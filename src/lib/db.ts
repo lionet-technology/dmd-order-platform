@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS orders (
   retail REAL NOT NULL DEFAULT 0,
   discount REAL NOT NULL DEFAULT 0,
   sales_price REAL NOT NULL DEFAULT 0,
+  manual_surcharge REAL NOT NULL DEFAULT 0,
   surcharge REAL NOT NULL DEFAULT 0,
   extra_surcharge REAL NOT NULL DEFAULT 0,
   import_tax REAL NOT NULL DEFAULT 0,
@@ -130,6 +131,12 @@ CREATE TABLE IF NOT EXISTS service_costs (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 `);
+
+
+const orderColumns = db.prepare("PRAGMA table_info(orders)").all() as Array<{ name: string }>;
+if (!orderColumns.some((column) => column.name === "manual_surcharge")) {
+  db.exec("ALTER TABLE orders ADD COLUMN manual_surcharge REAL NOT NULL DEFAULT 0");
+}
 
 export function queryAll<T = Record<string, unknown>>(sql: string, params: unknown[] = []): T[] {
   return db.prepare(sql).all(...params) as T[];
