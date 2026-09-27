@@ -41,3 +41,20 @@ NODE
 ```
 
 For this MVP, deploy a single app container. SQLite is not intended for horizontally scaled app replicas writing the same database file.
+
+## Jenkins job registration
+
+GitHub webhook is configured to:
+
+`https://deployment.lionet.vn/github-webhook/`
+
+The Jenkins job should be named `dmd-finance-platform` and use the same SCM credential as the existing `blog` job:
+
+- Repository: `https://github.com/thuan2172001/dmd-finance-platform`
+- Credential: `github-thuan2172001`
+- Branch: `*/main`
+- Script path: `Jenkinsfile`
+- Lightweight checkout: enabled
+- GitHub push trigger: enabled
+
+An exact Jenkins job XML matching the current `blog` job style is committed at `jenkins/job-config.xml`.
