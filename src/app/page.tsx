@@ -484,9 +484,9 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
       <div className="topbar">
         <button className="mobileBrand" onClick={()=>navigate("dashboard")}>DMD</button>
         <div className="crumb"><span>Finance Ops</span><i>/</i><b>{titleMap[section]}</b></div>
-        <div className="topActions">
-          <button className="secondaryBtn" onClick={()=>navigate("imports")}>⇩ Import</button>
-          <button className="primaryBtn" onClick={()=>openEntry("order")}>＋ Tạo Order</button>
+        <div className="topUser">
+          <span className="topRole">{role}</span>
+          <b>{user.display_name}</b>
         </div>
       </div>
 
