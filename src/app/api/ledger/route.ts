@@ -1,13 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
-import { db, queryAll } from "@/lib/db";
+import { db, queryAll, queryOne } from "@/lib/db";
+import { pageParams, paged } from "@/lib/pagination";
 import { addLedgerEntry } from "@/lib/finance";
 
 export const runtime = "nodejs";
 
 export async function GET(req:NextRequest) {
   const auth=requireUser(req,"ADMIN"); if(auth.error)return auth.error;
-  return NextResponse.json(queryAll("SELECT * FROM ledger_entries ORDER BY COALESCE(occurred_at,created_at) DESC,id DESC LIMIT 300"));
+  const {page,pageSize,q,offset}=pageParams(req);
+  const params:unknown[]=[];
+  let where="";
+  if(q){
+    where=" WHERE (entry_type LIKE ? OR customer LIKE ? OR reference_id LIKE ? OR note LIKE ?)";
+    const like="%"+q+"%"; params.push(like,like,like,like);
+  }
+  const total=queryOne<{c:number}>("SELECT COUNT(*) c FROM ledger_entries"+where,params)?.c||0;
+  const items=queryAll(
+    "SELECT * FROM ledger_entries"+where+" ORDER BY COALESCE(occurred_at,created_at) DESC,id DESC LIMIT ? OFFSET ?",
+    [...params,pageSize,offset],
+  );
+  return NextResponse.json(paged(items,total,page,pageSize));
 }
 
 export async function POST(req: NextRequest) {

@@ -5,6 +5,8 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 type Role = "ADMIN" | "SALES";
 type User = { id:number; username:string; display_name:string; role:Role; active?:number };
 type RowData = Record<string, string | number | null>;
+type PagedRows = { items:RowData[]; total:number; page:number; pageSize:number; totalPages:number };
+type AppSection = "dashboard"|"orders"|"imports"|"costs"|"recon"|"ledger"|"accounts";
 type Summary = { orders:number; review:number; unmatched:number; ledger:number; receivable:number };
 type ManualKind = "order" | "cost" | "balance";
 type InputMode = "manual" | "import";
@@ -279,6 +281,16 @@ function UserManager({users,onDone,currentUser}:{users:User[];onDone:()=>void;cu
   const [form,setForm]=useState({display_name:"",username:"",password:"",role:"SALES"});
   const [msg,setMsg]=useState("");
   const [busy,setBusy]=useState(false);
+  const [accountSearch,setAccountSearch]=useState("");
+  const [accountPage,setAccountPage]=useState(1);
+  const filteredUsers=users.filter(u=>{
+    const q=accountSearch.trim().toLowerCase();
+    return !q || u.display_name.toLowerCase().includes(q) || u.username.toLowerCase().includes(q) || u.role.toLowerCase().includes(q);
+  });
+  const accountPageSize=10;
+  const accountTotalPages=Math.max(1,Math.ceil(filteredUsers.length/accountPageSize));
+  const visibleUsers=filteredUsers.slice((accountPage-1)*accountPageSize,accountPage*accountPageSize);
+  useEffect(()=>{setAccountPage(1)},[accountSearch,users.length]);
 
   async function create(e:FormEvent){
     e.preventDefault();setBusy(true);setMsg("");
@@ -310,111 +322,265 @@ function UserManager({users,onDone,currentUser}:{users:User[];onDone:()=>void;cu
       </div>
       <div className="formFooter"><span className={msg.startsWith("Lỗi")?"inlineMsg error":"inlineMsg"}>{msg}</span><button className="primaryBtn" disabled={busy}>{busy?"Đang tạo…":"Tạo tài khoản"}</button></div>
     </form>
+    <div className="dataToolbar accountsToolbar"><SearchBar value={accountSearch} onChange={setAccountSearch} placeholder="Tìm tên, username, role..."/><span>{filteredUsers.length} accounts</span></div>
     <div className="tableWrap accountTable"><table><thead><tr><th>Tên</th><th>Username</th><th>Role</th><th>Status</th><th>Action</th></tr></thead><tbody>
-      {users.map(u=><tr key={u.id}><td>{u.display_name}</td><td>@{u.username}</td><td>{u.role}</td><td className={u.active?"good":"bad"}>{u.active?"Active":"Locked"}</td><td>
+      {visibleUsers.map(u=><tr key={u.id}><td>{u.display_name}</td><td>@{u.username}</td><td>{u.role}</td><td><span className={u.active?"status goodStatus":"status badStatus"}>{u.active?"Active":"Locked"}</span></td><td>
         <button className="editBtn" disabled={u.id===currentUser.id} onClick={()=>void patchUser(u.id,{active:!u.active})}>{u.active?"Khóa":"Mở"}</button>
         <button className="editBtn" onClick={()=>{const pw=window.prompt("Mật khẩu mới (ít nhất 8 ký tự)");if(pw)void patchUser(u.id,{password:pw})}}>Reset PW</button>
       </td></tr>)}
     </tbody></table></div>
+    <Pager data={{items:[],total:filteredUsers.length,page:accountPage,pageSize:accountPageSize,totalPages:accountTotalPages}} onPage={setAccountPage}/>
+  </div>;
+}
+
+function Pager({data,onPage}:{data:PagedRows;onPage:(page:number)=>void}) {
+  const from=data.total===0?0:(data.page-1)*data.pageSize+1;
+  const to=Math.min(data.page*data.pageSize,data.total);
+  return <div className="pager">
+    <span>{from}-{to} / {data.total}</span>
+    <div>
+      <button disabled={data.page<=1} onClick={()=>onPage(data.page-1)}>← Trước</button>
+      <b>{data.page} / {data.totalPages}</b>
+      <button disabled={data.page>=data.totalPages} onClick={()=>onPage(data.page+1)}>Sau →</button>
+    </div>
+  </div>;
+}
+
+function SearchBar({value,onChange,placeholder}:{value:string;onChange:(v:string)=>void;placeholder:string}) {
+  return <div className="searchBox"><span>⌕</span><input value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}/>{value&&<button onClick={()=>onChange("")}>×</button>}</div>;
+}
+
+function Modal({title,onClose,children}:{title:string;onClose:()=>void;children:React.ReactNode}) {
+  return <div className="modalBackdrop" onMouseDown={e=>{if(e.currentTarget===e.target)onClose()}}>
+    <div className="modalPanel">
+      <div className="modalHeader"><div><span className="eyebrow">DATA ENTRY</span><h2>{title}</h2></div><button className="iconBtn" onClick={onClose}>×</button></div>
+      <div className="modalBody">{children}</div>
+    </div>
+  </div>;
+}
+
+function PageHeader({eyebrow,title,description,actions}:{eyebrow:string;title:string;description:string;actions?:React.ReactNode}) {
+  return <div className="pageHeader">
+    <div><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{description}</p></div>
+    {actions&&<div className="pageActions">{actions}</div>}
   </div>;
 }
 
 function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   const role=user.role;
   const [summary,setSummary]=useState<Summary|null>(null);
-  const [orders,setOrders]=useState<RowData[]>([]);
-  const [costs,setCosts]=useState<RowData[]>([]);
-  const [recon,setRecon]=useState<RowData[]>([]);
-  const [ledger,setLedger]=useState<RowData[]>([]);
   const [users,setUsers]=useState<User[]>([]);
-  const [tab,setTab]=useState("orders");
-  const [inputMode,setInputMode]=useState<InputMode>("manual");
-  const [manualKind,setManualKind]=useState<ManualKind>("order");
+  const [section,setSection]=useState<AppSection>("dashboard");
+  const [data,setData]=useState<PagedRows>({items:[],total:0,page:1,pageSize:20,totalPages:1});
+  const [recent,setRecent]=useState<RowData[]>([]);
+  const [page,setPage]=useState(1);
+  const [search,setSearch]=useState("");
+  const [debouncedSearch,setDebouncedSearch]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [entry,setEntry]=useState<ManualKind|null>(null);
   const [editOrder,setEditOrder]=useState<RowData|null>(null);
 
-  const load=useCallback(async()=>{
-    const [s,o]=await Promise.all([fetch("/api/summary"),fetch("/api/orders")]);
-    if(s.status===401||o.status===401){onLogout();return;}
-    setSummary(await s.json());setOrders(await o.json());
-    if(role==="ADMIN"){
-      const [c,r,l,u]=await Promise.all([fetch("/api/costs"),fetch("/api/reconciliation"),fetch("/api/ledger"),fetch("/api/users")]);
-      setCosts(await c.json());setRecon(await r.json());setLedger(await l.json());setUsers(await u.json());
-    } else {
-      setCosts([]);setRecon([]);setLedger([]);setUsers([]);
-    }
-  },[role,onLogout]);
-  useEffect(()=>{void load()},[load]);
-
   const salesUsers=users.filter(u=>u.role==="SALES"&&u.active!==0);
-  const orderCols=useMemo(()=>role==="ADMIN"
-    ?["workflow_status","created_at","sales","customer","supplier","service","sub_service","tracking","order_id","est_net_cost","true_net_cost","base_cost","retail","sales_price","surcharge","import_tax","total_due","gross_margin_pct","margin_status","reconciliation_status"]
-    :["workflow_status","created_at","sales","customer","service","sub_service","order_id","discount","total_due"],[role]);
 
-  function startEdit(row:RowData){
-    setEditOrder(row);setInputMode("manual");setManualKind("order");
-    window.scrollTo({top:340,behavior:"smooth"});
+  useEffect(()=>{
+    const id=setTimeout(()=>setDebouncedSearch(search),300);
+    return ()=>clearTimeout(id);
+  },[search]);
+
+  useEffect(()=>{setPage(1)},[section,debouncedSearch]);
+
+  const loadSummary=useCallback(async()=>{
+    const res=await fetch("/api/summary");
+    if(res.status===401){onLogout();return;}
+    setSummary(await res.json());
+  },[onLogout]);
+
+  const loadUsers=useCallback(async()=>{
+    if(role!=="ADMIN"){setUsers([]);return;}
+    const res=await fetch("/api/users");
+    if(res.status===401){onLogout();return;}
+    setUsers(await res.json());
+  },[role,onLogout]);
+
+  const endpointFor=(target:AppSection)=>{
+    if(target==="orders")return "/api/orders";
+    if(target==="costs")return "/api/costs";
+    if(target==="recon")return "/api/reconciliation";
+    if(target==="ledger")return "/api/ledger";
+    return "";
+  };
+
+  const loadSection=useCallback(async(target:AppSection,currentPage=page,q=debouncedSearch)=>{
+    const endpoint=endpointFor(target);
+    if(!endpoint)return;
+    setLoading(true);
+    try{
+      const res=await fetch(endpoint+"?page="+currentPage+"&pageSize=20&q="+encodeURIComponent(q));
+      if(res.status===401){onLogout();return;}
+      if(!res.ok)return;
+      setData(await res.json());
+    } finally {setLoading(false)}
+  },[page,debouncedSearch,onLogout]);
+
+  const loadRecent=useCallback(async()=>{
+    const res=await fetch("/api/orders?page=1&pageSize=10");
+    if(res.ok){const body=await res.json();setRecent(body.items||[])}
+  },[]);
+
+  useEffect(()=>{void loadSummary();void loadUsers();void loadRecent()},[loadSummary,loadUsers,loadRecent]);
+  useEffect(()=>{if(["orders","costs","recon","ledger"].includes(section))void loadSection(section,page,debouncedSearch)},[section,page,debouncedSearch,loadSection]);
+
+  const refresh=useCallback(async()=>{
+    await Promise.all([loadSummary(),loadUsers(),loadRecent()]);
+    if(["orders","costs","recon","ledger"].includes(section))await loadSection(section,page,debouncedSearch);
+  },[loadSummary,loadUsers,loadRecent,loadSection,section,page,debouncedSearch]);
+
+  function navigate(next:AppSection){
+    setSection(next);setSearch("");setPage(1);
   }
-
-  async function logout(){
-    await fetch("/api/auth/logout",{method:"POST"});
-    onLogout();
+  function openEntry(kind:ManualKind,row?:RowData){
+    setEditOrder(row||null);setEntry(kind);
   }
+  function closeEntry(){setEntry(null);setEditOrder(null)}
+  async function entryDone(){closeEntry();await refresh()}
+  async function logout(){await fetch("/api/auth/logout",{method:"POST"});onLogout()}
 
-  return <main>
-    <header>
-      <div><span className="eyebrow">DMD · FINANCE OPS</span><h1>Linked Data Platform</h1><p>Nhập liệu một lần, tự sync Order ↔ Supplier Cost ↔ Reconciliation ↔ Balance.</p></div>
-      <div className="accountBox"><div><b>{user.display_name}</b><span>@{user.username} · {user.role}</span></div><button className="linkBtn" onClick={()=>void logout()}>Đăng xuất</button></div>
-    </header>
+  const orderCols=role==="ADMIN"
+    ?["workflow_status","created_at","sales","customer","service","tracking","order_id","true_net_cost","sales_price","total_due","margin_status","reconciliation_status"]
+    :["workflow_status","created_at","customer","service","sub_service","order_id","total_due"];
 
-    <section className={role==="ADMIN"?"stats":"stats salesStats"}>
-      <div><b>{summary?.orders??0}</b><span>Orders</span></div>
-      <div><b>{money(summary?.receivable)}</b><span>Total due</span></div>
-      {role==="ADMIN"&&<><div><b>{money(summary?.ledger)}</b><span>Ledger balance</span></div><div className={(summary?.review||0)>0?"warn":""}><b>{summary?.review??0}</b><span>Need review</span></div><div><b>{summary?.unmatched??0}</b><span>Unmatched cost</span></div></>}
-    </section>
+  const nav:Array<{key:AppSection;label:string;icon:string;admin?:boolean}>=[
+    {key:"dashboard",label:"Tổng quan",icon:"⌂"},
+    {key:"orders",label:"Orders",icon:"▤"},
+    {key:"imports",label:"Import dữ liệu",icon:"⇩"},
+    {key:"costs",label:"Supplier Costs",icon:"$ ",admin:true},
+    {key:"recon",label:"Reconciliation",icon:"✓",admin:true},
+    {key:"ledger",label:"Balance Ledger",icon:"≋",admin:true},
+    {key:"accounts",label:"Tài khoản",icon:"♙",admin:true},
+  ];
 
-    <section>
-      <div className="sectionTitle">
-        <div><span className="eyebrow">01 · DATA ENTRY</span><h2>Nhập trực tiếp trên platform</h2></div>
-        <div className="modeBar"><button className={inputMode==="manual"?"active":""} onClick={()=>setInputMode("manual")}>Nhập thủ công</button><button className={inputMode==="import"?"active":""} onClick={()=>setInputMode("import")}>Import Excel</button></div>
-      </div>
-      <div className="syncStrip"><b>Auto-sync:</b><span>Order saved</span><i>→</i><span>Pricing/weight recalculated</span>{role==="ADMIN"&&<><i>→</i><span>Cost matched by Tracking</span><i>→</i><span>Reconcile + Ledger updated</span></>}</div>
+  const titleMap:Record<AppSection,string>={
+    dashboard:"Tổng quan",orders:"Orders",imports:"Import dữ liệu",costs:"Supplier Costs",
+    recon:"Reconciliation",ledger:"Balance Ledger",accounts:"Tài khoản",
+  };
 
-      {inputMode==="manual"
-        ? <ManualEntry role={role} currentUser={user} salesUsers={salesUsers} kind={manualKind} setKind={setManualKind} onDone={load} editOrder={editOrder} onCancelEdit={()=>setEditOrder(null)}/>
-        : role==="ADMIN"
-          ? <div className="imports">
-              <ImportCard kind="orders" title="Lên đơn Admin" detail="Bulk import Order với đầy đủ cột Admin/finance." templateHref="/templates/dmd-admin-orders.xlsx" onDone={load}/>
-              <ImportCard kind="costs" title="Chi phí Supplier" detail="Match Tracking → True Net Cost → reconciliation." templateHref="/templates/dmd-supplier-costs.xlsx" onDone={load}/>
-              <ImportCard kind="balance" title="Balance / Thanh toán" detail="Bulk import payment, service cost và error adjustments." templateHref="/templates/dmd-balance.xlsx" onDone={load}/>
-            </div>
-          : <div className="imports salesImports">
-              <ImportCard kind="sales_orders" title="Lên đơn Sales" detail="Import nhiều Order của chính account đang đăng nhập. Cột Admin/finance không được phép import." templateHref="/templates/dmd-sales-orders.xlsx" onDone={load}/>
-            </div>
-      }
-    </section>
-
-    <section className="workspace">
-      <nav>
-        <button className={tab==="orders"?"active":""} onClick={()=>setTab("orders")}>Orders</button>
-        {role==="ADMIN"&&<><button className={tab==="costs"?"active":""} onClick={()=>setTab("costs")}>Supplier Costs <i>{costs.filter(x=>!x.matched).length}</i></button><button className={tab==="recon"?"active":""} onClick={()=>setTab("recon")}>Reconciliation <i>{recon.filter(x=>x.reconciliation_status==="REVIEW").length}</i></button><button className={tab==="ledger"?"active":""} onClick={()=>setTab("ledger")}>Balance Ledger</button><button className={tab==="users"?"active":""} onClick={()=>setTab("users")}>Accounts <i>{users.filter(x=>x.role==="SALES"&&x.active).length}</i></button></>}
+  return <div className="appShell">
+    <aside className="sidebar">
+      <div className="brand"><div className="brandMark">D</div><div><b>DMD Finance</b><span>Operations</span></div></div>
+      <nav className="sideNav">
+        {nav.filter(n=>!n.admin||role==="ADMIN").map(n=><button key={n.key} className={section===n.key?"active":""} onClick={()=>navigate(n.key)}>
+          <i>{n.icon}</i><span>{n.label}</span>
+          {n.key==="recon"&&Number(summary?.review||0)>0&&<em>{summary?.review}</em>}
+        </button>)}
       </nav>
-      {tab==="orders"&&<Table rows={orders} cols={orderCols} onEdit={startEdit}/>}
-      {role==="ADMIN"&&tab==="costs"&&<Table rows={costs} cols={["occurred_at","tracking","matched","order_id","customer","supplier","service","sub_service","total_net_cost","extra_surcharge","import_tax","reconciliation_status","note"]}/>}
-      {role==="ADMIN"&&tab==="recon"&&<Table rows={recon} cols={["reconciliation_status","tracking","order_id","customer","supplier","service","est_net_cost","true_net_cost","reconciliation_delta","gross_margin_pct","margin_status","total_due"]}/>}
-      {role==="ADMIN"&&tab==="ledger"&&<Table rows={ledger} cols={["occurred_at","entry_type","direction","amount","customer","reference_type","reference_id","bill_url","note"]}/>}
-      {role==="ADMIN"&&tab==="users"&&<UserManager users={users} onDone={load} currentUser={user}/>}
-    </section>
+      <div className="sideFooter">
+        <div className="avatar">{user.display_name.slice(0,1).toUpperCase()}</div>
+        <div className="sideUser"><b>{user.display_name}</b><span>{user.role} · @{user.username}</span></div>
+        <button className="logoutBtn" onClick={()=>void logout()} title="Đăng xuất">↪</button>
+      </div>
+    </aside>
 
-    {role==="ADMIN"&&<section className="questions">
-      <span className="eyebrow">CALCULATION AUDIT</span><h2>Đã tự động và phần còn thiếu</h2>
-      <ol>
-        <li><b>Đã có:</b> Base/Retail markup, Sales Price theo Discount, Volume, Chargeable Weight, ePacket length surcharge, Total Due, True Cost reconciliation, Gross Margin &lt;15% alert, ORDER_CHARGE ledger.</li>
-        <li><b>Chưa thể auto:</b> Remote-area surcharge — cần source State/ZIP chính thức.</li>
-        <li><b>Cần chốt:</b> Total Net Cost có bao gồm toàn bộ customs/fee không; Processing credit có reversal không; Gross Profit hiện không tính surcharge/import tax vào profit.</li>
-        <li><b>Cần nâng production:</b> chuyển markup hard-code thành Pricing Config quản trị được và chốt key multi-carton nếu Tracking không unique.</li>
-      </ol>
-    </section>}
-  </main>;
+    <div className="appMain">
+      <div className="topbar">
+        <button className="mobileBrand" onClick={()=>navigate("dashboard")}>DMD</button>
+        <div className="crumb"><span>Finance Ops</span><i>/</i><b>{titleMap[section]}</b></div>
+        <div className="topActions">
+          <button className="secondaryBtn" onClick={()=>navigate("imports")}>⇩ Import</button>
+          <button className="primaryBtn" onClick={()=>openEntry("order")}>＋ Tạo Order</button>
+        </div>
+      </div>
+
+      <div className="pageContent">
+        {section==="dashboard"&&<>
+          <PageHeader eyebrow="OVERVIEW" title={"Chào, "+user.display_name} description="Theo dõi nhanh Orders, doanh thu và các mục cần xử lý."/>
+          <section className={role==="ADMIN"?"metricGrid":"metricGrid salesMetricGrid"}>
+            <div className="metricCard"><span>Orders</span><b>{summary?.orders??0}</b><small>Tổng order hiện có</small></div>
+            <div className="metricCard"><span>Total due</span><b>{money(summary?.receivable)}</b><small>Tổng cần thu</small></div>
+            {role==="ADMIN"&&<>
+              <div className="metricCard"><span>Ledger balance</span><b>{money(summary?.ledger)}</b><small>Credit − Debit</small></div>
+              <div className={Number(summary?.review||0)>0?"metricCard alert":"metricCard"}><span>Need review</span><b>{summary?.review??0}</b><small>Reconciliation cần kiểm tra</small></div>
+              <div className="metricCard"><span>Unmatched cost</span><b>{summary?.unmatched??0}</b><small>Cost chưa match Tracking</small></div>
+            </>}
+          </section>
+
+          <section className="dashboardGrid">
+            <div className="panel">
+              <div className="panelHead"><div><h3>Order gần đây</h3><p>10 order mới nhất</p></div><button className="textBtn" onClick={()=>navigate("orders")}>Xem tất cả →</button></div>
+              <Table rows={recent} cols={role==="ADMIN"?["created_at","order_id","customer","sales","service","total_due","workflow_status"]:["created_at","order_id","customer","service","total_due","workflow_status"]} compact onEdit={row=>openEntry("order",row)}/>
+            </div>
+            <div className="quickPanel">
+              <h3>Thao tác nhanh</h3>
+              <button onClick={()=>openEntry("order")}><i>＋</i><div><b>Tạo Order</b><span>Nhập một order mới</span></div></button>
+              <button onClick={()=>navigate("imports")}><i>⇩</i><div><b>Import Excel</b><span>Nhập dữ liệu hàng loạt</span></div></button>
+              {role==="ADMIN"&&<button onClick={()=>openEntry("cost")}><i>$</i><div><b>Nhập Supplier Cost</b><span>Reconcile theo Tracking</span></div></button>}
+              {role==="ADMIN"&&<button onClick={()=>openEntry("balance")}><i>≋</i><div><b>Ghi Balance</b><span>Payment / Refund / Adjustment</span></div></button>}
+            </div>
+          </section>
+        </>}
+
+        {section==="orders"&&<>
+          <PageHeader eyebrow="OPERATIONS" title="Orders" description={role==="ADMIN"?"Quản lý toàn bộ đơn hàng và trạng thái xử lý.":"Quản lý các order thuộc tài khoản của bạn."}
+            actions={<><button className="secondaryBtn" onClick={()=>navigate("imports")}>⇩ Import</button><button className="primaryBtn" onClick={()=>openEntry("order")}>＋ Tạo Order</button></>}/>
+          <div className="panel dataPanel">
+            <div className="dataToolbar"><SearchBar value={search} onChange={setSearch} placeholder="Tìm Order ID, Tracking, khách hàng, dịch vụ..."/><span>{data.total} records</span></div>
+            {loading?<div className="loadingState">Đang tải dữ liệu…</div>:<Table rows={data.items} cols={orderCols} onEdit={row=>openEntry("order",row)}/>}
+            <Pager data={data} onPage={setPage}/>
+          </div>
+        </>}
+
+        {section==="imports"&&<>
+          <PageHeader eyebrow="BULK DATA" title="Import dữ liệu" description="Tải template chuẩn, điền dữ liệu rồi import. Hệ thống vẫn dùng cùng business logic với nhập thủ công."/>
+          {role==="ADMIN"
+            ? <div className="imports">
+                <ImportCard kind="orders" title="Orders Admin" detail="Order với đầy đủ field vận hành và finance." templateHref="/templates/dmd-admin-orders.xlsx" onDone={refresh}/>
+                <ImportCard kind="costs" title="Supplier Costs" detail="True cost, surcharge và import tax theo Tracking." templateHref="/templates/dmd-supplier-costs.xlsx" onDone={refresh}/>
+                <ImportCard kind="balance" title="Balance" detail="Payment, service cost và error adjustments." templateHref="/templates/dmd-balance.xlsx" onDone={refresh}/>
+              </div>
+            : <div className="imports salesImports"><ImportCard kind="sales_orders" title="Orders Sales" detail="Chỉ import order của account đang đăng nhập; không nhận field finance Admin." templateHref="/templates/dmd-sales-orders.xlsx" onDone={refresh}/></div>}
+        </>}
+
+        {role==="ADMIN"&&section==="costs"&&<>
+          <PageHeader eyebrow="FINANCE" title="Supplier Costs" description="Theo dõi chi phí thực tế và trạng thái link với Orders."
+            actions={<><button className="secondaryBtn" onClick={()=>navigate("imports")}>⇩ Import</button><button className="primaryBtn" onClick={()=>openEntry("cost")}>＋ Nhập Cost</button></>}/>
+          <div className="panel dataPanel">
+            <div className="dataToolbar"><SearchBar value={search} onChange={setSearch} placeholder="Tìm Tracking, supplier, service, Order ID..."/><span>{data.total} records</span></div>
+            {loading?<div className="loadingState">Đang tải dữ liệu…</div>:<Table rows={data.items} cols={["occurred_at","tracking","matched","order_id","customer","supplier","service","total_net_cost","reconciliation_status"]}/>}
+            <Pager data={data} onPage={setPage}/>
+          </div>
+        </>}
+
+        {role==="ADMIN"&&section==="recon"&&<>
+          <PageHeader eyebrow="FINANCE CONTROL" title="Reconciliation" description="So sánh Estimated Net và True Net Cost, ưu tiên các order REVIEW."/>
+          <div className="panel dataPanel">
+            <div className="dataToolbar"><SearchBar value={search} onChange={setSearch} placeholder="Tìm Tracking, Order ID, khách, supplier, status..."/><span>{data.total} records</span></div>
+            {loading?<div className="loadingState">Đang tải dữ liệu…</div>:<Table rows={data.items} cols={["reconciliation_status","tracking","order_id","customer","supplier","service","est_net_cost","true_net_cost","reconciliation_delta","gross_margin_pct","margin_status","total_due"]}/>}
+            <Pager data={data} onPage={setPage}/>
+          </div>
+        </>}
+
+        {role==="ADMIN"&&section==="ledger"&&<>
+          <PageHeader eyebrow="FINANCE" title="Balance Ledger" description="Dòng tiền Credit / Debit và các order charge tự động."
+            actions={<button className="primaryBtn" onClick={()=>openEntry("balance")}>＋ Ghi Balance</button>}/>
+          <div className="panel dataPanel">
+            <div className="dataToolbar"><SearchBar value={search} onChange={setSearch} placeholder="Tìm loại giao dịch, khách, reference, note..."/><span>{data.total} records</span></div>
+            {loading?<div className="loadingState">Đang tải dữ liệu…</div>:<Table rows={data.items} cols={["occurred_at","entry_type","direction","amount","customer","reference_type","reference_id","note"]}/>}
+            <Pager data={data} onPage={setPage}/>
+          </div>
+        </>}
+
+        {role==="ADMIN"&&section==="accounts"&&<>
+          <PageHeader eyebrow="ACCESS CONTROL" title="Tài khoản" description="Tạo và quản lý quyền truy cập cho Admin / Sales."/>
+          <div className="panel"><UserManager users={users} onDone={refresh} currentUser={user}/></div>
+        </>}
+      </div>
+    </div>
+
+    {entry&&<Modal title={editOrder?"Chỉnh sửa Order":entry==="order"?"Tạo Order":entry==="cost"?"Nhập Supplier Cost":"Ghi Balance"} onClose={closeEntry}>
+      {entry==="order"&&<OrderForm role={role} currentUser={user} salesUsers={salesUsers} edit={editOrder} onDone={entryDone} onCancelEdit={closeEntry}/>}
+      {entry==="cost"&&role==="ADMIN"&&<CostForm onDone={entryDone}/>}
+      {entry==="balance"&&role==="ADMIN"&&<BalanceForm onDone={entryDone}/>}
+    </Modal>}
+  </div>;
 }
 
 function AuthScreen({setup,onSuccess}:{setup:boolean;onSuccess:()=>void}){
@@ -447,16 +613,34 @@ export default function Home(){
   return <Platform user={status.user} onLogout={clearUser}/>;
 }
 
-function Table({rows,cols,onEdit}:{rows:RowData[];cols:string[];onEdit?:(row:RowData)=>void}){
-  return <div className="tableWrap"><table><thead><tr>{onEdit&&<th>Action</th>}{cols.map(c=><th key={c}>{c.replaceAll("_"," ")}</th>)}</tr></thead><tbody>
-    {rows.length===0?<tr><td colSpan={cols.length+(onEdit?1:0)} className="empty">Chưa có dữ liệu — nhập trực tiếp hoặc Import Excel phía trên.</td></tr>
-    :rows.map((r,i)=><tr key={String(r.id||r.tracking||i)}>
-      {onEdit&&<td><button className="editBtn" onClick={()=>onEdit(r)}>Sửa</button></td>}
+function Table({rows,cols,onEdit,compact=false}:{rows:RowData[];cols:string[];onEdit?:(row:RowData)=>void;compact?:boolean}){
+  const label=(c:string)=>({
+    workflow_status:"Trạng thái",created_at:"Ngày",sales:"Sales",customer:"Khách",supplier:"Supplier",service:"Dịch vụ",
+    sub_service:"Sub-service",tracking:"Tracking",order_id:"Order ID",est_net_cost:"Est. Net",true_net_cost:"True Net",
+    base_cost:"Base",retail:"Retail",sales_price:"Sales Price",surcharge:"Phụ phí",import_tax:"Thuế NK",
+    total_due:"Total Due",gross_margin_pct:"Margin %",margin_status:"Margin",reconciliation_status:"Reconcile",
+    reconciliation_delta:"Delta",occurred_at:"Ngày",entry_type:"Loại",direction:"Chiều",amount:"Số tiền",
+    reference_type:"Ref type",reference_id:"Reference",total_net_cost:"Total Net",matched:"Link",
+  } as Record<string,string>)[c]||c.replaceAll("_"," ");
+
+  const statusClass=(v:unknown)=>{
+    const x=String(v||"");
+    if(["REVIEW","LOW_MARGIN","Waiting","DEBIT"].includes(x))return "status badStatus";
+    if(["PASS","OK","Linked","CREDIT","RECONCILED","ADMIN_READY"].includes(x))return "status goodStatus";
+    if(["SALES_DRAFT","TRACKING_ASSIGNED","PENDING"].includes(x))return "status neutralStatus";
+    return "";
+  };
+
+  return <div className={compact?"tableWrap compactTable":"tableWrap"}><table><thead><tr>{onEdit&&<th></th>}{cols.map(c=><th key={c}>{label(c)}</th>)}</tr></thead><tbody>
+    {rows.length===0?<tr><td colSpan={cols.length+(onEdit?1:0)} className="empty">Chưa có dữ liệu.</td></tr>
+    :rows.map((r,i)=><tr key={String(r.id||r.tracking||r.order_id||i)}>
+      {onEdit&&<td className="actionCell"><button className="rowAction" onClick={()=>onEdit(r)}>Sửa</button></td>}
       {cols.map(c=>{
         const v=r[c];
         const isMoney=["amount","est_net_cost","true_net_cost","base_cost","retail","sales_price","surcharge","import_tax","extra_surcharge","extra_import_tax","total_due","reconciliation_delta","total_net_cost"].includes(c);
-        const display=c==="matched"?(Number(v)?"Linked":"Waiting"):isMoney?money(v):String(v??"");
-        return <td key={c} className={String(v)==="REVIEW"||display==="Waiting"?"bad":String(v)==="PASS"||display==="Linked"?"good":""}>{display}</td>;
+        const isStatus=["workflow_status","margin_status","reconciliation_status","direction","matched"].includes(c);
+        const display=c==="matched"?(Number(v)?"Linked":"Waiting"):isMoney?money(v):String(v??"—");
+        return <td key={c}>{isStatus?<span className={statusClass(display)}>{display}</span>:display}</td>;
       })}
     </tr>)}
   </tbody></table></div>;

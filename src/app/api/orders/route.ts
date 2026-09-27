@@ -1,19 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
-import { db, queryAll } from "@/lib/db";
+import { db, queryAll, queryOne } from "@/lib/db";
+import { pageParams, paged } from "@/lib/pagination";
 import { upsertOrder } from "@/lib/finance";
 
 export const runtime = "nodejs";
 
 export async function GET(req: NextRequest) {
   const auth=requireUser(req); if(auth.error)return auth.error;
+  const {page,pageSize,q,offset}=pageParams(req);
+  const where:string[]=[];
+  const params:unknown[]=[];
   if(auth.user.role==="SALES"){
-    return NextResponse.json(queryAll(
-      "SELECT * FROM orders WHERE sales_user_id=? ORDER BY COALESCE(created_at,updated_at) DESC,id DESC LIMIT 300",
-      [auth.user.id]
-    ));
+    where.push("sales_user_id=?");
+    params.push(auth.user.id);
   }
-  return NextResponse.json(queryAll("SELECT * FROM orders ORDER BY COALESCE(created_at,updated_at) DESC,id DESC LIMIT 300"));
+  if(q){
+    where.push("(order_id LIKE ? OR tracking LIKE ? OR customer LIKE ? OR service LIKE ? OR sales LIKE ?)");
+    const like="%"+q+"%";
+    params.push(like,like,like,like,like);
+  }
+  const whereSql=where.length?" WHERE "+where.join(" AND "):"";
+  const total=queryOne<{c:number}>("SELECT COUNT(*) c FROM orders"+whereSql,params)?.c||0;
+  const items=queryAll(
+    "SELECT * FROM orders"+whereSql+" ORDER BY COALESCE(created_at,updated_at) DESC,id DESC LIMIT ? OFFSET ?",
+    [...params,pageSize,offset],
+  );
+  return NextResponse.json(paged(items,total,page,pageSize));
 }
 
 export async function POST(req: NextRequest) {

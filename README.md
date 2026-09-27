@@ -50,3 +50,7 @@ SQLite is created automatically at data/dmd-finance-ops.db.
 - Multi-carton merge is intentionally conservative: if one Order ID has multiple pending drafts, the system refuses automatic merge.
 
 See docs/logic.md for rules and open questions.
+
+## UI
+
+The MVP now uses a role-aware dashboard shell with sidebar navigation, separate operational modules, modal data-entry forms, backend search and server-side pagination for large data tables.

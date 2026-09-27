@@ -152,3 +152,18 @@ Admin:
 - Can download/import dmd-balance.xlsx.
 
 Templates are stored under public/templates/ and can be regenerated using scripts/generate-download-templates.mjs.
+
+## UI / navigation update
+
+The web app now uses an operations-dashboard shell instead of one long page:
+
+- Role-aware sidebar navigation.
+- Sticky topbar with global Create Order / Import actions.
+- Separate screens for Overview, Orders, Import, Supplier Costs, Reconciliation, Balance Ledger and Accounts.
+- Dashboard with KPI cards, recent orders and quick actions.
+- Order / Cost / Reconciliation / Ledger lists use server-side pagination (20 rows/page).
+- Search is executed against the backend for paginated lists.
+- Accounts has search and pagination.
+- Manual Order / Cost / Balance forms open in focused modals instead of pushing tables down the page.
+- Tables use compact columns, readable labels and status badges.
+- Responsive layout switches the sidebar to a compact horizontal nav on smaller screens.
