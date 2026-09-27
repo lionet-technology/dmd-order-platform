@@ -58,3 +58,5 @@ The Jenkins job should be named `dmd-finance-platform` and use the same SCM cred
 - GitHub push trigger: enabled
 
 An exact Jenkins job XML matching the current `blog` job style is committed at `jenkins/job-config.xml`.
+
+- Webhook smoke check: a normal GitHub push should automatically schedule this Jenkins job.
