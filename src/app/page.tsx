@@ -1,15 +1,15 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Role = "ADMIN" | "SALES";
 type User = { id:number; username:string; display_name:string; role:Role; active?:number };
 type RowData = Record<string, string | number | null>;
 type PagedRows = { items:RowData[]; total:number; page:number; pageSize:number; totalPages:number };
-type AppSection = "dashboard"|"orders"|"imports"|"costs"|"recon"|"ledger"|"accounts";
+type AppSection = "dashboard"|"orders"|"costs"|"recon"|"ledger"|"accounts";
 type Summary = { orders:number; review:number; unmatched:number; ledger:number; receivable:number };
 type ManualKind = "order" | "cost" | "balance";
-type InputMode = "manual" | "import";
+type ImportKind = "orders"|"sales_orders"|"costs"|"balance";
 
 const money = (v: unknown) => new Intl.NumberFormat("en-US", {
   style:"currency", currency:"USD", maximumFractionDigits:2,
@@ -48,6 +48,32 @@ function Field({
   </label>;
 }
 
+function SmartSelect({
+  value,onChange,options,placeholder="Chọn",compact=false,
+}:{
+  value:string;onChange:(value:string)=>void;options:Array<{value:string;label:string}>;
+  placeholder?:string;compact?:boolean;
+}) {
+  const [open,setOpen]=useState(false);
+  const ref=useRef<HTMLDivElement>(null);
+  const selected=options.find(o=>o.value===value);
+  useEffect(()=>{
+    function close(e:MouseEvent){if(ref.current&&!ref.current.contains(e.target as Node))setOpen(false)}
+    document.addEventListener("mousedown",close);
+    return()=>document.removeEventListener("mousedown",close);
+  },[]);
+  return <div className={compact?"smartSelect compact":"smartSelect"} ref={ref}>
+    <button type="button" className={open?"smartSelectTrigger open":"smartSelectTrigger"} onClick={()=>setOpen(x=>!x)}>
+      <span className={!selected||!selected.value?"placeholder":""}>{selected?.label||placeholder}</span><i>⌄</i>
+    </button>
+    {open&&<div className="smartSelectMenu">
+      {options.map(o=><button type="button" key={o.value} className={o.value===value?"selected":""} onClick={()=>{onChange(o.value);setOpen(false)}}>
+        <span>{o.label}</span>{o.value===value&&<b>✓</b>}
+      </button>)}
+    </div>}
+  </div>;
+}
+
 function SelectField({
   label, name, value, onChange, options, wide=false,
 }: {
@@ -56,9 +82,7 @@ function SelectField({
 }) {
   return <label className={wide ? "field wide" : "field"}>
     <span>{label}</span>
-    <select value={value} onChange={(e)=>onChange(name,e.target.value)}>
-      {options.map((o)=><option value={o.value} key={o.value}>{o.label}</option>)}
-    </select>
+    <SmartSelect value={value} onChange={v=>onChange(name,v)} options={options}/>
   </label>;
 }
 
@@ -472,9 +496,9 @@ function SearchBar({value,onChange,placeholder}:{value:string;onChange:(v:string
   return <div className="searchBox"><span>⌕</span><input value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}/>{value&&<button onClick={()=>onChange("")}>×</button>}</div>;
 }
 
-function Modal({title,onClose,children}:{title:string;onClose:()=>void;children:React.ReactNode}) {
+function Modal({title,onClose,children,size="wide"}:{title:string;onClose:()=>void;children:React.ReactNode;size?:"wide"|"compact"}) {
   return <div className="modalBackdrop" onMouseDown={e=>{if(e.currentTarget===e.target)onClose()}}>
-    <div className="modalPanel">
+    <div className={size==="compact"?"modalPanel compactModal":"modalPanel"}>
       <div className="modalHeader"><div><span className="eyebrow">DATA ENTRY</span><h2>{title}</h2></div><button className="iconBtn" onClick={onClose}>×</button></div>
       <div className="modalBody">{children}</div>
     </div>
@@ -501,6 +525,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   const [loading,setLoading]=useState(false);
   const [entry,setEntry]=useState<ManualKind|null>(null);
   const [editOrder,setEditOrder]=useState<RowData|null>(null);
+  const [importKind,setImportKind]=useState<ImportKind|null>(null);
   const [orderEntryMode,setOrderEntryMode]=useState<"sheet"|"form">("sheet");
   const [orderFilters,setOrderFilters]=useState({status:"",service:"",salesUserId:"",reconcile:""});
 
@@ -586,7 +611,6 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   const nav:Array<{key:AppSection;label:string;icon:string;admin?:boolean}>=[
     {key:"dashboard",label:"Tổng quan",icon:"⌂"},
     {key:"orders",label:"Orders",icon:"▤"},
-    {key:"imports",label:"Import dữ liệu",icon:"⇩"},
     {key:"costs",label:"Supplier Costs",icon:"$ ",admin:true},
     {key:"recon",label:"Reconciliation",icon:"✓",admin:true},
     {key:"ledger",label:"Balance Ledger",icon:"≋",admin:true},
@@ -594,7 +618,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   ];
 
   const titleMap:Record<AppSection,string>={
-    dashboard:"Tổng quan",orders:"Orders",imports:"Import dữ liệu",costs:"Supplier Costs",
+    dashboard:"Tổng quan",orders:"Orders",costs:"Supplier Costs",
     recon:"Reconciliation",ledger:"Balance Ledger",accounts:"Tài khoản",
   };
 
@@ -645,7 +669,6 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
             <div className="quickPanel">
               <h3>Thao tác nhanh</h3>
               <button onClick={()=>openEntry("order")}><i>＋</i><div><b>Tạo Order</b><span>Nhập một order mới</span></div></button>
-              <button onClick={()=>navigate("imports")}><i>⇩</i><div><b>Import Excel</b><span>Nhập dữ liệu hàng loạt</span></div></button>
               {role==="ADMIN"&&<button onClick={()=>openEntry("cost")}><i>$</i><div><b>Nhập Supplier Cost</b><span>Reconcile theo Tracking</span></div></button>}
               {role==="ADMIN"&&<button onClick={()=>openEntry("balance")}><i>≋</i><div><b>Ghi Balance</b><span>Payment / Refund / Adjustment</span></div></button>}
             </div>
@@ -654,15 +677,15 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
 
         {section==="orders"&&<>
           <PageHeader eyebrow="OPERATIONS" title="Orders" description={role==="ADMIN"?"Quản lý toàn bộ đơn hàng và trạng thái xử lý.":"Quản lý các order thuộc tài khoản của bạn."}
-            actions={<><button className="secondaryBtn" onClick={()=>navigate("imports")}>⇩ Import</button><button className="primaryBtn" onClick={()=>openEntry("order")}>＋ Tạo Order</button></>}/>
+            actions={<><button className="secondaryBtn" onClick={()=>setImportKind(role==="ADMIN"?"orders":"sales_orders")}>⇩ Import</button><button className="primaryBtn" onClick={()=>openEntry("order")}>＋ Tạo Order</button></>}/>
           <div className="panel dataPanel">
             <div className="dataToolbar orderToolbar">
               <SearchBar value={search} onChange={setSearch} placeholder="Tìm Order ID, Tracking, khách hàng, dịch vụ..."/>
               <div className="orderFilters">
-                <select value={orderFilters.status} onChange={e=>setOrderFilters(x=>({...x,status:e.target.value}))}><option value="">Mọi trạng thái</option><option value="SALES_DRAFT">Sales draft</option><option value="TRACKING_ASSIGNED">Tracking assigned</option><option value="ADMIN_READY">Admin ready</option><option value="RECONCILED">Reconciled</option></select>
-                <select value={orderFilters.service} onChange={e=>setOrderFilters(x=>({...x,service:e.target.value}))}><option value="">Mọi dịch vụ</option><option value="ePacket">ePacket</option><option value="UPS">UPS</option><option value="Yun Express">Yun Express</option><option value="Chuyên tuyến">Chuyên tuyến</option></select>
-                {role==="ADMIN"&&<select value={orderFilters.salesUserId} onChange={e=>setOrderFilters(x=>({...x,salesUserId:e.target.value}))}><option value="">Mọi Sales</option>{salesUsers.map(u=><option key={u.id} value={u.id}>{u.display_name}</option>)}</select>}
-                {role==="ADMIN"&&<select value={orderFilters.reconcile} onChange={e=>setOrderFilters(x=>({...x,reconcile:e.target.value}))}><option value="">Mọi reconcile</option><option value="PASS">PASS</option><option value="REVIEW">REVIEW</option></select>}
+                <SmartSelect compact value={orderFilters.status} onChange={v=>setOrderFilters(x=>({...x,status:v}))} options={[{value:"",label:"Mọi trạng thái"},{value:"SALES_DRAFT",label:"Sales draft"},{value:"TRACKING_ASSIGNED",label:"Tracking assigned"},{value:"ADMIN_READY",label:"Admin ready"},{value:"RECONCILED",label:"Reconciled"}]}/>
+                <SmartSelect compact value={orderFilters.service} onChange={v=>setOrderFilters(x=>({...x,service:v}))} options={[{value:"",label:"Mọi dịch vụ"},{value:"ePacket",label:"ePacket"},{value:"UPS",label:"UPS"},{value:"Yun Express",label:"Yun Express"},{value:"Chuyên tuyến",label:"Chuyên tuyến"}]}/>
+                {role==="ADMIN"&&<SmartSelect compact value={orderFilters.salesUserId} onChange={v=>setOrderFilters(x=>({...x,salesUserId:v}))} options={[{value:"",label:"Mọi Sales"},...salesUsers.map(u=>({value:String(u.id),label:u.display_name}))]}/>}
+                {role==="ADMIN"&&<SmartSelect compact value={orderFilters.reconcile} onChange={v=>setOrderFilters(x=>({...x,reconcile:v}))} options={[{value:"",label:"Mọi reconcile"},{value:"PASS",label:"PASS"},{value:"REVIEW",label:"REVIEW"}]}/>}
                 {(orderFilters.status||orderFilters.service||orderFilters.salesUserId||orderFilters.reconcile)&&<button className="clearFilters" onClick={()=>setOrderFilters({status:"",service:"",salesUserId:"",reconcile:""})}>Xóa lọc</button>}
               </div>
               <span>{data.total} records</span>
@@ -672,20 +695,9 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
           </div>
         </>}
 
-        {section==="imports"&&<>
-          <PageHeader eyebrow="BULK DATA" title="Import dữ liệu" description="Tải template chuẩn, điền dữ liệu rồi import. Hệ thống vẫn dùng cùng business logic với nhập thủ công."/>
-          {role==="ADMIN"
-            ? <div className="imports">
-                <ImportCard kind="orders" title="Orders Admin" detail="Order với đầy đủ field vận hành và finance." templateHref="/templates/dmd-admin-orders.xlsx" onDone={refresh}/>
-                <ImportCard kind="costs" title="Supplier Costs" detail="True cost, surcharge và import tax theo Tracking." templateHref="/templates/dmd-supplier-costs.xlsx" onDone={refresh}/>
-                <ImportCard kind="balance" title="Balance" detail="Payment, service cost và error adjustments." templateHref="/templates/dmd-balance.xlsx" onDone={refresh}/>
-              </div>
-            : <div className="imports salesImports"><ImportCard kind="sales_orders" title="Orders Sales" detail="Chỉ import order của account đang đăng nhập; không nhận field finance Admin." templateHref="/templates/dmd-sales-orders.xlsx" onDone={refresh}/></div>}
-        </>}
-
         {role==="ADMIN"&&section==="costs"&&<>
           <PageHeader eyebrow="FINANCE" title="Supplier Costs" description="Theo dõi chi phí thực tế và trạng thái link với Orders."
-            actions={<><button className="secondaryBtn" onClick={()=>navigate("imports")}>⇩ Import</button><button className="primaryBtn" onClick={()=>openEntry("cost")}>＋ Nhập Cost</button></>}/>
+            actions={<><button className="secondaryBtn" onClick={()=>setImportKind("costs")}>⇩ Import</button><button className="primaryBtn" onClick={()=>openEntry("cost")}>＋ Nhập Cost</button></>}/>
           <div className="panel dataPanel">
             <div className="dataToolbar"><SearchBar value={search} onChange={setSearch} placeholder="Tìm Tracking, supplier, service, Order ID..."/><span>{data.total} records</span></div>
             {loading?<div className="loadingState">Đang tải dữ liệu…</div>:<Table rows={data.items} cols={["occurred_at","tracking","matched","order_id","customer","supplier","service","total_net_cost","reconciliation_status"]}/>}
@@ -704,7 +716,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
 
         {role==="ADMIN"&&section==="ledger"&&<>
           <PageHeader eyebrow="FINANCE" title="Balance Ledger" description="Dòng tiền Credit / Debit và các order charge tự động."
-            actions={<button className="primaryBtn" onClick={()=>openEntry("balance")}>＋ Ghi Balance</button>}/>
+            actions={<><button className="secondaryBtn" onClick={()=>setImportKind("balance")}>⇩ Import</button><button className="primaryBtn" onClick={()=>openEntry("balance")}>＋ Ghi Balance</button></>}/>
           <div className="panel dataPanel">
             <div className="dataToolbar"><SearchBar value={search} onChange={setSearch} placeholder="Tìm loại giao dịch, khách, reference, note..."/><span>{data.total} records</span></div>
             {loading?<div className="loadingState">Đang tải dữ liệu…</div>:<Table rows={data.items} cols={["occurred_at","entry_type","direction","amount","customer","reference_type","reference_id","note"]}/>}
@@ -718,6 +730,15 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
         </>}
       </div>
     </div>
+
+    {importKind&&<Modal size="compact" title={importKind==="costs"?"Import Supplier Costs":importKind==="balance"?"Import Balance":role==="ADMIN"?"Import Orders Admin":"Import Orders Sales"} onClose={()=>setImportKind(null)}>
+      <div className="importModalContent">
+        {importKind==="orders"&&<ImportCard kind="orders" title="Orders Admin" detail="Import nhiều Order với đầy đủ field vận hành và finance." templateHref="/templates/dmd-admin-orders.xlsx" onDone={()=>{setImportKind(null);void refresh()}}/>}
+        {importKind==="sales_orders"&&<ImportCard kind="sales_orders" title="Orders Sales" detail="Import nhiều Order của account đang đăng nhập; không nhận field finance Admin." templateHref="/templates/dmd-sales-orders.xlsx" onDone={()=>{setImportKind(null);void refresh()}}/>}
+        {importKind==="costs"&&<ImportCard kind="costs" title="Supplier Costs" detail="True cost, surcharge và import tax theo Tracking." templateHref="/templates/dmd-supplier-costs.xlsx" onDone={()=>{setImportKind(null);void refresh()}}/>}
+        {importKind==="balance"&&<ImportCard kind="balance" title="Balance" detail="Payment, service cost và error adjustments." templateHref="/templates/dmd-balance.xlsx" onDone={()=>{setImportKind(null);void refresh()}}/>}
+      </div>
+    </Modal>}
 
     {entry&&<Modal title={editOrder?"Chỉnh sửa Order":entry==="order"?(orderEntryMode==="sheet"?"Tạo Orders nhanh":"Tạo Order chi tiết"):entry==="cost"?"Nhập Supplier Cost":"Ghi Balance"} onClose={closeEntry}>
       {entry==="order"&&!editOrder&&orderEntryMode==="sheet"&&<QuickOrderSheet role={role} salesUsers={salesUsers} onDone={entryDone} onAdvanced={()=>setOrderEntryMode("form")}/>}

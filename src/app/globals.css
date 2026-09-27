@@ -267,3 +267,103 @@ tbody tr:hover td{background:#fafbff}
 
 @media(max-width:1180px){.orderToolbar{grid-template-columns:1fr auto}.orderFilters{grid-column:1/-1;order:3}.sheetToolbar{align-items:flex-start;flex-direction:column}.sheetTools{width:100%;flex-wrap:wrap}}
 @media(max-width:650px){.orderToolbar{display:flex}.orderFilters{width:100%;overflow:auto;flex-wrap:nowrap;padding-bottom:2px}.orderFilters select{flex:0 0 auto}.sheetEntry{margin:-14px -10px}.sheetTools{display:grid;grid-template-columns:1fr 1fr}.sheetTools .primaryBtn{grid-column:1/-1}.sheetToolbar span{line-height:1.4}.sheetScroll{max-height:70vh}}
+
+/* Refined select UI */
+.smartSelect{position:relative;width:100%;min-width:0}
+.smartSelect.compact{width:148px;flex:0 0 auto}
+.smartSelectTrigger{width:100%;height:34px;border:1px solid #d0d5dd;background:#fff;border-radius:8px;padding:0 9px;display:flex;align-items:center;justify-content:space-between;gap:8px;color:#344054;text-align:left;font-size:10.5px;font-weight:650;box-shadow:0 1px 2px rgba(16,24,40,.03)}
+.smartSelectTrigger:hover{border-color:#aeb8c7;background:#fcfcfd}
+.smartSelectTrigger.open{border-color:#8098ed;box-shadow:0 0 0 3px #eef2ff}
+.smartSelectTrigger span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.smartSelectTrigger .placeholder{color:#667085;font-weight:600}
+.smartSelectTrigger i{font-style:normal;color:#667085;font-size:13px;transition:transform .15s ease}.smartSelectTrigger.open i{transform:rotate(180deg)}
+.smartSelectMenu{position:absolute;top:calc(100% + 5px);left:0;right:0;min-width:max(100%,170px);max-height:240px;overflow:auto;background:#fff;border:1px solid #e1e5eb;border-radius:10px;box-shadow:0 14px 35px rgba(16,24,40,.14);padding:5px;z-index:120}
+.smartSelectMenu button{width:100%;min-height:32px;border:0;background:transparent;border-radius:7px;padding:6px 8px;display:flex;align-items:center;justify-content:space-between;gap:12px;color:#344054;font-size:10.5px;text-align:left}
+.smartSelectMenu button:hover{background:#f5f7ff;color:#2949c7}.smartSelectMenu button.selected{background:#eef2ff;color:#2949c7;font-weight:800}.smartSelectMenu b{font-size:10px}
+.field .smartSelectTrigger{height:35px}
+
+/* Keep spreadsheet selects visually consistent without heavy menus */
+.sheetCell select{appearance:none;-webkit-appearance:none;padding-right:20px;background-image:linear-gradient(45deg,transparent 50%,#7c8799 50%),linear-gradient(135deg,#7c8799 50%,transparent 50%);background-position:calc(100% - 10px) 12px,calc(100% - 6px) 12px;background-size:4px 4px,4px 4px;background-repeat:no-repeat}
+
+/* Contextual import modal */
+.compactModal{width:min(560px,94vw)}
+.compactModal .modalBody{padding:16px}.importModalContent{width:100%}
+.importModalContent .importCard{min-height:0;border:0;border-radius:0;padding:0;gap:13px}
+.importModalContent .file{padding:18px 14px;text-align:center;background:#fbfcfe}
+.importModalContent .importActions{margin-top:2px}
+
+/* Let filter menus escape the toolbar */
+.panel.dataPanel{overflow:visible}
+.dataPanel .tableWrap{border-left:1px solid transparent;border-right:1px solid transparent}
+.orderFilters .smartSelect.compact:nth-child(1){width:145px}
+.orderFilters .smartSelect.compact:nth-child(2){width:135px}
+.orderFilters .smartSelect.compact:nth-child(3){width:135px}
+.orderFilters .smartSelect.compact:nth-child(4){width:130px}
+
+/* Overall simplification */
+.pageContent{padding-top:22px}.pageHeader{margin-bottom:16px}.pageHeader h1{font-size:27px}.pageHeader p{font-size:11.5px}
+.primaryBtn,.secondaryBtn{min-height:36px}.panel,.metricCard,.quickPanel,.importCard{border-color:#e6e8ec;box-shadow:0 1px 2px rgba(16,24,40,.02)}
+.dataToolbar{background:#fff}
+
+/* Tablet: compact icon rail, keep content wide */
+@media (min-width:701px) and (max-width:1100px){
+  .sidebar{position:fixed;top:0;bottom:0;left:0;width:72px;height:100vh;display:flex;flex-direction:column}
+  .brand{height:64px;min-width:0;padding:0;justify-content:center;border-right:0;border-bottom:1px solid rgba(255,255,255,.08)}
+  .brandMark{width:34px;height:34px}.brand>div:last-child{display:none}
+  .sideNav{display:flex;flex:1;flex-direction:column;overflow:auto;padding:10px 8px;gap:5px}
+  .sideNav button{width:100%;display:flex;justify-content:center;padding:10px 6px;grid-template-columns:none}
+  .sideNav button i{display:block;width:auto;font-size:16px}.sideNav button>span{display:none}.sideNav button em{position:absolute;margin:0 0 24px 28px}
+  .sideFooter{margin-top:auto;display:flex;justify-content:center;min-width:0;padding:10px 6px;border-left:0;border-top:1px solid rgba(255,255,255,.08)}
+  .sideFooter .sideUser,.sideFooter .logoutBtn{display:none}.avatar{width:34px;height:34px}
+  .appMain{margin-left:72px;width:calc(100% - 72px)}
+  .topbar{top:0;height:60px;padding:0 18px}
+  .pageContent{padding:20px 18px 40px}
+  .pageHeader{align-items:flex-start}.pageActions{flex-shrink:0}
+  .metricGrid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .dashboardGrid{grid-template-columns:1fr}
+  .quickPanel{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+  .quickPanel>h3{grid-column:1/-1}
+  .formGrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .orderToolbar{grid-template-columns:minmax(260px,1fr) auto}.orderFilters{grid-column:1/-1;order:3}
+  .tableWrap{max-height:calc(100vh - 245px)}
+}
+
+/* Mobile: content-first with bottom navigation */
+@media (max-width:700px){
+  body{padding-bottom:66px}
+  .appShell{display:block}.appMain{margin-left:0;width:100%}
+  .sidebar{position:fixed;left:0;right:0;top:auto;bottom:0;width:100%;height:62px;background:#111827;display:block;z-index:90;border-top:1px solid rgba(255,255,255,.08)}
+  .brand,.sideFooter{display:none}
+  .sideNav{height:62px;display:flex;flex-direction:row;align-items:stretch;gap:2px;padding:5px 6px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+  .sideNav::-webkit-scrollbar{display:none}
+  .sideNav button{flex:1 0 64px;min-width:64px;width:auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:5px 4px;border-radius:8px;text-align:center}
+  .sideNav button i{display:block;width:auto;font-size:15px;line-height:16px}.sideNav button>span{display:block;font-size:8px;line-height:10px;max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sideNav button em{position:absolute;margin:-26px 0 0 28px;min-width:15px;height:15px;font-size:8px}
+  .topbar{position:sticky;top:0;height:54px;padding:0 12px}.mobileBrand{display:block;border:0;background:#111827;color:#fff;border-radius:8px;padding:7px 9px;font-weight:900}.crumb{display:none}
+  .topUser{gap:6px}.topUser b{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.topRole{font-size:8px}
+  .pageContent{padding:14px 10px 24px}
+  .pageHeader{flex-direction:column;align-items:stretch;gap:12px;margin-bottom:13px}.pageHeader h1{font-size:23px}.pageHeader p{font-size:10.5px}.pageHeader .eyebrow{font-size:9px}
+  .pageActions{width:100%;display:grid;grid-template-columns:1fr 1.25fr;gap:7px}.pageActions>*{width:100%;padding:8px 9px;font-size:10px}
+  .metricGrid,.salesMetricGrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.metricCard{min-height:86px;padding:11px}.metricCard>b{font-size:18px}.metricCard small{font-size:8px}
+  .dashboardGrid{grid-template-columns:1fr;gap:10px}.quickPanel{display:grid;grid-template-columns:1fr;gap:7px;padding:10px}.quickPanel>h3{grid-column:auto}
+  .panel{border-radius:10px}
+  .dataToolbar,.orderToolbar{display:flex;flex-direction:column;align-items:stretch;gap:8px;padding:9px}
+  .searchBox{width:100%;height:35px}.orderFilters{display:flex;width:100%;overflow-x:auto;flex-wrap:nowrap;padding:1px 0 4px;gap:6px;scrollbar-width:none}.orderFilters::-webkit-scrollbar{display:none}
+  .orderFilters .smartSelect.compact,.orderFilters .smartSelect.compact:nth-child(n){width:132px;min-width:132px}
+  .clearFilters{flex:0 0 auto}.dataToolbar>span{align-self:flex-end;font-size:9px}
+  .tableWrap{max-height:55vh;border-radius:0}.compactTable{max-height:330px}table{font-size:9.5px}th{padding:8px 9px;font-size:8px}td{padding:9px}
+  .pager{height:auto;min-height:48px;padding:8px;flex-direction:column;gap:6px}.pager>div{width:100%;justify-content:space-between}.pager button{min-width:72px}
+  .modalBackdrop{padding:0}.modalPanel,.compactModal{width:100%;height:100%;max-height:none;border-radius:0}.modalHeader{height:58px;padding:0 12px}.modalHeader h2{font-size:16px}.modalBody{padding:12px 10px}
+  .formGrid{grid-template-columns:1fr}.field.wide{grid-column:auto}.formFooter{align-items:stretch;flex-direction:column}.formFooter .primaryBtn{width:100%}
+  .smartSelectMenu{position:fixed;left:10px;right:10px;top:auto;bottom:76px;max-height:42vh;min-width:0;border-radius:14px;padding:7px;z-index:160}.smartSelectMenu button{min-height:38px;font-size:11px}
+  .sheetEntry{margin:-12px -10px;min-height:calc(100vh - 70px)}.sheetToolbar{padding:10px;gap:10px}.sheetTools{display:grid;width:100%;grid-template-columns:1fr 1fr}.sheetTools .primaryBtn{grid-column:1/-1}.sheetScroll{max-height:calc(100vh - 215px)}.sheetFooter{padding:7px 9px}
+  .importModalContent .importCard{padding:2px}.importActions{flex-direction:column}.importActions>*{width:100%}
+  .accountTable{max-height:45vh}
+}
+@media (min-width:701px) and (max-width:1100px){
+  .sidebar{align-items:stretch}
+  .sideNav{width:100%}
+  .sideNav button{position:relative}
+}
+@media (max-width:700px){
+  .sideNav button{position:relative}
+}

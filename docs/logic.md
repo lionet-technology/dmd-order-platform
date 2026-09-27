@@ -176,3 +176,13 @@ The web app now uses an operations-dashboard shell instead of one long page:
 - Required fields are validated per row and failed rows remain visible with inline row errors; successful rows can be saved in the same batch.
 - Detailed single-order form remains available through `Form chi tiết` and is still used for editing existing orders.
 - Orders list adds backend filters for workflow status, service, Sales account and reconciliation status, combined with existing search + pagination.
+
+## Contextual import + responsive UI
+
+- Removed the standalone Import page.
+- Orders, Supplier Costs and Balance now open their own import popup from the corresponding module.
+- Each import popup includes the correct downloadable XLSX template for that workflow/role.
+- Replaced normal form/filter selects with a custom dropdown component; spreadsheet select cells keep native keyboard/paste behavior but use custom styling.
+- Desktop keeps the full sidebar.
+- Tablet uses a compact icon rail to preserve table width.
+- Mobile uses a bottom navigation bar, full-width content, horizontally scrollable filters and full-screen data-entry/import modals.
