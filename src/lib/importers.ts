@@ -3,7 +3,8 @@ import { db } from "./db";
 import { addLedgerEntry, addSupplierCost, norm, num, text, upsertOrder } from "./finance";
 
 type Row = unknown[];
-type ImportKind = "orders" | "costs" | "balance";
+type ImportKind = "orders" | "sales_orders" | "costs" | "balance";
+type SalesImportContext = { userId:number; displayName:string };
 
 async function workbookRows(buffer: Buffer): Promise<Row[][]> {
   try {
@@ -104,6 +105,83 @@ function importOrders(rows: Row[][]) {
         if (salesUser) db.prepare("UPDATE orders SET sales_user_id=? WHERE id=?").run(salesUser.id, saved.id);
         else warnings.push("Sales '"+salesName+"' chưa có account tương ứng; order vẫn import nhưng chỉ Admin thấy.");
       }
+      imported++;
+    } catch (error) {
+      warnings.push(`Dòng ${h + offset + 2}: ${error instanceof Error ? error.message : "không thể lưu"}`);
+    }
+  });
+
+  return { imported, warnings };
+}
+
+function importSalesOrders(rows: Row[][], actor: SalesImportContext) {
+  const h = findHeader(rows, ["Ngày tạo", "Khách", "Order ID"]);
+  if (h < 0) throw new Error("Không tìm thấy header Template Lên đơn Sales.");
+  const headers = headerMap(rows[h]);
+  let imported = 0;
+  const warnings: string[] = [];
+
+  rows.slice(h + 1).forEach((row, offset) => {
+    if (norm(row[0]).startsWith("rule:")) return;
+    const orderId = text(pick(row, headers, "Order ID"));
+    const createdAt = text(pick(row, headers, "Ngày tạo"));
+    const customer = text(pick(row, headers, "Khách"));
+    if (!orderId && !createdAt && !customer) return;
+    if (!orderId) {
+      warnings.push(`Bỏ qua dòng ${h + offset + 2}: Sales import bắt buộc Order ID.`);
+      return;
+    }
+
+    try {
+      const matches = db.prepare("SELECT id,sales_user_id FROM orders WHERE order_id=? ORDER BY id")
+        .all(orderId) as Array<{id:number;sales_user_id:number|null}>;
+      if (matches.length > 1) {
+        warnings.push(`Dòng ${h + offset + 2}: Order ID ${orderId} có nhiều record; Admin cần xử lý multi-carton.`);
+        return;
+      }
+      let existingId: number | undefined;
+      if (matches.length === 1) {
+        if (matches[0].sales_user_id === null) {
+          warnings.push(`Dòng ${h + offset + 2}: Order ID ${orderId} đang chưa gán Sales; Admin cần assign trước.`);
+          return;
+        }
+        if (matches[0].sales_user_id !== actor.userId) {
+          warnings.push(`Dòng ${h + offset + 2}: Order ID ${orderId} thuộc Sales khác.`);
+          return;
+        }
+        existingId = matches[0].id;
+      }
+
+      const saved = upsertOrder({
+        id: existingId,
+        created_at: createdAt || null,
+        sales: actor.displayName,
+        customer,
+        service: text(pick(row, headers, "Dịch vụ")),
+        sub_service: text(pick(row, headers, "Sub-Service")),
+        order_id: orderId,
+        note: text(pick(row, headers, "Note")),
+        item: text(pick(row, headers, "Mặt hàng")),
+        material: text(pick(row, headers, "Chất liệu")),
+        declared_value: pick(row, headers, "Giá trị hàng hoá") as string | number | null,
+        carton_count: pick(row, headers, "Số lượng Carton") as string | number | null,
+        length: pick(row, headers, "Dài") as string | number | null,
+        width: pick(row, headers, "Rộng") as string | number | null,
+        height: pick(row, headers, "Cao") as string | number | null,
+        weight: pick(row, headers, "Khối lượng") as string | number | null,
+        recipient_name: text(pick(row, headers, "Tên người nhận")),
+        address1: text(pick(row, headers, "Địa chỉ*")),
+        address2: text(pick(row, headers, "Địa chỉ 2")),
+        city: text(pick(row, headers, "Thành phố*")),
+        state: text(pick(row, headers, "Bang*")),
+        zip: text(pick(row, headers, "ZIP*")),
+        country: text(pick(row, headers, "Nước*")),
+        phone: text(pick(row, headers, "Điện thoại")),
+      }) as { id:number };
+
+      db.prepare(
+        "UPDATE orders SET sales_user_id=?,sales=?,created_by_user_id=COALESCE(created_by_user_id,?),updated_by_user_id=? WHERE id=?"
+      ).run(actor.userId, actor.displayName, actor.userId, actor.userId, saved.id);
       imported++;
     } catch (error) {
       warnings.push(`Dòng ${h + offset + 2}: ${error instanceof Error ? error.message : "không thể lưu"}`);
@@ -214,11 +292,22 @@ function importBalance(rows: Row[][], batchId: number) {
   return { imported, warnings };
 }
 
-export async function importWorkbook(kind: ImportKind, buffer: Buffer, filename: string) {
+export async function importWorkbook(
+  kind: ImportKind,
+  buffer: Buffer,
+  filename: string,
+  options?: { salesActor?: SalesImportContext },
+) {
   const rows = await workbookRows(buffer);
   const batch = db.prepare("INSERT INTO import_batches(kind,filename) VALUES (?,?)").run(kind, filename);
   const batchId = Number(batch.lastInsertRowid);
-  const result = kind === "orders" ? importOrders(rows) : kind === "costs" ? importCosts(rows, batchId) : importBalance(rows, batchId);
+  let result: { imported:number; warnings:string[] };
+  if (kind === "orders") result = importOrders(rows);
+  else if (kind === "sales_orders") {
+    if (!options?.salesActor) throw new Error("Sales context is required.");
+    result = importSalesOrders(rows, options.salesActor);
+  } else if (kind === "costs") result = importCosts(rows, batchId);
+  else result = importBalance(rows, batchId);
   db.prepare("UPDATE import_batches SET imported_rows=?, warnings=? WHERE id=?").run(result.imported, JSON.stringify(result.warnings), batchId);
   return { batchId, ...result };
 }

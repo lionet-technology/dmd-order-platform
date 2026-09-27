@@ -253,8 +253,8 @@ function ManualEntry({
   </div>;
 }
 
-function ImportCard({ kind, title, detail, onDone }:{
-  kind:"orders"|"costs"|"balance"; title:string; detail:string; onDone:()=>void
+function ImportCard({ kind, title, detail, templateHref, onDone }:{
+  kind:"orders"|"sales_orders"|"costs"|"balance"; title:string; detail:string; templateHref:string; onDone:()=>void
 }) {
   const [file,setFile]=useState<File|null>(null); const [busy,setBusy]=useState(false); const [msg,setMsg]=useState("");
   async function upload(){
@@ -264,7 +264,15 @@ function ImportCard({ kind, title, detail, onDone }:{
     if(!res.ok){setMsg("Lỗi: "+body.error);return;}
     const warnings=(body.warnings||[]).join(" · "); setMsg("Đã nhập "+body.imported+" dòng"+(warnings?" · "+warnings:"")); onDone();
   }
-  return <div className="importCard"><div><span className="eyebrow">{kind.toUpperCase()}</span><h3>{title}</h3><p>{detail}</p></div><label className="file"><input type="file" accept=".xlsx" onChange={e=>setFile(e.target.files?.[0]||null)}/><span>{file?.name||"Chọn file .xlsx"}</span></label><button disabled={!file||busy} onClick={upload}>{busy?"Đang nhập…":"Import Excel"}</button>{msg&&<small>{msg}</small>}</div>
+  return <div className="importCard">
+    <div><span className="eyebrow">{kind.toUpperCase()}</span><h3>{title}</h3><p>{detail}</p></div>
+    <label className="file"><input type="file" accept=".xlsx" onChange={e=>setFile(e.target.files?.[0]||null)}/><span>{file?.name||"Chọn file .xlsx"}</span></label>
+    <div className="importActions">
+      <a className="templateBtn" href={templateHref} download>↓ Download template</a>
+      <button disabled={!file||busy} onClick={upload}>{busy?"Đang nhập…":"Import Excel"}</button>
+    </div>
+    {msg&&<small>{msg}</small>}
+  </div>
 }
 
 function UserManager({users,onDone,currentUser}:{users:User[];onDone:()=>void;currentUser:User}) {
@@ -367,13 +375,21 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
     <section>
       <div className="sectionTitle">
         <div><span className="eyebrow">01 · DATA ENTRY</span><h2>Nhập trực tiếp trên platform</h2></div>
-        {role==="ADMIN"&&<div className="modeBar"><button className={inputMode==="manual"?"active":""} onClick={()=>setInputMode("manual")}>Nhập thủ công</button><button className={inputMode==="import"?"active":""} onClick={()=>setInputMode("import")}>Import Excel</button></div>}
+        <div className="modeBar"><button className={inputMode==="manual"?"active":""} onClick={()=>setInputMode("manual")}>Nhập thủ công</button><button className={inputMode==="import"?"active":""} onClick={()=>setInputMode("import")}>Import Excel</button></div>
       </div>
       <div className="syncStrip"><b>Auto-sync:</b><span>Order saved</span><i>→</i><span>Pricing/weight recalculated</span>{role==="ADMIN"&&<><i>→</i><span>Cost matched by Tracking</span><i>→</i><span>Reconcile + Ledger updated</span></>}</div>
 
-      {inputMode==="manual"||role==="SALES"
+      {inputMode==="manual"
         ? <ManualEntry role={role} currentUser={user} salesUsers={salesUsers} kind={manualKind} setKind={setManualKind} onDone={load} editOrder={editOrder} onCancelEdit={()=>setEditOrder(null)}/>
-        : <div className="imports"><ImportCard kind="orders" title="Lên đơn Admin / Sales" detail="Bulk import template cũ; dùng chung business logic." onDone={load}/><ImportCard kind="costs" title="Chi phí Supplier" detail="Match Tracking → True Net Cost → reconciliation." onDone={load}/><ImportCard kind="balance" title="Balance / Thanh toán" detail="Bulk import cho migration và xử lý hàng loạt." onDone={load}/></div>
+        : role==="ADMIN"
+          ? <div className="imports">
+              <ImportCard kind="orders" title="Lên đơn Admin" detail="Bulk import Order với đầy đủ cột Admin/finance." templateHref="/templates/dmd-admin-orders.xlsx" onDone={load}/>
+              <ImportCard kind="costs" title="Chi phí Supplier" detail="Match Tracking → True Net Cost → reconciliation." templateHref="/templates/dmd-supplier-costs.xlsx" onDone={load}/>
+              <ImportCard kind="balance" title="Balance / Thanh toán" detail="Bulk import payment, service cost và error adjustments." templateHref="/templates/dmd-balance.xlsx" onDone={load}/>
+            </div>
+          : <div className="imports salesImports">
+              <ImportCard kind="sales_orders" title="Lên đơn Sales" detail="Import nhiều Order của chính account đang đăng nhập. Cột Admin/finance không được phép import." templateHref="/templates/dmd-sales-orders.xlsx" onDone={load}/>
+            </div>
       }
     </section>
 

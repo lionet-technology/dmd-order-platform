@@ -8,6 +8,9 @@ MVP platform to replace the linked DMD Excel workflow with one canonical data-en
 - First-run Admin setup; Admin can create, lock/unlock and reset Sales/Admin accounts.
 - Sales sees and edits only orders assigned to its own account.
 - Manual Order entry for Sales/Admin.
+- Sales can bulk import its own Orders with a restricted Sales template.
+- Admin can bulk import Orders / Supplier Costs / Balance.
+- Both roles can download the correct .xlsx template directly from the import UI.
 - Manual Supplier Cost entry linked by Tracking.
 - Manual Balance ledger entry for payment/refund/service/error/adjustment.
 - Edit Order directly from the Orders table.

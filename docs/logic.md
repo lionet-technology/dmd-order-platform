@@ -134,3 +134,21 @@ Still requires business input:
 - Whether Tracking is globally unique for multi-carton.
 - Pricing multipliers should move from hard-coded rules to an Admin Pricing Config before production.
 - Gross Profit currently uses Sales Price - True Net Cost and excludes surcharge/import tax from profit; confirm whether this matches DMD accounting treatment.
+
+
+## Role-based import templates
+
+Sales:
+- Can download dmd-sales-orders.xlsx.
+- Can bulk import Orders only.
+- Imported rows are assigned to the currently authenticated Sales account.
+- Sales import ignores/does not accept Supplier, Tracking, Net Cost, Base, Retail, Tax or other Admin finance fields.
+- Existing Order IDs owned by another Sales are rejected.
+- Existing unassigned/multi-record Order IDs require Admin resolution.
+
+Admin:
+- Can download/import dmd-admin-orders.xlsx.
+- Can download/import dmd-supplier-costs.xlsx.
+- Can download/import dmd-balance.xlsx.
+
+Templates are stored under public/templates/ and can be regenerated using scripts/generate-download-templates.mjs.
