@@ -1,0 +1,19 @@
+name: dmd-finance-platform
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dmd-finance-platform:latest
+    container_name: dmd-finance-platform
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      DMD_DB_PATH: /app/data/dmd-finance-ops.db
+    ports:
+      - "${HOST_PORT:-3419}:3000"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
