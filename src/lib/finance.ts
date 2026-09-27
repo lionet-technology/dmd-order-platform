@@ -19,6 +19,7 @@ export type OrderInput = {
   surcharge?: number | string | null;
   import_tax?: number | string | null;
   total_due?: number | string | null;
+  auto_pricing?: boolean | number | string | null;
   note?: string;
   item?: string;
   material?: string;
@@ -56,7 +57,6 @@ export type SupplierCostInput = {
   total_net_cost?: number | string | null;
   extra_surcharge?: number | string | null;
   import_tax?: number | string | null;
-  total_due?: number | string | null;
   note?: string;
   batch_id?: number | null;
 };
@@ -88,6 +88,7 @@ type OrderRecord = Record<string, unknown> & {
   extra_surcharge: number;
   extra_import_tax: number;
   total_due: number;
+  auto_pricing?: number;
 };
 
 export const text = (v: unknown) => String(v ?? "").trim();
@@ -187,11 +188,14 @@ export function applyLatestSupplierCost(tracking: string) {
   db.prepare(`
     UPDATE orders SET
       true_net_cost=?, extra_surcharge=?, extra_import_tax=?, total_due=?,
-      gross_profit_net=ROUND(sales_price-?, 2), reconciliation_delta=?,
+      gross_profit_net=ROUND(sales_price-?, 2),
+      gross_margin_pct=CASE WHEN sales_price>0 THEN ROUND(((sales_price-?)/sales_price)*100,2) ELSE 0 END,
+      margin_status=CASE WHEN sales_price>0 AND ((sales_price-?)/sales_price)*100<15 THEN 'LOW_MARGIN' ELSE 'OK' END,
+      reconciliation_delta=?,
       reconciliation_status=CASE WHEN ? <= est_net_cost THEN 'PASS' ELSE 'REVIEW' END,
       workflow_status='RECONCILED', updated_at=CURRENT_TIMESTAMP
     WHERE id=?
-  `).run(cost.total_net_cost, cost.extra_surcharge, cost.import_tax, totalDue, cost.total_net_cost, delta, cost.total_net_cost, order.id);
+  `).run(cost.total_net_cost, cost.extra_surcharge, cost.import_tax, totalDue, cost.total_net_cost, cost.total_net_cost, cost.total_net_cost, delta, cost.total_net_cost, order.id);
   const refreshed = getOrderByTracking(tracking);
   if (refreshed) upsertAutoOrderCharge(refreshed);
   return true;
@@ -260,7 +264,9 @@ export function upsertOrder(input: OrderInput) {
   const length = numericValue(input, "length", existing);
   const width = numericValue(input, "width", existing);
   const height = numericValue(input, "height", existing);
-  const volume = numericValue(input, "volume", existing) || money(length * width * height);
+  const volume = input.volume !== undefined && input.volume !== null && input.volume !== ""
+    ? num(input.volume)
+    : money(length * width * height);
   const weight = numericValue(input, "weight", existing);
   const estNet = numericValue(input, "est_net_cost", existing);
   const discount = numericValue(input, "discount", existing);
@@ -270,11 +276,15 @@ export function upsertOrder(input: OrderInput) {
     ? num(input.surcharge)
     : num(existing?.manual_surcharge);
 
+  const autoPricing = input.auto_pricing !== undefined && input.auto_pricing !== null
+    ? !["0","false","off"].includes(String(input.auto_pricing).toLowerCase())
+    : existing ? Boolean(existing.auto_pricing) : true;
+
   const calc = pricing(service, subService, estNet, {
-    base: numericValue(input, "base_cost", existing),
-    retail: numericValue(input, "retail", existing),
+    base: autoPricing ? 0 : numericValue(input, "base_cost", existing),
+    retail: autoPricing ? 0 : numericValue(input, "retail", existing),
     discount,
-    salesPrice: numericValue(input, "sales_price", existing),
+    salesPrice: autoPricing ? 0 : numericValue(input, "sales_price", existing),
     surcharge: manualSurcharge,
     importTax: numericValue(input, "import_tax", existing),
     weight,
@@ -299,12 +309,15 @@ export function upsertOrder(input: OrderInput) {
     retail: calc.retail,
     discount,
     sales_price: calc.salesPrice,
+    auto_pricing: autoPricing ? 1 : 0,
     manual_surcharge: money(manualSurcharge),
     surcharge: calc.surcharge,
     import_tax: numericValue(input, "import_tax", existing),
     total_due: input.total_due !== undefined && input.total_due !== null && input.total_due !== "" ? money(num(input.total_due)) : calc.totalDue,
     gross_profit_base: money(calc.salesPrice - calc.base),
     gross_profit_net: money(calc.salesPrice - estNet),
+    gross_margin_pct: calc.salesPrice > 0 ? money(((calc.salesPrice - estNet) / calc.salesPrice) * 100) : 0,
+    margin_status: calc.salesPrice > 0 && ((calc.salesPrice - estNet) / calc.salesPrice) * 100 < 15 ? "LOW_MARGIN" : "OK",
     note: stringValue(input, "note", existing),
     item,
     material: stringValue(input, "material", existing),
@@ -315,7 +328,9 @@ export function upsertOrder(input: OrderInput) {
     height,
     volume,
     weight,
-    chargeable_weight: numericValue(input, "chargeable_weight", existing) || calc.chargeable,
+    chargeable_weight: input.chargeable_weight !== undefined && input.chargeable_weight !== null && input.chargeable_weight !== ""
+      ? num(input.chargeable_weight)
+      : calc.chargeable,
     recipient_name: recipient,
     address1: stringValue(input, "address1", existing),
     address2: stringValue(input, "address2", existing),
@@ -332,9 +347,9 @@ export function upsertOrder(input: OrderInput) {
       UPDATE orders SET
         created_at=@created_at,sales=@sales,customer=@customer,supplier=@supplier,service=@service,sub_service=@sub_service,
         label=@label,tracking=@tracking,order_id=@order_id,draft_key=@draft_key,workflow_status=@workflow_status,
-        est_net_cost=@est_net_cost,base_cost=@base_cost,retail=@retail,discount=@discount,sales_price=@sales_price,
+        est_net_cost=@est_net_cost,base_cost=@base_cost,retail=@retail,discount=@discount,sales_price=@sales_price,auto_pricing=@auto_pricing,
         manual_surcharge=@manual_surcharge,surcharge=@surcharge,import_tax=@import_tax,total_due=@total_due,gross_profit_base=@gross_profit_base,
-        gross_profit_net=@gross_profit_net,note=@note,item=@item,material=@material,declared_value=@declared_value,
+        gross_profit_net=@gross_profit_net,gross_margin_pct=@gross_margin_pct,margin_status=@margin_status,note=@note,item=@item,material=@material,declared_value=@declared_value,
         carton_count=@carton_count,length=@length,width=@width,height=@height,volume=@volume,weight=@weight,
         chargeable_weight=@chargeable_weight,recipient_name=@recipient_name,address1=@address1,address2=@address2,
         city=@city,state=@state,zip=@zip,country=@country,phone=@phone,updated_at=CURRENT_TIMESTAMP
@@ -345,12 +360,12 @@ export function upsertOrder(input: OrderInput) {
     const result = db.prepare(`
       INSERT INTO orders(
         created_at,sales,customer,supplier,service,sub_service,label,tracking,order_id,draft_key,workflow_status,
-        est_net_cost,base_cost,retail,discount,sales_price,manual_surcharge,surcharge,import_tax,total_due,gross_profit_base,gross_profit_net,
+        est_net_cost,base_cost,retail,discount,sales_price,auto_pricing,manual_surcharge,surcharge,import_tax,total_due,gross_profit_base,gross_profit_net,gross_margin_pct,margin_status,
         note,item,material,declared_value,carton_count,length,width,height,volume,weight,chargeable_weight,recipient_name,
         address1,address2,city,state,zip,country,phone,updated_at
       ) VALUES (
         @created_at,@sales,@customer,@supplier,@service,@sub_service,@label,@tracking,@order_id,@draft_key,@workflow_status,
-        @est_net_cost,@base_cost,@retail,@discount,@sales_price,@manual_surcharge,@surcharge,@import_tax,@total_due,@gross_profit_base,@gross_profit_net,
+        @est_net_cost,@base_cost,@retail,@discount,@sales_price,@auto_pricing,@manual_surcharge,@surcharge,@import_tax,@total_due,@gross_profit_base,@gross_profit_net,@gross_margin_pct,@margin_status,
         @note,@item,@material,@declared_value,@carton_count,@length,@width,@height,@volume,@weight,@chargeable_weight,@recipient_name,
         @address1,@address2,@city,@state,@zip,@country,@phone,CURRENT_TIMESTAMP
       )

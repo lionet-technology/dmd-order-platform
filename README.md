@@ -4,6 +4,9 @@ MVP platform to replace the linked DMD Excel workflow with one canonical data-en
 
 ## What it does
 
+- Separate Admin / Sales login accounts with server-side permissions.
+- First-run Admin setup; Admin can create, lock/unlock and reset Sales/Admin accounts.
+- Sales sees and edits only orders assigned to its own account.
 - Manual Order entry for Sales/Admin.
 - Manual Supplier Cost entry linked by Tracking.
 - Manual Balance ledger entry for payment/refund/service/error/adjustment.

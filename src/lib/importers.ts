@@ -57,9 +57,10 @@ function importOrders(rows: Row[][]) {
     }
 
     try {
-      upsertOrder({
+      const salesName = text(pick(row, headers, "Sales"));
+      const saved = upsertOrder({
         created_at: createdAt || null,
-        sales: text(pick(row, headers, "Sales")),
+        sales: salesName,
         customer,
         supplier: text(pick(row, headers, "Supplier")),
         service: text(pick(row, headers, "Dịch vụ")),
@@ -75,6 +76,7 @@ function importOrders(rows: Row[][]) {
         surcharge: pick(row, headers, "Phụ phí") as string | number | null,
         import_tax: pick(row, headers, "Thuế NK") as string | number | null,
         total_due: pick(row, headers, "Tổng cần thu") as string | number | null,
+        auto_pricing: false,
         note: text(pick(row, headers, "Note")),
         item: text(pick(row, headers, "Mặt hàng")),
         material: text(pick(row, headers, "Chất liệu")),
@@ -94,7 +96,14 @@ function importOrders(rows: Row[][]) {
         zip: text(pick(row, headers, "ZIP*")),
         country: text(pick(row, headers, "Nước*")),
         phone: text(pick(row, headers, "Điện thoại")),
-      });
+      }) as { id:number };
+      if (salesName) {
+        const salesUser = db.prepare(
+          "SELECT id FROM users WHERE role='SALES' AND active=1 AND (lower(display_name)=lower(?) OR lower(username)=lower(?)) LIMIT 1"
+        ).get(salesName, salesName) as { id:number } | undefined;
+        if (salesUser) db.prepare("UPDATE orders SET sales_user_id=? WHERE id=?").run(salesUser.id, saved.id);
+        else warnings.push("Sales '"+salesName+"' chưa có account tương ứng; order vẫn import nhưng chỉ Admin thấy.");
+      }
       imported++;
     } catch (error) {
       warnings.push(`Dòng ${h + offset + 2}: ${error instanceof Error ? error.message : "không thể lưu"}`);

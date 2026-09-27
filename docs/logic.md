@@ -94,3 +94,43 @@ Balance intake:
 5. Confirm lifecycle/reversal for Processing = + Balance.
 6. Provide official remote-area State/ZIP source.
 7. Confirm whether supplier payable/receivable needs a separate ledger.
+
+
+## Authentication and permissions
+
+- First run creates the first Admin account.
+- Passwords are stored as salted scrypt hashes.
+- Login uses a 7-day HttpOnly SameSite session cookie.
+- Admin can create Admin/Sales accounts, lock/unlock users and reset passwords.
+- Lock/reset revokes existing sessions immediately.
+- Sales only reads/updates orders assigned to its own sales_user_id.
+- Supplier Cost, Reconciliation, Balance Ledger and Excel bulk import are Admin-only.
+- Excel Order import maps the Sales cell to an active Sales account by exact display name or username; unmatched rows stay Admin-visible and emit a warning.
+
+## Calculation audit
+
+Automatically calculated:
+- Base / Retail markup by current service rules.
+- Sales Price from Retail and Discount.
+- Volume from dimensions.
+- Chargeable Weight = max(actual kg, volume / 5000).
+- ePacket length surcharge.
+- Total Due.
+- Estimated vs True Net reconciliation and delta.
+- Gross profit and gross margin percentage.
+- LOW_MARGIN when gross margin is below 15%.
+- ORDER_CHARGE ledger sync.
+
+Fixed during audit:
+- Auto prices recompute when Net Cost changes.
+- Volume and chargeable weight recompute when dimensions change.
+- Auto ePacket surcharge does not accumulate after repeated edits.
+- Manual surcharge is stored separately from automatic dimension surcharge.
+
+Still requires business input:
+- Remote-area surcharge: official State/ZIP source.
+- Whether Total Net Cost already includes all supplier fees/customs.
+- Processing credit lifecycle/reversal.
+- Whether Tracking is globally unique for multi-carton.
+- Pricing multipliers should move from hard-coded rules to an Admin Pricing Config before production.
+- Gross Profit currently uses Sales Price - True Net Cost and excludes surcharge/import tax from profit; confirm whether this matches DMD accounting treatment.

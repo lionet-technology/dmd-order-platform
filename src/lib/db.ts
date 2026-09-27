@@ -13,6 +13,28 @@ db.pragma("busy_timeout = 10000");
 db.pragma("foreign_keys = ON");
 
 db.exec(`
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  display_name TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL CHECK(role IN ('ADMIN','SALES')),
+  active INTEGER NOT NULL DEFAULT 1,
+  created_by_user_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
+
 CREATE TABLE IF NOT EXISTS import_batches (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   kind TEXT NOT NULL,
@@ -133,10 +155,26 @@ CREATE TABLE IF NOT EXISTS service_costs (
 `);
 
 
-const orderColumns = db.prepare("PRAGMA table_info(orders)").all() as Array<{ name: string }>;
-if (!orderColumns.some((column) => column.name === "manual_surcharge")) {
-  db.exec("ALTER TABLE orders ADD COLUMN manual_surcharge REAL NOT NULL DEFAULT 0");
+function ensureColumn(table: string, name: string, ddl: string) {
+  const columns = db.prepare("PRAGMA table_info(" + table + ")").all() as Array<{ name: string }>;
+  if (columns.some((column) => column.name === name)) return;
+  try {
+    db.exec("ALTER TABLE " + table + " ADD COLUMN " + ddl);
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.toLowerCase().includes("duplicate column")) throw error;
+  }
 }
+
+ensureColumn("orders", "manual_surcharge", "manual_surcharge REAL NOT NULL DEFAULT 0");
+ensureColumn("orders", "auto_pricing", "auto_pricing INTEGER NOT NULL DEFAULT 1");
+ensureColumn("orders", "gross_margin_pct", "gross_margin_pct REAL NOT NULL DEFAULT 0");
+ensureColumn("orders", "margin_status", "margin_status TEXT NOT NULL DEFAULT 'PENDING'");
+ensureColumn("orders", "sales_user_id", "sales_user_id INTEGER");
+ensureColumn("orders", "created_by_user_id", "created_by_user_id INTEGER");
+ensureColumn("orders", "updated_by_user_id", "updated_by_user_id INTEGER");
+ensureColumn("supplier_costs", "created_by_user_id", "created_by_user_id INTEGER");
+ensureColumn("ledger_entries", "created_by_user_id", "created_by_user_id INTEGER");
+ensureColumn("import_batches", "created_by_user_id", "created_by_user_id INTEGER");
 
 export function queryAll<T = Record<string, unknown>>(sql: string, params: unknown[] = []): T[] {
   return db.prepare(sql).all(...params) as T[];
