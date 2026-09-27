@@ -431,3 +431,5 @@ tbody tr:hover td{background:#fafbff}
 @media (max-width:700px){
   .sideNav button{position:relative}
 }
+
+.rootBadge{display:inline-flex;align-items:center;margin-left:6px;padding:2px 5px;border-radius:999px;background:#fff4e5;color:#b54708;border:1px solid #fedf89;font-size:7.5px;font-weight:800;letter-spacing:.06em;vertical-align:middle}

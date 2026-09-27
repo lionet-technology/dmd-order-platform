@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL CHECK(role IN ('ADMIN','SALES')),
   active INTEGER NOT NULL DEFAULT 1,
+  is_root_admin INTEGER NOT NULL DEFAULT 0,
   created_by_user_id INTEGER,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -189,7 +190,15 @@ ensureColumn("orders", "created_by_user_id", "created_by_user_id INTEGER");
 ensureColumn("orders", "updated_by_user_id", "updated_by_user_id INTEGER");
 ensureColumn("supplier_costs", "created_by_user_id", "created_by_user_id INTEGER");
 ensureColumn("ledger_entries", "created_by_user_id", "created_by_user_id INTEGER");
+ensureColumn("users", "is_root_admin", "is_root_admin INTEGER NOT NULL DEFAULT 0");
 ensureColumn("import_batches", "created_by_user_id", "created_by_user_id INTEGER");
+
+db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_single_root_admin ON users(is_root_admin) WHERE is_root_admin=1");
+const rootAdminCount = (db.prepare("SELECT COUNT(*) c FROM users WHERE is_root_admin=1").get() as {c:number}).c;
+if(rootAdminCount===0){
+  const firstAdmin=db.prepare("SELECT id FROM users WHERE role='ADMIN' ORDER BY id ASC LIMIT 1").get() as {id:number}|undefined;
+  if(firstAdmin) db.prepare("UPDATE users SET is_root_admin=1 WHERE id=?").run(firstAdmin.id);
+}
 
 const enumSeeds: Array<[string,string,string,number]> = [
   ["SERVICE","ePacket","",10],

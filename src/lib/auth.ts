@@ -9,6 +9,7 @@ export type AuthUser = {
   display_name: string;
   role: UserRole;
   active: number;
+  is_root_admin: number;
 };
 
 const COOKIE = "dmd_session";
@@ -43,14 +44,15 @@ export function createUser(input: {
   password: string;
   role: UserRole;
   created_by_user_id?: number | null;
+  is_root_admin?: boolean;
 }) {
   const username = input.username.trim().toLowerCase();
   const displayName = input.display_name.trim();
   if (!/^[a-z0-9._-]{3,40}$/.test(username)) throw new Error("Username 3-40 ký tự: a-z, 0-9, ., _, -");
   if (!displayName) throw new Error("Tên hiển thị là bắt buộc.");
-  const result = db.prepare("INSERT INTO users(username,display_name,password_hash,role,created_by_user_id) VALUES (?,?,?,?,?)")
-    .run(username, displayName, hashPassword(input.password), input.role, input.created_by_user_id || null);
-  return db.prepare("SELECT id,username,display_name,role,active,created_at FROM users WHERE id=?").get(result.lastInsertRowid);
+  const result = db.prepare("INSERT INTO users(username,display_name,password_hash,role,is_root_admin,created_by_user_id) VALUES (?,?,?,?,?,?)")
+    .run(username, displayName, hashPassword(input.password), input.role, input.is_root_admin ? 1 : 0, input.created_by_user_id || null);
+  return db.prepare("SELECT id,username,display_name,role,active,is_root_admin,created_at FROM users WHERE id=?").get(result.lastInsertRowid);
 }
 
 export function createSession(userId: number) {
@@ -80,7 +82,7 @@ export function currentUser(req: NextRequest): AuthUser | null {
   const token = req.cookies.get(COOKIE)?.value;
   if (!token) return null;
   const user = db.prepare(
-    "SELECT u.id,u.username,u.display_name,u.role,u.active FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND datetime(s.expires_at) > CURRENT_TIMESTAMP AND u.active=1"
+    "SELECT u.id,u.username,u.display_name,u.role,u.active,u.is_root_admin FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND datetime(s.expires_at) > CURRENT_TIMESTAMP AND u.active=1"
   ).get(tokenHash(token)) as AuthUser | undefined;
   return user || null;
 }
@@ -93,5 +95,5 @@ export function requireUser(req: NextRequest, role?: UserRole) {
 }
 
 export function publicUser(user: AuthUser) {
-  return { id:user.id, username:user.username, display_name:user.display_name, role:user.role };
+  return { id:user.id, username:user.username, display_name:user.display_name, role:user.role, is_root_admin:user.is_root_admin };
 }
