@@ -1,6 +1,6 @@
 import { readSheet, SheetNotFoundError } from "read-excel-file/node";
 import { db } from "./db";
-import { addLedgerEntry, addSupplierCost, norm, num, text, upsertOrder } from "./finance";
+import { addLedgerEntry, addSupplierCost, norm, normalizeDateInput, num, text, upsertOrder } from "./finance";
 
 type Row = unknown[];
 type ImportKind = "orders" | "sales_orders" | "costs" | "balance";
@@ -38,6 +38,11 @@ function pick(row: Row, headers: Map<string, number>, ...names: string[]) {
   return null;
 }
 
+function importDate(value: unknown) {
+  if (value instanceof Date) return normalizeDateInput(value) || "";
+  return text(value);
+}
+
 function importOrders(rows: Row[][]) {
   const h = findHeader(rows, ["Ngày tạo", "Sales", "Khách", "Order ID"]);
   if (h < 0) throw new Error("Không tìm thấy header Template Lên đơn.");
@@ -49,7 +54,7 @@ function importOrders(rows: Row[][]) {
     if (norm(row[0]).startsWith("rule:")) return;
     const tracking = text(pick(row, headers, "Tracking"));
     const orderId = text(pick(row, headers, "Order ID"));
-    const createdAt = text(pick(row, headers, "Ngày tạo"));
+    const createdAt = importDate(pick(row, headers, "Ngày tạo"));
     const customer = text(pick(row, headers, "Khách"));
     if (!tracking && !orderId && !createdAt && !customer) return;
     if (!tracking && !orderId) {
@@ -124,7 +129,7 @@ function importSalesOrders(rows: Row[][], actor: SalesImportContext) {
   rows.slice(h + 1).forEach((row, offset) => {
     if (norm(row[0]).startsWith("rule:")) return;
     const orderId = text(pick(row, headers, "Order ID"));
-    const createdAt = text(pick(row, headers, "Ngày tạo"));
+    const createdAt = importDate(pick(row, headers, "Ngày tạo"));
     const customer = text(pick(row, headers, "Khách"));
     if (!orderId && !createdAt && !customer) return;
     if (!orderId) {
@@ -207,7 +212,7 @@ function importCosts(rows: Row[][], batchId: number) {
       service: text(pick(row, headers, "Dịch vụ")),
       sub_service: text(pick(row, headers, "Sub-Service")),
       tracking,
-      occurred_at: text(pick(row, headers, "Ngày")),
+      occurred_at: importDate(pick(row, headers, "Ngày")),
       item: text(pick(row, headers, "Mặt hàng")),
       destination: text(pick(row, headers, "Điểm đến")),
       weight: pick(row, headers, "Cân nặng") as string | number | null,
@@ -240,7 +245,7 @@ function importBalance(rows: Row[][], batchId: number) {
     const amount = num(row[2]);
     if (category && amount) {
       addLedgerEntry({
-        occurred_at: text(row[0]) || null,
+        occurred_at: importDate(row[0]) || null,
         entry_type: norm(category).includes("refund") ? "REFUND" : "PAYMENT",
         direction: "CREDIT",
         amount,

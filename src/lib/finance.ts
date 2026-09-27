@@ -101,6 +101,46 @@ export const nullableNum = (v: unknown) => (v === null || v === undefined || v =
 export const money = (v: number) => Math.round((Number(v || 0) + Number.EPSILON) * 100) / 100;
 export const norm = (v: unknown) => text(v).toLowerCase().replace(/[\n\r]+/g, " ").replace(/\s+/g, " ");
 
+export function normalizeDateInput(value: unknown, field = "Ngày") {
+  if (value === null || value === undefined || value === "") return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  const raw = text(value);
+  let day: number;
+  let month: number;
+  let year: number;
+
+  const displayMatch = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (displayMatch) {
+    day = Number(displayMatch[1]);
+    month = Number(displayMatch[2]);
+    year = Number(displayMatch[3]);
+  } else if (isoMatch) {
+    year = Number(isoMatch[1]);
+    month = Number(isoMatch[2]);
+    day = Number(isoMatch[3]);
+  } else {
+    throw new Error(`${field} phải đúng định dạng dd/mm/yyyy.`);
+  }
+
+  const candidate = new Date(Date.UTC(year, month - 1, day));
+  if (
+    candidate.getUTCFullYear() !== year ||
+    candidate.getUTCMonth() !== month - 1 ||
+    candidate.getUTCDate() !== day
+  ) {
+    throw new Error(`${field} không hợp lệ.`);
+  }
+
+  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
 export function draftKey(parts: Array<string | number | null | undefined>) {
   return parts.map((x) => norm(x)).filter(Boolean).join("|").slice(0, 500);
 }
@@ -293,7 +333,7 @@ export function upsertOrder(input: OrderInput) {
   });
 
   const payload = {
-    created_at: stringValue(input, "created_at", existing) || null,
+    created_at: normalizeDateInput(stringValue(input, "created_at", existing), "Ngày tạo"),
     sales: stringValue(input, "sales", existing),
     customer,
     supplier,
@@ -397,7 +437,7 @@ export function addSupplierCost(input: SupplierCostInput) {
       export_customs,import_customs,total_net_cost,extra_surcharge,import_tax,note,batch_id
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
-    text(input.supplier), text(input.service), text(input.sub_service), tracking, text(input.occurred_at) || null,
+    text(input.supplier), text(input.service), text(input.sub_service), tracking, normalizeDateInput(input.occurred_at, "Ngày chi phí"),
     text(input.item), text(input.destination), num(input.weight), netPrice, fee, exportCustoms, importCustoms,
     totalNet, money(num(input.extra_surcharge)), money(num(input.import_tax)), text(input.note), input.batch_id || null
   );
@@ -426,7 +466,7 @@ export function addLedgerEntry(input: LedgerInput) {
       occurred_at,entry_type,direction,amount,customer,reference_type,reference_id,bill_url,note,batch_id
     ) VALUES (?,?,?,?,?,?,?,?,?,?)
   `).run(
-    text(input.occurred_at) || null, type, direction, amount, text(input.customer) || null,
+    normalizeDateInput(input.occurred_at, "Ngày giao dịch"), type, direction, amount, text(input.customer) || null,
     text(input.reference_type) || null, text(input.reference_id) || null, text(input.bill_url) || null,
     text(input.note) || null, input.batch_id || null
   );

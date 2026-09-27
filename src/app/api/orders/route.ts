@@ -23,11 +23,17 @@ export async function GET(req: NextRequest) {
   const status=String(req.nextUrl.searchParams.get("status")||"").trim();
   const service=String(req.nextUrl.searchParams.get("service")||"").trim();
   const reconcile=String(req.nextUrl.searchParams.get("reconcile")||"").trim();
-  const salesUserId=Number(req.nextUrl.searchParams.get("salesUserId")||0);
+  const salesUserRaw=String(req.nextUrl.searchParams.get("salesUserId")||"").trim();
   if(status){where.push("workflow_status=?");params.push(status);}
   if(service){where.push("service=?");params.push(service);}
   if(reconcile){where.push("reconciliation_status=?");params.push(reconcile);}
-  if(auth.user.role==="ADMIN"&&salesUserId>0){where.push("sales_user_id=?");params.push(salesUserId);}
+  if(auth.user.role==="ADMIN"&&salesUserRaw){
+    const salesUserId=/^\d+$/.test(salesUserRaw)
+      ? Number(salesUserRaw)
+      : (db.prepare("SELECT id FROM users WHERE role='SALES' AND active=1 AND (lower(display_name)=lower(?) OR lower(username)=lower(?)) LIMIT 1").get(salesUserRaw,salesUserRaw) as {id:number}|undefined)?.id;
+    if(salesUserId){where.push("sales_user_id=?");params.push(salesUserId);}
+    else {where.push("1=0");}
+  }
   const whereSql=where.length?" WHERE "+where.join(" AND "):"";
   const total=queryOne<{c:number}>("SELECT COUNT(*) c FROM orders"+whereSql,params)?.c||0;
   const items=queryAll(
@@ -72,10 +78,14 @@ export async function POST(req: NextRequest) {
     }
 
     let salesName=String(body.sales||"").trim();
-    const salesUserId=body.sales_user_id?Number(body.sales_user_id):null;
-    if(salesUserId){
-      const salesUser=db.prepare("SELECT id,display_name FROM users WHERE id=? AND role='SALES' AND active=1").get(salesUserId) as {id:number;display_name:string}|undefined;
-      if(!salesUser)return NextResponse.json({error:"Sales account không hợp lệ."},{status:400});
+    const salesUserRaw=String(body.sales_user_id||"").trim();
+    let salesUserId:number|null=null;
+    if(salesUserRaw){
+      const salesUser=/^\d+$/.test(salesUserRaw)
+        ? db.prepare("SELECT id,display_name FROM users WHERE id=? AND role='SALES' AND active=1").get(Number(salesUserRaw)) as {id:number;display_name:string}|undefined
+        : db.prepare("SELECT id,display_name FROM users WHERE role='SALES' AND active=1 AND (lower(display_name)=lower(?) OR lower(username)=lower(?)) LIMIT 1").get(salesUserRaw,salesUserRaw) as {id:number;display_name:string}|undefined;
+      if(!salesUser)return NextResponse.json({error:"Sales account không hợp lệ. Hãy chọn hoặc nhập đúng tên/username Sales."},{status:400});
+      salesUserId=salesUser.id;
       salesName=salesUser.display_name;
     }
     const saved=upsertOrder({...body,sales:salesName}) as {id:number};

@@ -15,7 +15,24 @@ const money = (v: unknown) => new Intl.NumberFormat("en-US", {
   style:"currency", currency:"USD", maximumFractionDigits:2,
 }).format(Number(v || 0));
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => {
+  const d = new Date();
+  return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`;
+};
+
+function displayDate(value: unknown) {
+  const raw=String(value??"").trim();
+  const iso=raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(iso)return `${iso[3]}/${iso[2]}/${iso[1]}`;
+  return raw;
+}
+
+function isValidDateText(value: string) {
+  if(!/^\d{2}\/\d{2}\/\d{4}$/.test(value))return false;
+  const [day,month,year]=value.split("/").map(Number);
+  const d=new Date(Date.UTC(year,month-1,day));
+  return d.getUTCFullYear()===year&&d.getUTCMonth()===month-1&&d.getUTCDate()===day;
+}
 
 async function postJson(url: string, body: Record<string, unknown>) {
   const res = await fetch(url, {
@@ -49,40 +66,83 @@ function Field({
 }
 
 function SmartSelect({
-  value,onChange,options,placeholder="Chọn",compact=false,
+  value,onChange,options,placeholder="Chọn hoặc nhập",compact=false,allowCustom=true,dataCell,onKeyDown,onPaste,
 }:{
   value:string;onChange:(value:string)=>void;options:Array<{value:string;label:string}>;
-  placeholder?:string;compact?:boolean;
+  placeholder?:string;compact?:boolean;allowCustom?:boolean;dataCell?:string;
+  onKeyDown?:(e:React.KeyboardEvent<HTMLInputElement>)=>void;
+  onPaste?:(e:React.ClipboardEvent<HTMLInputElement>)=>void;
 }) {
   const [open,setOpen]=useState(false);
   const ref=useRef<HTMLDivElement>(null);
   const selected=options.find(o=>o.value===value);
+  const [query,setQuery]=useState(selected?.label??value);
+  useEffect(()=>{setQuery(options.find(o=>o.value===value)?.label??value)},[value,options]);
   useEffect(()=>{
     function close(e:MouseEvent){if(ref.current&&!ref.current.contains(e.target as Node))setOpen(false)}
     document.addEventListener("mousedown",close);
     return()=>document.removeEventListener("mousedown",close);
   },[]);
+  const normalized=query.trim().toLowerCase();
+  const filtered=options.filter(o=>!normalized||o.label.toLowerCase().includes(normalized)||o.value.toLowerCase().includes(normalized));
+  function commitTyped(){
+    const exact=options.find(o=>o.label.toLowerCase()===normalized||o.value.toLowerCase()===normalized);
+    if(exact){onChange(exact.value);setQuery(exact.label);return}
+    if(allowCustom)onChange(query.trim());
+    else setQuery(selected?.label??"");
+  }
   return <div className={compact?"smartSelect compact":"smartSelect"} ref={ref}>
-    <button type="button" className={open?"smartSelectTrigger open":"smartSelectTrigger"} onClick={()=>setOpen(x=>!x)}>
-      <span className={!selected||!selected.value?"placeholder":""}>{selected?.label||placeholder}</span><i>⌄</i>
-    </button>
+    <div className={open?"smartSelectTrigger open":"smartSelectTrigger"}>
+      <input
+        data-sheet-cell={dataCell}
+        className="smartSelectInput"
+        value={query}
+        placeholder={placeholder}
+        onFocus={()=>setOpen(true)}
+        onChange={e=>{setQuery(e.target.value);if(allowCustom)onChange(e.target.value);setOpen(true)}}
+        onBlur={()=>setTimeout(commitTyped,0)}
+        onKeyDown={onKeyDown}
+        onPaste={onPaste}
+      />
+      <button type="button" className="smartSelectToggle" onMouseDown={e=>e.preventDefault()} onClick={()=>setOpen(x=>!x)}>⌄</button>
+    </div>
     {open&&<div className="smartSelectMenu">
-      {options.map(o=><button type="button" key={o.value} className={o.value===value?"selected":""} onClick={()=>{onChange(o.value);setOpen(false)}}>
+      {filtered.length?filtered.map(o=><button type="button" key={o.value} className={o.value===value?"selected":""} onMouseDown={e=>e.preventDefault()} onClick={()=>{onChange(o.value);setQuery(o.label);setOpen(false)}}>
         <span>{o.label}</span>{o.value===value&&<b>✓</b>}
-      </button>)}
+      </button>):<div className="smartSelectEmpty">Dùng “{query.trim()}”</div>}
     </div>}
   </div>;
 }
 
 function SelectField({
-  label, name, value, onChange, options, wide=false,
+  label, name, value, onChange, options, wide=false, allowCustom=true,
 }: {
   label:string; name:string; value:string; onChange:(name:string,value:string)=>void;
-  options:Array<{value:string;label:string}>; wide?:boolean;
+  options:Array<{value:string;label:string}>; wide?:boolean; allowCustom?:boolean;
 }) {
   return <label className={wide ? "field wide" : "field"}>
     <span>{label}</span>
-    <SmartSelect value={value} onChange={v=>onChange(name,v)} options={options}/>
+    <SmartSelect value={value} onChange={v=>onChange(name,v)} options={options} allowCustom={allowCustom}/>
+  </label>;
+}
+
+function DateField({label,name,value,onChange,required=false}:{
+  label:string;name:string;value:string;onChange:(name:string,value:string)=>void;required?:boolean;
+}) {
+  const invalid=Boolean(value)&&!isValidDateText(value);
+  return <label className="field">
+    <span>{label}{required&&<b> *</b>}</span>
+    <input
+      name={name}
+      type="text"
+      inputMode="numeric"
+      value={value}
+      placeholder="dd/mm/yyyy"
+      required={required}
+      className={invalid?"inputError":""}
+      onChange={e=>onChange(name,e.target.value)}
+    />
+    {invalid&&<small className="fieldError">Ngày không hợp lệ, dùng dd/mm/yyyy.</small>}
   </label>;
 }
 
@@ -117,7 +177,7 @@ function OrderForm({
     const next = { ...blank };
     Object.keys(next).forEach((key)=>{
       const v=edit[key];
-      (next as Record<string,string>)[key]=v===null||v===undefined?"":String(v);
+      (next as Record<string,string>)[key]=v===null||v===undefined?"":key==="created_at"?displayDate(v):String(v);
     });
     next.id=String(edit.id || "");
     setForm(next);
@@ -127,7 +187,9 @@ function OrderForm({
   const change=(name:string,value:string)=>setForm((x)=>({...x,[name]:value}));
 
   async function submit(e:FormEvent){
-    e.preventDefault(); setBusy(true); setMsg("");
+    e.preventDefault();
+    if(form.created_at&&!isValidDateText(form.created_at)){setMsg("Lỗi: Ngày tạo phải đúng định dạng dd/mm/yyyy.");return;}
+    setBusy(true); setMsg("");
     try {
       const saved=await postJson("/api/orders",form);
       setMsg(edit?"Đã cập nhật order #"+saved.id:"Đã tạo order #"+saved.id);
@@ -144,7 +206,7 @@ function OrderForm({
     </div>
     <p className="formHint">Sales tạo draft trước. Admin bổ sung Tracking / Supplier / Cost sau; hệ thống tự merge và sync.</p>
     <div className="formGrid">
-      <Field label="Ngày tạo" name="created_at" type="date" value={form.created_at} onChange={change}/>
+      <DateField label="Ngày tạo" name="created_at" value={form.created_at} onChange={change}/>
       {role==="ADMIN"
         ? <SelectField label="Sales account" name="sales_user_id" value={form.sales_user_id} onChange={change} options={[{value:"",label:"-- Chọn Sales --"},...salesUsers.map(u=>({value:String(u.id),label:u.display_name+" (@"+u.username+")"}))]}/>
         : <label className="field"><span>Sales account</span><input value={currentUser.display_name+" (@"+currentUser.username+")"} disabled/></label>}
@@ -187,7 +249,7 @@ function OrderForm({
 
 
 type SheetRow = Record<string,string>;
-type SheetColumn = { key:string; label:string; width?:number; type?:"text"|"number"|"date"|"select"; options?:Array<{value:string;label:string}> };
+type SheetColumn = { key:string; label:string; width?:number; type?:"text"|"number"|"dateText"|"combo"; options?:Array<{value:string;label:string}> };
 
 function QuickOrderSheet({role,salesUsers,onDone,onAdvanced}:{role:Role;salesUsers:User[];onDone:()=>void;onAdvanced:()=>void}) {
   const blankRow=():SheetRow=>({
@@ -201,7 +263,7 @@ function QuickOrderSheet({role,salesUsers,onDone,onAdvanced}:{role:Role;salesUse
   const [errors,setErrors]=useState<Record<number,string>>({});
 
   const common:SheetColumn[]=[
-    {key:"created_at",label:"Ngày",width:118,type:"date"},{key:"customer",label:"Khách *",width:150},
+    {key:"created_at",label:"Ngày",width:118,type:"dateText"},{key:"customer",label:"Khách *",width:150},
     {key:"order_id",label:"Order ID *",width:135},{key:"service",label:"Dịch vụ",width:125},
     {key:"sub_service",label:"Sub-Service",width:120},{key:"item",label:"Mặt hàng",width:135},
     {key:"carton_count",label:"Carton",width:75,type:"number"},{key:"weight",label:"Kg",width:72,type:"number"},
@@ -211,7 +273,7 @@ function QuickOrderSheet({role,salesUsers,onDone,onAdvanced}:{role:Role;salesUse
     {key:"country",label:"Nước",width:85},{key:"note",label:"Note",width:180},
   ];
   const columns:SheetColumn[]=role==="ADMIN"?[
-    {key:"sales_user_id",label:"Sales",width:160,type:"select",options:[{value:"",label:"— Chọn Sales —"},...salesUsers.map(u=>({value:String(u.id),label:u.display_name}))]},
+    {key:"sales_user_id",label:"Sales",width:180,type:"combo",options:[{value:"",label:"— Chọn / nhập Sales —"},...salesUsers.map(u=>({value:String(u.id),label:u.display_name+" (@"+u.username+")"}))]},
     ...common,
     {key:"supplier",label:"Supplier",width:120},{key:"tracking",label:"Tracking",width:145},
     {key:"est_net_cost",label:"Est. Net",width:90,type:"number"},{key:"discount",label:"Discount %",width:90,type:"number"},
@@ -228,10 +290,10 @@ function QuickOrderSheet({role,salesUsers,onDone,onAdvanced}:{role:Role;salesUse
   function addRows(count=5){setRows(prev=>[...prev,...Array.from({length:count},blankRow)])}
   function removeRow(index:number){setRows(prev=>prev.length<=1?[blankRow()]:prev.filter((_,i)=>i!==index));setErrors({})}
   function focusCell(row:number,col:number){requestAnimationFrame(()=>document.querySelector<HTMLElement>(`[data-sheet-cell="${row}-${col}"]`)?.focus())}
-  function handleKey(e:React.KeyboardEvent<HTMLInputElement|HTMLSelectElement>,row:number,col:number){
+  function handleKey(e:React.KeyboardEvent<HTMLInputElement>,row:number,col:number){
     if(e.key==="Enter"){e.preventDefault();if(row===rows.length-1)addRows(1);focusCell(row+1,col)}
   }
-  function handlePaste(e:React.ClipboardEvent<HTMLInputElement|HTMLSelectElement>,startRow:number,startCol:number){
+  function handlePaste(e:React.ClipboardEvent<HTMLInputElement>,startRow:number,startCol:number){
     const raw=e.clipboardData.getData("text/plain");
     if(!raw.includes("\t")&&!raw.includes("\n"))return;
     e.preventDefault();
@@ -257,6 +319,7 @@ function QuickOrderSheet({role,salesUsers,onDone,onAdvanced}:{role:Role;salesUse
     activeRows.forEach(({row,index})=>{
       if(!row.customer.trim())invalid[index]="Thiếu Khách";
       else if(!row.order_id.trim())invalid[index]="Thiếu Order ID";
+      else if(row.created_at&&!isValidDateText(row.created_at))invalid[index]="Ngày phải đúng dd/mm/yyyy";
     });
     if(Object.keys(invalid).length){setErrors(invalid);setMsg("Có dòng thiếu dữ liệu bắt buộc.");return;}
     setBusy(true);setMsg("");setErrors({});
@@ -292,9 +355,28 @@ function QuickOrderSheet({role,salesUsers,onDone,onAdvanced}:{role:Role;salesUse
         <tbody>{rows.map((row,r)=><tr key={r} className={errors[r]?"sheetErrorRow":dirty(row)?"sheetDirtyRow":""}>
           <td className="sheetRowNumber"><span>{r+1}</span>{errors[r]&&<i title={errors[r]}>!</i>}</td>
           {columns.map((col,c)=><td key={col.key} className="sheetCell">
-            {col.type==="select"
-              ? <select data-sheet-cell={`${r}-${c}`} value={row[col.key]||""} onChange={e=>updateCell(r,col.key,e.target.value)} onKeyDown={e=>handleKey(e,r,c)} onPaste={e=>handlePaste(e,r,c)}>{col.options?.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select>
-              : <input data-sheet-cell={`${r}-${c}`} type={col.type||"text"} step={col.type==="number"?"any":undefined} value={row[col.key]||""} placeholder={col.key==="service"?"ePacket":col.key==="country"?"US":""} onChange={e=>updateCell(r,col.key,e.target.value)} onKeyDown={e=>handleKey(e,r,c)} onPaste={e=>handlePaste(e,r,c)}/>}
+            {col.type==="combo"
+              ? <SmartSelect
+                  value={row[col.key]||""}
+                  onChange={v=>updateCell(r,col.key,v)}
+                  options={col.options||[]}
+                  placeholder="Nhập hoặc chọn"
+                  dataCell={`${r}-${c}`}
+                  onKeyDown={e=>handleKey(e,r,c)}
+                  onPaste={e=>handlePaste(e,r,c)}
+                />
+              : <input
+                  data-sheet-cell={`${r}-${c}`}
+                  type={col.type==="number"?"number":"text"}
+                  inputMode={col.type==="dateText"?"numeric":undefined}
+                  step={col.type==="number"?"any":undefined}
+                  value={row[col.key]||""}
+                  placeholder={col.type==="dateText"?"dd/mm/yyyy":col.key==="service"?"ePacket":col.key==="country"?"US":""}
+                  className={col.type==="dateText"&&row[col.key]&&!isValidDateText(row[col.key])?"sheetInputError":""}
+                  onChange={e=>updateCell(r,col.key,e.target.value)}
+                  onKeyDown={e=>handleKey(e,r,c)}
+                  onPaste={e=>handlePaste(e,r,c)}
+                />}
           </td>)}
           <td className="sheetRemove"><button title="Xóa dòng" onClick={()=>removeRow(r)}>×</button></td>
         </tr>)}</tbody>
@@ -312,7 +394,9 @@ function CostForm({onDone}:{onDone:()=>void}) {
   const [form,setForm]=useState(blank); const [busy,setBusy]=useState(false); const [msg,setMsg]=useState("");
   const change=(name:string,value:string)=>setForm((x)=>({...x,[name]:value}));
   async function submit(e:FormEvent){
-    e.preventDefault();setBusy(true);setMsg("");
+    e.preventDefault();
+    if(form.occurred_at&&!isValidDateText(form.occurred_at)){setMsg("Lỗi: Ngày phải đúng định dạng dd/mm/yyyy.");return;}
+    setBusy(true);setMsg("");
     try{
       const r=await postJson("/api/costs",form);
       setMsg(r.matched?"Đã lưu và link vào Order.":"Đã lưu; chờ Order cùng Tracking để auto-link.");
@@ -324,7 +408,7 @@ function CostForm({onDone}:{onDone:()=>void}) {
     <div className="formHead"><div><span className="eyebrow">SUPPLIER COST</span><h3>Nhập chi phí thực tế</h3></div></div>
     <p className="formHint">Tracking là link chính. Cost nhập trước Order cũng được; khi Order xuất hiện hệ thống tự reconcile.</p>
     <div className="formGrid">
-      <Field label="Ngày" name="occurred_at" type="date" value={form.occurred_at} onChange={change}/>
+      <DateField label="Ngày" name="occurred_at" value={form.occurred_at} onChange={change}/>
       <Field label="Tracking" name="tracking" value={form.tracking} onChange={change} required/>
       <Field label="Supplier" name="supplier" value={form.supplier} onChange={change}/>
       <Field label="Dịch vụ" name="service" value={form.service} onChange={change}/>
@@ -348,7 +432,9 @@ function BalanceForm({onDone}:{onDone:()=>void}) {
   const change=(name:string,value:string)=>setForm((x)=>({...x,[name]:value}));
   const direction=["PAYMENT","REFUND","ERROR_REFUND","ERROR_PROCESSING","ADJUSTMENT_CREDIT"].includes(form.entry_type)?"CREDIT":"DEBIT";
   async function submit(e:FormEvent){
-    e.preventDefault();setBusy(true);setMsg("");
+    e.preventDefault();
+    if(form.occurred_at&&!isValidDateText(form.occurred_at)){setMsg("Lỗi: Ngày phải đúng định dạng dd/mm/yyyy.");return;}
+    setBusy(true);setMsg("");
     try{
       await postJson("/api/ledger",{...form,direction});
       setMsg("Đã ghi "+(direction==="CREDIT"?"+":"-")+" Balance.");
@@ -360,7 +446,7 @@ function BalanceForm({onDone}:{onDone:()=>void}) {
     <div className="formHead"><div><span className="eyebrow">BALANCE LEDGER</span><h3>Nhập giao dịch Balance</h3></div><span className={direction==="CREDIT"?"direction credit":"direction debit"}>{direction==="CREDIT"?"+ CREDIT":"− DEBIT"}</span></div>
     <p className="formHint">Ledger append-only. Order Charge được tạo tự động; form này dùng cho payment/refund/service/error/adjustment.</p>
     <div className="formGrid">
-      <Field label="Ngày" name="occurred_at" type="date" value={form.occurred_at} onChange={change}/>
+      <DateField label="Ngày" name="occurred_at" value={form.occurred_at} onChange={change}/>
       <SelectField label="Hạng mục" name="entry_type" value={form.entry_type} onChange={change} options={[
         {value:"PAYMENT",label:"Payment (+)"},
         {value:"REFUND",label:"Refund (+)"},
@@ -464,7 +550,7 @@ function UserManager({users,onDone,currentUser}:{users:User[];onDone:()=>void;cu
         <Field label="Tên hiển thị" name="display_name" value={form.display_name} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} required/>
         <Field label="Username" name="username" value={form.username} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} required/>
         <Field label="Mật khẩu ban đầu" name="password" type="password" value={form.password} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} required/>
-        <SelectField label="Role" name="role" value={form.role} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} options={[{value:"SALES",label:"Sales"},{value:"ADMIN",label:"Admin"}]}/>
+        <SelectField label="Role" name="role" value={form.role} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} allowCustom={false} options={[{value:"SALES",label:"Sales"},{value:"ADMIN",label:"Admin"}]}/>
       </div>
       <div className="formFooter"><span className={msg.startsWith("Lỗi")?"inlineMsg error":"inlineMsg"}>{msg}</span><button className="primaryBtn" disabled={busy}>{busy?"Đang tạo…":"Tạo tài khoản"}</button></div>
     </form>
@@ -805,7 +891,7 @@ function Table({rows,cols,onEdit,compact=false}:{rows:RowData[];cols:string[];on
         const v=r[c];
         const isMoney=["amount","est_net_cost","true_net_cost","base_cost","retail","sales_price","surcharge","import_tax","extra_surcharge","extra_import_tax","total_due","reconciliation_delta","total_net_cost"].includes(c);
         const isStatus=["workflow_status","margin_status","reconciliation_status","direction","matched"].includes(c);
-        const display=c==="matched"?(Number(v)?"Linked":"Waiting"):isMoney?money(v):String(v??"—");
+        const display=c==="matched"?(Number(v)?"Linked":"Waiting"):isMoney?money(v):["created_at","occurred_at"].includes(c)?(v?displayDate(v):"—"):String(v??"—");
         return <td key={c}>{isStatus?<span className={statusClass(display)}>{display}</span>:display}</td>;
       })}
     </tr>)}

@@ -168,6 +168,17 @@ The web app now uses an operations-dashboard shell instead of one long page:
 - Tables use compact columns, readable labels and status badges.
 - Responsive layout switches the sidebar to a compact horizontal nav on smaller screens.
 
+## Date input and editable comboboxes
+
+- Manual date fields use plain text in `dd/mm/yyyy`; there is no browser datepicker.
+- UI validates both the format and the real calendar date, e.g. `31/02/2026` is invalid.
+- Backend normalizes valid dates to ISO `yyyy-mm-dd` for sorting/storage and also validates Order, Supplier Cost and Balance writes.
+- Stored ISO dates are rendered back to `dd/mm/yyyy` in forms and tables.
+- Selection controls are editable comboboxes: users can type, paste, filter suggestions or click an option.
+- Sales account values can be resolved from account ID, exact display name or username.
+- Strict enums such as Account Role remain searchable/pasteable but reject custom values.
+- Quick Order Sales cells use the same editable combobox behavior, including pasted Sales names/usernames.
+
 ## Quick Order spreadsheet entry
 
 - Create Order now opens a spreadsheet-style multi-row editor by default.
