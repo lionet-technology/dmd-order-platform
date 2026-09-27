@@ -161,6 +161,128 @@ function OrderForm({
   </form>;
 }
 
+
+type SheetRow = Record<string,string>;
+type SheetColumn = { key:string; label:string; width?:number; type?:"text"|"number"|"date"|"select"; options?:Array<{value:string;label:string}> };
+
+function QuickOrderSheet({role,salesUsers,onDone,onAdvanced}:{role:Role;salesUsers:User[];onDone:()=>void;onAdvanced:()=>void}) {
+  const blankRow=():SheetRow=>({
+    created_at:"",sales_user_id:"",customer:"",order_id:"",service:"",sub_service:"",item:"",
+    carton_count:"",weight:"",length:"",width:"",height:"",recipient_name:"",city:"",state:"",
+    zip:"",country:"",note:"",supplier:"",tracking:"",est_net_cost:"",discount:"",surcharge:"",import_tax:"",
+  });
+  const [rows,setRows]=useState<SheetRow[]>(()=>Array.from({length:8},blankRow));
+  const [busy,setBusy]=useState(false);
+  const [msg,setMsg]=useState("");
+  const [errors,setErrors]=useState<Record<number,string>>({});
+
+  const common:SheetColumn[]=[
+    {key:"created_at",label:"Ngày",width:118,type:"date"},{key:"customer",label:"Khách *",width:150},
+    {key:"order_id",label:"Order ID *",width:135},{key:"service",label:"Dịch vụ",width:125},
+    {key:"sub_service",label:"Sub-Service",width:120},{key:"item",label:"Mặt hàng",width:135},
+    {key:"carton_count",label:"Carton",width:75,type:"number"},{key:"weight",label:"Kg",width:72,type:"number"},
+    {key:"length",label:"Dài",width:72,type:"number"},{key:"width",label:"Rộng",width:72,type:"number"},
+    {key:"height",label:"Cao",width:72,type:"number"},{key:"recipient_name",label:"Người nhận",width:145},
+    {key:"city",label:"Thành phố",width:115},{key:"state",label:"Bang",width:90},{key:"zip",label:"ZIP",width:90},
+    {key:"country",label:"Nước",width:85},{key:"note",label:"Note",width:180},
+  ];
+  const columns:SheetColumn[]=role==="ADMIN"?[
+    {key:"sales_user_id",label:"Sales",width:160,type:"select",options:[{value:"",label:"— Chọn Sales —"},...salesUsers.map(u=>({value:String(u.id),label:u.display_name}))]},
+    ...common,
+    {key:"supplier",label:"Supplier",width:120},{key:"tracking",label:"Tracking",width:145},
+    {key:"est_net_cost",label:"Est. Net",width:90,type:"number"},{key:"discount",label:"Discount %",width:90,type:"number"},
+    {key:"surcharge",label:"Phụ phí",width:90,type:"number"},{key:"import_tax",label:"Thuế NK",width:90,type:"number"},
+  ]:common;
+
+  const dirty=(row:SheetRow)=>Object.entries(row).some(([key,v])=>key!=="created_at"&&String(v||"").trim()!=="");
+  const activeRows=rows.map((row,index)=>({row,index})).filter(x=>dirty(x.row));
+
+  function updateCell(rowIndex:number,key:string,value:string){
+    setRows(prev=>prev.map((r,i)=>i===rowIndex?{...r,[key]:value}:r));
+    setErrors(prev=>{const next={...prev};delete next[rowIndex];return next});
+  }
+  function addRows(count=5){setRows(prev=>[...prev,...Array.from({length:count},blankRow)])}
+  function removeRow(index:number){setRows(prev=>prev.length<=1?[blankRow()]:prev.filter((_,i)=>i!==index));setErrors({})}
+  function focusCell(row:number,col:number){requestAnimationFrame(()=>document.querySelector<HTMLElement>(`[data-sheet-cell="${row}-${col}"]`)?.focus())}
+  function handleKey(e:React.KeyboardEvent<HTMLInputElement|HTMLSelectElement>,row:number,col:number){
+    if(e.key==="Enter"){e.preventDefault();if(row===rows.length-1)addRows(1);focusCell(row+1,col)}
+  }
+  function handlePaste(e:React.ClipboardEvent<HTMLInputElement|HTMLSelectElement>,startRow:number,startCol:number){
+    const raw=e.clipboardData.getData("text/plain");
+    if(!raw.includes("\t")&&!raw.includes("\n"))return;
+    e.preventDefault();
+    const matrix=raw.replace(/\r/g,"").split("\n").filter((line,i,a)=>!(i===a.length-1&&line==="")).map(line=>line.split("\t"));
+    setRows(prev=>{
+      const next=[...prev]; while(next.length<startRow+matrix.length)next.push(blankRow());
+      matrix.forEach((vals,rOff)=>vals.forEach((value,cOff)=>{
+        const col=columns[startCol+cOff]; if(!col)return;
+        let normalized=value.trim();
+        if(col.key==="sales_user_id"){
+          const match=salesUsers.find(u=>u.display_name.toLowerCase()===normalized.toLowerCase()||u.username.toLowerCase()===normalized.toLowerCase());
+          if(match)normalized=String(match.id);
+        }
+        next[startRow+rOff]={...next[startRow+rOff],[col.key]:normalized};
+      }));
+      return next;
+    });
+  }
+
+  async function saveAll(){
+    if(!activeRows.length){setMsg("Nhập ít nhất 1 dòng Order.");return;}
+    const invalid:Record<number,string>={};
+    activeRows.forEach(({row,index})=>{
+      if(!row.customer.trim())invalid[index]="Thiếu Khách";
+      else if(!row.order_id.trim())invalid[index]="Thiếu Order ID";
+    });
+    if(Object.keys(invalid).length){setErrors(invalid);setMsg("Có dòng thiếu dữ liệu bắt buộc.");return;}
+    setBusy(true);setMsg("");setErrors({});
+    const results=await Promise.all(activeRows.map(async({row,index})=>{
+      try{
+        await postJson("/api/orders",{...row,created_at:row.created_at||today(),service:row.service||"ePacket",country:row.country||"US",auto_pricing:true});
+        return {index,ok:true as const};
+      }catch(error){return {index,ok:false as const,error:error instanceof Error?error.message:"Không thể lưu"}}
+    }));
+    const failed=results.filter(x=>!x.ok);
+    const succeeded=results.filter(x=>x.ok).map(x=>x.index);
+    if(failed.length){
+      const nextErrors:Record<number,string>={};
+      failed.forEach(x=>{if(!x.ok)nextErrors[x.index]=x.error});
+      setErrors(nextErrors);setRows(prev=>prev.map((r,i)=>succeeded.includes(i)?blankRow():r));
+      setMsg(`Đã lưu ${succeeded.length} dòng, ${failed.length} dòng lỗi.`);setBusy(false);return;
+    }
+    setBusy(false);onDone();
+  }
+
+  return <div className="sheetEntry">
+    <div className="sheetToolbar">
+      <div><b>Nhập nhanh nhiều Order</b><span>Paste từ Google Sheets/Excel · Enter xuống dòng · Tab sang ô kế</span></div>
+      <div className="sheetTools">
+        <button className="secondaryBtn" onClick={()=>addRows(5)}>＋ 5 dòng</button>
+        <button className="secondaryBtn" onClick={onAdvanced}>Form chi tiết</button>
+        <button className="primaryBtn" disabled={busy||!activeRows.length} onClick={()=>void saveAll()}>{busy?"Đang lưu…":`Lưu ${activeRows.length||""} Order`}</button>
+      </div>
+    </div>
+    <div className="sheetScroll">
+      <table className="sheetTable">
+        <thead><tr><th className="sheetCorner">#</th>{columns.map(col=><th key={col.key} style={{minWidth:col.width||110}}>{col.label}</th>)}<th></th></tr></thead>
+        <tbody>{rows.map((row,r)=><tr key={r} className={errors[r]?"sheetErrorRow":dirty(row)?"sheetDirtyRow":""}>
+          <td className="sheetRowNumber"><span>{r+1}</span>{errors[r]&&<i title={errors[r]}>!</i>}</td>
+          {columns.map((col,c)=><td key={col.key} className="sheetCell">
+            {col.type==="select"
+              ? <select data-sheet-cell={`${r}-${c}`} value={row[col.key]||""} onChange={e=>updateCell(r,col.key,e.target.value)} onKeyDown={e=>handleKey(e,r,c)} onPaste={e=>handlePaste(e,r,c)}>{col.options?.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select>
+              : <input data-sheet-cell={`${r}-${c}`} type={col.type||"text"} step={col.type==="number"?"any":undefined} value={row[col.key]||""} placeholder={col.key==="service"?"ePacket":col.key==="country"?"US":""} onChange={e=>updateCell(r,col.key,e.target.value)} onKeyDown={e=>handleKey(e,r,c)} onPaste={e=>handlePaste(e,r,c)}/>}
+          </td>)}
+          <td className="sheetRemove"><button title="Xóa dòng" onClick={()=>removeRow(r)}>×</button></td>
+        </tr>)}</tbody>
+      </table>
+    </div>
+    <div className="sheetFooter">
+      <button className="textBtn" onClick={()=>addRows(10)}>＋ Thêm 10 dòng</button>
+      <div><span>{activeRows.length} dòng có dữ liệu</span>{msg&&<b className={msg.includes("lỗi")||msg.includes("thiếu")?"sheetMsg error":"sheetMsg"}>{msg}</b>}</div>
+    </div>
+  </div>;
+}
+
 function CostForm({onDone}:{onDone:()=>void}) {
   const blank={occurred_at:today(),supplier:"",service:"",sub_service:"",tracking:"",net_price:"",fee:"",export_customs:"",import_customs:"",total_net_cost:"",extra_surcharge:"",import_tax:"",note:""};
   const [form,setForm]=useState(blank); const [busy,setBusy]=useState(false); const [msg,setMsg]=useState("");
@@ -379,6 +501,8 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   const [loading,setLoading]=useState(false);
   const [entry,setEntry]=useState<ManualKind|null>(null);
   const [editOrder,setEditOrder]=useState<RowData|null>(null);
+  const [orderEntryMode,setOrderEntryMode]=useState<"sheet"|"form">("sheet");
+  const [orderFilters,setOrderFilters]=useState({status:"",service:"",salesUserId:"",reconcile:""});
 
   const salesUsers=users.filter(u=>u.role==="SALES"&&u.active!==0);
 
@@ -388,6 +512,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   },[search]);
 
   useEffect(()=>{setPage(1)},[section,debouncedSearch]);
+  useEffect(()=>{setPage(1)},[orderFilters.status,orderFilters.service,orderFilters.salesUserId,orderFilters.reconcile]);
 
   const loadSummary=useCallback(async()=>{
     const res=await fetch("/api/summary");
@@ -415,12 +540,19 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
     if(!endpoint)return;
     setLoading(true);
     try{
-      const res=await fetch(endpoint+"?page="+currentPage+"&pageSize=20&q="+encodeURIComponent(q));
+      const params=new URLSearchParams({page:String(currentPage),pageSize:"20",q});
+      if(target==="orders"){
+        if(orderFilters.status)params.set("status",orderFilters.status);
+        if(orderFilters.service)params.set("service",orderFilters.service);
+        if(orderFilters.salesUserId)params.set("salesUserId",orderFilters.salesUserId);
+        if(orderFilters.reconcile)params.set("reconcile",orderFilters.reconcile);
+      }
+      const res=await fetch(endpoint+"?"+params.toString());
       if(res.status===401){onLogout();return;}
       if(!res.ok)return;
       setData(await res.json());
     } finally {setLoading(false)}
-  },[page,debouncedSearch,onLogout]);
+  },[page,debouncedSearch,onLogout,orderFilters]);
 
   const loadRecent=useCallback(async()=>{
     const res=await fetch("/api/orders?page=1&pageSize=10");
@@ -439,9 +571,11 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
     setSection(next);setSearch("");setPage(1);
   }
   function openEntry(kind:ManualKind,row?:RowData){
-    setEditOrder(row||null);setEntry(kind);
+    setEditOrder(row||null);
+    if(kind==="order")setOrderEntryMode(row?"form":"sheet");
+    setEntry(kind);
   }
-  function closeEntry(){setEntry(null);setEditOrder(null)}
+  function closeEntry(){setEntry(null);setEditOrder(null);setOrderEntryMode("sheet")}
   async function entryDone(){closeEntry();await refresh()}
   async function logout(){await fetch("/api/auth/logout",{method:"POST"});onLogout()}
 
@@ -522,7 +656,17 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
           <PageHeader eyebrow="OPERATIONS" title="Orders" description={role==="ADMIN"?"Quản lý toàn bộ đơn hàng và trạng thái xử lý.":"Quản lý các order thuộc tài khoản của bạn."}
             actions={<><button className="secondaryBtn" onClick={()=>navigate("imports")}>⇩ Import</button><button className="primaryBtn" onClick={()=>openEntry("order")}>＋ Tạo Order</button></>}/>
           <div className="panel dataPanel">
-            <div className="dataToolbar"><SearchBar value={search} onChange={setSearch} placeholder="Tìm Order ID, Tracking, khách hàng, dịch vụ..."/><span>{data.total} records</span></div>
+            <div className="dataToolbar orderToolbar">
+              <SearchBar value={search} onChange={setSearch} placeholder="Tìm Order ID, Tracking, khách hàng, dịch vụ..."/>
+              <div className="orderFilters">
+                <select value={orderFilters.status} onChange={e=>setOrderFilters(x=>({...x,status:e.target.value}))}><option value="">Mọi trạng thái</option><option value="SALES_DRAFT">Sales draft</option><option value="TRACKING_ASSIGNED">Tracking assigned</option><option value="ADMIN_READY">Admin ready</option><option value="RECONCILED">Reconciled</option></select>
+                <select value={orderFilters.service} onChange={e=>setOrderFilters(x=>({...x,service:e.target.value}))}><option value="">Mọi dịch vụ</option><option value="ePacket">ePacket</option><option value="UPS">UPS</option><option value="Yun Express">Yun Express</option><option value="Chuyên tuyến">Chuyên tuyến</option></select>
+                {role==="ADMIN"&&<select value={orderFilters.salesUserId} onChange={e=>setOrderFilters(x=>({...x,salesUserId:e.target.value}))}><option value="">Mọi Sales</option>{salesUsers.map(u=><option key={u.id} value={u.id}>{u.display_name}</option>)}</select>}
+                {role==="ADMIN"&&<select value={orderFilters.reconcile} onChange={e=>setOrderFilters(x=>({...x,reconcile:e.target.value}))}><option value="">Mọi reconcile</option><option value="PASS">PASS</option><option value="REVIEW">REVIEW</option></select>}
+                {(orderFilters.status||orderFilters.service||orderFilters.salesUserId||orderFilters.reconcile)&&<button className="clearFilters" onClick={()=>setOrderFilters({status:"",service:"",salesUserId:"",reconcile:""})}>Xóa lọc</button>}
+              </div>
+              <span>{data.total} records</span>
+            </div>
             {loading?<div className="loadingState">Đang tải dữ liệu…</div>:<Table rows={data.items} cols={orderCols} onEdit={row=>openEntry("order",row)}/>}
             <Pager data={data} onPage={setPage}/>
           </div>
@@ -575,8 +719,9 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
       </div>
     </div>
 
-    {entry&&<Modal title={editOrder?"Chỉnh sửa Order":entry==="order"?"Tạo Order":entry==="cost"?"Nhập Supplier Cost":"Ghi Balance"} onClose={closeEntry}>
-      {entry==="order"&&<OrderForm role={role} currentUser={user} salesUsers={salesUsers} edit={editOrder} onDone={entryDone} onCancelEdit={closeEntry}/>}
+    {entry&&<Modal title={editOrder?"Chỉnh sửa Order":entry==="order"?(orderEntryMode==="sheet"?"Tạo Orders nhanh":"Tạo Order chi tiết"):entry==="cost"?"Nhập Supplier Cost":"Ghi Balance"} onClose={closeEntry}>
+      {entry==="order"&&!editOrder&&orderEntryMode==="sheet"&&<QuickOrderSheet role={role} salesUsers={salesUsers} onDone={entryDone} onAdvanced={()=>setOrderEntryMode("form")}/>}
+      {entry==="order"&&(editOrder||orderEntryMode==="form")&&<OrderForm role={role} currentUser={user} salesUsers={salesUsers} edit={editOrder} onDone={entryDone} onCancelEdit={closeEntry}/>}
       {entry==="cost"&&role==="ADMIN"&&<CostForm onDone={entryDone}/>}
       {entry==="balance"&&role==="ADMIN"&&<BalanceForm onDone={entryDone}/>}
     </Modal>}

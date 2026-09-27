@@ -20,6 +20,14 @@ export async function GET(req: NextRequest) {
     const like="%"+q+"%";
     params.push(like,like,like,like,like);
   }
+  const status=String(req.nextUrl.searchParams.get("status")||"").trim();
+  const service=String(req.nextUrl.searchParams.get("service")||"").trim();
+  const reconcile=String(req.nextUrl.searchParams.get("reconcile")||"").trim();
+  const salesUserId=Number(req.nextUrl.searchParams.get("salesUserId")||0);
+  if(status){where.push("workflow_status=?");params.push(status);}
+  if(service){where.push("service=?");params.push(service);}
+  if(reconcile){where.push("reconciliation_status=?");params.push(reconcile);}
+  if(auth.user.role==="ADMIN"&&salesUserId>0){where.push("sales_user_id=?");params.push(salesUserId);}
   const whereSql=where.length?" WHERE "+where.join(" AND "):"";
   const total=queryOne<{c:number}>("SELECT COUNT(*) c FROM orders"+whereSql,params)?.c||0;
   const items=queryAll(

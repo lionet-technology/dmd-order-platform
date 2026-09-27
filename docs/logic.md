@@ -167,3 +167,12 @@ The web app now uses an operations-dashboard shell instead of one long page:
 - Manual Order / Cost / Balance forms open in focused modals instead of pushing tables down the page.
 - Tables use compact columns, readable labels and status badges.
 - Responsive layout switches the sidebar to a compact horizontal nav on smaller screens.
+
+## Quick Order spreadsheet entry
+
+- Create Order now opens a spreadsheet-style multi-row editor by default.
+- Supports Enter to move down, Tab to move across, adding/removing rows and rectangular paste from Google Sheets / Excel.
+- Sales rows are automatically scoped by the authenticated Sales account; Admin can choose Sales per row and use finance columns.
+- Required fields are validated per row and failed rows remain visible with inline row errors; successful rows can be saved in the same batch.
+- Detailed single-order form remains available through `Form chi tiết` and is still used for editing existing orders.
+- Orders list adds backend filters for workflow status, service, Sales account and reconciliation status, combined with existing search + pagination.
