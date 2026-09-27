@@ -162,6 +162,39 @@ tbody tr:hover td{background:#fafbff}
 .accountTable{border-top:1px solid var(--line);max-height:360px}
 .accountTable .editBtn{margin-right:5px}
 
+/* Master data */
+.enumManager{background:#fff}
+.enumTabs{display:flex;gap:6px;padding:12px;border-bottom:1px solid var(--line);overflow-x:auto}
+.enumTabs button{min-width:130px;border:1px solid #d9dee7;background:#fff;border-radius:9px;padding:8px 10px;display:flex;align-items:center;justify-content:space-between;gap:10px;color:#475467;font-size:10px;font-weight:750}
+.enumTabs button:hover{background:#f8fafc}.enumTabs button.active{border-color:#a7b7f4;background:#eef2ff;color:#2949c7}
+.enumTabs small{font-size:8px;color:#98a2b3}
+.enumCreate{display:grid;grid-template-columns:minmax(180px,1fr) minmax(160px,.8fr) 90px auto;gap:8px;align-items:end;padding:14px 12px;border-bottom:1px solid var(--line);background:#fafbfc}
+.enumCreateTitle{display:flex;flex-direction:column;gap:2px;align-self:center}.enumCreateTitle b{font-size:11px}.enumCreateTitle span{font-size:8.5px;color:#667085}
+.enumCreate>input,.enumInlineInput{height:34px;border:1px solid #d0d5dd;border-radius:8px;padding:0 9px;outline:0;font-size:10px;background:#fff;color:#344054}
+.enumCreate>input:focus,.enumInlineInput:focus{border-color:#8098ed;box-shadow:0 0 0 3px #eef2ff}
+.enumSortInput{max-width:90px}
+.enumListHead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.enumListHead>span{font-size:9px;color:#98a2b3;white-space:nowrap}
+.enumTable{max-height:calc(100vh - 330px)}
+.enumTable td b{font-size:10.5px}
+.enumInlineInput{width:100%;height:30px}.enumInlineInput.sort{width:74px;text-align:right}
+.enumActions{white-space:nowrap}.enumActions button{margin-right:5px}
+.deactivateBtn,.activateBtn{border-radius:7px;padding:6px 8px;font-size:9px;font-weight:750}
+.deactivateBtn{border:1px solid #fecdca;background:#fff;color:#b42318}.deactivateBtn:hover{background:#fef3f2}
+.activateBtn{border:1px solid #abefc6;background:#fff;color:#067647}.activateBtn:hover{background:#ecfdf3}
+.inactiveEnumRow td{color:#98a2b3;background:#fafafa}.inactiveEnumRow td b{text-decoration:line-through}
+.enumMessage{padding:9px 12px;border-top:1px solid var(--line);font-size:9.5px;color:#087a55;background:#f8fffb}.enumMessage.error{color:#b42318;background:#fff8f7}
+
+@media(max-width:900px){
+  .enumCreate{grid-template-columns:1fr 1fr}.enumCreateTitle{grid-column:1/-1}.enumCreate .primaryBtn{align-self:stretch}
+}
+@media(max-width:700px){
+  .enumTabs{padding:8px}.enumTabs button{min-width:108px;padding:7px 8px}
+  .enumCreate{grid-template-columns:1fr;padding:10px}.enumCreateTitle{grid-column:auto}.enumSortInput{max-width:none}
+  .enumListHead{align-items:stretch;flex-direction:column}.enumListHead>span{align-self:flex-end}
+  .enumTable{max-height:52vh}.enumActions{display:flex;gap:4px}.enumActions button{margin:0}
+}
+
 /* Modal */
 .modalBackdrop{position:fixed;inset:0;background:rgba(15,23,42,.46);z-index:100;display:grid;place-items:center;padding:22px}
 .modalPanel{width:min(1120px,96vw);max-height:92vh;background:#fff;border-radius:14px;box-shadow:0 24px 70px rgba(15,23,42,.24);display:flex;flex-direction:column;overflow:hidden}
@@ -247,20 +280,29 @@ tbody tr:hover td{background:#fafbff}
 /* Orders quick spreadsheet entry */
 .sheetEntry{display:flex;flex-direction:column;min-height:420px;margin:-18px}
 .sheetToolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 14px;border-bottom:1px solid var(--line);background:#fff}
-.sheetToolbar>div:first-child{display:flex;flex-direction:column;gap:2px;min-width:0}.sheetToolbar b{font-size:12px}.sheetToolbar span{font-size:9px;color:#667085}
-.sheetTools{display:flex;gap:7px;align-items:center;flex-shrink:0}.sheetTools .secondaryBtn,.sheetTools .primaryBtn{padding:7px 9px;font-size:9.5px}
-.sheetScroll{overflow:auto;max-height:64vh;background:#fff;border-bottom:1px solid var(--line)}
-.sheetTable{border-collapse:separate;border-spacing:0;table-layout:fixed;width:max-content;min-width:100%;font-size:10px}
-.sheetTable th{position:sticky;top:0;z-index:5;height:31px;padding:6px 7px;background:#f3f4f6;border-right:1px solid #dfe3e8;border-bottom:1px solid #cfd5dd;color:#475467;text-transform:none;font-size:9px;letter-spacing:0;white-space:nowrap}
-.sheetCorner{left:0!important;z-index:7!important;min-width:40px;width:40px;text-align:center;background:#e9edf2!important}
-.sheetTable td{height:31px;padding:0;border-right:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;background:#fff;max-width:none;overflow:visible}
-.sheetTable tbody tr:hover td{background:#fff}.sheetTable tbody tr.sheetDirtyRow td{background:#fcfdff}.sheetTable tbody tr.sheetErrorRow td{background:#fff8f7}
-.sheetRowNumber{position:sticky;left:0;z-index:4;width:40px;min-width:40px;background:#f3f4f6!important;text-align:center;color:#667085;font-size:9px;font-weight:700}.sheetRowNumber i{display:inline-grid;place-items:center;margin-left:3px;width:14px;height:14px;border-radius:50%;background:#d92d20;color:#fff;font-style:normal;font-size:8px}
-.sheetCell input,.sheetCell select{display:block;width:100%;height:30px;border:0;border-radius:0;background:transparent;padding:4px 6px;color:#172033;font-size:10px;outline:none;min-width:100%}
-.sheetCell input:focus,.sheetCell select:focus{position:relative;z-index:3;box-shadow:inset 0 0 0 2px #3155d9;background:#fff}
-.sheetCell input::placeholder{color:#b1b7c3}.sheetCell input[type=number]{text-align:right}.sheetCell input[type=date]{min-width:116px}
-.sheetRemove{width:30px;min-width:30px;text-align:center;background:#fafafa!important}.sheetRemove button{border:0;background:transparent;color:#98a2b3;font-size:14px;padding:4px 8px}.sheetRemove button:hover{color:#b42318}
-.sheetFooter{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;background:#fafbfc}.sheetFooter>div{display:flex;align-items:center;gap:10px;font-size:9px;color:#667085}.sheetMsg{font-size:9px;color:#087a55}.sheetMsg.error{color:#b42318}
+.sheetToolbar>div:first-child{display:flex;flex-direction:column;gap:1px;min-width:0}.sheetToolbar b{font-size:11px}.sheetToolbar span{font-size:8.5px;color:#667085}
+.sheetTools{display:flex;gap:6px;align-items:center;flex-shrink:0}.sheetTools .secondaryBtn,.sheetTools .primaryBtn{min-height:30px;padding:5px 8px;font-size:9px}
+.sheetScroll{position:relative;flex:1;overflow:auto;min-height:0;background:#fff;border-bottom:1px solid var(--line)}
+.sheetTable{border-collapse:separate;border-spacing:0;table-layout:fixed;width:max-content;min-width:100%;font-size:9.5px}
+.sheetTable th{position:sticky;top:0;z-index:12;height:26px;padding:4px 6px;background:#f3f4f6;border-right:1px solid #d7dce3;border-bottom:1px solid #c8ced7;color:#475467;text-transform:none;font-size:8.5px;letter-spacing:0;white-space:nowrap;overflow:visible;user-select:none}
+.sheetTable th>span{display:block;overflow:hidden;text-overflow:ellipsis}
+.columnResizer{position:absolute;right:-3px;top:0;width:6px;height:100%;cursor:col-resize;z-index:15}
+.columnResizer:hover,.columnResizing .columnResizer{background:#3155d9}
+.columnResizing,.columnResizing *{cursor:col-resize!important;user-select:none!important}
+.sheetCorner{left:0!important;z-index:16!important;width:42px;text-align:center;background:#e9edf2!important}
+.sheetActionHead{position:sticky!important;right:0;z-index:16!important;width:54px;background:#e9edf2!important}
+.sheetTable td{height:25px;padding:0;border-right:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;background:#fff;max-width:none;overflow:visible}
+.sheetTable tbody tr:hover td{background:#fbfcfe}.sheetTable tbody tr.sheetDirtyRow td{background:#fcfdff}.sheetTable tbody tr.sheetErrorRow td{background:#fff8f7}
+.sheetRowNumber{position:sticky;left:0;z-index:10;width:42px;background:#f3f4f6!important;text-align:center;color:#667085;font-size:8.5px;font-weight:700}.sheetRowNumber i{display:inline-grid;place-items:center;margin-left:2px;width:12px;height:12px;border-radius:50%;background:#d92d20;color:#fff;font-style:normal;font-size:7px}
+.sheetCell{position:relative}
+.sheetCell:focus-within{z-index:30}
+.sheetCell input{display:block;width:100%;height:24px;border:0;border-radius:0;background:transparent;padding:2px 5px;color:#172033;font-size:9.5px;outline:none;min-width:0}
+.sheetCell input:focus{position:relative;z-index:3;box-shadow:inset 0 0 0 2px #3155d9;background:#fff}
+.sheetCell input::placeholder{color:#b1b7c3}.sheetCell input[type=number]{text-align:right;-moz-appearance:textfield}.sheetCell input[type=number]::-webkit-inner-spin-button,.sheetCell input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.sheetRowActions{position:sticky;right:0;z-index:9;width:54px;background:#f8fafc!important;text-align:center;white-space:nowrap}
+.sheetRowActions button{width:24px;height:24px;border:0;background:transparent;color:#667085;font-size:12px;padding:0}
+.sheetRowActions button:hover{background:#eef2ff;color:#3155d9}.sheetRowActions button:last-child:hover{background:#fef3f2;color:#b42318}
+.sheetFooter{min-height:36px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:5px 10px;background:#fafbfc}.sheetFooter>div{display:flex;align-items:center;gap:8px;font-size:8.5px;color:#667085}.sheetMsg{font-size:8.5px;color:#087a55}.sheetMsg.error{color:#b42318}
 
 /* Orders search + filters */
 .orderToolbar{display:grid;grid-template-columns:minmax(260px,1fr) auto auto;align-items:center}.orderFilters{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.orderFilters select{height:34px;border:1px solid #d0d5dd;border-radius:7px;background:#fff;color:#475467;padding:0 26px 0 8px;font-size:9.5px;outline:none}.orderFilters select:focus{border-color:#91a4ef;box-shadow:0 0 0 2px #f0f3ff}.clearFilters{height:34px;border:0;background:transparent;color:#b42318;font-size:9.5px;font-weight:700;padding:0 6px}
@@ -287,17 +329,27 @@ tbody tr:hover td{background:#fafbff}
 .fieldError{margin-top:1px;color:#b42318;font-size:9px;line-height:1.35}
 .field input.inputError{border-color:#fda29b;background:#fffafa;box-shadow:0 0 0 2px #fef3f2}
 .sheetCell input.sheetInputError{background:#fff1f0;box-shadow:inset 0 0 0 1px #f97066}
-.sheetCell .smartSelect{height:30px}
-.sheetCell .smartSelectTrigger{height:30px;border:0;border-radius:0;padding-left:6px;box-shadow:none}
+.smartSelect.invalid .smartSelectTrigger{border-color:#f04438!important;background:#fff7f6!important;box-shadow:0 0 0 1px #fee4e2}
+.smartSelect.invalid .smartSelectInput{color:#b42318}
+.sheetCell .smartSelect{height:24px}
+.sheetCell .smartSelectTrigger{height:24px;border:0;border-radius:0;padding:0 2px 0 5px;box-shadow:none}
 .sheetCell .smartSelectTrigger.open{box-shadow:inset 0 0 0 2px #3155d9}
-.sheetCell .smartSelectInput{height:29px;font-size:10px}
-.sheetCell .smartSelectMenu{min-width:190px}
+.sheetCell .smartSelectInput{height:23px;font-size:9.5px}
+.sheetCell .smartSelectToggle{width:20px;height:20px;flex-basis:20px;font-size:10px}
+.sheetCell .smartSelectMenu{min-width:190px;z-index:220}
 
 /* Keep spreadsheet selects visually consistent without heavy menus */
 .sheetCell select{appearance:none;-webkit-appearance:none;padding-right:20px;background-image:linear-gradient(45deg,transparent 50%,#7c8799 50%),linear-gradient(135deg,#7c8799 50%,transparent 50%);background-position:calc(100% - 10px) 12px,calc(100% - 6px) 12px;background-size:4px 4px,4px 4px;background-repeat:no-repeat}
 
 /* Contextual import modal */
 .compactModal{width:min(560px,94vw)}
+.fullscreenBackdrop{padding:0}
+.fullscreenModal{width:100vw;height:100vh;max-height:none;border-radius:0}
+.fullscreenModal .modalHeader{height:48px;min-height:48px;padding:0 12px}
+.fullscreenModal .modalHeader h2{font-size:15px}
+.fullscreenModal .modalBody{flex:1;min-height:0;padding:0;overflow:hidden}
+.fullscreenModal .sheetEntry{height:100%;min-height:0;margin:0}
+.fullscreenModal .sheetToolbar{min-height:46px;padding:6px 10px}
 .compactModal .modalBody{padding:16px}.importModalContent{width:100%}
 .importModalContent .importCard{min-height:0;border:0;border-radius:0;padding:0;gap:13px}
 .importModalContent .file{padding:18px 14px;text-align:center;background:#fbfcfe}

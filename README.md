@@ -53,4 +53,4 @@ See docs/logic.md for rules and open questions.
 
 ## UI
 
-The MVP now uses a role-aware dashboard shell with sidebar navigation, separate operational modules, modal data-entry forms, backend search and server-side pagination for large data tables.
+The MVP now uses a role-aware dashboard shell with sidebar navigation, separate operational modules, modal data-entry forms, backend search and server-side pagination for large data tables. Quick Order entry is a full-screen spreadsheet with paste, row cloning and resizable columns. Admin can manage shared master-data enums (Service, Sub-Service, Supplier, Country) through add/edit/activate/deactivate workflows; enum values are never deleted.

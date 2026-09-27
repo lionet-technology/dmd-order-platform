@@ -152,6 +152,21 @@ CREATE TABLE IF NOT EXISTS service_costs (
   batch_id INTEGER REFERENCES import_batches(id),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS enum_values (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  enum_type TEXT NOT NULL,
+  value TEXT NOT NULL COLLATE NOCASE,
+  parent_value TEXT NOT NULL DEFAULT '' COLLATE NOCASE,
+  active INTEGER NOT NULL DEFAULT 1,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_by_user_id INTEGER,
+  updated_by_user_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(enum_type, value, parent_value)
+);
+CREATE INDEX IF NOT EXISTS idx_enum_values_type_active ON enum_values(enum_type, active, sort_order, value);
 `);
 
 
@@ -175,6 +190,90 @@ ensureColumn("orders", "updated_by_user_id", "updated_by_user_id INTEGER");
 ensureColumn("supplier_costs", "created_by_user_id", "created_by_user_id INTEGER");
 ensureColumn("ledger_entries", "created_by_user_id", "created_by_user_id INTEGER");
 ensureColumn("import_batches", "created_by_user_id", "created_by_user_id INTEGER");
+
+const enumSeeds: Array<[string,string,string,number]> = [
+  ["SERVICE","ePacket","",10],
+  ["SERVICE","UPS","",20],
+  ["SERVICE","Yun Express","",30],
+  ["SERVICE","Chuyên tuyến","",40],
+  ["SERVICE","USPS Domestic","",50],
+  ["SERVICE","USPS GDE","",60],
+  ["SERVICE","Royal Mail UK","",70],
+  ["SERVICE","Evri UK","",80],
+  ["SERVICE","Kho US","",90],
+  ["SERVICE","Kho VN","",100],
+  ["SERVICE","Kho TQ","",110],
+
+  ["SUB_SERVICE","T11","ePacket",10],
+  ["SUB_SERVICE","Standard","ePacket",20],
+  ["SUB_SERVICE","Eco","ePacket",30],
+  ["SUB_SERVICE","Saver","UPS",10],
+  ["SUB_SERVICE","Expedited","UPS",20],
+  ["SUB_SERVICE","Express","UPS",30],
+  ["SUB_SERVICE","Fulfill","Kho US",10],
+  ["SUB_SERVICE","Relabel","Kho US",20],
+  ["SUB_SERVICE","Handling","Kho US",30],
+  ["SUB_SERVICE","Forward","Kho US",40],
+  ["SUB_SERVICE","Fulfill","Kho VN",10],
+  ["SUB_SERVICE","Relabel","Kho VN",20],
+  ["SUB_SERVICE","Handling","Kho VN",30],
+  ["SUB_SERVICE","Forward","Kho VN",40],
+  ["SUB_SERVICE","Fulfill","Kho TQ",10],
+  ["SUB_SERVICE","Relabel","Kho TQ",20],
+  ["SUB_SERVICE","Handling","Kho TQ",30],
+  ["SUB_SERVICE","Forward","Kho TQ",40],
+
+  ["SUPPLIER","KILOSHIP","",10],
+  ["SUPPLIER","BELL","",20],
+
+  ["COUNTRY","US","",10],
+  ["COUNTRY","GB","",20],
+  ["COUNTRY","VN","",30],
+  ["COUNTRY","CN","",40],
+  ["COUNTRY","CA","",50],
+  ["COUNTRY","AU","",60],
+  ["COUNTRY","DE","",70],
+  ["COUNTRY","FR","",80],
+  ["COUNTRY","ES","",90],
+  ["COUNTRY","IT","",100],
+  ["COUNTRY","NL","",110],
+  ["COUNTRY","BE","",120],
+  ["COUNTRY","PL","",130],
+  ["COUNTRY","CZ","",140],
+  ["COUNTRY","AT","",150],
+  ["COUNTRY","JP","",160],
+  ["COUNTRY","KR","",170],
+  ["COUNTRY","SG","",180],
+  ["COUNTRY","TH","",190],
+  ["COUNTRY","MY","",200],
+  ["COUNTRY","ID","",210],
+  ["COUNTRY","PH","",220]
+];
+const insertEnumSeed = db.prepare(
+  "INSERT OR IGNORE INTO enum_values(enum_type,value,parent_value,sort_order) VALUES (?,?,?,?)"
+);
+const seedEnumTransaction = db.transaction(() => {
+  for (const [type,value,parent,sortOrder] of enumSeeds) insertEnumSeed.run(type,value,parent,sortOrder);
+
+  const discovered: Array<[string,string,string]> = [];
+  const collect = (type:string, rows:Array<Record<string,unknown>>, valueKey:string, parentKey?:string) => {
+    for (const row of rows) {
+      const value=String(row[valueKey]??"").trim();
+      if(!value)continue;
+      const parent=parentKey?String(row[parentKey]??"").trim():"";
+      discovered.push([type,value,parent]);
+    }
+  };
+  collect("SERVICE", db.prepare("SELECT DISTINCT service FROM orders WHERE service IS NOT NULL AND service<>''").all() as Array<Record<string,unknown>>, "service");
+  collect("SERVICE", db.prepare("SELECT DISTINCT service FROM supplier_costs WHERE service IS NOT NULL AND service<>''").all() as Array<Record<string,unknown>>, "service");
+  collect("SUB_SERVICE", db.prepare("SELECT DISTINCT service,sub_service FROM orders WHERE sub_service IS NOT NULL AND sub_service<>''").all() as Array<Record<string,unknown>>, "sub_service", "service");
+  collect("SUB_SERVICE", db.prepare("SELECT DISTINCT service,sub_service FROM supplier_costs WHERE sub_service IS NOT NULL AND sub_service<>''").all() as Array<Record<string,unknown>>, "sub_service", "service");
+  collect("SUPPLIER", db.prepare("SELECT DISTINCT supplier FROM orders WHERE supplier IS NOT NULL AND supplier<>''").all() as Array<Record<string,unknown>>, "supplier");
+  collect("SUPPLIER", db.prepare("SELECT DISTINCT supplier FROM supplier_costs WHERE supplier IS NOT NULL AND supplier<>''").all() as Array<Record<string,unknown>>, "supplier");
+  collect("COUNTRY", db.prepare("SELECT DISTINCT country FROM orders WHERE country IS NOT NULL AND country<>''").all() as Array<Record<string,unknown>>, "country");
+  for (const [type,value,parent] of discovered) insertEnumSeed.run(type,value,parent,999);
+});
+seedEnumTransaction();
 
 export function queryAll<T = Record<string, unknown>>(sql: string, params: unknown[] = []): T[] {
   return db.prepare(sql).all(...params) as T[];

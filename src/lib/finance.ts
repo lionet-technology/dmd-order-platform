@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { validateOrderEnums, validateSupplierCostEnums } from "./enums";
 
 export type OrderInput = {
   id?: number;
@@ -80,6 +81,10 @@ type OrderRecord = Record<string, unknown> & {
   order_id: string | null;
   customer: string | null;
   created_at: string | null;
+  service: string | null;
+  sub_service: string | null;
+  supplier: string | null;
+  country: string | null;
   est_net_cost: number;
   sales_price: number;
   manual_surcharge: number;
@@ -297,8 +302,14 @@ export function upsertOrder(input: OrderInput) {
   if (!orderId && !tracking) throw new Error("Cần Order ID hoặc Tracking.");
 
   const customer = stringValue(input, "customer", existing);
-  const service = stringValue(input, "service", existing);
-  const subService = stringValue(input, "sub_service", existing);
+  const enumValues = validateOrderEnums({
+    service: input.service,
+    sub_service: input.sub_service,
+    supplier: input.supplier,
+    country: input.country,
+  }, existing);
+  const service = enumValues.service;
+  const subService = enumValues.sub_service;
   const item = stringValue(input, "item", existing);
   const recipient = stringValue(input, "recipient_name", existing);
   const length = numericValue(input, "length", existing);
@@ -310,7 +321,7 @@ export function upsertOrder(input: OrderInput) {
   const weight = numericValue(input, "weight", existing);
   const estNet = numericValue(input, "est_net_cost", existing);
   const discount = numericValue(input, "discount", existing);
-  const supplier = stringValue(input, "supplier", existing);
+  const supplier = enumValues.supplier;
 
   const manualSurcharge = input.surcharge !== undefined && input.surcharge !== null && input.surcharge !== ""
     ? num(input.surcharge)
@@ -377,7 +388,7 @@ export function upsertOrder(input: OrderInput) {
     city: stringValue(input, "city", existing),
     state: stringValue(input, "state", existing),
     zip: stringValue(input, "zip", existing),
-    country: stringValue(input, "country", existing),
+    country: enumValues.country,
     phone: stringValue(input, "phone", existing),
   };
 
@@ -424,6 +435,7 @@ export function upsertOrder(input: OrderInput) {
 export function addSupplierCost(input: SupplierCostInput) {
   const tracking = text(input.tracking);
   if (!tracking) throw new Error("Tracking là bắt buộc để link chi phí.");
+  const enumValues = validateSupplierCostEnums(input);
   const netPrice = num(input.net_price);
   const fee = num(input.fee);
   const exportCustoms = num(input.export_customs);
@@ -437,7 +449,7 @@ export function addSupplierCost(input: SupplierCostInput) {
       export_customs,import_customs,total_net_cost,extra_surcharge,import_tax,note,batch_id
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
-    text(input.supplier), text(input.service), text(input.sub_service), tracking, normalizeDateInput(input.occurred_at, "Ngày chi phí"),
+    enumValues.supplier, enumValues.service, enumValues.sub_service, tracking, normalizeDateInput(input.occurred_at, "Ngày chi phí"),
     text(input.item), text(input.destination), num(input.weight), netPrice, fee, exportCustoms, importCustoms,
     totalNet, money(num(input.extra_surcharge)), money(num(input.import_tax)), text(input.note), input.batch_id || null
   );

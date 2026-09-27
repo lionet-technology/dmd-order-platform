@@ -6,10 +6,34 @@ type Role = "ADMIN" | "SALES";
 type User = { id:number; username:string; display_name:string; role:Role; active?:number };
 type RowData = Record<string, string | number | null>;
 type PagedRows = { items:RowData[]; total:number; page:number; pageSize:number; totalPages:number };
-type AppSection = "dashboard"|"orders"|"costs"|"recon"|"ledger"|"accounts";
+type AppSection = "dashboard"|"orders"|"costs"|"recon"|"ledger"|"accounts"|"masterdata";
 type Summary = { orders:number; review:number; unmatched:number; ledger:number; receivable:number };
 type ManualKind = "order" | "cost" | "balance";
 type ImportKind = "orders"|"sales_orders"|"costs"|"balance";
+type EnumType = "SERVICE"|"SUB_SERVICE"|"SUPPLIER"|"COUNTRY";
+type EnumRow = {
+  id:number; enum_type:EnumType; value:string; parent_value:string; active:number;
+  sort_order:number; created_at?:string; updated_at?:string;
+};
+
+const ENUM_LABELS:Record<EnumType,string>={
+  SERVICE:"Dịch vụ",SUB_SERVICE:"Sub-Service",SUPPLIER:"Supplier",COUNTRY:"Nước",
+};
+
+function enumOptions(rows:EnumRow[],type:EnumType,parent=""){
+  return rows
+    .filter(row=>row.enum_type===type&&row.active!==0&&(type!=="SUB_SERVICE"||!parent||row.parent_value.toLowerCase()===parent.toLowerCase()))
+    .sort((a,b)=>a.sort_order-b.sort_order||a.value.localeCompare(b.value))
+    .map(row=>({value:row.value,label:row.value}));
+}
+
+function enumIsValid(rows:EnumRow[],type:EnumType,value:string,parent=""){
+  if(!value.trim())return true;
+  return rows.some(row=>
+    row.enum_type===type&&row.active!==0&&row.value.toLowerCase()===value.trim().toLowerCase()&&
+    (type!=="SUB_SERVICE"||row.parent_value.toLowerCase()===parent.trim().toLowerCase())
+  );
+}
 
 const money = (v: unknown) => new Intl.NumberFormat("en-US", {
   style:"currency", currency:"USD", maximumFractionDigits:2,
@@ -66,18 +90,19 @@ function Field({
 }
 
 function SmartSelect({
-  value,onChange,options,placeholder="Chọn hoặc nhập",compact=false,allowCustom=true,dataCell,onKeyDown,onPaste,
+  value,onChange,options,placeholder="Chọn hoặc nhập",compact=false,allowCustom=true,dataCell,onKeyDown,onPaste,invalid=false,
 }:{
   value:string;onChange:(value:string)=>void;options:Array<{value:string;label:string}>;
-  placeholder?:string;compact?:boolean;allowCustom?:boolean;dataCell?:string;
+  placeholder?:string;compact?:boolean;allowCustom?:boolean;dataCell?:string;invalid?:boolean;
   onKeyDown?:(e:React.KeyboardEvent<HTMLInputElement>)=>void;
   onPaste?:(e:React.ClipboardEvent<HTMLInputElement>)=>void;
 }) {
   const [open,setOpen]=useState(false);
   const ref=useRef<HTMLDivElement>(null);
   const selected=options.find(o=>o.value===value);
-  const [query,setQuery]=useState(selected?.label??value);
-  useEffect(()=>{setQuery(options.find(o=>o.value===value)?.label??value)},[value,options]);
+  const selectedLabel=selected?.label??value;
+  const [query,setQuery]=useState(selectedLabel);
+  useEffect(()=>{setQuery(selectedLabel)},[value,selectedLabel]);
   useEffect(()=>{
     function close(e:MouseEvent){if(ref.current&&!ref.current.contains(e.target as Node))setOpen(false)}
     document.addEventListener("mousedown",close);
@@ -91,7 +116,7 @@ function SmartSelect({
     if(allowCustom)onChange(query.trim());
     else setQuery(selected?.label??"");
   }
-  return <div className={compact?"smartSelect compact":"smartSelect"} ref={ref}>
+  return <div className={`${compact?"smartSelect compact":"smartSelect"}${invalid?" invalid":""}`} ref={ref}>
     <div className={open?"smartSelectTrigger open":"smartSelectTrigger"}>
       <input
         data-sheet-cell={dataCell}
@@ -104,7 +129,7 @@ function SmartSelect({
         onKeyDown={onKeyDown}
         onPaste={onPaste}
       />
-      <button type="button" className="smartSelectToggle" onMouseDown={e=>e.preventDefault()} onClick={()=>setOpen(x=>!x)}>⌄</button>
+      <button type="button" tabIndex={-1} className="smartSelectToggle" onMouseDown={e=>e.preventDefault()} onClick={()=>setOpen(x=>!x)}>⌄</button>
     </div>
     {open&&<div className="smartSelectMenu">
       {filtered.length?filtered.map(o=><button type="button" key={o.value} className={o.value===value?"selected":""} onMouseDown={e=>e.preventDefault()} onClick={()=>{onChange(o.value);setQuery(o.label);setOpen(false)}}>
@@ -115,14 +140,33 @@ function SmartSelect({
 }
 
 function SelectField({
-  label, name, value, onChange, options, wide=false, allowCustom=true,
+  label, name, value, onChange, options, wide=false, allowCustom=true, requireOption=false,
 }: {
   label:string; name:string; value:string; onChange:(name:string,value:string)=>void;
-  options:Array<{value:string;label:string}>; wide?:boolean; allowCustom?:boolean;
+  options:Array<{value:string;label:string}>; wide?:boolean; allowCustom?:boolean; requireOption?:boolean;
 }) {
+  const valid=!requireOption||!value.trim()||options.some(o=>
+    o.value.toLowerCase()===value.trim().toLowerCase()||o.label.toLowerCase()===value.trim().toLowerCase()
+  );
   return <label className={wide ? "field wide" : "field"}>
     <span>{label}</span>
-    <SmartSelect value={value} onChange={v=>onChange(name,v)} options={options} allowCustom={allowCustom}/>
+    <SmartSelect value={value} onChange={v=>onChange(name,v)} options={options} allowCustom={allowCustom} invalid={!valid}/>
+    {!valid&&<small className="fieldError">Giá trị không nằm trong danh sách hợp lệ.</small>}
+  </label>;
+}
+
+function EnumField({
+  label,name,value,onChange,options,type,parent="",required=false,wide=false,existingValue="",
+}:{
+  label:string;name:string;value:string;onChange:(name:string,value:string)=>void;
+  options:Array<{value:string;label:string}>;type:EnumType;parent?:string;required?:boolean;wide?:boolean;existingValue?:string;
+}) {
+  const exactExisting=existingValue&&value.trim().toLowerCase()===existingValue.trim().toLowerCase();
+  const valid=!value.trim()||options.some(o=>o.value.toLowerCase()===value.trim().toLowerCase())||Boolean(exactExisting);
+  return <label className={wide?"field wide":"field"}>
+    <span>{label}{required&&<b> *</b>}</span>
+    <SmartSelect value={value} onChange={v=>onChange(name,v)} options={options} invalid={!valid} placeholder="Nhập hoặc chọn"/>
+    {!valid&&<small className="fieldError">{ENUM_LABELS[type]} không hợp lệ{parent?` cho ${parent}`:""}.</small>}
   </label>;
 }
 
@@ -158,9 +202,9 @@ function TextAreaField({
 }
 
 function OrderForm({
-  role, currentUser, salesUsers, edit, onDone, onCancelEdit,
+  role, currentUser, salesUsers, enums, edit, onDone, onCancelEdit,
 }: {
-  role:Role; currentUser:User; salesUsers:User[]; edit:RowData|null; onDone:()=>void; onCancelEdit:()=>void;
+  role:Role; currentUser:User; salesUsers:User[]; enums:EnumRow[]; edit:RowData|null; onDone:()=>void; onCancelEdit:()=>void;
 }) {
   const blank = useMemo(()=>({
     id:"", created_at:today(), sales:"", sales_user_id:"", customer:"", order_id:"", service:"ePacket", sub_service:"",
@@ -185,10 +229,22 @@ function OrderForm({
   },[edit,blank]);
 
   const change=(name:string,value:string)=>setForm((x)=>({...x,[name]:value}));
+  const serviceOptions=enumOptions(enums,"SERVICE");
+  const subServiceOptions=enumOptions(enums,"SUB_SERVICE",form.service);
+  const supplierOptions=enumOptions(enums,"SUPPLIER");
+  const countryOptions=enumOptions(enums,"COUNTRY");
+  const existing=(key:string)=>edit?String(edit[key]??""):"";
+  const unchangedParent=!edit||form.service.trim().toLowerCase()===existing("service").trim().toLowerCase();
 
   async function submit(e:FormEvent){
     e.preventDefault();
     if(form.created_at&&!isValidDateText(form.created_at)){setMsg("Lỗi: Ngày tạo phải đúng định dạng dd/mm/yyyy.");return;}
+    const validOrExisting=(type:EnumType,value:string,parent="",oldValue="")=>
+      enumIsValid(enums,type,value,parent)||Boolean(oldValue&&value.trim().toLowerCase()===oldValue.trim().toLowerCase());
+    if(!form.service.trim()||!validOrExisting("SERVICE",form.service,"",existing("service"))){setMsg("Lỗi: Dịch vụ không hợp lệ.");return;}
+    if(form.sub_service&&!validOrExisting("SUB_SERVICE",form.sub_service,form.service,unchangedParent?existing("sub_service"):"")){setMsg("Lỗi: Sub-Service không hợp lệ với Dịch vụ đã chọn.");return;}
+    if(form.country&&!validOrExisting("COUNTRY",form.country,"",existing("country"))){setMsg("Lỗi: Nước không hợp lệ.");return;}
+    if(form.supplier&&!validOrExisting("SUPPLIER",form.supplier,"",existing("supplier"))){setMsg("Lỗi: Supplier không hợp lệ.");return;}
     setBusy(true); setMsg("");
     try {
       const saved=await postJson("/api/orders",form);
@@ -212,11 +268,11 @@ function OrderForm({
         : <label className="field"><span>Sales account</span><input value={currentUser.display_name+" (@"+currentUser.username+")"} disabled/></label>}
       <Field label="Khách" name="customer" value={form.customer} onChange={change} required/>
       <Field label="Order ID" name="order_id" value={form.order_id} onChange={change} required={!form.tracking}/>
-      <Field label="Dịch vụ" name="service" value={form.service} onChange={change} required/>
-      <Field label="Sub-Service" name="sub_service" value={form.sub_service} onChange={change}/>
+      <EnumField label="Dịch vụ" name="service" value={form.service} onChange={change} options={serviceOptions} type="SERVICE" required existingValue={existing("service")}/>
+      <EnumField label="Sub-Service" name="sub_service" value={form.sub_service} onChange={change} options={subServiceOptions} type="SUB_SERVICE" parent={form.service} existingValue={unchangedParent?existing("sub_service"):""}/>
       <Field label="Mặt hàng" name="item" value={form.item} onChange={change}/>
       <Field label="Người nhận" name="recipient_name" value={form.recipient_name} onChange={change}/>
-      <Field label="Nước" name="country" value={form.country} onChange={change}/>
+      <EnumField label="Nước" name="country" value={form.country} onChange={change} options={countryOptions} type="COUNTRY" existingValue={existing("country")}/>
       <Field label="Khối lượng (kg)" name="weight" type="number" value={form.weight} onChange={change}/>
       <Field label="Dài (cm)" name="length" type="number" value={form.length} onChange={change}/>
       <Field label="Rộng (cm)" name="width" type="number" value={form.width} onChange={change}/>
@@ -226,7 +282,7 @@ function OrderForm({
     {role==="ADMIN" && <div className="adminBlock">
       <div className="adminTitle"><span>Admin finance / fulfilment</span><small>Tự động sync sang Sales view</small></div>
       <div className="formGrid">
-        <Field label="Supplier" name="supplier" value={form.supplier} onChange={change}/>
+        <EnumField label="Supplier" name="supplier" value={form.supplier} onChange={change} options={supplierOptions} type="SUPPLIER" existingValue={existing("supplier")}/>
         <Field label="Tracking" name="tracking" value={form.tracking} onChange={change} required={!form.order_id}/>
         <Field label="Label URL" name="label" value={form.label} onChange={change} wide/>
         <Field label="Estimated Net Cost" name="est_net_cost" type="number" value={form.est_net_cost} onChange={change}/>
@@ -251,7 +307,7 @@ function OrderForm({
 type SheetRow = Record<string,string>;
 type SheetColumn = { key:string; label:string; width?:number; type?:"text"|"number"|"dateText"|"combo"; options?:Array<{value:string;label:string}> };
 
-function QuickOrderSheet({role,salesUsers,onDone,onAdvanced}:{role:Role;salesUsers:User[];onDone:()=>void;onAdvanced:()=>void}) {
+function QuickOrderSheet({role,salesUsers,enums,onDone,onAdvanced}:{role:Role;salesUsers:User[];enums:EnumRow[];onDone:()=>void;onAdvanced:()=>void}) {
   const blankRow=():SheetRow=>({
     created_at:"",sales_user_id:"",customer:"",order_id:"",service:"",sub_service:"",item:"",
     carton_count:"",weight:"",length:"",width:"",height:"",recipient_name:"",city:"",state:"",
@@ -261,21 +317,34 @@ function QuickOrderSheet({role,salesUsers,onDone,onAdvanced}:{role:Role;salesUse
   const [busy,setBusy]=useState(false);
   const [msg,setMsg]=useState("");
   const [errors,setErrors]=useState<Record<number,string>>({});
+  const [columnWidths,setColumnWidths]=useState<Record<string,number>>({});
+  useEffect(()=>{
+    try{
+      const saved=window.localStorage.getItem("dmd.orderSheetWidths");
+      if(saved)setColumnWidths(JSON.parse(saved));
+    }catch{}
+  },[]);
+  useEffect(()=>{
+    try{window.localStorage.setItem("dmd.orderSheetWidths",JSON.stringify(columnWidths))}catch{}
+  },[columnWidths]);
+  const serviceOptions=enumOptions(enums,"SERVICE");
+  const countryOptions=enumOptions(enums,"COUNTRY");
+  const supplierOptions=enumOptions(enums,"SUPPLIER");
 
   const common:SheetColumn[]=[
     {key:"created_at",label:"Ngày",width:118,type:"dateText"},{key:"customer",label:"Khách *",width:150},
-    {key:"order_id",label:"Order ID *",width:135},{key:"service",label:"Dịch vụ",width:125},
-    {key:"sub_service",label:"Sub-Service",width:120},{key:"item",label:"Mặt hàng",width:135},
+    {key:"order_id",label:"Order ID *",width:135},{key:"service",label:"Dịch vụ",width:140,type:"combo",options:serviceOptions},
+    {key:"sub_service",label:"Sub-Service",width:140,type:"combo"},{key:"item",label:"Mặt hàng",width:135},
     {key:"carton_count",label:"Carton",width:75,type:"number"},{key:"weight",label:"Kg",width:72,type:"number"},
     {key:"length",label:"Dài",width:72,type:"number"},{key:"width",label:"Rộng",width:72,type:"number"},
     {key:"height",label:"Cao",width:72,type:"number"},{key:"recipient_name",label:"Người nhận",width:145},
     {key:"city",label:"Thành phố",width:115},{key:"state",label:"Bang",width:90},{key:"zip",label:"ZIP",width:90},
-    {key:"country",label:"Nước",width:85},{key:"note",label:"Note",width:180},
+    {key:"country",label:"Nước",width:100,type:"combo",options:countryOptions},{key:"note",label:"Note",width:180},
   ];
   const columns:SheetColumn[]=role==="ADMIN"?[
     {key:"sales_user_id",label:"Sales",width:180,type:"combo",options:[{value:"",label:"— Chọn / nhập Sales —"},...salesUsers.map(u=>({value:String(u.id),label:u.display_name+" (@"+u.username+")"}))]},
     ...common,
-    {key:"supplier",label:"Supplier",width:120},{key:"tracking",label:"Tracking",width:145},
+    {key:"supplier",label:"Supplier",width:130,type:"combo",options:supplierOptions},{key:"tracking",label:"Tracking",width:145},
     {key:"est_net_cost",label:"Est. Net",width:90,type:"number"},{key:"discount",label:"Discount %",width:90,type:"number"},
     {key:"surcharge",label:"Phụ phí",width:90,type:"number"},{key:"import_tax",label:"Thuế NK",width:90,type:"number"},
   ]:common;
@@ -288,10 +357,46 @@ function QuickOrderSheet({role,salesUsers,onDone,onAdvanced}:{role:Role;salesUse
     setErrors(prev=>{const next={...prev};delete next[rowIndex];return next});
   }
   function addRows(count=5){setRows(prev=>[...prev,...Array.from({length:count},blankRow)])}
+  function cloneRow(index:number){
+    setRows(prev=>{
+      const next=[...prev];
+      next.splice(index+1,0,{...prev[index]});
+      return next;
+    });
+    setErrors({});
+  }
   function removeRow(index:number){setRows(prev=>prev.length<=1?[blankRow()]:prev.filter((_,i)=>i!==index));setErrors({})}
   function focusCell(row:number,col:number){requestAnimationFrame(()=>document.querySelector<HTMLElement>(`[data-sheet-cell="${row}-${col}"]`)?.focus())}
   function handleKey(e:React.KeyboardEvent<HTMLInputElement>,row:number,col:number){
-    if(e.key==="Enter"){e.preventDefault();if(row===rows.length-1)addRows(1);focusCell(row+1,col)}
+    if(e.key==="Enter"){
+      e.preventDefault();
+      const nextRow=e.shiftKey?Math.max(0,row-1):row+1;
+      if(!e.shiftKey&&row===rows.length-1)addRows(1);
+      focusCell(nextRow,col);
+    }
+  }
+  function autoFitColumn(key:string,label:string,baseWidth:number){
+    const longest=Math.max(label.length,...rows.map(row=>String(row[key]||"").length));
+    const next=Math.max(58,Math.min(320,Math.max(baseWidth,longest*7+24)));
+    setColumnWidths(prev=>({...prev,[key]:next}));
+  }
+  function startResize(e:React.MouseEvent,key:string,currentWidth:number){
+    e.preventDefault();
+    e.stopPropagation();
+    const startX=e.clientX;
+    const startWidth=columnWidths[key]||currentWidth;
+    function move(ev:MouseEvent){
+      const next=Math.max(58,Math.min(420,startWidth+(ev.clientX-startX)));
+      setColumnWidths(prev=>({...prev,[key]:next}));
+    }
+    function up(){
+      document.removeEventListener("mousemove",move);
+      document.removeEventListener("mouseup",up);
+      document.body.classList.remove("columnResizing");
+    }
+    document.body.classList.add("columnResizing");
+    document.addEventListener("mousemove",move);
+    document.addEventListener("mouseup",up);
   }
   function handlePaste(e:React.ClipboardEvent<HTMLInputElement>,startRow:number,startCol:number){
     const raw=e.clipboardData.getData("text/plain");
@@ -320,6 +425,10 @@ function QuickOrderSheet({role,salesUsers,onDone,onAdvanced}:{role:Role;salesUse
       if(!row.customer.trim())invalid[index]="Thiếu Khách";
       else if(!row.order_id.trim())invalid[index]="Thiếu Order ID";
       else if(row.created_at&&!isValidDateText(row.created_at))invalid[index]="Ngày phải đúng dd/mm/yyyy";
+      else if(row.service&&!enumIsValid(enums,"SERVICE",row.service))invalid[index]="Dịch vụ không hợp lệ";
+      else if(row.sub_service&&!enumIsValid(enums,"SUB_SERVICE",row.sub_service,row.service))invalid[index]="Sub-Service không hợp lệ";
+      else if(row.country&&!enumIsValid(enums,"COUNTRY",row.country))invalid[index]="Nước không hợp lệ";
+      else if(row.supplier&&!enumIsValid(enums,"SUPPLIER",row.supplier))invalid[index]="Supplier không hợp lệ";
     });
     if(Object.keys(invalid).length){setErrors(invalid);setMsg("Có dòng thiếu dữ liệu bắt buộc.");return;}
     setBusy(true);setMsg("");setErrors({});
@@ -351,16 +460,32 @@ function QuickOrderSheet({role,salesUsers,onDone,onAdvanced}:{role:Role;salesUse
     </div>
     <div className="sheetScroll">
       <table className="sheetTable">
-        <thead><tr><th className="sheetCorner">#</th>{columns.map(col=><th key={col.key} style={{minWidth:col.width||110}}>{col.label}</th>)}<th></th></tr></thead>
+        <colgroup>
+          <col style={{width:42}}/>
+          {columns.map(col=><col key={col.key} style={{width:columnWidths[col.key]||col.width||110}}/>)}
+          <col style={{width:54}}/>
+        </colgroup>
+        <thead><tr><th className="sheetCorner">#</th>{columns.map(col=>{
+          const width=columnWidths[col.key]||col.width||110;
+          return <th key={col.key} style={{width,minWidth:width,maxWidth:width}}>
+            <span>{col.label}</span>
+            <i className="columnResizer" title="Kéo để đổi độ rộng · double click để auto-fit" onDoubleClick={()=>autoFitColumn(col.key,col.label,col.width||110)} onMouseDown={e=>startResize(e,col.key,width)} />
+          </th>;
+        })}<th className="sheetActionHead"></th></tr></thead>
         <tbody>{rows.map((row,r)=><tr key={r} className={errors[r]?"sheetErrorRow":dirty(row)?"sheetDirtyRow":""}>
           <td className="sheetRowNumber"><span>{r+1}</span>{errors[r]&&<i title={errors[r]}>!</i>}</td>
-          {columns.map((col,c)=><td key={col.key} className="sheetCell">
+          {columns.map((col,c)=>{
+            const options=col.key==="sub_service"?enumOptions(enums,"SUB_SERVICE",row.service):(col.options||[]);
+            const enumType:EnumType|undefined=col.key==="service"?"SERVICE":col.key==="sub_service"?"SUB_SERVICE":col.key==="supplier"?"SUPPLIER":col.key==="country"?"COUNTRY":undefined;
+            const invalidEnum=Boolean(enumType&&row[col.key]&&!enumIsValid(enums,enumType,row[col.key],enumType==="SUB_SERVICE"?row.service:""));
+            return <td key={col.key} className="sheetCell">
             {col.type==="combo"
               ? <SmartSelect
                   value={row[col.key]||""}
                   onChange={v=>updateCell(r,col.key,v)}
-                  options={col.options||[]}
+                  options={options}
                   placeholder="Nhập hoặc chọn"
+                  invalid={invalidEnum}
                   dataCell={`${r}-${c}`}
                   onKeyDown={e=>handleKey(e,r,c)}
                   onPaste={e=>handlePaste(e,r,c)}
@@ -377,8 +502,11 @@ function QuickOrderSheet({role,salesUsers,onDone,onAdvanced}:{role:Role;salesUse
                   onKeyDown={e=>handleKey(e,r,c)}
                   onPaste={e=>handlePaste(e,r,c)}
                 />}
-          </td>)}
-          <td className="sheetRemove"><button title="Xóa dòng" onClick={()=>removeRow(r)}>×</button></td>
+          </td>})}
+          <td className="sheetRowActions">
+            <button tabIndex={-1} title="Clone dòng" onClick={()=>cloneRow(r)}>⧉</button>
+            <button tabIndex={-1} title="Xóa dòng" onClick={()=>removeRow(r)}>×</button>
+          </td>
         </tr>)}</tbody>
       </table>
     </div>
@@ -389,13 +517,19 @@ function QuickOrderSheet({role,salesUsers,onDone,onAdvanced}:{role:Role;salesUse
   </div>;
 }
 
-function CostForm({onDone}:{onDone:()=>void}) {
+function CostForm({enums,onDone}:{enums:EnumRow[];onDone:()=>void}) {
   const blank={occurred_at:today(),supplier:"",service:"",sub_service:"",tracking:"",net_price:"",fee:"",export_customs:"",import_customs:"",total_net_cost:"",extra_surcharge:"",import_tax:"",note:""};
   const [form,setForm]=useState(blank); const [busy,setBusy]=useState(false); const [msg,setMsg]=useState("");
   const change=(name:string,value:string)=>setForm((x)=>({...x,[name]:value}));
+  const serviceOptions=enumOptions(enums,"SERVICE");
+  const subServiceOptions=enumOptions(enums,"SUB_SERVICE",form.service);
+  const supplierOptions=enumOptions(enums,"SUPPLIER");
   async function submit(e:FormEvent){
     e.preventDefault();
     if(form.occurred_at&&!isValidDateText(form.occurred_at)){setMsg("Lỗi: Ngày phải đúng định dạng dd/mm/yyyy.");return;}
+    if(form.service&&!enumIsValid(enums,"SERVICE",form.service)){setMsg("Lỗi: Dịch vụ không hợp lệ.");return;}
+    if(form.sub_service&&!enumIsValid(enums,"SUB_SERVICE",form.sub_service,form.service)){setMsg("Lỗi: Sub-Service không hợp lệ.");return;}
+    if(form.supplier&&!enumIsValid(enums,"SUPPLIER",form.supplier)){setMsg("Lỗi: Supplier không hợp lệ.");return;}
     setBusy(true);setMsg("");
     try{
       const r=await postJson("/api/costs",form);
@@ -410,9 +544,9 @@ function CostForm({onDone}:{onDone:()=>void}) {
     <div className="formGrid">
       <DateField label="Ngày" name="occurred_at" value={form.occurred_at} onChange={change}/>
       <Field label="Tracking" name="tracking" value={form.tracking} onChange={change} required/>
-      <Field label="Supplier" name="supplier" value={form.supplier} onChange={change}/>
-      <Field label="Dịch vụ" name="service" value={form.service} onChange={change}/>
-      <Field label="Sub-Service" name="sub_service" value={form.sub_service} onChange={change}/>
+      <EnumField label="Supplier" name="supplier" value={form.supplier} onChange={change} options={supplierOptions} type="SUPPLIER"/>
+      <EnumField label="Dịch vụ" name="service" value={form.service} onChange={change} options={serviceOptions} type="SERVICE"/>
+      <EnumField label="Sub-Service" name="sub_service" value={form.sub_service} onChange={change} options={subServiceOptions} type="SUB_SERVICE" parent={form.service}/>
       <Field label="Net Price" name="net_price" type="number" value={form.net_price} onChange={change}/>
       <Field label="Phụ phí supplier" name="fee" type="number" value={form.fee} onChange={change}/>
       <Field label="HQ Xuất khẩu" name="export_customs" type="number" value={form.export_customs} onChange={change}/>
@@ -447,7 +581,7 @@ function BalanceForm({onDone}:{onDone:()=>void}) {
     <p className="formHint">Ledger append-only. Order Charge được tạo tự động; form này dùng cho payment/refund/service/error/adjustment.</p>
     <div className="formGrid">
       <DateField label="Ngày" name="occurred_at" value={form.occurred_at} onChange={change}/>
-      <SelectField label="Hạng mục" name="entry_type" value={form.entry_type} onChange={change} options={[
+      <SelectField label="Hạng mục" name="entry_type" value={form.entry_type} onChange={change} allowCustom={false} requireOption options={[
         {value:"PAYMENT",label:"Payment (+)"},
         {value:"REFUND",label:"Refund (+)"},
         {value:"SERVICE_COST",label:"Service Cost (-)"},
@@ -469,9 +603,9 @@ function BalanceForm({onDone}:{onDone:()=>void}) {
 }
 
 function ManualEntry({
-  role, currentUser, salesUsers, kind, setKind, onDone, editOrder, onCancelEdit,
+  role, currentUser, salesUsers, enums, kind, setKind, onDone, editOrder, onCancelEdit,
 }: {
-  role:Role;currentUser:User;salesUsers:User[];kind:ManualKind;setKind:(k:ManualKind)=>void;onDone:()=>void;
+  role:Role;currentUser:User;salesUsers:User[];enums:EnumRow[];kind:ManualKind;setKind:(k:ManualKind)=>void;onDone:()=>void;
   editOrder:RowData|null;onCancelEdit:()=>void;
 }) {
   useEffect(()=>{ if(editOrder) setKind("order") },[editOrder,setKind]);
@@ -481,8 +615,8 @@ function ManualEntry({
       {role==="ADMIN"&&<button className={kind==="cost"?"active":""} onClick={()=>setKind("cost")}>+ Chi phí</button>}
       {role==="ADMIN"&&<button className={kind==="balance"?"active":""} onClick={()=>setKind("balance")}>+ Balance</button>}
     </div>
-    {kind==="order"&&<OrderForm role={role} currentUser={currentUser} salesUsers={salesUsers} edit={editOrder} onDone={onDone} onCancelEdit={onCancelEdit}/>}
-    {kind==="cost"&&<CostForm onDone={onDone}/>}
+    {kind==="order"&&<OrderForm role={role} currentUser={currentUser} salesUsers={salesUsers} enums={enums} edit={editOrder} onDone={onDone} onCancelEdit={onCancelEdit}/>}
+    {kind==="cost"&&<CostForm enums={enums} onDone={onDone}/>}
     {kind==="balance"&&<BalanceForm onDone={onDone}/>}
   </div>;
 }
@@ -550,7 +684,7 @@ function UserManager({users,onDone,currentUser}:{users:User[];onDone:()=>void;cu
         <Field label="Tên hiển thị" name="display_name" value={form.display_name} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} required/>
         <Field label="Username" name="username" value={form.username} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} required/>
         <Field label="Mật khẩu ban đầu" name="password" type="password" value={form.password} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} required/>
-        <SelectField label="Role" name="role" value={form.role} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} allowCustom={false} options={[{value:"SALES",label:"Sales"},{value:"ADMIN",label:"Admin"}]}/>
+        <SelectField label="Role" name="role" value={form.role} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} allowCustom={false} requireOption options={[{value:"SALES",label:"Sales"},{value:"ADMIN",label:"Admin"}]}/>
       </div>
       <div className="formFooter"><span className={msg.startsWith("Lỗi")?"inlineMsg error":"inlineMsg"}>{msg}</span><button className="primaryBtn" disabled={busy}>{busy?"Đang tạo…":"Tạo tài khoản"}</button></div>
     </form>
@@ -562,6 +696,136 @@ function UserManager({users,onDone,currentUser}:{users:User[];onDone:()=>void;cu
       </td></tr>)}
     </tbody></table></div>
     <Pager data={{items:[],total:filteredUsers.length,page:accountPage,pageSize:accountPageSize,totalPages:accountTotalPages}} onPage={setAccountPage}/>
+  </div>;
+}
+
+function EnumManager({rows,onDone}:{rows:EnumRow[];onDone:()=>void|Promise<void>}) {
+  const [type,setType]=useState<EnumType>("SERVICE");
+  const [search,setSearch]=useState("");
+  const [form,setForm]=useState({value:"",parent_value:"",sort_order:"0"});
+  const [editing,setEditing]=useState<number|null>(null);
+  const [draft,setDraft]=useState({value:"",parent_value:"",sort_order:"0"});
+  const [busy,setBusy]=useState(false);
+  const [msg,setMsg]=useState("");
+  const serviceOptions=enumOptions(rows,"SERVICE");
+
+  const typeRows=rows
+    .filter(row=>row.enum_type===type)
+    .filter(row=>{
+      const q=search.trim().toLowerCase();
+      return !q||row.value.toLowerCase().includes(q)||row.parent_value.toLowerCase().includes(q);
+    })
+    .sort((a,b)=>a.parent_value.localeCompare(b.parent_value)||a.sort_order-b.sort_order||a.value.localeCompare(b.value));
+
+  function switchType(next:EnumType){
+    setType(next);setSearch("");setEditing(null);setMsg("");
+    setForm({value:"",parent_value:"",sort_order:"0"});
+  }
+
+  async function create(e:FormEvent){
+    e.preventDefault();
+    if(!form.value.trim()){setMsg("Lỗi: Tên danh mục là bắt buộc.");return;}
+    if(type==="SUB_SERVICE"&&!form.parent_value){setMsg("Lỗi: Sub-Service cần Dịch vụ cha.");return;}
+    setBusy(true);setMsg("");
+    try{
+      await postJson("/api/enums",{enum_type:type,value:form.value,parent_value:form.parent_value,sort_order:Number(form.sort_order||0)});
+      setForm({value:"",parent_value:"",sort_order:"0"});
+      setMsg("Đã thêm "+ENUM_LABELS[type]+".");
+      await onDone();
+    }catch(error){setMsg("Lỗi: "+(error instanceof Error?error.message:"Không thể thêm danh mục"))}
+    finally{setBusy(false)}
+  }
+
+  function startEdit(row:EnumRow){
+    setEditing(row.id);
+    setDraft({value:row.value,parent_value:row.parent_value,sort_order:String(row.sort_order||0)});
+    setMsg("");
+  }
+
+  async function patch(id:number,body:Record<string,unknown>){
+    const res=await fetch("/api/enums/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const data=await res.json();
+    if(!res.ok)throw new Error(data.error||"Không thể cập nhật danh mục");
+    await onDone();
+    return data;
+  }
+
+  async function save(row:EnumRow){
+    if(!draft.value.trim()){setMsg("Lỗi: Tên danh mục là bắt buộc.");return;}
+    setBusy(true);setMsg("");
+    try{
+      const body:Record<string,unknown>={value:draft.value,sort_order:Number(draft.sort_order||0)};
+      await patch(row.id,body);
+      setEditing(null);
+      setMsg("Đã cập nhật "+ENUM_LABELS[type]+".");
+    }catch(error){setMsg("Lỗi: "+(error instanceof Error?error.message:"Không thể cập nhật"))}
+    finally{setBusy(false)}
+  }
+
+  async function toggle(row:EnumRow){
+    setBusy(true);setMsg("");
+    try{
+      await patch(row.id,{active:!row.active});
+      setMsg(row.active?"Đã deactivate. Dữ liệu cũ vẫn được giữ.":"Đã kích hoạt lại.");
+    }catch(error){setMsg("Lỗi: "+(error instanceof Error?error.message:"Không thể cập nhật"))}
+    finally{setBusy(false)}
+  }
+
+  return <div className="enumManager">
+    <div className="enumTabs">
+      {(["SERVICE","SUB_SERVICE","SUPPLIER","COUNTRY"] as EnumType[]).map(key=>{
+        const total=rows.filter(row=>row.enum_type===key).length;
+        const active=rows.filter(row=>row.enum_type===key&&row.active!==0).length;
+        return <button key={key} className={type===key?"active":""} onClick={()=>switchType(key)}>
+          <span>{ENUM_LABELS[key]}</span><small>{active}/{total}</small>
+        </button>;
+      })}
+    </div>
+
+    <form className="enumCreate" onSubmit={create}>
+      <div className="enumCreateTitle">
+        <b>Thêm {ENUM_LABELS[type]}</b>
+        <span>Giá trị mới sẽ dùng ngay ở form nhập liệu.</span>
+      </div>
+      <input value={form.value} onChange={e=>setForm(x=>({...x,value:e.target.value}))} placeholder={"Tên "+ENUM_LABELS[type]}/>
+      {type==="SUB_SERVICE"&&<SmartSelect
+        value={form.parent_value}
+        onChange={value=>setForm(x=>({...x,parent_value:value}))}
+        options={serviceOptions}
+        allowCustom={false}
+        invalid={Boolean(form.parent_value)&&!enumIsValid(rows,"SERVICE",form.parent_value)}
+        placeholder="Dịch vụ cha"
+      />}
+      <input className="enumSortInput" type="number" value={form.sort_order} onChange={e=>setForm(x=>({...x,sort_order:e.target.value}))} placeholder="Thứ tự"/>
+      <button className="primaryBtn" disabled={busy}>＋ Thêm</button>
+    </form>
+
+    <div className="enumListHead">
+      <SearchBar value={search} onChange={setSearch} placeholder={"Tìm "+ENUM_LABELS[type]+"..."}/>
+      <span>{typeRows.length} giá trị · không hỗ trợ xóa</span>
+    </div>
+
+    <div className="tableWrap enumTable"><table>
+      <thead><tr><th>Tên</th>{type==="SUB_SERVICE"&&<th>Dịch vụ cha</th>}<th>Thứ tự</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+      <tbody>
+        {typeRows.length===0?<tr><td className="empty" colSpan={type==="SUB_SERVICE"?5:4}>Chưa có dữ liệu.</td></tr>:typeRows.map(row=><tr key={row.id} className={!row.active?"inactiveEnumRow":""}>
+          <td>{editing===row.id?<input className="enumInlineInput" value={draft.value} onChange={e=>setDraft(x=>({...x,value:e.target.value}))}/>:<b>{row.value}</b>}</td>
+          {type==="SUB_SERVICE"&&<td>{row.parent_value||"—"}</td>}
+          <td>{editing===row.id?<input className="enumInlineInput sort" type="number" value={draft.sort_order} onChange={e=>setDraft(x=>({...x,sort_order:e.target.value}))}/>:row.sort_order}</td>
+          <td><span className={row.active?"status goodStatus":"status neutralStatus"}>{row.active?"Active":"Inactive"}</span></td>
+          <td className="enumActions">
+            {editing===row.id?<>
+              <button className="editBtn" disabled={busy} onClick={()=>void save(row)}>Lưu</button>
+              <button className="editBtn" onClick={()=>setEditing(null)}>Hủy</button>
+            </>:<>
+              <button className="editBtn" onClick={()=>startEdit(row)}>Sửa</button>
+              <button className={row.active?"deactivateBtn":"activateBtn"} disabled={busy} onClick={()=>void toggle(row)}>{row.active?"Deactivate":"Activate"}</button>
+            </>}
+          </td>
+        </tr>)}
+      </tbody>
+    </table></div>
+    {msg&&<div className={msg.startsWith("Lỗi")?"enumMessage error":"enumMessage"}>{msg}</div>}
   </div>;
 }
 
@@ -582,9 +846,10 @@ function SearchBar({value,onChange,placeholder}:{value:string;onChange:(v:string
   return <div className="searchBox"><span>⌕</span><input value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}/>{value&&<button onClick={()=>onChange("")}>×</button>}</div>;
 }
 
-function Modal({title,onClose,children,size="wide"}:{title:string;onClose:()=>void;children:React.ReactNode;size?:"wide"|"compact"}) {
-  return <div className="modalBackdrop" onMouseDown={e=>{if(e.currentTarget===e.target)onClose()}}>
-    <div className={size==="compact"?"modalPanel compactModal":"modalPanel"}>
+function Modal({title,onClose,children,size="wide"}:{title:string;onClose:()=>void;children:React.ReactNode;size?:"wide"|"compact"|"fullscreen"}) {
+  const panelClass=size==="compact"?"modalPanel compactModal":size==="fullscreen"?"modalPanel fullscreenModal":"modalPanel";
+  return <div className={size==="fullscreen"?"modalBackdrop fullscreenBackdrop":"modalBackdrop"} onMouseDown={e=>{if(e.currentTarget===e.target)onClose()}}>
+    <div className={panelClass}>
       <div className="modalHeader"><div><span className="eyebrow">DATA ENTRY</span><h2>{title}</h2></div><button className="iconBtn" onClick={onClose}>×</button></div>
       <div className="modalBody">{children}</div>
     </div>
@@ -602,6 +867,8 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   const role=user.role;
   const [summary,setSummary]=useState<Summary|null>(null);
   const [users,setUsers]=useState<User[]>([]);
+  const [enums,setEnums]=useState<EnumRow[]>([]);
+  const [allEnums,setAllEnums]=useState<EnumRow[]>([]);
   const [section,setSection]=useState<AppSection>("dashboard");
   const [data,setData]=useState<PagedRows>({items:[],total:0,page:1,pageSize:20,totalPages:1});
   const [recent,setRecent]=useState<RowData[]>([]);
@@ -638,6 +905,17 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
     setUsers(await res.json());
   },[role,onLogout]);
 
+  const loadEnums=useCallback(async()=>{
+    const activeRes=await fetch("/api/enums");
+    if(activeRes.status===401){onLogout();return;}
+    if(activeRes.ok)setEnums(await activeRes.json());
+    if(role==="ADMIN"){
+      const allRes=await fetch("/api/enums?all=1");
+      if(allRes.status===401){onLogout();return;}
+      if(allRes.ok)setAllEnums(await allRes.json());
+    }else setAllEnums([]);
+  },[role,onLogout]);
+
   const endpointFor=(target:AppSection)=>{
     if(target==="orders")return "/api/orders";
     if(target==="costs")return "/api/costs";
@@ -670,13 +948,13 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
     if(res.ok){const body=await res.json();setRecent(body.items||[])}
   },[]);
 
-  useEffect(()=>{void loadSummary();void loadUsers();void loadRecent()},[loadSummary,loadUsers,loadRecent]);
+  useEffect(()=>{void loadSummary();void loadUsers();void loadEnums();void loadRecent()},[loadSummary,loadUsers,loadEnums,loadRecent]);
   useEffect(()=>{if(["orders","costs","recon","ledger"].includes(section))void loadSection(section,page,debouncedSearch)},[section,page,debouncedSearch,loadSection]);
 
   const refresh=useCallback(async()=>{
-    await Promise.all([loadSummary(),loadUsers(),loadRecent()]);
+    await Promise.all([loadSummary(),loadUsers(),loadEnums(),loadRecent()]);
     if(["orders","costs","recon","ledger"].includes(section))await loadSection(section,page,debouncedSearch);
-  },[loadSummary,loadUsers,loadRecent,loadSection,section,page,debouncedSearch]);
+  },[loadSummary,loadUsers,loadEnums,loadRecent,loadSection,section,page,debouncedSearch]);
 
   function navigate(next:AppSection){
     setSection(next);setSearch("");setPage(1);
@@ -700,12 +978,13 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
     {key:"costs",label:"Supplier Costs",icon:"$ ",admin:true},
     {key:"recon",label:"Reconciliation",icon:"✓",admin:true},
     {key:"ledger",label:"Balance Ledger",icon:"≋",admin:true},
+    {key:"masterdata",label:"Danh mục",icon:"☷",admin:true},
     {key:"accounts",label:"Tài khoản",icon:"♙",admin:true},
   ];
 
   const titleMap:Record<AppSection,string>={
     dashboard:"Tổng quan",orders:"Orders",costs:"Supplier Costs",
-    recon:"Reconciliation",ledger:"Balance Ledger",accounts:"Tài khoản",
+    recon:"Reconciliation",ledger:"Balance Ledger",masterdata:"Danh mục",accounts:"Tài khoản",
   };
 
   return <div className="appShell">
@@ -769,7 +1048,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
               <SearchBar value={search} onChange={setSearch} placeholder="Tìm Order ID, Tracking, khách hàng, dịch vụ..."/>
               <div className="orderFilters">
                 <SmartSelect compact value={orderFilters.status} onChange={v=>setOrderFilters(x=>({...x,status:v}))} options={[{value:"",label:"Mọi trạng thái"},{value:"SALES_DRAFT",label:"Sales draft"},{value:"TRACKING_ASSIGNED",label:"Tracking assigned"},{value:"ADMIN_READY",label:"Admin ready"},{value:"RECONCILED",label:"Reconciled"}]}/>
-                <SmartSelect compact value={orderFilters.service} onChange={v=>setOrderFilters(x=>({...x,service:v}))} options={[{value:"",label:"Mọi dịch vụ"},{value:"ePacket",label:"ePacket"},{value:"UPS",label:"UPS"},{value:"Yun Express",label:"Yun Express"},{value:"Chuyên tuyến",label:"Chuyên tuyến"}]}/>
+                <SmartSelect compact value={orderFilters.service} onChange={v=>setOrderFilters(x=>({...x,service:v}))} allowCustom={false} options={[{value:"",label:"Mọi dịch vụ"},...enumOptions(enums,"SERVICE")]}/>
                 {role==="ADMIN"&&<SmartSelect compact value={orderFilters.salesUserId} onChange={v=>setOrderFilters(x=>({...x,salesUserId:v}))} options={[{value:"",label:"Mọi Sales"},...salesUsers.map(u=>({value:String(u.id),label:u.display_name}))]}/>}
                 {role==="ADMIN"&&<SmartSelect compact value={orderFilters.reconcile} onChange={v=>setOrderFilters(x=>({...x,reconcile:v}))} options={[{value:"",label:"Mọi reconcile"},{value:"PASS",label:"PASS"},{value:"REVIEW",label:"REVIEW"}]}/>}
                 {(orderFilters.status||orderFilters.service||orderFilters.salesUserId||orderFilters.reconcile)&&<button className="clearFilters" onClick={()=>setOrderFilters({status:"",service:"",salesUserId:"",reconcile:""})}>Xóa lọc</button>}
@@ -810,6 +1089,11 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
           </div>
         </>}
 
+        {role==="ADMIN"&&section==="masterdata"&&<>
+          <PageHeader eyebrow="MASTER DATA" title="Danh mục nhập liệu" description="Quản lý Dịch vụ, Sub-Service, Supplier và Nước. Có thể thêm, sửa, deactivate/activate; không xóa dữ liệu lịch sử."/>
+          <div className="panel"><EnumManager rows={allEnums} onDone={refresh}/></div>
+        </>}
+
         {role==="ADMIN"&&section==="accounts"&&<>
           <PageHeader eyebrow="ACCESS CONTROL" title="Tài khoản" description="Tạo và quản lý quyền truy cập cho Admin / Sales."/>
           <div className="panel"><UserManager users={users} onDone={refresh} currentUser={user}/></div>
@@ -826,10 +1110,10 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
       </div>
     </Modal>}
 
-    {entry&&<Modal title={editOrder?"Chỉnh sửa Order":entry==="order"?(orderEntryMode==="sheet"?"Tạo Orders nhanh":"Tạo Order chi tiết"):entry==="cost"?"Nhập Supplier Cost":"Ghi Balance"} onClose={closeEntry}>
-      {entry==="order"&&!editOrder&&orderEntryMode==="sheet"&&<QuickOrderSheet role={role} salesUsers={salesUsers} onDone={entryDone} onAdvanced={()=>setOrderEntryMode("form")}/>}
-      {entry==="order"&&(editOrder||orderEntryMode==="form")&&<OrderForm role={role} currentUser={user} salesUsers={salesUsers} edit={editOrder} onDone={entryDone} onCancelEdit={closeEntry}/>}
-      {entry==="cost"&&role==="ADMIN"&&<CostForm onDone={entryDone}/>}
+    {entry&&<Modal size={entry==="order"?"fullscreen":"wide"} title={editOrder?"Chỉnh sửa Order":entry==="order"?(orderEntryMode==="sheet"?"Tạo Orders nhanh":"Tạo Order chi tiết"):entry==="cost"?"Nhập Supplier Cost":"Ghi Balance"} onClose={closeEntry}>
+      {entry==="order"&&!editOrder&&orderEntryMode==="sheet"&&<QuickOrderSheet role={role} salesUsers={salesUsers} enums={enums} onDone={entryDone} onAdvanced={()=>setOrderEntryMode("form")}/>}
+      {entry==="order"&&(editOrder||orderEntryMode==="form")&&<OrderForm role={role} currentUser={user} salesUsers={salesUsers} enums={enums} edit={editOrder} onDone={entryDone} onCancelEdit={closeEntry}/>}
+      {entry==="cost"&&role==="ADMIN"&&<CostForm enums={enums} onDone={entryDone}/>}
       {entry==="balance"&&role==="ADMIN"&&<BalanceForm onDone={entryDone}/>}
     </Modal>}
   </div>;

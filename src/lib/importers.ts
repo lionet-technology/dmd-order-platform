@@ -1,6 +1,7 @@
 import { readSheet, SheetNotFoundError } from "read-excel-file/node";
 import { db } from "./db";
 import { addLedgerEntry, addSupplierCost, norm, normalizeDateInput, num, text, upsertOrder } from "./finance";
+import { canonicalEnumValue } from "./enums";
 
 type Row = unknown[];
 type ImportKind = "orders" | "sales_orders" | "costs" | "balance";
@@ -257,7 +258,12 @@ function importBalance(rows: Row[][], batchId: number) {
       imported++;
     }
 
-    const service = text(row[6]);
+    const serviceRaw = text(row[6]);
+    let service = "";
+    if (serviceRaw) {
+      try { service = canonicalEnumValue("SERVICE", serviceRaw); }
+      catch (error) { warnings.push(`Service "${serviceRaw}": ${error instanceof Error ? error.message : "không hợp lệ"}`); }
+    }
     const total = num(row[10]);
     if (service && total) {
       db.prepare(`

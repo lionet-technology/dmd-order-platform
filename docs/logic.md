@@ -179,10 +179,25 @@ The web app now uses an operations-dashboard shell instead of one long page:
 - Strict enums such as Account Role remain searchable/pasteable but reject custom values.
 - Quick Order Sales cells use the same editable combobox behavior, including pasted Sales names/usernames.
 
+## Enum master data
+
+- Dịch vụ, Sub-Service, Supplier và Nước use shared master-data enums.
+- Input remains fast: users can type or paste text, or choose a suggestion from the combobox.
+- New/manual/imported values must match an active enum; invalid values are highlighted red in UI and rejected again by the backend.
+- Sub-Service is scoped by its parent Dịch vụ.
+- Initial enums are seeded for current DMD service families, common suppliers and common destination countries; existing values already present in Orders / Supplier Costs are also discovered and preserved.
+- Admin has a dedicated Danh mục screen with add, inline edit, sort order, activate and deactivate.
+- There is intentionally no delete API/action. Deactivation preserves historical data.
+- Renaming an enum cascades to linked stored values so records do not become orphaned.
+- Deactivating a Dịch vụ also deactivates its child Sub-Service values.
+
 ## Quick Order spreadsheet entry
 
-- Create Order now opens a spreadsheet-style multi-row editor by default.
-- Supports Enter to move down, Tab to move across, adding/removing rows and rectangular paste from Google Sheets / Excel.
+- Create Order now opens a full-screen spreadsheet-style multi-row editor by default.
+- Cells use compact spreadsheet density with sticky header, row numbers and row actions.
+- Supports Enter / Shift+Enter vertical navigation, Tab across cells, adding/removing rows and rectangular paste from Google Sheets / Excel.
+- Each row can be cloned in one click.
+- Column widths can be resized by dragging the header edge; double-click auto-fits the column.
 - Sales rows are automatically scoped by the authenticated Sales account; Admin can choose Sales per row and use finance columns.
 - Required fields are validated per row and failed rows remain visible with inline row errors; successful rows can be saved in the same batch.
 - Detailed single-order form remains available through `Form chi tiết` and is still used for editing existing orders.
