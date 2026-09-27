@@ -1,0 +1,10 @@
+node_modules/
+.next/
+data/*.db
+data/*.db-*
+.smoke/
+.env
+.env.*
+!.env.example
+.DS_Store
+npm-debug.log*
