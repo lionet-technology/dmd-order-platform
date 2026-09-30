@@ -15,7 +15,7 @@ The `data/` directory is intentionally ignored by Git. `git reset`, Jenkins sync
 The repository follows the same fixed-directory pattern used by the other Lionet projects:
 
 1. Jenkins receives a GitHub push.
-2. Sync `main` to `/home/lionet/workspace/thuantv/dmd-finance-platform`.
+2. Sync `main` to the legacy runtime directory `/home/lionet/workspace/thuantv/dmd-finance-platform`.
 3. Preserve/create `.env` and `data/`.
 4. Run `docker compose up -d --build --remove-orphans`.
 5. Poll `/api/health`.
@@ -23,7 +23,7 @@ The repository follows the same fixed-directory pattern used by the other Lionet
 The Jenkins agent needs:
 
 - permission to `sudo -u lionet`;
-- GitHub SSH access for `git@github.com:thuan2172001/dmd-finance-platform.git`;
+- GitHub SSH access for `git@github.com:lionet-technology/dmd-order-platform.git`;
 - Docker access for user `lionet`.
 
 ## SQLite backup
@@ -48,10 +48,10 @@ GitHub webhook is configured to:
 
 `https://deployment.lionet.vn/github-webhook/`
 
-The Jenkins job should be named `dmd-finance-platform` and use the same SCM credential as the existing `blog` job:
+The Jenkins job should be named `dmd-order-platform`. The runtime directory and Docker project intentionally keep the legacy `dmd-finance-platform` name for now so the existing `.env` and SQLite `data/` stay in place during the repository migration.
 
-- Repository: `https://github.com/thuan2172001/dmd-finance-platform`
-- Credential: `github-thuan2172001`
+- Repository: `https://github.com/lionet-technology/dmd-order-platform.git`
+- Credential: `github-jenkins`
 - Branch: `*/main`
 - Script path: `Jenkinsfile`
 - Lightweight checkout: enabled

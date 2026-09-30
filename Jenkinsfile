@@ -15,7 +15,7 @@ pipeline {
     DEPLOY_DIR = '/home/lionet/workspace/thuantv/dmd-finance-platform'
     APP_DIR = '/home/lionet/workspace/thuantv/dmd-finance-platform'
     PROJECT_NAME = 'dmd-finance-platform'
-    GIT_URL = 'git@github.com:thuan2172001/dmd-finance-platform.git'
+    GIT_URL = 'git@github.com:lionet-technology/dmd-order-platform.git'
     DEPLOY_USER = 'lionet'
   }
 
@@ -104,7 +104,7 @@ pipeline {
 
   post {
     success {
-      echo 'Deploy dmd-finance-platform success'
+      echo 'Deploy dmd-order-platform success'
     }
     failure {
       echo 'Deploy failed — check Git SSH access, Docker permissions, .env, port conflicts, or app logs.'

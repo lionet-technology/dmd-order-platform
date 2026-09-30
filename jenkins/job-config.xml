@@ -1,7 +1,7 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <flow-definition plugin="workflow-job@1571.1580.v18e46842c125">
   <actions/>
-  <description>DMD Finance Platform — main branch auto deploy via Docker Compose.</description>
+  <description>DMD Order Platform — main branch auto deploy via Docker Compose.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <org.jenkinsci.plugins.workflow.job.properties.DisableConcurrentBuildsJobProperty>
@@ -20,8 +20,8 @@
       <configVersion>2</configVersion>
       <userRemoteConfigs>
         <hudson.plugins.git.UserRemoteConfig>
-          <url>https://github.com/thuan2172001/dmd-finance-platform</url>
-          <credentialsId>github-thuan2172001</credentialsId>
+          <url>https://github.com/lionet-technology/dmd-order-platform.git</url>
+          <credentialsId>github-jenkins</credentialsId>
         </hudson.plugins.git.UserRemoteConfig>
       </userRemoteConfigs>
       <branches>
