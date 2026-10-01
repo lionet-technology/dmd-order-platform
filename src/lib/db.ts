@@ -277,6 +277,13 @@ ensureColumn("orders", "gross_margin_pct", "gross_margin_pct REAL NOT NULL DEFAU
 ensureColumn("orders", "margin_status", "margin_status TEXT NOT NULL DEFAULT 'PENDING'");
 ensureColumn("orders", "sales_user_id", "sales_user_id INTEGER");
 ensureColumn("orders", "client_user_id", "client_user_id INTEGER");
+ensureColumn("orders","fulfillment_started_at","fulfillment_started_at TEXT");
+ensureColumn("orders","cancelled_at","cancelled_at TEXT");
+ensureColumn("orders","cancelled_by_user_id","cancelled_by_user_id INTEGER");
+ensureColumn("orders","cancellation_reason","cancellation_reason TEXT");
+ensureColumn("orders","cancellation_refund_percent","cancellation_refund_percent REAL");
+ensureColumn("orders","cancellation_refund_amount","cancellation_refund_amount REAL");
+ensureColumn("orders","cancelled_original_due","cancelled_original_due REAL");
 ensureColumn("orders", "created_by_user_id", "created_by_user_id INTEGER");
 ensureColumn("orders", "updated_by_user_id", "updated_by_user_id INTEGER");
 ensureColumn("orders", "manual_volume", "manual_volume REAL");
@@ -314,6 +321,7 @@ db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_system_code ON orders(syst
 db.exec("CREATE INDEX IF NOT EXISTS idx_orders_client_order_id ON orders(client_user_id,order_id)");
 db.exec("CREATE INDEX IF NOT EXISTS idx_order_trackings_shipping ON order_trackings(shipment_status,etd_at)");
 db.exec("CREATE INDEX IF NOT EXISTS idx_ledger_client_user ON ledger_entries(client_user_id)");
+db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_ledger_cancellation_refund ON ledger_entries(reference_id) WHERE entry_type='REFUND' AND reference_type='ORDER_CANCELLATION'");
 db.exec("CREATE INDEX IF NOT EXISTS idx_supplier_costs_normalized_tracking ON supplier_costs(normalized_tracking)");
 db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_supplier_costs_source_key ON supplier_costs(source_key) WHERE source_key IS NOT NULL");
 db.prepare("UPDATE supplier_costs SET normalized_tracking=UPPER(REPLACE(REPLACE(TRIM(tracking),' ',''),'-','')) WHERE normalized_tracking IS NULL OR normalized_tracking=''").run();
@@ -323,7 +331,7 @@ db.prepare("UPDATE supplier_costs SET normalized_tracking=UPPER(REPLACE(REPLACE(
 db.exec(`
   INSERT OR IGNORE INTO order_trackings(order_id,lot_number,tracking,normalized_tracking,label_url,status,is_primary)
   SELECT id,1,tracking,UPPER(REPLACE(REPLACE(TRIM(tracking),' ',''),'-','')),NULLIF(label,''),'ACTIVE',1
-  FROM orders WHERE tracking IS NOT NULL AND TRIM(tracking)<>'';
+  FROM orders WHERE workflow_status<>'CANCELLED' AND tracking IS NOT NULL AND TRIM(tracking)<>'';
 `);
 const ordersMissingCode=db.prepare("SELECT id,created_at FROM orders WHERE system_order_code IS NULL OR system_order_code='' ORDER BY id").all() as Array<{id:number;created_at:string|null}>;
 const setSystemCode=db.prepare("UPDATE orders SET system_order_code=? WHERE id=?");

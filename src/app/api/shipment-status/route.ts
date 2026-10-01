@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { normalizeDateInput } from "@/lib/finance";
 import { logOrderEvent } from "@/lib/order-audit";
+import { assertOrderOpen } from "@/lib/order-operations";
 
 export const runtime="nodejs";
 const STATUSES=new Set(["WAITING_HANDOVER","RECEIVED","IN_TRANSIT","DELIVERED","ALERT","EXCEPTION"]);
@@ -42,6 +43,7 @@ export async function POST(req:NextRequest){
           ? db.prepare("SELECT * FROM order_trackings WHERE id=? AND status='ACTIVE'").get(id)
           : db.prepare("SELECT * FROM order_trackings WHERE normalized_tracking=UPPER(REPLACE(REPLACE(?,' ',''),'-','')) AND status='ACTIVE'").get(tracking)) as Record<string,unknown>|undefined;
         if(!current)throw new Error("Tracking không tồn tại hoặc không còn active.");
+        assertOrderOpen(Number(current.order_id));
         const status=String(raw.shipment_status||current.shipment_status||"WAITING_HANDOVER").toUpperCase();
         if(!STATUSES.has(status))throw new Error("Shipment status không hợp lệ.");
         const etd=raw.etd_at===undefined?current.etd_at:normalizeDateInput(raw.etd_at,"ETD");
@@ -52,6 +54,7 @@ export async function POST(req:NextRequest){
         if(delivered&&String(delivered)<String(etd))throw new Error("Ngày Delivered không được trước ETD.");
         db.prepare("UPDATE order_trackings SET shipment_status=?,etd_at=?,delivered_at=?,status_updated_at=CURRENT_TIMESTAMP,status_updated_by_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
           .run(status,etd,delivered,auth.user.id,Number(current.id));
+        if(status!=="WAITING_HANDOVER")db.prepare("UPDATE orders SET fulfillment_started_at=COALESCE(fulfillment_started_at,CURRENT_TIMESTAMP) WHERE id=?").run(Number(current.order_id));
         logOrderEvent({orderId:Number(current.order_id),eventType:"SHIPMENT_STATUS_UPDATED",summary:"Cập nhật Tracking "+String(current.tracking)+": "+String(current.shipment_status||"WAITING_HANDOVER")+" → "+status+", ETD "+etd+".",actorId:auth.user.id,before:current,after:{shipment_status:status,etd_at:etd,delivered_at:delivered}});
         updated++;
       }

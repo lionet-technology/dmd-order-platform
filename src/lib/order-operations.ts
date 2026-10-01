@@ -15,6 +15,12 @@ export type OrderTracking = {
   created_at:string; updated_at:string;
 };
 
+export function assertOrderOpen(orderId:number){
+  const order=db.prepare("SELECT workflow_status FROM orders WHERE id=?").get(orderId) as {workflow_status:string}|undefined;
+  if(!order)throw new Error("Order không tồn tại.");
+  if(order.workflow_status==="CANCELLED")throw new Error("Đơn đã huỷ; không thể sửa hoặc trả Tracking/Label.");
+}
+
 export function normalizeTracking(value:unknown){
   return text(value).toUpperCase().replace(/[\s-]+/g,"");
 }
@@ -43,6 +49,7 @@ function syncLegacyPrimary(orderId:number){
 }
 
 export function addOrderTracking(input:{orderId:number;tracking:unknown;labelUrl?:unknown;lotNumber?:unknown;actorId?:number|null;isPrimary?:boolean;costMatchType?:CostMatchType;costParentTrackingId?:number|null}){
+  assertOrderOpen(input.orderId);
   const tracking=text(input.tracking); const normalized=normalizeTracking(tracking);
   if(!normalized)throw new Error("Tracking là bắt buộc.");
   const duplicate=db.prepare("SELECT order_id FROM order_trackings WHERE normalized_tracking=?").get(normalized) as {order_id:number}|undefined;
@@ -57,6 +64,7 @@ export function addOrderTracking(input:{orderId:number;tracking:unknown;labelUrl
 }
 
 export function updateOrderTracking(input:{orderId:number;id:number;labelUrl?:unknown;lotNumber?:unknown;costMatchType?:CostMatchType;costParentTrackingId?:number|null;isPrimary?:boolean}){
+  assertOrderOpen(input.orderId);
   const row=db.prepare("SELECT * FROM order_trackings WHERE id=? AND order_id=?").get(input.id,input.orderId) as OrderTracking|undefined;
   if(!row)throw new Error("Tracking không thuộc Order này.");
   const lot=input.lotNumber===undefined?row.lot_number:Math.max(1,Math.trunc(Number(input.lotNumber)||1));
@@ -74,6 +82,7 @@ export function updateOrderTracking(input:{orderId:number;id:number;labelUrl?:un
 }
 
 export function replaceOrderTracking(input:{orderId:number;oldTrackingId:number;newTracking:unknown;newLabelUrl?:unknown;reason:unknown;actorId?:number|null}){
+  assertOrderOpen(input.orderId);
   const old=db.prepare("SELECT * FROM order_trackings WHERE id=? AND order_id=? AND status='ACTIVE'").get(input.oldTrackingId,input.orderId) as OrderTracking|undefined;
   if(!old)throw new Error("Tracking cũ không hợp lệ hoặc đã được thay thế.");
   const reason=text(input.reason); if(!reason)throw new Error("Lý do đổi Tracking/Label là bắt buộc.");
@@ -104,13 +113,15 @@ export function recomputeOrderFinancials(orderId:number){
   const totals=db.prepare(`SELECT COUNT(*) rows_count,COALESCE(SUM(total_net_cost),0) true_net_cost,COALESCE(SUM(extra_surcharge),0) extra_surcharge,COALESCE(SUM(import_tax),0) import_tax
     FROM supplier_costs WHERE matched_order_id=?`).get(orderId) as {rows_count:number;true_net_cost:number;extra_surcharge:number;import_tax:number};
   const salesPrice=Number(order.sales_price||0); const baseSurcharge=Number(order.surcharge||0); const baseTax=Number(order.import_tax||0);
-  const totalDue=money(salesPrice+baseSurcharge+totals.extra_surcharge+baseTax+totals.import_tax);
+  const cancelled=order.workflow_status==="CANCELLED";
+  const totalDue=cancelled?Number(order.total_due||0):money(salesPrice+baseSurcharge+totals.extra_surcharge+baseTax+totals.import_tax);
   const est=Number(order.est_net_cost||0); const trueNet=money(totals.true_net_cost); const delta=money(trueNet-est);
-  const gross=money(salesPrice-trueNet); const margin=salesPrice>0?money((gross/salesPrice)*100):0;
+  const revenue=cancelled?totalDue:salesPrice;
+  const gross=money(revenue-trueNet); const margin=revenue>0?money((gross/revenue)*100):0;
   db.prepare(`UPDATE orders SET true_net_cost=?,extra_surcharge=?,extra_import_tax=?,total_due=?,gross_profit_net=?,gross_margin_pct=?,margin_status=?,reconciliation_delta=?,reconciliation_status=?,charge_status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`)
     .run(totals.rows_count?trueNet:null,money(totals.extra_surcharge),money(totals.import_tax),totalDue,gross,margin,salesPrice>0&&margin<15?"LOW_MARGIN":"OK",totals.rows_count?delta:null,totals.rows_count?(trueNet<=est?"PASS":"REVIEW"):"PENDING",totals.rows_count?"IMPORTED":"PENDING",orderId);
   const ref=String(orderId);
-  if(totalDue>0)db.prepare(`INSERT INTO ledger_entries(occurred_at,entry_type,direction,amount,customer,client_user_id,reference_type,reference_id,note)
+  if(!cancelled&&totalDue>0)db.prepare(`INSERT INTO ledger_entries(occurred_at,entry_type,direction,amount,customer,client_user_id,reference_type,reference_id,note)
     VALUES (?,'ORDER_CHARGE','DEBIT',?,?,?,'ORDER',?,'Auto from Order total')
     ON CONFLICT(entry_type,reference_type,reference_id) WHERE reference_id IS NOT NULL AND entry_type='ORDER_CHARGE'
     DO UPDATE SET occurred_at=excluded.occurred_at,amount=excluded.amount,customer=excluded.customer,client_user_id=excluded.client_user_id`).run(order.created_at||null,totalDue,order.customer||null,order.client_user_id||null,ref);

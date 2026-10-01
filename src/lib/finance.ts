@@ -188,7 +188,7 @@ export function getOrderByTracking(tracking: string) {
 }
 
 export function upsertAutoOrderCharge(order: OrderRecord) {
-  if (!order.tracking || !order.total_due) return;
+  if (order.workflow_status==="CANCELLED" || !order.tracking || !order.total_due) return;
   db.prepare(`
     INSERT INTO ledger_entries(occurred_at, entry_type, direction, amount, customer, client_user_id, reference_type, reference_id, note)
     VALUES (?, 'ORDER_CHARGE', 'DEBIT', ?, ?, ?, 'TRACKING', ?, 'Auto from order total due')
@@ -253,6 +253,7 @@ export function upsertOrder(input: OrderInput) {
     input.recipient_name,
   ]);
   const existing = findOrder(input, initialTracking, initialOrderId, preliminaryKey);
+  if(existing?.workflow_status==="CANCELLED")throw new Error("Đơn đã huỷ; không thể sửa hoặc tạo lại trên cùng record.");
   const clientUserId = input.client_user_id !== undefined && input.client_user_id !== null && input.client_user_id !== ""
     ? Number(input.client_user_id)
     : Number(existing?.client_user_id || 0) || null;
@@ -469,6 +470,7 @@ export function addSupplierCost(input: SupplierCostInput) {
 }
 
 export function addLedgerEntry(input: LedgerInput) {
+  if(text(input.reference_type).toUpperCase()==="ORDER_CANCELLATION")throw new Error("Khoản hoàn huỷ đơn chỉ được tạo qua chức năng Huỷ đơn.");
   const amount = money(num(input.amount));
   if (amount<=0) throw new Error("Số tiền phải lớn hơn 0.");
   const type = text(input.entry_type).toUpperCase();

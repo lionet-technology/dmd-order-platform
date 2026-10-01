@@ -1056,7 +1056,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
             <div className="dataToolbar orderToolbar">
               <SearchBar value={search} onChange={setSearch} placeholder="Tìm Order ID, Tracking, khách hàng, dịch vụ..."/>
               <div className="orderFilters">
-                <SmartSelect compact value={orderFilters.status} onChange={v=>setOrderFilters(x=>({...x,status:v}))} options={[{value:"",label:"Mọi trạng thái"},{value:"PENDING_PURCHASE",label:"Chờ mua đơn"},{value:"PURCHASING",label:"Đang mua đơn"},{value:"PURCHASED",label:"Đã mua đơn"},{value:"RECONCILED",label:"Đã đối soát"}]}/>
+                <SmartSelect compact value={orderFilters.status} onChange={v=>setOrderFilters(x=>({...x,status:v}))} options={[{value:"",label:"Mọi trạng thái"},{value:"PENDING_PURCHASE",label:"Chờ mua đơn"},{value:"PURCHASING",label:"Đang mua đơn"},{value:"PURCHASED",label:"Đã mua đơn"},{value:"RECONCILED",label:"Đã đối soát"},{value:"CANCELLED",label:"Đã huỷ"}]}/>
                 <SmartSelect compact value={orderFilters.service} onChange={v=>setOrderFilters(x=>({...x,service:v}))} allowCustom={false} options={[{value:"",label:"Mọi dịch vụ"},...enumOptions(enums,"SERVICE")]}/>
                 {role==="ADMIN"&&<SmartSelect compact value={orderFilters.salesUserId} onChange={v=>setOrderFilters(x=>({...x,salesUserId:v}))} options={[{value:"",label:"Mọi Sales"},...salesUsers.map(u=>({value:String(u.id),label:u.display_name}))]}/>}
                 {role==="ADMIN"&&<SmartSelect compact value={orderFilters.reconcile} onChange={v=>setOrderFilters(x=>({...x,reconcile:v}))} options={[{value:"",label:"Mọi reconcile"},{value:"PASS",label:"PASS"},{value:"REVIEW",label:"REVIEW"}]}/>}
@@ -1115,7 +1115,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
       </div>
     </div>
 
-    {viewOrder&&<Modal size="wide" title="Chi tiết Order" onClose={()=>setViewOrder(null)}><OrderDetailPanel orderId={Number(viewOrder.id)} role={role} onEdit={row=>{setViewOrder(null);openEntry("order",row as RowData)}} onPurchase={role==="ADMIN"?row=>{setViewOrder(null);setPurchaseOrder(row as RowData)}:undefined}/></Modal>}
+    {viewOrder&&<Modal size="wide" title="Chi tiết Order" onClose={()=>setViewOrder(null)}><OrderDetailPanel orderId={Number(viewOrder.id)} role={role} onDone={refresh} onEdit={row=>{setViewOrder(null);openEntry("order",row as RowData)}} onPurchase={role==="ADMIN"?row=>{setViewOrder(null);setPurchaseOrder(row as RowData)}:undefined}/></Modal>}
 
     {role==="ADMIN"&&bulkTracking&&<Modal size="fullscreen" title="Nhập Tracking & Label hàng loạt" onClose={()=>setBulkTracking(false)}><BulkTrackingSheet enums={enums} onDone={refresh}/></Modal>}
 
@@ -1193,7 +1193,7 @@ function Table({rows,cols,onView,onEdit,onPurchase,compact=false}:{rows:RowData[
   return <div className={compact?"tableWrap compactTable":"tableWrap"}><table><thead><tr>{hasActions&&<th>Thao tác</th>}{cols.map(c=><th key={c}>{label(c)}</th>)}</tr></thead><tbody>
     {rows.length===0?<tr><td colSpan={cols.length+(hasActions?1:0)} className="empty">Chưa có dữ liệu.</td></tr>
     :rows.map((r,i)=><tr key={String(r.id||r.tracking||r.order_id||i)}>
-      {hasActions&&<td className="actionCell"><div className="rowActions">{onView&&<button className="rowAction" onClick={()=>onView(r)}>View</button>}{onEdit&&<button className="rowAction" onClick={()=>onEdit(r)}>Sửa</button>}{onPurchase&&<button className="rowAction primaryRowAction" onClick={()=>onPurchase(r)}>{Number(r.tracking_count||0)>0?"Tracking":"Mua đơn"}</button>}</div></td>}
+      {hasActions&&<td className="actionCell"><div className="rowActions">{onView&&<button className="rowAction" onClick={()=>onView(r)}>View</button>}{onEdit&&r.workflow_status!=="CANCELLED"&&<button className="rowAction" onClick={()=>onEdit(r)}>Sửa</button>}{onPurchase&&r.workflow_status!=="CANCELLED"&&<button className="rowAction primaryRowAction" onClick={()=>onPurchase(r)}>{Number(r.tracking_count||0)>0?"Tracking":"Mua đơn"}</button>}</div></td>}
       {cols.map(c=>{
         const v=r[c];
         const isMoney=["amount","est_net_cost","true_net_cost","base_cost","retail","sales_price","surcharge","import_tax","extra_surcharge","extra_import_tax","total_due","reconciliation_delta","total_net_cost"].includes(c);

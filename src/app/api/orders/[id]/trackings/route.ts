@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { canAccessClient, getClientAccount, requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { addOrderTracking, listOrderTrackings, replaceOrderTracking, updateOrderTracking } from "@/lib/order-operations";
+import { addOrderTracking, assertOrderOpen, listOrderTrackings, replaceOrderTracking, updateOrderTracking } from "@/lib/order-operations";
 import { canonicalEnumValue } from "@/lib/enums";
 import { logOrderEvent } from "@/lib/order-audit";
 
@@ -31,6 +31,7 @@ export async function POST(req:NextRequest,{params}:{params:Promise<{id:string}>
   try{
     const body=await req.json();const action=String(body.action||"save");
     const apply=db.transaction(()=>{
+    assertOrderOpen(id);
     if(action==="replace"){
       const old=db.prepare("SELECT tracking,label_url FROM order_trackings WHERE id=? AND order_id=?").get(Number(body.old_tracking_id),id) as {tracking:string;label_url:string|null}|undefined;
       const replacement=replaceOrderTracking({orderId:id,oldTrackingId:Number(body.old_tracking_id),newTracking:body.new_tracking,newLabelUrl:body.new_label_url,reason:body.reason,actorId:auth.user.id});

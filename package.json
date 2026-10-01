@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "verify:rbac": "node scripts/verify-rbac.cjs",
-    "verify:orders": "node scripts/verify-order-flow.cjs"
+    "verify:orders": "node scripts/verify-order-flow.cjs",
+    "verify:cancellation": "node scripts/verify-order-cancellation.cjs"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",

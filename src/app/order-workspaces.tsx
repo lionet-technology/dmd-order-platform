@@ -18,14 +18,25 @@ async function json(url:string,options?:RequestInit){const response=await fetch(
 async function post(url:string,body:unknown){return json(url,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)})}
 function activeTrackings(data:GenericRow){return (Array.isArray(data.trackings)?data.trackings:[]).filter((row:GenericRow)=>row.status==="ACTIVE")}
 
-export function OrderDetailPanel({orderId,role,onEdit,onPurchase}:{orderId:number;role:Role;onEdit:(row:GenericRow)=>void;onPurchase?:(row:GenericRow)=>void}){
+export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderId:number;role:Role;onEdit:(row:GenericRow)=>void;onPurchase?:(row:GenericRow)=>void;onDone?:()=>void|Promise<void>}){
   const [data,setData]=useState<GenericRow|null>(null);
   const [tab,setTab]=useState("overview");
+  const [cancelOpen,setCancelOpen]=useState(false),[cancelReason,setCancelReason]=useState(""),[cancelError,setCancelError]=useState(""),[cancelBusy,setCancelBusy]=useState(false);
   const [error,setError]=useState("");
   useEffect(()=>{void json("/api/orders/"+orderId).then(setData).catch(error=>setError(error.message))},[orderId]);
   if(error)return <div className="loadingState">Lỗi: {error}</div>;
   if(!data)return <div className="loadingState">Đang tải chi tiết Order…</div>;
   const trackings=Array.isArray(data.trackings)?data.trackings as GenericRow[]:[];
+  const cancelled=data.workflow_status==="CANCELLED";
+  const policy=(data.cancellation||{}) as {allowed?:boolean;reason?:string;refund_percent?:number;refund_amount?:number};
+  async function submitCancellation(){
+    setCancelBusy(true);setCancelError("");
+    try{
+      await post("/api/orders/"+orderId+"/cancel",{reason:cancelReason});
+      setData(await json("/api/orders/"+orderId));setCancelOpen(false);setTab("history");await onDone?.();
+    }catch(error){setCancelError(error instanceof Error?error.message:"Không thể huỷ đơn.")}
+    finally{setCancelBusy(false)}
+  }
   const active=trackings.filter(row=>row.status==="ACTIVE");
   const events=Array.isArray(data.events)?data.events as GenericRow[]:[];
   async function copyAll(){await navigator.clipboard.writeText(active.map(row=>String(row.tracking||"")).filter(Boolean).join("\n"))}
@@ -36,9 +47,12 @@ export function OrderDetailPanel({orderId,role,onEdit,onPurchase}:{orderId:numbe
     </div>
     <div className="detailActions">
       <button className="secondaryBtn" disabled={!active.length} onClick={()=>void copyAll()}>Copy tất cả Tracking</button>
-      {role==="ADMIN"&&onPurchase&&<button className="secondaryBtn" onClick={()=>onPurchase(data)}>Tracking & Label</button>}
-      {role!=="CLIENT"&&<button className="primaryBtn" onClick={()=>onEdit(data)}>Sửa Order</button>}
+      {!cancelled&&role==="ADMIN"&&onPurchase&&<button className="secondaryBtn" onClick={()=>onPurchase(data)}>Tracking & Label</button>}
+      {!cancelled&&role!=="CLIENT"&&<button className="primaryBtn" onClick={()=>onEdit(data)}>Sửa Order</button>}
+      {!cancelled&&<button className="secondaryBtn" disabled={!policy.allowed||cancelBusy} title={policy.reason} onClick={()=>{setCancelOpen(true);setCancelError("")}}>Huỷ đơn</button>}
     </div>
+    {cancelled?<div className="detailBody"><b>Đã huỷ · Hoàn {String(data.cancellation_refund_percent||0)}%: {money(data.cancellation_refund_amount)}</b><p>Phí giữ lại: {money(data.total_due)}. {data.cancellation_reason?String(data.cancellation_reason):""}</p></div>:!policy.allowed&&<p className="detailBody">{policy.reason}</p>}
+    {cancelOpen&&<section className="detailBody"><h3>Xác nhận huỷ đơn</h3><p>Hoàn {policy.refund_percent}% vào Balance: <b>{money(policy.refund_amount)}</b>. Đơn sẽ ngừng xử lý trên hệ thống.</p><p>Tracking/label đã cấp vẫn được lưu trong lịch sử; nhà cung cấp cần xử lý huỷ label riêng.</p><label>Lý do huỷ (không bắt buộc)<textarea maxLength={2000} value={cancelReason} disabled={cancelBusy} onChange={event=>setCancelReason(event.target.value)}/></label>{cancelError&&<p role="alert">{cancelError}</p>}<div className="detailActions"><button className="secondaryBtn" disabled={cancelBusy} onClick={()=>setCancelOpen(false)}>Đóng</button><button className="primaryBtn" disabled={cancelBusy} onClick={()=>void submitCancellation()}>{cancelBusy?"Đang huỷ…":"Xác nhận huỷ đơn"}</button></div></section>}
     <div className="detailTabs">
       {[["overview","Tổng quan"],["tracking","Tracking & Label"],["finance","Giá & Đối soát"],["history","Lịch sử"]].filter(item=>role==="ADMIN"||item[0]!=="finance").map(item=><button key={item[0]} className={tab===item[0]?"active":""} onClick={()=>setTab(item[0])}>{item[1]}</button>)}
     </div>
@@ -56,14 +70,14 @@ export function OrderDetailPanel({orderId,role,onEdit,onPurchase}:{orderId:numbe
         <div><span>{String(row.status||"")}</span><b>{String(row.tracking||"—")}</b></div>
         <div><span>Shipment status</span><b>{statusLabels[String(row.shipment_status||"WAITING_HANDOVER")]||String(row.shipment_status||"—")}</b></div>
         <div><span>ETD</span><b>{displayDate(row.etd_at)}</b></div>
-        {row.label_url?<a href={String(row.label_url)} target="_blank" rel="noreferrer">Xem/Tải Label ↗</a>:<em>Thiếu Label</em>}
+        {row.label_url?<a href={String(row.label_url)} target="_blank" rel="noreferrer">{cancelled?"Label lưu trữ · không sử dụng ↗":"Xem/Tải Label ↗"}</a>:<em>Thiếu Label</em>}
       </article>)}</div>
     </div>}
     {tab==="finance"&&role==="ADMIN"&&<div className="detailBody"><section className="financeCards">
       {[["Net Cost Est",data.est_net_cost],["Net Cost True",data.true_net_cost],["Base Cost",data.base_cost],["Retail Price",data.retail],["Discount",String(data.discount||0)+"%"],["Giá bán",data.sales_price],["Phụ phí PS",data.extra_surcharge],["Thuế NK PS",data.extra_import_tax],["Giá tổng",data.total_due]].map(([label,value])=><article key={String(label)}><span>{String(label)}</span><b>{String(label)==="Discount"?String(value):money(value)}</b></article>)}
     </section><div className="reconcileStrip"><span>Đối soát</span><b>{String(data.reconciliation_status||"PENDING")}</b><span>Chi phí có thể về sau và không chặn hoàn tất Order.</span></div></div>}
     {tab==="history"&&<div className="detailBody"><div className="historyTimeline">{events.length?events.map(event=><article key={String(event.id)}>
-      <i></i><div><time>{displayDate(event.created_at)} · {String(event.actor_display_name||event.actor_username||"Hệ thống")}</time><b>{String(event.summary||event.event_type)}</b><span>{String(event.source||"UI")}</span></div>
+      <i></i><div><time>{displayDate(event.created_at)} · {String(event.actor_display_name||event.actor_username||"Hệ thống")}{event.actor_username?" · @"+String(event.actor_username):""}{event.actor_role?" · "+String(event.actor_role):""}</time><b>{String(event.summary||event.event_type)}</b><span>{String(event.source||"UI")}</span></div>
     </article>):<p>Order chưa có History log.</p>}</div></div>}
   </div>;
 }
