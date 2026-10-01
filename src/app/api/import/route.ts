@@ -9,10 +9,10 @@ export async function POST(req: NextRequest) {
   const auth=requireUser(req); if(auth.error)return auth.error;
   try {
     const form = await req.formData();
-    const kind = String(form.get("kind") || "") as "orders" | "sales_orders" | "costs" | "balance";
+    const kind = String(form.get("kind") || "") as "orders" | "sales_orders" | "costs" | "tracking_updates" | "balance";
     const file = form.get("file");
-    const adminKinds = ["orders","costs","balance"];
-    const allowed = auth.user.role==="ADMIN" ? adminKinds.includes(kind) : kind==="sales_orders";
+    const adminKinds = ["orders","costs","tracking_updates","balance"];
+    const allowed = auth.user.role==="ADMIN" ? adminKinds.includes(kind) : auth.user.role==="SALES" && kind==="sales_orders";
     if (!allowed) return NextResponse.json({ error: "Bạn không có quyền import loại dữ liệu này." }, { status: 403 });
     if (!(file instanceof File)) return NextResponse.json({ error: "File is required" }, { status: 400 });
 
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
       kind,
       Buffer.from(await file.arrayBuffer()),
       file.name,
-      auth.user.role==="SALES" ? { salesActor:{ userId:auth.user.id, displayName:auth.user.display_name } } : undefined,
+      auth.user.role==="SALES" ? { salesActor:{ userId:auth.user.id, displayName:auth.user.display_name },actorId:auth.user.id } : {actorId:auth.user.id},
     );
     db.prepare("UPDATE import_batches SET created_by_user_id=? WHERE id=?").run(auth.user.id,result.batchId);
     return NextResponse.json(result);

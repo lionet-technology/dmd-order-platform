@@ -1,15 +1,16 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BulkTrackingSheet,OrderDetailPanel,ShipmentStatusPanel,TrackingReplacementSheet } from "./order-workspaces";
 
-type Role = "ADMIN" | "SALES";
-type User = { id:number; username:string; display_name:string; role:Role; active?:number; is_root_admin?:number };
+type Role = "ADMIN" | "SALES" | "CLIENT";
+type User = { id:number; username:string; display_name:string; role:Role; sales_user_id?:number|null; sales_display_name?:string|null; active?:number; is_root_admin?:number };
 type RowData = Record<string, string | number | null>;
 type PagedRows = { items:RowData[]; total:number; page:number; pageSize:number; totalPages:number };
-type AppSection = "dashboard"|"orders"|"costs"|"recon"|"ledger"|"accounts"|"masterdata";
+type AppSection = "dashboard"|"orders"|"shipping"|"costs"|"recon"|"ledger"|"accounts"|"masterdata";
 type Summary = { orders:number; review:number; unmatched:number; ledger:number; receivable:number };
 type ManualKind = "order" | "cost" | "balance";
-type ImportKind = "orders"|"sales_orders"|"costs"|"balance";
+type ImportKind = "orders"|"sales_orders"|"costs"|"tracking_updates"|"balance";
 type EnumType = "SERVICE"|"SUB_SERVICE"|"SUPPLIER"|"COUNTRY";
 type EnumRow = {
   id:number; enum_type:EnumType; value:string; parent_value:string; active:number;
@@ -109,7 +110,11 @@ function SmartSelect({
     return()=>document.removeEventListener("mousedown",close);
   },[]);
   const normalized=query.trim().toLowerCase();
-  const filtered=options.filter(o=>!normalized||o.label.toLowerCase().includes(normalized)||o.value.toLowerCase().includes(normalized));
+  const selectedNormalized=selectedLabel.trim().toLowerCase();
+  // Fixed-choice selects should show the full option list when first opened.
+  // Only filter after the user changes the visible query from the selected label.
+  const filterQuery=!allowCustom&&normalized===selectedNormalized?"":normalized;
+  const filtered=options.filter(o=>!filterQuery||o.label.toLowerCase().includes(filterQuery)||o.value.toLowerCase().includes(filterQuery));
   function commitTyped(){
     const exact=options.find(o=>o.label.toLowerCase()===normalized||o.value.toLowerCase()===normalized);
     if(exact){onChange(exact.value);setQuery(exact.label);return}
@@ -204,11 +209,11 @@ function TextAreaField({
 type SheetRow = Record<string,string>;
 type SheetColumn = { key:string; label:string; width?:number; type?:"text"|"number"|"dateText"|"combo"; options?:Array<{value:string;label:string}> };
 
-function QuickOrderSheet({role,salesUsers,enums,onDone,edit}:{role:Role;salesUsers:User[];enums:EnumRow[];onDone:()=>void;edit?:RowData|null}) {
+function QuickOrderSheet({role,clients,enums,onDone,edit}:{role:Role;clients:User[];enums:EnumRow[];onDone:()=>void;edit?:RowData|null}) {
   const blankRow=():SheetRow=>({
-    created_at:"",sales_user_id:"",customer:"",order_id:"",service:"",sub_service:"",item:"",
-    carton_count:"",weight:"",length:"",width:"",height:"",recipient_name:"",city:"",state:"",
-    zip:"",country:"",note:"",supplier:"",tracking:"",label:"",est_net_cost:"",base_cost:"",retail:"",discount:"",sales_price:"",auto_pricing:"1",surcharge:"",import_tax:"",
+    client_user_id:"",customer:"",order_id:"",service:"",sub_service:"",item:"",material:"",
+    carton_count:"",weight:"",length:"",width:"",height:"",manual_volume:"",declared_value:"",recipient_name:"",city:"",state:"",
+    zip:"",country:"",note:"",discount:"",discount_note:"",est_net_cost:"",base_cost:"",retail:"",sales_price:"",surcharge:"",import_tax:"",
   });
   const editRow=():SheetRow=>{
     const row=blankRow();
@@ -217,6 +222,10 @@ function QuickOrderSheet({role,salesUsers,enums,onDone,edit}:{role:Role;salesUse
       const value=edit[key];
       row[key]=value===null||value===undefined?"":key==="created_at"?displayDate(value):String(value);
     });
+    if(!row.client_user_id&&row.customer){
+      const match=clients.find(client=>client.display_name.toLowerCase()===row.customer.toLowerCase()||client.username.toLowerCase()===row.customer.toLowerCase());
+      if(match)row.client_user_id=String(match.id);
+    }
     row.id=String(edit.id||"");
     return row;
   };
@@ -236,24 +245,25 @@ function QuickOrderSheet({role,salesUsers,enums,onDone,edit}:{role:Role;salesUse
   },[columnWidths]);
   const serviceOptions=enumOptions(enums,"SERVICE");
   const countryOptions=enumOptions(enums,"COUNTRY");
-  const supplierOptions=enumOptions(enums,"SUPPLIER");
+  const clientOptions=clients
+    .filter(client=>client.active!==0||String(edit?.client_user_id||"")===String(client.id))
+    .map(client=>({value:String(client.id),label:client.display_name+" (@"+client.username+")"}));
 
   const common:SheetColumn[]=[
-    {key:"created_at",label:"Ngày",width:118,type:"dateText"},{key:"customer",label:"Khách *",width:150},
-    {key:"order_id",label:"Order ID *",width:135},{key:"service",label:"Dịch vụ",width:140,type:"combo",options:serviceOptions},
-    {key:"sub_service",label:"Sub-Service",width:140,type:"combo"},{key:"item",label:"Mặt hàng",width:135},
-    {key:"carton_count",label:"Carton",width:75,type:"number"},{key:"weight",label:"Kg",width:72,type:"number"},
-    {key:"length",label:"Dài",width:72,type:"number"},{key:"width",label:"Rộng",width:72,type:"number"},
-    {key:"height",label:"Cao",width:72,type:"number"},{key:"recipient_name",label:"Người nhận",width:145},
-    {key:"city",label:"Thành phố",width:115},{key:"state",label:"Bang",width:90},{key:"zip",label:"ZIP",width:90},
-    {key:"country",label:"Nước",width:100,type:"combo",options:countryOptions},{key:"note",label:"Note",width:180},
+    {key:"client_user_id",label:"Client *",width:185,type:"combo",options:clientOptions},
+    {key:"order_id",label:"Client Order ID *",width:145},{key:"service",label:"Dịch vụ *",width:140,type:"combo",options:serviceOptions},
+    {key:"sub_service",label:"Sub-Service",width:140,type:"combo"},{key:"item",label:"Tên sản phẩm *",width:145},{key:"material",label:"Chất liệu *",width:120},
+    {key:"carton_count",label:"Số carton *",width:82,type:"number"},{key:"weight",label:"Tổng kg *",width:78,type:"number"},
+    {key:"length",label:"Dài cm",width:76,type:"number"},{key:"width",label:"Rộng cm",width:76,type:"number"},
+    {key:"height",label:"Cao cm",width:76,type:"number"},{key:"manual_volume",label:"Thể tích cm³",width:105,type:"number"},{key:"declared_value",label:"Giá trị SX USD",width:105,type:"number"},
+    {key:"discount",label:"Discount %",width:88,type:"number"},{key:"discount_note",label:"Lý do discount",width:165},
+    {key:"recipient_name",label:"Người nhận",width:145},{key:"city",label:"Thành phố",width:115},{key:"state",label:"Bang",width:90},{key:"zip",label:"ZIP",width:90},
+    {key:"country",label:"Nước",width:100,type:"combo",options:countryOptions},{key:"note",label:"Note Order",width:180},
   ];
   const columns:SheetColumn[]=role==="ADMIN"?[
-    {key:"sales_user_id",label:"Sales",width:180,type:"combo",options:[{value:"",label:"— Chọn / nhập Sales —"},...salesUsers.map(u=>({value:String(u.id),label:u.display_name+" (@"+u.username+")"}))]},
     ...common,
-    {key:"supplier",label:"Supplier",width:130,type:"combo",options:supplierOptions},{key:"tracking",label:"Tracking",width:145},{key:"label",label:"Label URL",width:190},
-    {key:"est_net_cost",label:"Est. Net",width:90,type:"number"},{key:"auto_pricing",label:"Auto Pricing",width:105,type:"combo",options:[{value:"1",label:"Auto"},{value:"0",label:"Manual"}]},
-    {key:"base_cost",label:"Base Cost",width:90,type:"number"},{key:"retail",label:"Retail",width:90,type:"number"},{key:"discount",label:"Discount %",width:90,type:"number"},{key:"sales_price",label:"Sales Price",width:95,type:"number"},
+    {key:"est_net_cost",label:"Net Cost Est",width:95,type:"number"},
+    {key:"base_cost",label:"Base Cost",width:90,type:"number"},{key:"retail",label:"Retail Price",width:95,type:"number"},{key:"sales_price",label:"Giá bán",width:95,type:"number"},
     {key:"surcharge",label:"Phụ phí",width:90,type:"number"},{key:"import_tax",label:"Thuế NK",width:90,type:"number"},
   ]:common;
 
@@ -316,8 +326,8 @@ function QuickOrderSheet({role,salesUsers,enums,onDone,edit}:{role:Role;salesUse
       matrix.forEach((vals,rOff)=>vals.forEach((value,cOff)=>{
         const col=columns[startCol+cOff]; if(!col)return;
         let normalized=value.trim();
-        if(col.key==="sales_user_id"){
-          const match=salesUsers.find(u=>u.display_name.toLowerCase()===normalized.toLowerCase()||u.username.toLowerCase()===normalized.toLowerCase());
+        if(col.key==="client_user_id"){
+          const match=clients.find(u=>u.display_name.toLowerCase()===normalized.toLowerCase()||u.username.toLowerCase()===normalized.toLowerCase());
           if(match)normalized=String(match.id);
         }
         next[startRow+rOff]={...next[startRow+rOff],[col.key]:normalized};
@@ -330,9 +340,15 @@ function QuickOrderSheet({role,salesUsers,enums,onDone,edit}:{role:Role;salesUse
     if(!activeRows.length){setMsg("Nhập ít nhất 1 dòng Order.");return;}
     const invalid:Record<number,string>={};
     activeRows.forEach(({row,index})=>{
-      if(!row.customer.trim())invalid[index]="Thiếu Khách";
+      if(!row.client_user_id.trim())invalid[index]="Thiếu Client";
       else if(!row.order_id.trim())invalid[index]="Thiếu Order ID";
-      else if(row.created_at&&!isValidDateText(row.created_at))invalid[index]="Ngày phải đúng dd/mm/yyyy";
+      else if(!row.service.trim())invalid[index]="Thiếu Dịch vụ";
+      else if(!row.item.trim())invalid[index]="Thiếu tên sản phẩm";
+      else if(!row.material.trim())invalid[index]="Thiếu chất liệu";
+      else if(Number(row.carton_count||0)<1)invalid[index]="Số carton phải từ 1";
+      else if(Number(row.weight||0)<=0)invalid[index]="Khối lượng phải lớn hơn 0";
+      else if(([row.length,row.width,row.height].filter(Boolean).length>0&&[row.length,row.width,row.height].filter(Boolean).length<3)||(!row.manual_volume&&![row.length,row.width,row.height].every(Boolean)))invalid[index]="Nhập đủ Dài/Rộng/Cao hoặc Thể tích";
+      else if(row.discount&&Number(row.discount)!==0&&!row.discount_note.trim())invalid[index]="Discount ngoại lệ cần lý do";
       else if(row.service&&!enumIsValid(enums,"SERVICE",row.service))invalid[index]="Dịch vụ không hợp lệ";
       else if(row.sub_service&&!enumIsValid(enums,"SUB_SERVICE",row.sub_service,row.service))invalid[index]="Sub-Service không hợp lệ";
       else if(row.country&&!enumIsValid(enums,"COUNTRY",row.country))invalid[index]="Nước không hợp lệ";
@@ -342,7 +358,8 @@ function QuickOrderSheet({role,salesUsers,enums,onDone,edit}:{role:Role;salesUse
     setBusy(true);setMsg("");setErrors({});
     const results=await Promise.all(activeRows.map(async({row,index})=>{
       try{
-        await postJson("/api/orders",{...row,created_at:row.created_at||today(),service:row.service||"ePacket",country:row.country||"US",auto_pricing:row.auto_pricing||"1",id:row.id||undefined});
+        const client=clients.find(item=>String(item.id)===row.client_user_id);
+        await postJson("/api/orders",{...row,customer:client?.display_name||row.customer,country:row.country||"US",auto_pricing:"0",id:row.id||undefined});
         return {index,ok:true as const};
       }catch(error){return {index,ok:false as const,error:error instanceof Error?error.message:"Không thể lưu"}}
     }));
@@ -498,22 +515,23 @@ const BALANCE_TYPES=[
   {value:"ERROR_PROCESSING",label:"Processing (+)"},{value:"ERROR_REFUND",label:"Error Refund (+)"},{value:"ERROR_CHARGEABLE",label:"Chargeable (-)"},
   {value:"ADJUSTMENT_CREDIT",label:"Adjustment Credit (+)"},{value:"ADJUSTMENT_DEBIT",label:"Adjustment Debit (-)"},
 ];
-function BalanceSheet({onDone}:{onDone:()=>void}){
+function BalanceSheet({clients,onDone}:{clients:User[];onDone:()=>void}){
+  const clientOptions=clients.filter(client=>client.active!==0).map(client=>({value:String(client.id),label:client.display_name+" (@"+client.username+")"}));
   const columns:SheetColumn[]=[
     {key:"occurred_at",label:"Ngày",width:115,type:"dateText"},{key:"entry_type",label:"Hạng mục *",width:165,type:"combo",options:BALANCE_TYPES},
-    {key:"amount",label:"Số tiền *",width:100,type:"number"},{key:"customer",label:"Customer/User",width:150},
+    {key:"amount",label:"Số tiền *",width:100,type:"number"},{key:"client_user_id",label:"Client *",width:185,type:"combo",options:clientOptions},
     {key:"reference_type",label:"Reference type",width:125},{key:"reference_id",label:"Reference ID",width:145},
     {key:"bill_url",label:"Bill URL",width:200},{key:"note",label:"Note",width:200},
   ];
-  const blank=()=>({occurred_at:today(),entry_type:"PAYMENT",amount:"",customer:"",reference_type:"MANUAL",reference_id:"",bill_url:"",note:""});
+  const blank=()=>({occurred_at:today(),entry_type:"PAYMENT",amount:"",client_user_id:"",customer:"",reference_type:"MANUAL",reference_id:"",bill_url:"",note:""});
   const credit=new Set(["PAYMENT","REFUND","ERROR_REFUND","ERROR_PROCESSING","ADJUSTMENT_CREDIT"]);
   return <EntrySheet title="Ghi Balance" hint="Paste nhiều dòng · CREDIT/DEBIT tự suy ra từ hạng mục" columns={columns} blank={blank} storageKey="dmd.balanceSheetWidths"
-    validate={row=>row.occurred_at&&!isValidDateText(row.occurred_at)?"Ngày sai định dạng":!BALANCE_TYPES.some(x=>x.value===row.entry_type)?"Hạng mục không hợp lệ":!row.amount||Number(row.amount)<=0?"Số tiền phải > 0":""}
-    save={row=>postJson("/api/ledger",{...row,direction:credit.has(row.entry_type)?"CREDIT":"DEBIT"})} onDone={onDone}/>;
+    validate={row=>row.occurred_at&&!isValidDateText(row.occurred_at)?"Ngày sai định dạng":!BALANCE_TYPES.some(x=>x.value===row.entry_type)?"Hạng mục không hợp lệ":!row.amount||Number(row.amount)<=0?"Số tiền phải > 0":!row.client_user_id?"Thiếu Client":""}
+    save={row=>{const client=clients.find(item=>String(item.id)===row.client_user_id);return postJson("/api/ledger",{...row,customer:client?.display_name||row.customer,direction:credit.has(row.entry_type)?"CREDIT":"DEBIT"})}} onDone={onDone}/>;
 }
 
 function ImportCard({ kind, title, detail, templateHref, onDone }:{
-  kind:"orders"|"sales_orders"|"costs"|"balance"; title:string; detail:string; templateHref:string; onDone:()=>void
+  kind:"orders"|"sales_orders"|"costs"|"tracking_updates"|"balance"; title:string; detail:string; templateHref:string; onDone:()=>void
 }) {
   const [file,setFile]=useState<File|null>(null); const [busy,setBusy]=useState(false); const [msg,setMsg]=useState("");
   async function upload(){
@@ -534,15 +552,28 @@ function ImportCard({ kind, title, detail, templateHref, onDone }:{
   </div>
 }
 
-function UserManager({users,onDone,currentUser}:{users:User[];onDone:()=>void;currentUser:User}) {
-  const [form,setForm]=useState({display_name:"",username:"",password:"",role:"SALES"});
+function ClientServiceSettingsEditor({client,enums,onClose}:{client:User;enums:EnumRow[];onClose:()=>void}){
+  const services=enumOptions(enums,"SERVICE");
+  const [settings,setSettings]=useState<Record<string,{is_enabled:boolean;discount_percent:string}>>({});
+  const [busy,setBusy]=useState(false);const [msg,setMsg]=useState("");
+  useEffect(()=>{void(async()=>{const res=await fetch(`/api/client-services?clientUserId=${client.id}`);if(!res.ok)return;const rows=await res.json();const next:Record<string,{is_enabled:boolean;discount_percent:string}>={};for(const row of rows)if(!row.sub_service)next[row.service]={is_enabled:Boolean(row.is_enabled),discount_percent:String(row.discount_percent||0)};setSettings(next)})()},[client.id]);
+  function value(service:string){return settings[service]||{is_enabled:true,discount_percent:"0"}}
+  function update(service:string,patch:Partial<{is_enabled:boolean;discount_percent:string}>){setSettings(prev=>({...prev,[service]:{...value(service),...patch}}))}
+  async function save(service:string){setBusy(true);setMsg("");try{const current=value(service);await postJson("/api/client-services",{client_user_id:client.id,service,is_enabled:current.is_enabled,discount_percent:Number(current.discount_percent||0)});setMsg(`Đã lưu ${service}.`)}catch(error){setMsg("Lỗi: "+(error instanceof Error?error.message:"Không thể lưu"))}finally{setBusy(false)}}
+  return <div className="clientServiceEditor"><p className="formHint">Bật/tắt dịch vụ cho Client và đặt Discount mặc định. Discount ngoại lệ vẫn có thể nhập trên từng Order kèm lý do.</p><div className="serviceSettingList">{services.map(option=>{const row=value(option.value);return <div className="serviceSettingRow" key={option.value}><label className="serviceToggle"><input type="checkbox" checked={row.is_enabled} onChange={e=>update(option.value,{is_enabled:e.target.checked})}/><span>{row.is_enabled?"Được sử dụng":"Đang bị chặn"}</span></label><b>{option.label}</b><label><span>Discount mặc định</span><div><input type="number" min="0" max="100" step="0.01" value={row.discount_percent} onChange={e=>update(option.value,{discount_percent:e.target.value})}/><em>%</em></div></label><button className="secondaryBtn" disabled={busy} onClick={()=>void save(option.value)}>Lưu</button></div>})}</div><div className="formFooter"><span className={msg.startsWith("Lỗi")?"inlineMsg error":"inlineMsg"}>{msg}</span><button className="secondaryBtn" onClick={onClose}>Đóng</button></div></div>;
+}
+
+function UserManager({users,enums,onDone,currentUser}:{users:User[];enums:EnumRow[];onDone:()=>void;currentUser:User}) {
+  const [form,setForm]=useState({display_name:"",username:"",password:"",role:"SALES",sales_user_id:""});
   const [msg,setMsg]=useState("");
   const [busy,setBusy]=useState(false);
   const [accountSearch,setAccountSearch]=useState("");
   const [accountPage,setAccountPage]=useState(1);
+  const [serviceClient,setServiceClient]=useState<User|null>(null);
+  const salesUsers=users.filter(user=>user.role==="SALES"&&user.active!==0);
   const filteredUsers=users.filter(u=>{
     const q=accountSearch.trim().toLowerCase();
-    return !q || u.display_name.toLowerCase().includes(q) || u.username.toLowerCase().includes(q) || u.role.toLowerCase().includes(q);
+    return !q || u.display_name.toLowerCase().includes(q) || u.username.toLowerCase().includes(q) || u.role.toLowerCase().includes(q) || String(u.sales_display_name||"").toLowerCase().includes(q);
   });
   const accountPageSize=10;
   const accountTotalPages=Math.max(1,Math.ceil(filteredUsers.length/accountPageSize));
@@ -552,8 +583,9 @@ function UserManager({users,onDone,currentUser}:{users:User[];onDone:()=>void;cu
   async function create(e:FormEvent){
     e.preventDefault();setBusy(true);setMsg("");
     try{
+      if(form.role==="CLIENT"&&!form.sales_user_id)throw new Error("Client bắt buộc phải chọn Sales phụ trách.");
       await postJson("/api/users",form);
-      setForm({display_name:"",username:"",password:"",role:"SALES"});
+      setForm({display_name:"",username:"",password:"",role:"SALES",sales_user_id:""});
       setMsg("Đã tạo tài khoản.");
       onDone();
     }catch(error){setMsg("Lỗi: "+(error instanceof Error?error.message:"Không thể tạo tài khoản"))}
@@ -569,24 +601,27 @@ function UserManager({users,onDone,currentUser}:{users:User[];onDone:()=>void;cu
 
   return <div className="accountPanel">
     <form className="formCard" onSubmit={create}>
-      <div className="formHead"><div><span className="eyebrow">ACCOUNT MANAGEMENT</span><h3>Tạo tài khoản Sales / Admin</h3></div></div>
-      <p className="formHint">Admin tạo tài khoản, khóa/mở lại và reset password. Sales chỉ nhìn dữ liệu Order của chính mình.</p>
+      <div className="formHead"><div><span className="eyebrow">ACCOUNT MANAGEMENT</span><h3>Tạo tài khoản Admin / Sales / Client</h3></div></div>
+      <p className="formHint">Client được gán bắt buộc cho một Sales. Sales chỉ thao tác Orders và Balance của các Client mình phụ trách; Client chỉ được xem dữ liệu của chính mình.</p>
       <div className="formGrid">
         <Field label="Tên hiển thị" name="display_name" value={form.display_name} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} required/>
         <Field label="Username" name="username" value={form.username} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} required/>
         <Field label="Mật khẩu ban đầu" name="password" type="password" value={form.password} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} required/>
-        <SelectField label="Role" name="role" value={form.role} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} allowCustom={false} requireOption options={[{value:"SALES",label:"Sales"},{value:"ADMIN",label:"Admin"}]}/>
+        <SelectField label="Role" name="role" value={form.role} onChange={(n,v)=>setForm(x=>({...x,[n]:v,sales_user_id:v==="CLIENT"?x.sales_user_id:""}))} allowCustom={false} requireOption options={[{value:"SALES",label:"Sales"},{value:"CLIENT",label:"Client"},{value:"ADMIN",label:"Admin"}]}/>
+        {form.role==="CLIENT"&&<SelectField label="Sales phụ trách" name="sales_user_id" value={form.sales_user_id} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} allowCustom={false} requireOption options={salesUsers.map(user=>({value:String(user.id),label:user.display_name+" (@"+user.username+")"}))}/>}
       </div>
       <div className="formFooter"><span className={msg.startsWith("Lỗi")?"inlineMsg error":"inlineMsg"}>{msg}</span><button className="primaryBtn" disabled={busy}>{busy?"Đang tạo…":"Tạo tài khoản"}</button></div>
     </form>
     <div className="dataToolbar accountsToolbar"><SearchBar value={accountSearch} onChange={setAccountSearch} placeholder="Tìm tên, username, role..."/><span>{filteredUsers.length} accounts</span></div>
-    <div className="tableWrap accountTable"><table><thead><tr><th>Tên</th><th>Username</th><th>Role</th><th>Status</th><th>Action</th></tr></thead><tbody>
-      {visibleUsers.map(u=><tr key={u.id}><td>{u.display_name}{u.is_root_admin?<span className="rootBadge">ROOT</span>:null}</td><td>@{u.username}</td><td>{u.role}</td><td><span className={u.active?"status goodStatus":"status badStatus"}>{u.active?"Active":"Locked"}</span></td><td>
+    <div className="tableWrap accountTable"><table><thead><tr><th>Tên</th><th>Username</th><th>Role</th><th>Sales phụ trách</th><th>Status</th><th>Action</th></tr></thead><tbody>
+      {visibleUsers.map(u=><tr key={u.id}><td>{u.display_name}{u.is_root_admin?<span className="rootBadge">ROOT</span>:null}</td><td>@{u.username}</td><td>{u.role}</td><td>{u.role==="CLIENT"?<SmartSelect compact value={String(u.sales_user_id||"")} onChange={value=>{if(value)void patchUser(u.id,{sales_user_id:Number(value)})}} allowCustom={false} options={salesUsers.map(user=>({value:String(user.id),label:user.display_name}))}/>:"—"}</td><td><span className={u.active?"status goodStatus":"status badStatus"}>{u.active?"Active":"Locked"}</span></td><td>
         <button className="editBtn" disabled={Boolean(u.is_root_admin)||u.id===currentUser.id} onClick={()=>void patchUser(u.id,{active:!u.active})}>{u.is_root_admin?"Protected":u.active?"Khóa":"Mở"}</button>
         <button className="editBtn" disabled={Boolean(u.is_root_admin)&&u.id!==currentUser.id} onClick={()=>{const pw=window.prompt("Mật khẩu mới (ít nhất 8 ký tự)");if(pw)void patchUser(u.id,{password:pw})}}>Reset PW</button>
+        {u.role==="CLIENT"&&<button className="editBtn" onClick={()=>setServiceClient(u)}>Dịch vụ</button>}
       </td></tr>)}
     </tbody></table></div>
     <Pager data={{items:[],total:filteredUsers.length,page:accountPage,pageSize:accountPageSize,totalPages:accountTotalPages}} onPage={setAccountPage}/>
+    {serviceClient&&<Modal title={`Dịch vụ · ${serviceClient.display_name}`} onClose={()=>setServiceClient(null)}><ClientServiceSettingsEditor client={serviceClient} enums={enums} onClose={()=>setServiceClient(null)}/></Modal>}
   </div>;
 }
 
@@ -754,13 +789,87 @@ function PageHeader({eyebrow,title,description,actions}:{eyebrow:string;title:st
   </div>;
 }
 
+type TrackingDraft={id?:number;tracking:string;label_url:string;lot_number:number;status?:string;is_primary?:number;cost_match_type:string;cost_parent_tracking_id?:number|null;replaced_by_tracking_id?:number|null};
+
+function PurchaseOrderPanel({order,enums,onClose,onDone}:{order:RowData;enums:EnumRow[];onClose:()=>void;onDone:()=>void|Promise<void>}){
+  const orderId=Number(order.id||0);
+  const [supplier,setSupplier]=useState(String(order.supplier||""));
+  const [internalNote,setInternalNote]=useState(String(order.internal_note||""));
+  const [expectedLotCount,setExpectedLotCount]=useState(String(order.expected_lot_count||1));
+  const [trackings,setTrackings]=useState<TrackingDraft[]>([]);
+  const [busy,setBusy]=useState(true);const [msg,setMsg]=useState("");
+  const [replaceId,setReplaceId]=useState<number|null>(null);
+  const [replacement,setReplacement]=useState({tracking:"",label_url:"",reason:""});
+  const supplierOptions=enumOptions(enums,"SUPPLIER");
+
+  const load=useCallback(async()=>{
+    setBusy(true);setMsg("");
+    const res=await fetch(`/api/orders/${orderId}/trackings`);const body=await res.json();
+    if(!res.ok){setMsg("Lỗi: "+body.error);setBusy(false);return;}
+    setSupplier(String(body.order?.supplier||""));setInternalNote(String(body.order?.internal_note||""));setExpectedLotCount(String(body.order?.expected_lot_count||1));
+    const rows=(body.trackings||[]).map((row:Record<string,unknown>)=>({
+      id:Number(row.id),tracking:String(row.tracking||""),label_url:String(row.label_url||""),lot_number:Number(row.lot_number||1),status:String(row.status||"ACTIVE"),is_primary:Number(row.is_primary||0),cost_match_type:String(row.cost_match_type||"UNKNOWN"),cost_parent_tracking_id:row.cost_parent_tracking_id?Number(row.cost_parent_tracking_id):null,replaced_by_tracking_id:row.replaced_by_tracking_id?Number(row.replaced_by_tracking_id):null,
+    }));
+    setTrackings(rows.length?rows:[{tracking:"",label_url:"",lot_number:1,cost_match_type:"UNKNOWN"}]);setBusy(false);
+  },[orderId]);
+  useEffect(()=>{void load()},[load]);
+
+  const active=trackings.filter(row=>row.status!=="REPLACED"&&row.status!=="CANCELLED");
+  const history=trackings.filter(row=>row.status==="REPLACED"||row.status==="CANCELLED");
+  function update(index:number,key:keyof TrackingDraft,value:string|number|null){setTrackings(prev=>prev.map((row,i)=>i===index?{...row,[key]:value}:row))}
+  function addTracking(){setTrackings(prev=>[...prev,{tracking:"",label_url:"",lot_number:1,cost_match_type:"UNKNOWN"}])}
+  function removeDraft(index:number){setTrackings(prev=>prev.filter((_,i)=>i!==index))}
+
+  async function save(complete:boolean){
+    if(!supplier){setMsg("Lỗi: Hãy chọn Supplier.");return;}
+    if(complete&&!active.some(row=>row.tracking.trim())){setMsg("Lỗi: Cần ít nhất một Tracking.");return;}
+    const seen=new Set<string>();
+    for(const row of active){const key=row.tracking.replace(/[\s-]+/g,"").toUpperCase();if(!key)continue;if(seen.has(key)){setMsg("Lỗi: Tracking bị trùng trong Order.");return;}seen.add(key)}
+    setBusy(true);setMsg("");
+    try{
+      await postJson(`/api/orders/${orderId}/trackings`,{action:"save",supplier,internal_note:internalNote,expected_lot_count:Number(expectedLotCount||1),complete,trackings:active});
+      setMsg(complete?"Đã hoàn tất mua đơn.":"Đã lưu nháp.");await load();await onDone();
+    }catch(error){setMsg("Lỗi: "+(error instanceof Error?error.message:"Không thể lưu"));setBusy(false)}
+  }
+  async function replaceTracking(){
+    if(!replaceId||!replacement.tracking.trim()||!replacement.reason.trim()){setMsg("Lỗi: Tracking mới và lý do là bắt buộc.");return;}
+    setBusy(true);setMsg("");
+    try{
+      await postJson(`/api/orders/${orderId}/trackings`,{action:"replace",old_tracking_id:replaceId,new_tracking:replacement.tracking,new_label_url:replacement.label_url,reason:replacement.reason});
+      setReplaceId(null);setReplacement({tracking:"",label_url:"",reason:""});await load();await onDone();
+    }catch(error){setMsg("Lỗi: "+(error instanceof Error?error.message:"Không thể đổi Tracking"));setBusy(false)}
+  }
+
+  return <div className="purchasePanel">
+    <div className="purchaseSummary"><div><span>ORDER</span><b>{String(order.order_id||order.id||"—")}</b></div><div><span>CLIENT</span><b>{String(order.customer||"—")}</b></div><div><span>TRẠNG THÁI</span><b>{String(order.workflow_status||"PENDING_PURCHASE")}</b></div></div>
+    <div className="purchaseFields">
+      <SelectField label="Supplier" name="supplier" value={supplier} onChange={(_,value)=>setSupplier(value)} allowCustom={false} requireOption options={supplierOptions}/>
+      <Field label="Số lượng Lô" name="expected_lot_count" type="number" value={expectedLotCount} onChange={(_,value)=>setExpectedLotCount(value)}/>
+      <TextAreaField label="Note nội bộ (chỉ Admin)" name="internal_note" value={internalNote} onChange={(_,value)=>setInternalNote(value)}/>
+    </div>
+    {busy&&trackings.length===0?<div className="loadingState">Đang tải Tracking…</div>:<div className="lotList">
+      <section className="lotCard"><div className="lotHead"><div><span>TRACKING & LABEL</span><b>{active.length}/{String(order.carton_count||"?")} carton</b></div><button className="textBtn" onClick={addTracking}>＋ Thêm Tracking</button></div>
+        <div className="trackingRows">{active.map((row,index)=><div className="trackingRow" key={row.id||`new-${index}`}>
+          <div className="trackingIndex">{index+1}</div>
+          <label><span>Tracking</span><input value={row.tracking} disabled={Boolean(row.id)} onChange={e=>update(index,"tracking",e.target.value)} placeholder="Nhập mã Tracking"/></label>
+          <label><span>URL Label</span><input value={row.label_url} onChange={e=>update(index,"label_url",e.target.value)} placeholder="https://..."/></label>
+          <div className="trackingActions">{row.label_url&&<a href={row.label_url} target="_blank" rel="noreferrer">Label ↗</a>}{row.id?<button onClick={()=>{setReplaceId(row.id||null);setReplacement({tracking:"",label_url:"",reason:""})}}>Đổi Tracking</button>:<button onClick={()=>removeDraft(index)}>Xóa</button>}</div>
+        </div>)}</div>
+      </section>
+      {history.length>0&&<details className="trackingHistory"><summary>Lịch sử Tracking ({history.length})</summary>{history.map(row=><div key={row.id}><span>{row.tracking}</span><em>{row.status}</em>{row.label_url&&<a href={row.label_url} target="_blank" rel="noreferrer">Label cũ ↗</a>}</div>)}</details>}
+    </div>}
+    {replaceId&&<div className="replaceBox"><div className="formHead"><div><span className="eyebrow">TRACKING REPLACEMENT</span><h3>Đổi Tracking và Label</h3></div><button className="closeBtn" onClick={()=>setReplaceId(null)}>×</button></div><div className="formGrid"><Field label="Tracking mới" name="tracking" value={replacement.tracking} onChange={(_,value)=>setReplacement(x=>({...x,tracking:value}))}/><Field label="URL Label mới" name="label_url" value={replacement.label_url} onChange={(_,value)=>setReplacement(x=>({...x,label_url:value}))}/><Field label="Lý do thay đổi" name="reason" value={replacement.reason} onChange={(_,value)=>setReplacement(x=>({...x,reason:value}))}/></div><button className="primaryBtn" onClick={()=>void replaceTracking()}>Xác nhận thay thế</button></div>}
+    <div className="formFooter"><span className={msg.startsWith("Lỗi")?"inlineMsg error":"inlineMsg"}>{msg}</span><div className="purchaseButtons"><button className="secondaryBtn" onClick={onClose}>Đóng</button><button className="secondaryBtn" disabled={busy} onClick={()=>void save(false)}>Lưu nháp</button><button className="primaryBtn" disabled={busy} onClick={()=>void save(true)}>Hoàn tất mua đơn</button></div></div>
+  </div>;
+}
+
 function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   const role=user.role;
   const [summary,setSummary]=useState<Summary|null>(null);
   const [users,setUsers]=useState<User[]>([]);
   const [enums,setEnums]=useState<EnumRow[]>([]);
   const [allEnums,setAllEnums]=useState<EnumRow[]>([]);
-  const [section,setSection]=useState<AppSection>("dashboard");
+  const [section,setSection]=useState<AppSection>(role==="ADMIN"?"dashboard":"orders");
   const [data,setData]=useState<PagedRows>({items:[],total:0,page:1,pageSize:20,totalPages:1});
   const [recent,setRecent]=useState<RowData[]>([]);
   const [page,setPage]=useState(1);
@@ -769,10 +878,15 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   const [loading,setLoading]=useState(false);
   const [entry,setEntry]=useState<ManualKind|null>(null);
   const [editOrder,setEditOrder]=useState<RowData|null>(null);
+  const [purchaseOrder,setPurchaseOrder]=useState<RowData|null>(null);
+  const [viewOrder,setViewOrder]=useState<RowData|null>(null);
+  const [bulkTracking,setBulkTracking]=useState(false);
+  const [bulkReplacement,setBulkReplacement]=useState(false);
   const [importKind,setImportKind]=useState<ImportKind|null>(null);
   const [orderFilters,setOrderFilters]=useState({status:"",service:"",salesUserId:"",reconcile:""});
 
   const salesUsers=users.filter(u=>u.role==="SALES"&&u.active!==0);
+  const clients=users.filter(u=>u.role==="CLIENT");
 
   useEffect(()=>{
     const id=setTimeout(()=>setDebouncedSearch(search),300);
@@ -783,16 +897,17 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   useEffect(()=>{setPage(1)},[orderFilters.status,orderFilters.service,orderFilters.salesUserId,orderFilters.reconcile]);
 
   const loadSummary=useCallback(async()=>{
+    if(role!=="ADMIN"){setSummary(null);return;}
     const res=await fetch("/api/summary");
     if(res.status===401){onLogout();return;}
     setSummary(await res.json());
-  },[onLogout]);
+  },[role,onLogout]);
 
   const loadUsers=useCallback(async()=>{
-    if(role!=="ADMIN"){setUsers([]);return;}
+    if(role==="CLIENT"){setUsers([]);return;}
     const res=await fetch("/api/users");
     if(res.status===401){onLogout();return;}
-    setUsers(await res.json());
+    if(res.ok)setUsers(await res.json());
   },[role,onLogout]);
 
   const loadEnums=useCallback(async()=>{
@@ -808,6 +923,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
 
   const endpointFor=(target:AppSection)=>{
     if(target==="orders")return "/api/orders";
+    if(target==="shipping")return "/api/shipment-status";
     if(target==="costs")return "/api/costs";
     if(target==="recon")return "/api/reconciliation";
     if(target==="ledger")return "/api/ledger";
@@ -834,22 +950,25 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   },[page,debouncedSearch,onLogout,orderFilters]);
 
   const loadRecent=useCallback(async()=>{
+    if(role!=="ADMIN"){setRecent([]);return;}
     const res=await fetch("/api/orders?page=1&pageSize=10");
     if(res.ok){const body=await res.json();setRecent(body.items||[])}
-  },[]);
+  },[role]);
 
   useEffect(()=>{void loadSummary();void loadUsers();void loadEnums();void loadRecent()},[loadSummary,loadUsers,loadEnums,loadRecent]);
-  useEffect(()=>{if(["orders","costs","recon","ledger"].includes(section))void loadSection(section,page,debouncedSearch)},[section,page,debouncedSearch,loadSection]);
+  useEffect(()=>{if(["orders","shipping","costs","recon","ledger"].includes(section))void loadSection(section,page,debouncedSearch)},[section,page,debouncedSearch,loadSection]);
 
   const refresh=useCallback(async()=>{
     await Promise.all([loadSummary(),loadUsers(),loadEnums(),loadRecent()]);
-    if(["orders","costs","recon","ledger"].includes(section))await loadSection(section,page,debouncedSearch);
+    if(["orders","shipping","costs","recon","ledger"].includes(section))await loadSection(section,page,debouncedSearch);
   },[loadSummary,loadUsers,loadEnums,loadRecent,loadSection,section,page,debouncedSearch]);
 
   function navigate(next:AppSection){
+    if(role!=="ADMIN"&&!(["orders","ledger"] as AppSection[]).includes(next))return;
     setSection(next);setSearch("");setPage(1);
   }
   function openEntry(kind:ManualKind,row?:RowData){
+    if(role==="CLIENT")return;
     setEditOrder(row||null);
     setEntry(kind);
   }
@@ -858,21 +977,22 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   async function logout(){await fetch("/api/auth/logout",{method:"POST"});onLogout()}
 
   const orderCols=role==="ADMIN"
-    ?["workflow_status","created_at","sales","customer","service","tracking","order_id","true_net_cost","sales_price","total_due","margin_status","reconciliation_status"]
-    :["workflow_status","created_at","customer","service","sub_service","order_id","total_due"];
+    ?["workflow_status","created_at","system_order_code","order_id","sales","customer","item","service","sub_service","chargeable_weight","tracking","true_net_cost","sales_price","extra_surcharge","extra_import_tax","total_due","reconciliation_status"]
+    :["workflow_status","created_at","system_order_code","order_id","customer","item","service","sub_service","chargeable_weight","tracking","sales_price","total_due"];
 
-  const nav:Array<{key:AppSection;label:string;icon:string;admin?:boolean}>=[
-    {key:"dashboard",label:"Tổng quan",icon:"⌂"},
+  const nav:Array<{key:AppSection;label:string;icon:string;adminOnly?:boolean}>=[
+    {key:"dashboard",label:"Tổng quan",icon:"⌂",adminOnly:true},
     {key:"orders",label:"Orders",icon:"▤"},
-    {key:"costs",label:"Supplier Costs",icon:"$ ",admin:true},
-    {key:"recon",label:"Reconciliation",icon:"✓",admin:true},
-    {key:"ledger",label:"Balance Ledger",icon:"≋",admin:true},
-    {key:"masterdata",label:"Danh mục",icon:"☷",admin:true},
-    {key:"accounts",label:"Tài khoản",icon:"♙",admin:true},
+    {key:"shipping",label:"Theo dõi vận chuyển",icon:"⌁",adminOnly:true},
+    {key:"ledger",label:"Balance Ledger",icon:"≋"},
+    {key:"costs",label:"Supplier Costs",icon:"$ ",adminOnly:true},
+    {key:"recon",label:"Reconciliation",icon:"✓",adminOnly:true},
+    {key:"masterdata",label:"Danh mục",icon:"☷",adminOnly:true},
+    {key:"accounts",label:"Tài khoản",icon:"♙",adminOnly:true},
   ];
 
   const titleMap:Record<AppSection,string>={
-    dashboard:"Tổng quan",orders:"Orders",costs:"Supplier Costs",
+    dashboard:"Tổng quan",orders:"Orders",shipping:"Theo dõi vận chuyển",costs:"Supplier Costs",
     recon:"Reconciliation",ledger:"Balance Ledger",masterdata:"Danh mục",accounts:"Tài khoản",
   };
 
@@ -880,7 +1000,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
     <aside className="sidebar">
       <div className="brand"><div className="brandMark">D</div><div><b>DMD Finance</b><span>Operations</span></div></div>
       <nav className="sideNav">
-        {nav.filter(n=>!n.admin||role==="ADMIN").map(n=><button key={n.key} className={section===n.key?"active":""} onClick={()=>navigate(n.key)}>
+        {nav.filter(n=>!n.adminOnly||role==="ADMIN").map(n=><button key={n.key} className={section===n.key?"active":""} onClick={()=>navigate(n.key)}>
           <i>{n.icon}</i><span>{n.label}</span>
           {n.key==="recon"&&Number(summary?.review||0)>0&&<em>{summary?.review}</em>}
         </button>)}
@@ -894,7 +1014,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
 
     <div className="appMain">
       <div className="topbar">
-        <button className="mobileBrand" onClick={()=>navigate("dashboard")}>DMD</button>
+        <button className="mobileBrand" onClick={()=>navigate(role==="ADMIN"?"dashboard":"orders")}>DMD</button>
         <div className="crumb"><span>Finance Ops</span><i>/</i><b>{titleMap[section]}</b></div>
         <div className="topUser">
           <span className="topRole">{role}</span>
@@ -903,7 +1023,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
       </div>
 
       <div className="pageContent">
-        {section==="dashboard"&&<>
+        {role==="ADMIN"&&section==="dashboard"&&<>
           <PageHeader eyebrow="OVERVIEW" title={"Chào, "+user.display_name} description="Theo dõi nhanh Orders, doanh thu và các mục cần xử lý."/>
           <section className={role==="ADMIN"?"metricGrid":"metricGrid salesMetricGrid"}>
             <div className="metricCard"><span>Orders</span><b>{summary?.orders??0}</b><small>Tổng order hiện có</small></div>
@@ -918,7 +1038,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
           <section className="dashboardGrid">
             <div className="panel">
               <div className="panelHead"><div><h3>Order gần đây</h3><p>10 order mới nhất</p></div><button className="textBtn" onClick={()=>navigate("orders")}>Xem tất cả →</button></div>
-              <Table rows={recent} cols={role==="ADMIN"?["created_at","order_id","customer","sales","service","total_due","workflow_status"]:["created_at","order_id","customer","service","total_due","workflow_status"]} compact onEdit={row=>openEntry("order",row)}/>
+              <Table rows={recent} cols={role==="ADMIN"?["created_at","system_order_code","order_id","customer","sales","service","total_due","workflow_status"]:["created_at","system_order_code","order_id","customer","service","total_due","workflow_status"]} compact onView={setViewOrder}/>
             </div>
             <div className="quickPanel">
               <h3>Thao tác nhanh</h3>
@@ -930,13 +1050,13 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
         </>}
 
         {section==="orders"&&<>
-          <PageHeader eyebrow="OPERATIONS" title="Orders" description={role==="ADMIN"?"Quản lý toàn bộ đơn hàng và trạng thái xử lý.":"Quản lý các order thuộc tài khoản của bạn."}
-            actions={<><button className="secondaryBtn" onClick={()=>setImportKind(role==="ADMIN"?"orders":"sales_orders")}>⇩ Import</button><button className="primaryBtn" onClick={()=>openEntry("order")}>＋ Tạo Order</button></>}/>
+          <PageHeader eyebrow="OPERATIONS" title="Orders" description={role==="ADMIN"?"Quản lý toàn bộ đơn hàng và trạng thái xử lý.":role==="SALES"?"Quản lý Orders của các Client được phân công.":"Theo dõi Orders của tài khoản Client này."}
+            actions={role!=="CLIENT"?<><button className="secondaryBtn" onClick={()=>setImportKind(role==="ADMIN"?"orders":"sales_orders")}>⇩ Import</button>{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkTracking(true)}>▦ Nhập Tracking hàng loạt</button>}{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkReplacement(true)}>⇄ Đổi Tracking</button>}<button className="primaryBtn" onClick={()=>openEntry("order")}>＋ Tạo Order</button></>:undefined}/>
           <div className="panel dataPanel">
             <div className="dataToolbar orderToolbar">
               <SearchBar value={search} onChange={setSearch} placeholder="Tìm Order ID, Tracking, khách hàng, dịch vụ..."/>
               <div className="orderFilters">
-                <SmartSelect compact value={orderFilters.status} onChange={v=>setOrderFilters(x=>({...x,status:v}))} options={[{value:"",label:"Mọi trạng thái"},{value:"SALES_DRAFT",label:"Sales draft"},{value:"TRACKING_ASSIGNED",label:"Tracking assigned"},{value:"ADMIN_READY",label:"Admin ready"},{value:"RECONCILED",label:"Reconciled"}]}/>
+                <SmartSelect compact value={orderFilters.status} onChange={v=>setOrderFilters(x=>({...x,status:v}))} options={[{value:"",label:"Mọi trạng thái"},{value:"PENDING_PURCHASE",label:"Chờ mua đơn"},{value:"PURCHASING",label:"Đang mua đơn"},{value:"PURCHASED",label:"Đã mua đơn"},{value:"RECONCILED",label:"Đã đối soát"}]}/>
                 <SmartSelect compact value={orderFilters.service} onChange={v=>setOrderFilters(x=>({...x,service:v}))} allowCustom={false} options={[{value:"",label:"Mọi dịch vụ"},...enumOptions(enums,"SERVICE")]}/>
                 {role==="ADMIN"&&<SmartSelect compact value={orderFilters.salesUserId} onChange={v=>setOrderFilters(x=>({...x,salesUserId:v}))} options={[{value:"",label:"Mọi Sales"},...salesUsers.map(u=>({value:String(u.id),label:u.display_name}))]}/>}
                 {role==="ADMIN"&&<SmartSelect compact value={orderFilters.reconcile} onChange={v=>setOrderFilters(x=>({...x,reconcile:v}))} options={[{value:"",label:"Mọi reconcile"},{value:"PASS",label:"PASS"},{value:"REVIEW",label:"REVIEW"}]}/>}
@@ -944,9 +1064,14 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
               </div>
               <span>{data.total} records</span>
             </div>
-            {loading?<div className="loadingState">Đang tải dữ liệu…</div>:<Table rows={data.items} cols={orderCols} onEdit={row=>openEntry("order",row)}/>}
+            {loading?<div className="loadingState">Đang tải dữ liệu…</div>:<Table rows={data.items} cols={orderCols} onView={setViewOrder} onPurchase={role==="ADMIN"?row=>setPurchaseOrder(row):undefined}/>}
             <Pager data={data} onPage={setPage}/>
           </div>
+        </>}
+
+        {role==="ADMIN"&&section==="shipping"&&<>
+          <PageHeader eyebrow="OPERATIONS" title="Theo dõi vận chuyển" description="Cập nhật trạng thái theo ETD; Alert và Exception được tách thành view xử lý riêng."/>
+          <div className="panel"><ShipmentStatusPanel enums={enums}/></div>
         </>}
 
         {role==="ADMIN"&&section==="costs"&&<>
@@ -968,9 +1093,9 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
           </div>
         </>}
 
-        {role==="ADMIN"&&section==="ledger"&&<>
-          <PageHeader eyebrow="FINANCE" title="Balance Ledger" description="Dòng tiền Credit / Debit và các order charge tự động."
-            actions={<><button className="secondaryBtn" onClick={()=>setImportKind("balance")}>⇩ Import</button><button className="primaryBtn" onClick={()=>openEntry("balance")}>＋ Ghi Balance</button></>}/>
+        {section==="ledger"&&<>
+          <PageHeader eyebrow="FINANCE" title="Balance Ledger" description={role==="ADMIN"?"Dòng tiền Credit / Debit và các order charge tự động.":role==="SALES"?"Balance Ledger của các Client được phân công.":"Balance Ledger của tài khoản Client này."}
+            actions={role==="ADMIN"?<><button className="secondaryBtn" onClick={()=>setImportKind("balance")}>⇩ Import</button><button className="primaryBtn" onClick={()=>openEntry("balance")}>＋ Ghi Balance</button></>:role==="SALES"?<button className="primaryBtn" onClick={()=>openEntry("balance")}>＋ Ghi Balance</button>:undefined}/>
           <div className="panel dataPanel">
             <div className="dataToolbar"><SearchBar value={search} onChange={setSearch} placeholder="Tìm loại giao dịch, khách, reference, note..."/><span>{data.total} records</span></div>
             {loading?<div className="loadingState">Đang tải dữ liệu…</div>:<Table rows={data.items} cols={["occurred_at","entry_type","direction","amount","customer","reference_type","reference_id","note"]}/>}
@@ -984,25 +1109,34 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
         </>}
 
         {role==="ADMIN"&&section==="accounts"&&<>
-          <PageHeader eyebrow="ACCESS CONTROL" title="Tài khoản" description="Tạo và quản lý quyền truy cập cho Admin / Sales."/>
-          <div className="panel"><UserManager users={users} onDone={refresh} currentUser={user}/></div>
+          <PageHeader eyebrow="ACCESS CONTROL" title="Tài khoản" description="Tạo và quản lý quyền truy cập cho Admin / Sales / Client."/>
+          <div className="panel"><UserManager users={users} enums={enums} onDone={refresh} currentUser={user}/></div>
         </>}
       </div>
     </div>
 
-    {importKind&&<Modal size="compact" title={importKind==="costs"?"Import Supplier Costs":importKind==="balance"?"Import Balance":role==="ADMIN"?"Import Orders Admin":"Import Orders Sales"} onClose={()=>setImportKind(null)}>
+    {viewOrder&&<Modal size="wide" title="Chi tiết Order" onClose={()=>setViewOrder(null)}><OrderDetailPanel orderId={Number(viewOrder.id)} role={role} onEdit={row=>{setViewOrder(null);openEntry("order",row as RowData)}} onPurchase={role==="ADMIN"?row=>{setViewOrder(null);setPurchaseOrder(row as RowData)}:undefined}/></Modal>}
+
+    {role==="ADMIN"&&bulkTracking&&<Modal size="fullscreen" title="Nhập Tracking & Label hàng loạt" onClose={()=>setBulkTracking(false)}><BulkTrackingSheet enums={enums} onDone={refresh}/></Modal>}
+
+    {role==="ADMIN"&&bulkReplacement&&<Modal size="fullscreen" title="Đổi Tracking & Label hàng loạt" onClose={()=>setBulkReplacement(false)}><TrackingReplacementSheet onDone={refresh}/></Modal>}
+
+    {role!=="CLIENT"&&importKind&&<Modal size="compact" title={importKind==="costs"?"Import Supplier Costs":importKind==="tracking_updates"?"Import đổi Tracking & Label":importKind==="balance"?"Import Balance":role==="ADMIN"?"Import Orders Admin":"Import Orders Sales"} onClose={()=>setImportKind(null)}>
       <div className="importModalContent">
         {importKind==="orders"&&<ImportCard kind="orders" title="Orders Admin" detail="Import nhiều Order với đầy đủ field vận hành và finance." templateHref="/templates/dmd-admin-orders.xlsx" onDone={()=>{setImportKind(null);void refresh()}}/>}
         {importKind==="sales_orders"&&<ImportCard kind="sales_orders" title="Orders Sales" detail="Import nhiều Order của account đang đăng nhập; không nhận field finance Admin." templateHref="/templates/dmd-sales-orders.xlsx" onDone={()=>{setImportKind(null);void refresh()}}/>}
         {importKind==="costs"&&<ImportCard kind="costs" title="Supplier Costs" detail="True cost, surcharge và import tax theo Tracking." templateHref="/templates/dmd-supplier-costs.xlsx" onDone={()=>{setImportKind(null);void refresh()}}/>}
+        {importKind==="tracking_updates"&&<ImportCard kind="tracking_updates" title="Đổi Tracking & Label" detail="Match Tracking cũ, giữ lịch sử và thay bằng Tracking/Label mới." templateHref="/templates/dmd-tracking-updates.xlsx" onDone={()=>{setImportKind(null);void refresh()}}/>}
         {importKind==="balance"&&<ImportCard kind="balance" title="Balance" detail="Payment, service cost và error adjustments." templateHref="/templates/dmd-balance.xlsx" onDone={()=>{setImportKind(null);void refresh()}}/>}
       </div>
     </Modal>}
 
-    {entry&&<Modal size="fullscreen" title={editOrder?"Chỉnh sửa Order":entry==="order"?"Tạo Orders":entry==="cost"?"Nhập Supplier Cost":"Ghi Balance"} onClose={closeEntry}>
-      {entry==="order"&&<QuickOrderSheet role={role} salesUsers={salesUsers} enums={enums} onDone={entryDone} edit={editOrder}/>}
+    {role==="ADMIN"&&purchaseOrder&&<Modal size="wide" title="Xử lý mua đơn & Tracking" onClose={()=>setPurchaseOrder(null)}><PurchaseOrderPanel order={purchaseOrder} enums={enums} onClose={()=>setPurchaseOrder(null)} onDone={refresh}/></Modal>}
+
+    {role!=="CLIENT"&&entry&&<Modal size="fullscreen" title={editOrder?"Chỉnh sửa Order":entry==="order"?"Tạo Orders":entry==="cost"?"Nhập Supplier Cost":"Ghi Balance"} onClose={closeEntry}>
+      {entry==="order"&&<QuickOrderSheet role={role} clients={clients} enums={enums} onDone={entryDone} edit={editOrder}/>}
       {entry==="cost"&&role==="ADMIN"&&<CostSheet enums={enums} onDone={entryDone}/>}
-      {entry==="balance"&&role==="ADMIN"&&<BalanceSheet onDone={entryDone}/>}
+      {entry==="balance"&&(role==="ADMIN"||role==="SALES")&&<BalanceSheet clients={clients} onDone={entryDone}/>}
     </Modal>}
   </div>;
 }
@@ -1019,7 +1153,7 @@ function AuthScreen({setup,onSuccess}:{setup:boolean;onSuccess:()=>void}){
     }catch(error){setMsg(error instanceof Error?error.message:"Không đăng nhập được")}
     finally{setBusy(false)}
   }
-  return <main className="authPage"><form className="authCard" onSubmit={submit}><span className="eyebrow">DMD · FINANCE OPS</span><h1>{setup?"Tạo Admin đầu tiên":"Đăng nhập"}</h1><p>{setup?"Khởi tạo tài khoản quản trị. Sau đó Admin sẽ tạo tài khoản cho Sales.":"Dùng tài khoản Admin hoặc Sales được cấp."}</p>
+  return <main className="authPage"><form className="authCard" onSubmit={submit}><span className="eyebrow">DMD · FINANCE OPS</span><h1>{setup?"Tạo Admin đầu tiên":"Đăng nhập"}</h1><p>{setup?"Khởi tạo tài khoản quản trị. Sau đó Admin sẽ tạo tài khoản cho Sales và Client.":"Dùng tài khoản Admin, Sales hoặc Client được cấp."}</p>
     {setup&&<Field label="Tên hiển thị" name="display_name" value={form.display_name} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} required/>}
     <Field label="Username" name="username" value={form.username} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} required/>
     <Field label="Password" name="password" type="password" value={form.password} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} required/>
@@ -1037,33 +1171,41 @@ export default function Home(){
   return <Platform user={status.user} onLogout={clearUser}/>;
 }
 
-function Table({rows,cols,onEdit,compact=false}:{rows:RowData[];cols:string[];onEdit?:(row:RowData)=>void;compact?:boolean}){
+function Table({rows,cols,onView,onEdit,onPurchase,compact=false}:{rows:RowData[];cols:string[];onView?:(row:RowData)=>void;onEdit?:(row:RowData)=>void;onPurchase?:(row:RowData)=>void;compact?:boolean}){
   const label=(c:string)=>({
-    workflow_status:"Trạng thái",created_at:"Ngày",sales:"Sales",customer:"Khách",supplier:"Supplier",service:"Dịch vụ",
-    sub_service:"Sub-service",tracking:"Tracking",order_id:"Order ID",est_net_cost:"Est. Net",true_net_cost:"True Net",
-    base_cost:"Base",retail:"Retail",sales_price:"Sales Price",surcharge:"Phụ phí",import_tax:"Thuế NK",
-    total_due:"Total Due",gross_margin_pct:"Margin %",margin_status:"Margin",reconciliation_status:"Reconcile",
+    workflow_status:"Trạng thái",created_at:"Ngày",system_order_code:"DMD ID",sales:"Sales",customer:"Khách",supplier:"Supplier",service:"Dịch vụ",item:"Sản phẩm",
+    sub_service:"Sub-service",tracking:"Tracking / Label",order_id:"Client Order ID",chargeable_weight:"Hạng cân (kg)",est_net_cost:"Net Cost Est",true_net_cost:"Net Cost True",
+    base_cost:"Base Cost",retail:"Retail Price",sales_price:"Giá bán",surcharge:"Phụ phí",import_tax:"Thuế NK",extra_surcharge:"Phụ phí PS",extra_import_tax:"Thuế NK PS",
+    total_due:"Giá tổng",gross_margin_pct:"Margin %",margin_status:"Margin",reconciliation_status:"Reconcile",
     reconciliation_delta:"Delta",occurred_at:"Ngày",entry_type:"Loại",direction:"Chiều",amount:"Số tiền",
     reference_type:"Ref type",reference_id:"Reference",total_net_cost:"Total Net",matched:"Link",
-  } as Record<string,string>)[c]||c.replaceAll("_"," ");
+  } as Record<string,string>)[c]||c.replace(/_/g," ");
 
   const statusClass=(v:unknown)=>{
     const x=String(v||"");
     if(["REVIEW","LOW_MARGIN","Waiting","DEBIT"].includes(x))return "status badStatus";
-    if(["PASS","OK","Linked","CREDIT","RECONCILED","ADMIN_READY"].includes(x))return "status goodStatus";
-    if(["SALES_DRAFT","TRACKING_ASSIGNED","PENDING"].includes(x))return "status neutralStatus";
+    if(["PASS","OK","Linked","CREDIT","RECONCILED","PURCHASED"].includes(x))return "status goodStatus";
+    if(["PENDING_PURCHASE","PURCHASING","PENDING"].includes(x))return "status neutralStatus";
     return "";
   };
 
-  return <div className={compact?"tableWrap compactTable":"tableWrap"}><table><thead><tr>{onEdit&&<th></th>}{cols.map(c=><th key={c}>{label(c)}</th>)}</tr></thead><tbody>
-    {rows.length===0?<tr><td colSpan={cols.length+(onEdit?1:0)} className="empty">Chưa có dữ liệu.</td></tr>
+  const hasActions=Boolean(onView||onEdit||onPurchase);
+  return <div className={compact?"tableWrap compactTable":"tableWrap"}><table><thead><tr>{hasActions&&<th>Thao tác</th>}{cols.map(c=><th key={c}>{label(c)}</th>)}</tr></thead><tbody>
+    {rows.length===0?<tr><td colSpan={cols.length+(hasActions?1:0)} className="empty">Chưa có dữ liệu.</td></tr>
     :rows.map((r,i)=><tr key={String(r.id||r.tracking||r.order_id||i)}>
-      {onEdit&&<td className="actionCell"><button className="rowAction" onClick={()=>onEdit(r)}>Sửa</button></td>}
+      {hasActions&&<td className="actionCell"><div className="rowActions">{onView&&<button className="rowAction" onClick={()=>onView(r)}>View</button>}{onEdit&&<button className="rowAction" onClick={()=>onEdit(r)}>Sửa</button>}{onPurchase&&<button className="rowAction primaryRowAction" onClick={()=>onPurchase(r)}>{Number(r.tracking_count||0)>0?"Tracking":"Mua đơn"}</button>}</div></td>}
       {cols.map(c=>{
         const v=r[c];
         const isMoney=["amount","est_net_cost","true_net_cost","base_cost","retail","sales_price","surcharge","import_tax","extra_surcharge","extra_import_tax","total_due","reconciliation_delta","total_net_cost"].includes(c);
         const isStatus=["workflow_status","margin_status","reconciliation_status","direction","matched"].includes(c);
         const display=c==="matched"?(Number(v)?"Linked":"Waiting"):isMoney?money(v):["created_at","occurred_at"].includes(c)?(v?displayDate(v):"—"):String(v??"—");
+        if(c==="tracking"){
+          let trackingRows:Array<{id?:number;tracking?:string;label_url?:string;status?:string;lot_number?:number}>=[];
+          try{trackingRows=JSON.parse(String(r.tracking_data||"[]"))}catch{}
+          const active=trackingRows.filter(row=>row.status==="ACTIVE"||!row.status);
+          if(!active.length)return <td key={c}>—</td>;
+          return <td key={c}><details className="trackingCell"><summary>{active[0].tracking}{active.length>1?` +${active.length-1}`:""}</summary><div>{active.map(row=><span key={row.id||row.tracking}><b>Lô {row.lot_number||1}</b>{row.tracking}{row.label_url&&<a href={row.label_url} target="_blank" rel="noreferrer">Label ↗</a>}</span>)}</div></details></td>;
+        }
         return <td key={c}>{isStatus?<span className={statusClass(display)}>{display}</span>:display}</td>;
       })}
     </tr>)}

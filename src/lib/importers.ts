@@ -1,10 +1,13 @@
+import { createHash } from "node:crypto";
 import { readSheet, SheetNotFoundError } from "read-excel-file/node";
 import { db } from "./db";
 import { addLedgerEntry, addSupplierCost, norm, normalizeDateInput, num, text, upsertOrder } from "./finance";
 import { canonicalEnumValue } from "./enums";
+import { findTrackingOwner, replaceOrderTracking } from "./order-operations";
+import { logOrderEvent } from "./order-audit";
 
 type Row = unknown[];
-type ImportKind = "orders" | "sales_orders" | "costs" | "balance";
+type ImportKind = "orders" | "sales_orders" | "costs" | "tracking_updates" | "balance";
 type SalesImportContext = { userId:number; displayName:string };
 
 async function workbookRows(buffer: Buffer): Promise<Row[][]> {
@@ -44,8 +47,8 @@ function importDate(value: unknown) {
   return text(value);
 }
 
-function importOrders(rows: Row[][]) {
-  const h = findHeader(rows, ["Ngày tạo", "Sales", "Khách", "Order ID"]);
+function importOrders(rows: Row[][], actorId?:number) {
+  const h = findHeader(rows, ["Sales", "Khách", "Order ID"]);
   if (h < 0) throw new Error("Không tìm thấy header Template Lên đơn.");
   const headers = headerMap(rows[h]);
   let imported = 0;
@@ -54,21 +57,28 @@ function importOrders(rows: Row[][]) {
   rows.slice(h + 1).forEach((row, offset) => {
     if (norm(row[0]).startsWith("rule:")) return;
     const tracking = text(pick(row, headers, "Tracking"));
-    const orderId = text(pick(row, headers, "Order ID"));
-    const createdAt = importDate(pick(row, headers, "Ngày tạo"));
+    const orderId = text(pick(row, headers, "Client Order ID", "Order ID"));
     const customer = text(pick(row, headers, "Khách"));
-    if (!tracking && !orderId && !createdAt && !customer) return;
+    if (!tracking && !orderId && !customer) return;
     if (!tracking && !orderId) {
       warnings.push(`Bỏ qua dòng ${h + offset + 2}: cần Tracking hoặc Order ID.`);
       return;
     }
 
     try {
-      const salesName = text(pick(row, headers, "Sales"));
+      let salesName = text(pick(row, headers, "Sales"));
+      const clientAccount = customer ? db.prepare(`
+        SELECT c.id,c.display_name,c.sales_user_id,s.display_name sales_name
+        FROM users c LEFT JOIN users s ON s.id=c.sales_user_id
+        WHERE c.role='CLIENT' AND c.active=1
+          AND (lower(c.display_name)=lower(?) OR lower(c.username)=lower(?))
+        LIMIT 1
+      `).get(customer,customer) as {id:number;display_name:string;sales_user_id:number|null;sales_name:string|null}|undefined : undefined;
+      if(clientAccount?.sales_name)salesName=clientAccount.sales_name;
       const saved = upsertOrder({
-        created_at: createdAt || null,
+        client_user_id: clientAccount?.id || null,
         sales: salesName,
-        customer,
+        customer: clientAccount?.display_name || customer,
         supplier: text(pick(row, headers, "Supplier")),
         service: text(pick(row, headers, "Dịch vụ")),
         sub_service: text(pick(row, headers, "Sub-Service")),
@@ -79,6 +89,7 @@ function importOrders(rows: Row[][]) {
         base_cost: pick(row, headers, "Base Cost") as string | number | null,
         retail: pick(row, headers, "Retail") as string | number | null,
         discount: pick(row, headers, "Discount") as string | number | null,
+        discount_note:text(pick(row,headers,"Lý do Discount")),
         sales_price: pick(row, headers, "Sales Price") as string | number | null,
         surcharge: pick(row, headers, "Phụ phí") as string | number | null,
         import_tax: pick(row, headers, "Thuế NK") as string | number | null,
@@ -104,13 +115,18 @@ function importOrders(rows: Row[][]) {
         country: text(pick(row, headers, "Nước*")),
         phone: text(pick(row, headers, "Điện thoại")),
       }) as { id:number };
-      if (salesName) {
+      if (clientAccount) {
+        db.prepare("UPDATE orders SET client_user_id=?,sales_user_id=?,sales=? WHERE id=?")
+          .run(clientAccount.id,clientAccount.sales_user_id,salesName,saved.id);
+      } else if (salesName) {
         const salesUser = db.prepare(
           "SELECT id FROM users WHERE role='SALES' AND active=1 AND (lower(display_name)=lower(?) OR lower(username)=lower(?)) LIMIT 1"
         ).get(salesName, salesName) as { id:number } | undefined;
         if (salesUser) db.prepare("UPDATE orders SET sales_user_id=? WHERE id=?").run(salesUser.id, saved.id);
         else warnings.push("Sales '"+salesName+"' chưa có account tương ứng; order vẫn import nhưng chỉ Admin thấy.");
       }
+      const after=db.prepare("SELECT * FROM orders WHERE id=?").get(saved.id);
+      logOrderEvent({orderId:saved.id,eventType:"ORDER_IMPORTED",summary:"Order được nhập từ file Admin.",actorId,source:"IMPORT",after});
       imported++;
     } catch (error) {
       warnings.push(`Dòng ${h + offset + 2}: ${error instanceof Error ? error.message : "không thể lưu"}`);
@@ -121,7 +137,7 @@ function importOrders(rows: Row[][]) {
 }
 
 function importSalesOrders(rows: Row[][], actor: SalesImportContext) {
-  const h = findHeader(rows, ["Ngày tạo", "Khách", "Order ID"]);
+  const h = findHeader(rows, ["Khách", "Order ID"]);
   if (h < 0) throw new Error("Không tìm thấy header Template Lên đơn Sales.");
   const headers = headerMap(rows[h]);
   let imported = 0;
@@ -129,30 +145,40 @@ function importSalesOrders(rows: Row[][], actor: SalesImportContext) {
 
   rows.slice(h + 1).forEach((row, offset) => {
     if (norm(row[0]).startsWith("rule:")) return;
-    const orderId = text(pick(row, headers, "Order ID"));
-    const createdAt = importDate(pick(row, headers, "Ngày tạo"));
+    const orderId = text(pick(row, headers, "Client Order ID", "Order ID"));
     const customer = text(pick(row, headers, "Khách"));
-    if (!orderId && !createdAt && !customer) return;
+    if (!orderId && !customer) return;
     if (!orderId) {
       warnings.push(`Bỏ qua dòng ${h + offset + 2}: Sales import bắt buộc Order ID.`);
       return;
     }
 
     try {
-      const matches = db.prepare("SELECT id,sales_user_id FROM orders WHERE order_id=? ORDER BY id")
-        .all(orderId) as Array<{id:number;sales_user_id:number|null}>;
+      const clientAccount = db.prepare(`
+        SELECT id,display_name FROM users
+        WHERE role='CLIENT' AND active=1 AND sales_user_id=?
+          AND (lower(display_name)=lower(?) OR lower(username)=lower(?))
+        LIMIT 1
+      `).get(actor.userId,customer,customer) as {id:number;display_name:string}|undefined;
+      if(!clientAccount){
+        warnings.push(`Dòng ${h + offset + 2}: Client '${customer}' không tồn tại hoặc không thuộc Sales đang đăng nhập.`);
+        return;
+      }
+
+      const matches = db.prepare("SELECT id,client_user_id FROM orders WHERE order_id=? ORDER BY id")
+        .all(orderId) as Array<{id:number;client_user_id:number|null}>;
       if (matches.length > 1) {
         warnings.push(`Dòng ${h + offset + 2}: Order ID ${orderId} có nhiều record; Admin cần xử lý multi-carton.`);
         return;
       }
       let existingId: number | undefined;
       if (matches.length === 1) {
-        if (matches[0].sales_user_id === null) {
-          warnings.push(`Dòng ${h + offset + 2}: Order ID ${orderId} đang chưa gán Sales; Admin cần assign trước.`);
+        if (matches[0].client_user_id === null) {
+          warnings.push(`Dòng ${h + offset + 2}: Order ID ${orderId} đang chưa gán Client; Admin cần assign trước.`);
           return;
         }
-        if (matches[0].sales_user_id !== actor.userId) {
-          warnings.push(`Dòng ${h + offset + 2}: Order ID ${orderId} thuộc Sales khác.`);
+        if (matches[0].client_user_id !== clientAccount.id) {
+          warnings.push(`Dòng ${h + offset + 2}: Order ID ${orderId} thuộc Client khác.`);
           return;
         }
         existingId = matches[0].id;
@@ -160,9 +186,9 @@ function importSalesOrders(rows: Row[][], actor: SalesImportContext) {
 
       const saved = upsertOrder({
         id: existingId,
-        created_at: createdAt || null,
+        client_user_id: clientAccount.id,
         sales: actor.displayName,
-        customer,
+        customer: clientAccount.display_name,
         service: text(pick(row, headers, "Dịch vụ")),
         sub_service: text(pick(row, headers, "Sub-Service")),
         order_id: orderId,
@@ -174,6 +200,9 @@ function importSalesOrders(rows: Row[][], actor: SalesImportContext) {
         length: pick(row, headers, "Dài") as string | number | null,
         width: pick(row, headers, "Rộng") as string | number | null,
         height: pick(row, headers, "Cao") as string | number | null,
+        manual_volume:pick(row,headers,"Thể tích") as string|number|null,
+        discount:pick(row,headers,"Discount") as string|number|null,
+        discount_note:text(pick(row,headers,"Lý do Discount")),
         weight: pick(row, headers, "Khối lượng") as string | number | null,
         recipient_name: text(pick(row, headers, "Tên người nhận")),
         address1: text(pick(row, headers, "Địa chỉ*")),
@@ -186,8 +215,10 @@ function importSalesOrders(rows: Row[][], actor: SalesImportContext) {
       }) as { id:number };
 
       db.prepare(
-        "UPDATE orders SET sales_user_id=?,sales=?,created_by_user_id=COALESCE(created_by_user_id,?),updated_by_user_id=? WHERE id=?"
-      ).run(actor.userId, actor.displayName, actor.userId, actor.userId, saved.id);
+        "UPDATE orders SET client_user_id=?,sales_user_id=?,customer=?,sales=?,created_by_user_id=COALESCE(created_by_user_id,?),updated_by_user_id=? WHERE id=?"
+      ).run(clientAccount.id, actor.userId, clientAccount.display_name, actor.displayName, actor.userId, actor.userId, saved.id);
+      const after=db.prepare("SELECT * FROM orders WHERE id=?").get(saved.id);
+      logOrderEvent({orderId:saved.id,eventType:"ORDER_IMPORTED",summary:"Order được nhập từ file Sales.",actorId:actor.userId,source:"IMPORT",after});
       imported++;
     } catch (error) {
       warnings.push(`Dòng ${h + offset + 2}: ${error instanceof Error ? error.message : "không thể lưu"}`);
@@ -197,7 +228,7 @@ function importSalesOrders(rows: Row[][], actor: SalesImportContext) {
   return { imported, warnings };
 }
 
-function importCosts(rows: Row[][], batchId: number) {
+function importCosts(rows: Row[][], batchId: number, actorId?:number) {
   const h = findHeader(rows, ["Supplier", "Dịch vụ", "Sub-Service", "Tracking", "Total"]);
   if (h < 0) throw new Error("Không tìm thấy header Template Chi phí.");
   const headers = headerMap(rows[h]);
@@ -226,11 +257,37 @@ function importCosts(rows: Row[][], batchId: number) {
       import_tax: pick(row, headers, "Thuế NK") as string | number | null,
       note: text(pick(row, headers, "Note")),
       batch_id: batchId,
+      source_key:createHash("sha256").update(JSON.stringify(row.map(value=>value instanceof Date?value.toISOString():String(value??"").trim()))).digest("hex"),
     });
     if (result.warning) warnings.push(`Tracking ${tracking}: ${result.warning}`);
-    imported++;
+    if(!result.duplicate){
+      db.prepare("UPDATE supplier_costs SET created_by_user_id=? WHERE id=?").run(actorId||null,result.id);
+      const cost=db.prepare("SELECT matched_order_id,tracking,total_net_cost,extra_surcharge,import_tax,note FROM supplier_costs WHERE id=?").get(result.id) as {matched_order_id:number|null;tracking:string;total_net_cost:number;extra_surcharge:number;import_tax:number;note:string|null}|undefined;
+      if(cost?.matched_order_id)logOrderEvent({orderId:cost.matched_order_id,eventType:"SUPPLIER_COST_IMPORTED",summary:`Cập nhật chi phí theo Tracking ${cost.tracking}: Net Cost True ${cost.total_net_cost} USD, phụ phí ${cost.extra_surcharge||0} USD, thuế NK ${cost.import_tax||0} USD.`,actorId,visibility:"ADMIN",source:"IMPORT",after:cost});
+      imported++;
+    }
   }
   return { imported, warnings };
+}
+
+function importTrackingUpdates(rows:Row[][],actorId?:number){
+  const h=findHeader(rows,["Tracking cũ","Tracking mới","URL Label mới","Lý do"]);
+  if(h<0)throw new Error("Không tìm thấy header Template đổi Tracking.");
+  const headers=headerMap(rows[h]);let imported=0;const warnings:string[]=[];
+  for(const [offset,row] of rows.slice(h+1).entries()){
+    if(norm(row[0]).startsWith("rule:"))break;
+    const oldTracking=text(pick(row,headers,"Tracking cũ"));const newTracking=text(pick(row,headers,"Tracking mới"));
+    if(!oldTracking&&!newTracking)continue;
+    try{
+      if(!oldTracking||!newTracking)throw new Error("Tracking cũ và Tracking mới là bắt buộc.");
+      const owner=findTrackingOwner(oldTracking);if(!owner)throw new Error("Không tìm thấy Tracking cũ.");
+      const reason=text(pick(row,headers,"Lý do"));if(!reason)throw new Error("Lý do là bắt buộc.");
+      const replacement=replaceOrderTracking({orderId:owner.order_id,oldTrackingId:owner.id,newTracking,newLabelUrl:text(pick(row,headers,"URL Label mới")),reason,actorId});
+      logOrderEvent({orderId:owner.order_id,eventType:"TRACKING_REPLACED",summary:`Đổi Tracking ${oldTracking} → ${newTracking}. Lý do: ${reason}`,actorId,source:"IMPORT",before:owner,after:replacement});
+      imported++;
+    }catch(error){warnings.push(`Dòng ${h+offset+2}: ${error instanceof Error?error.message:"không thể đổi Tracking"}`)}
+  }
+  return {imported,warnings};
 }
 
 function importBalance(rows: Row[][], batchId: number) {
@@ -307,18 +364,21 @@ export async function importWorkbook(
   kind: ImportKind,
   buffer: Buffer,
   filename: string,
-  options?: { salesActor?: SalesImportContext },
+  options?: { salesActor?: SalesImportContext; actorId?:number },
 ) {
   const rows = await workbookRows(buffer);
+  return db.transaction(()=>{
   const batch = db.prepare("INSERT INTO import_batches(kind,filename) VALUES (?,?)").run(kind, filename);
   const batchId = Number(batch.lastInsertRowid);
   let result: { imported:number; warnings:string[] };
-  if (kind === "orders") result = importOrders(rows);
+  if (kind === "orders") result = importOrders(rows,options?.actorId);
   else if (kind === "sales_orders") {
     if (!options?.salesActor) throw new Error("Sales context is required.");
     result = importSalesOrders(rows, options.salesActor);
-  } else if (kind === "costs") result = importCosts(rows, batchId);
+  } else if (kind === "costs") result = importCosts(rows, batchId,options?.actorId);
+  else if(kind==="tracking_updates")result=importTrackingUpdates(rows,options?.actorId);
   else result = importBalance(rows, batchId);
   db.prepare("UPDATE import_batches SET imported_rows=?, warnings=? WHERE id=?").run(result.imported, JSON.stringify(result.warnings), batchId);
   return { batchId, ...result };
+  })();
 }

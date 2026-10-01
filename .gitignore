@@ -1,10 +1,11 @@
 node_modules/
 .next/
-data/*.db
-data/*.db-*
+data/
 .smoke/
 .env
 .env.*
 !.env.example
 .DS_Store
 npm-debug.log*
+.agent/
+tsconfig.tsbuildinfo

@@ -1,8 +1,10 @@
 import { db } from "./db";
 import { validateOrderEnums, validateSupplierCostEnums } from "./enums";
+import { addOrderTracking, appendOrderNote, findTrackingOwner, matchSupplierCostsForOrder, normalizeTracking } from "./order-operations";
 
 export type OrderInput = {
   id?: number;
+  client_user_id?: number | string | null;
   created_at?: string | null;
   sales?: string;
   customer?: string;
@@ -16,6 +18,7 @@ export type OrderInput = {
   base_cost?: number | string | null;
   retail?: number | string | null;
   discount?: number | string | null;
+  discount_note?: string;
   sales_price?: number | string | null;
   surcharge?: number | string | null;
   import_tax?: number | string | null;
@@ -30,7 +33,10 @@ export type OrderInput = {
   width?: number | string | null;
   height?: number | string | null;
   volume?: number | string | null;
+  manual_volume?: number | string | null;
+  dimensional_divisor?: number | string | null;
   weight?: number | string | null;
+  internal_note?: string;
   chargeable_weight?: number | string | null;
   recipient_name?: string;
   address1?: string;
@@ -60,9 +66,11 @@ export type SupplierCostInput = {
   import_tax?: number | string | null;
   note?: string;
   batch_id?: number | null;
+  source_key?: string | null;
 };
 
 export type LedgerInput = {
+  client_user_id?: number | string | null;
   occurred_at?: string | null;
   entry_type: string;
   direction?: "CREDIT" | "DEBIT";
@@ -77,6 +85,7 @@ export type LedgerInput = {
 
 type OrderRecord = Record<string, unknown> & {
   id: number;
+  client_user_id: number | null;
   tracking: string | null;
   order_id: string | null;
   customer: string | null;
@@ -150,7 +159,7 @@ export function draftKey(parts: Array<string | number | null | undefined>) {
   return parts.map((x) => norm(x)).filter(Boolean).join("|").slice(0, 500);
 }
 
-export function pricing(serviceRaw: string, subServiceRaw: string, estNet: number, current: {
+export function pricing(_serviceRaw: string, _subServiceRaw: string, _estNet: number, current: {
   base: number;
   retail: number;
   discount: number;
@@ -160,89 +169,37 @@ export function pricing(serviceRaw: string, subServiceRaw: string, estNet: numbe
   weight: number;
   volume: number;
   length: number;
+  dimensionalDivisor?: number;
 }) {
-  const service = norm(serviceRaw);
-  const sub = norm(subServiceRaw);
-  let base = current.base;
-  let retail = current.retail;
-  const chargeable = Math.max(current.weight || 0, (current.volume || 0) / 5000);
-
-  if (!base || !retail) {
-    if (service.includes("epacket")) {
-      base ||= estNet * 1.06;
-      retail ||= estNet * 1.16;
-    } else if (service.includes("yun express")) {
-      base ||= estNet * 1.12;
-      retail ||= estNet * 1.32;
-    } else if (service.includes("ups") || ["saver", "express", "expedited"].some((x) => sub.includes(x))) {
-      base ||= estNet * 1.12;
-      retail ||= estNet * 1.32;
-    } else if (service.includes("chuyên tuyến") || service.includes("chuyen tuyen")) {
-      base ||= estNet * 1.15;
-      retail ||= estNet * 1.37;
-    }
-  }
-
-  let surcharge = current.surcharge || 0;
-  if (service.includes("epacket") && current.length > 75) surcharge += 10.5;
-  else if (service.includes("epacket") && current.length > 55) surcharge += 5;
-
-  const salesPrice = current.salesPrice || retail * (1 - (current.discount || 0) / 100);
-  const totalDue = salesPrice + surcharge + (current.importTax || 0);
+  // Pricing markups are intentionally deferred. For now these are manual
+  // snapshots; only measurement and payable-total arithmetic are automatic.
+  const divisor=Number(current.dimensionalDivisor||5000)||5000;
+  const chargeable=Math.max(current.weight||0,(current.volume||0)/divisor);
   return {
-    base: money(base),
-    retail: money(retail),
-    salesPrice: money(salesPrice),
-    surcharge: money(surcharge),
-    chargeable,
-    totalDue: money(totalDue),
+    base:money(current.base),retail:money(current.retail),salesPrice:money(current.salesPrice),
+    surcharge:money(current.surcharge),chargeable,
+    totalDue:money((current.salesPrice||0)+(current.surcharge||0)+(current.importTax||0)),
   };
 }
 
 export function getOrderByTracking(tracking: string) {
-  return db.prepare("SELECT * FROM orders WHERE tracking=?").get(tracking) as OrderRecord | undefined;
+  const owner=findTrackingOwner(tracking);
+  return owner?db.prepare("SELECT * FROM orders WHERE id=?").get(owner.order_id) as OrderRecord:undefined;
 }
 
 export function upsertAutoOrderCharge(order: OrderRecord) {
   if (!order.tracking || !order.total_due) return;
   db.prepare(`
-    INSERT INTO ledger_entries(occurred_at, entry_type, direction, amount, customer, reference_type, reference_id, note)
-    VALUES (?, 'ORDER_CHARGE', 'DEBIT', ?, ?, 'TRACKING', ?, 'Auto from order total due')
+    INSERT INTO ledger_entries(occurred_at, entry_type, direction, amount, customer, client_user_id, reference_type, reference_id, note)
+    VALUES (?, 'ORDER_CHARGE', 'DEBIT', ?, ?, ?, 'TRACKING', ?, 'Auto from order total due')
     ON CONFLICT(entry_type, reference_type, reference_id) WHERE reference_id IS NOT NULL AND entry_type = 'ORDER_CHARGE'
-    DO UPDATE SET occurred_at=excluded.occurred_at, amount=excluded.amount, customer=excluded.customer
-  `).run(order.created_at || null, order.total_due, order.customer || null, order.tracking);
+    DO UPDATE SET occurred_at=excluded.occurred_at, amount=excluded.amount, customer=excluded.customer, client_user_id=excluded.client_user_id
+  `).run(order.created_at || null, order.total_due, order.customer || null, order.client_user_id || null, order.tracking);
 }
 
 export function applyLatestSupplierCost(tracking: string) {
-  const order = getOrderByTracking(tracking);
-  if (!order) return false;
-  const cost = db.prepare(`
-    SELECT total_net_cost, extra_surcharge, import_tax
-    FROM supplier_costs WHERE tracking=? ORDER BY id DESC LIMIT 1
-  `).get(tracking) as { total_net_cost:number; extra_surcharge:number; import_tax:number } | undefined;
-  if (!cost) return false;
-
-  const totalDue = money(
-    Number(order.sales_price || 0) +
-    Number(order.surcharge || 0) +
-    Number(cost.extra_surcharge || 0) +
-    Number(order.import_tax || 0) +
-    Number(cost.import_tax || 0)
-  );
-  const delta = money(Number(cost.total_net_cost || 0) - Number(order.est_net_cost || 0));
-  db.prepare(`
-    UPDATE orders SET
-      true_net_cost=?, extra_surcharge=?, extra_import_tax=?, total_due=?,
-      gross_profit_net=ROUND(sales_price-?, 2),
-      gross_margin_pct=CASE WHEN sales_price>0 THEN ROUND(((sales_price-?)/sales_price)*100,2) ELSE 0 END,
-      margin_status=CASE WHEN sales_price>0 AND ((sales_price-?)/sales_price)*100<15 THEN 'LOW_MARGIN' ELSE 'OK' END,
-      reconciliation_delta=?,
-      reconciliation_status=CASE WHEN ? <= est_net_cost THEN 'PASS' ELSE 'REVIEW' END,
-      workflow_status='RECONCILED', updated_at=CURRENT_TIMESTAMP
-    WHERE id=?
-  `).run(cost.total_net_cost, cost.extra_surcharge, cost.import_tax, totalDue, cost.total_net_cost, cost.total_net_cost, cost.total_net_cost, delta, cost.total_net_cost, order.id);
-  const refreshed = getOrderByTracking(tracking);
-  if (refreshed) upsertAutoOrderCharge(refreshed);
+  const owner=findTrackingOwner(tracking);if(!owner)return false;
+  matchSupplierCostsForOrder(owner.order_id);
   return true;
 }
 
@@ -296,6 +253,9 @@ export function upsertOrder(input: OrderInput) {
     input.recipient_name,
   ]);
   const existing = findOrder(input, initialTracking, initialOrderId, preliminaryKey);
+  const clientUserId = input.client_user_id !== undefined && input.client_user_id !== null && input.client_user_id !== ""
+    ? Number(input.client_user_id)
+    : Number(existing?.client_user_id || 0) || null;
 
   const orderId = stringValue(input, "order_id", existing);
   const tracking = stringValue(input, "tracking", existing);
@@ -312,39 +272,63 @@ export function upsertOrder(input: OrderInput) {
   const subService = enumValues.sub_service;
   const item = stringValue(input, "item", existing);
   const recipient = stringValue(input, "recipient_name", existing);
-  const length = numericValue(input, "length", existing);
-  const width = numericValue(input, "width", existing);
-  const height = numericValue(input, "height", existing);
-  const volume = input.volume !== undefined && input.volume !== null && input.volume !== ""
-    ? num(input.volume)
-    : money(length * width * height);
-  const weight = numericValue(input, "weight", existing);
-  const estNet = numericValue(input, "est_net_cost", existing);
-  const discount = numericValue(input, "discount", existing);
-  const supplier = enumValues.supplier;
+  const measurement=(key:keyof OrderInput)=>input[key]!==undefined?nullableNum(input[key]):nullableNum(existing?.[String(key)]);
+  const length=measurement("length"),width=measurement("width"),height=measurement("height");
+  const dimensionCount=[length,width,height].filter(value=>Number(value||0)>0).length;
+  if(dimensionCount>0&&dimensionCount<3)throw new Error("Hãy nhập đủ Dài, Rộng và Cao hoặc bỏ trống cả ba.");
+  const calculatedVolume=dimensionCount===3?Number(length)*Number(width)*Number(height):null;
+  const manualVolume=input.manual_volume!==undefined?nullableNum(input.manual_volume):input.volume!==undefined?nullableNum(input.volume):nullableNum(existing?.manual_volume);
+  const volume=calculatedVolume||manualVolume||0;
+  const weight=measurement("weight")||0;
+  const cartonCount=measurement("carton_count");
+  const dimensionalDivisor=Number(input.dimensional_divisor||existing?.dimensional_divisor||5000)||5000;
+  if((!existing||input.weight!==undefined)&&weight<=0)throw new Error("Tổng khối lượng phải lớn hơn 0 kg.");
+  if((!existing||input.carton_count!==undefined)&&(!Number.isInteger(cartonCount)||Number(cartonCount)<1))throw new Error("Số lượng carton phải là số nguyên từ 1 trở lên.");
+  if(input.manual_volume!==undefined&&input.manual_volume!==null&&input.manual_volume!==""&&Number(manualVolume)<=0)throw new Error("Thể tích tổng phải lớn hơn 0.");
+  if(input.dimensional_divisor!==undefined&&(!Number.isFinite(Number(input.dimensional_divisor))||Number(input.dimensional_divisor)<=0))throw new Error("Hệ số quy đổi thể tích phải lớn hơn 0.");
+  for(const dimension of [length,width,height])if(dimension!==null&&dimension<0)throw new Error("Kích thước không được âm.");
+  if(!existing){
+    if(!item)throw new Error("Tên sản phẩm là bắt buộc.");
+    if(!stringValue(input,"material",existing))throw new Error("Chất liệu là bắt buộc.");
+    if(!cartonCount||cartonCount<1)throw new Error("Số lượng carton phải từ 1 trở lên.");
+    if(!weight||weight<=0)throw new Error("Tổng khối lượng phải lớn hơn 0 kg.");
+    if(!volume||volume<=0)throw new Error("Hãy nhập đủ kích thước hoặc thể tích tổng của lô hàng.");
+  }
+  const estNet=numericValue(input,"est_net_cost",existing);
+  const supplier=enumValues.supplier;
+  const setting=clientUserId?db.prepare(`SELECT * FROM client_service_settings WHERE client_user_id=? AND lower(service)=lower(?) AND (lower(sub_service)=lower(?) OR sub_service='') ORDER BY CASE WHEN lower(sub_service)=lower(?) THEN 0 ELSE 1 END LIMIT 1`).get(clientUserId,service,subService,subService) as {is_enabled:number;discount_percent:number}|undefined:undefined;
+  if(setting&&setting.is_enabled===0)throw new Error("Client này đang bị chặn sử dụng dịch vụ đã chọn.");
+  const hasDiscount=input.discount!==undefined&&input.discount!==null&&input.discount!=="";
+  const defaultDiscount=Number(setting?.discount_percent||0);
+  const discount=hasDiscount?num(input.discount):(existing?numericValue(input,"discount",existing):defaultDiscount);
+  if((hasDiscount||!existing)&&(discount<0||discount>100))throw new Error("Discount phải từ 0 đến 100%.");
+  const discountNote=stringValue(input,"discount_note",existing);
+  if(hasDiscount&&money(discount)!==money(defaultDiscount)&&!discountNote)throw new Error("Discount ngoại lệ bắt buộc phải có lý do.");
 
   const manualSurcharge = input.surcharge !== undefined && input.surcharge !== null && input.surcharge !== ""
     ? num(input.surcharge)
     : num(existing?.manual_surcharge);
 
-  const autoPricing = input.auto_pricing !== undefined && input.auto_pricing !== null
-    ? !["0","false","off"].includes(String(input.auto_pricing).toLowerCase())
-    : existing ? Boolean(existing.auto_pricing) : true;
+  const autoPricing=false;
 
   const calc = pricing(service, subService, estNet, {
-    base: autoPricing ? 0 : numericValue(input, "base_cost", existing),
-    retail: autoPricing ? 0 : numericValue(input, "retail", existing),
+    base:numericValue(input,"base_cost",existing),
+    retail:numericValue(input,"retail",existing),
     discount,
-    salesPrice: autoPricing ? 0 : numericValue(input, "sales_price", existing),
+    salesPrice:numericValue(input,"sales_price",existing),
     surcharge: manualSurcharge,
     importTax: numericValue(input, "import_tax", existing),
     weight,
     volume,
-    length,
+    length:Number(length||0),
+    dimensionalDivisor,
   });
 
   const payload = {
-    created_at: normalizeDateInput(stringValue(input, "created_at", existing), "Ngày tạo"),
+    client_user_id: clientUserId,
+    created_at: existing
+      ? (input.created_at ? normalizeDateInput(input.created_at, "Ngày tạo") : existing.created_at)
+      : (input.created_at ? normalizeDateInput(input.created_at, "Ngày tạo") : new Date().toISOString()),
     sales: stringValue(input, "sales", existing),
     customer,
     supplier,
@@ -354,11 +338,13 @@ export function upsertOrder(input: OrderInput) {
     tracking: tracking || null,
     order_id: orderId || null,
     draft_key: draftKey([orderId, customer, service, subService, item, recipient]) || null,
-    workflow_status: tracking && supplier && estNet ? "ADMIN_READY" : tracking ? "TRACKING_ASSIGNED" : "SALES_DRAFT",
+    workflow_status: existing?String(existing.workflow_status||"PENDING_PURCHASE"):"PENDING_PURCHASE",
     est_net_cost: estNet,
     base_cost: calc.base,
     retail: calc.retail,
     discount,
+    discount_note:discountNote,
+    discount_source:money(discount)===money(defaultDiscount)?"DEFAULT":"MANUAL",
     sales_price: calc.salesPrice,
     auto_pricing: autoPricing ? 1 : 0,
     manual_surcharge: money(manualSurcharge),
@@ -370,18 +356,19 @@ export function upsertOrder(input: OrderInput) {
     gross_margin_pct: calc.salesPrice > 0 ? money(((calc.salesPrice - estNet) / calc.salesPrice) * 100) : 0,
     margin_status: calc.salesPrice > 0 && ((calc.salesPrice - estNet) / calc.salesPrice) * 100 < 15 ? "LOW_MARGIN" : "OK",
     note: stringValue(input, "note", existing),
+    internal_note:stringValue(input,"internal_note",existing),
     item,
     material: stringValue(input, "material", existing),
     declared_value: input.declared_value !== undefined ? nullableNum(input.declared_value) : nullableNum(existing?.declared_value),
-    carton_count: input.carton_count !== undefined ? nullableNum(input.carton_count) : nullableNum(existing?.carton_count),
-    length,
-    width,
-    height,
+    carton_count:cartonCount,
+    length,width,height,
+    manual_volume:manualVolume,
+    calculated_volume:calculatedVolume,
     volume,
+    dimensional_divisor:dimensionalDivisor,
+    measurement_mode:"LOT",
     weight,
-    chargeable_weight: input.chargeable_weight !== undefined && input.chargeable_weight !== null && input.chargeable_weight !== ""
-      ? num(input.chargeable_weight)
-      : calc.chargeable,
+    chargeable_weight:calc.chargeable,
     recipient_name: recipient,
     address1: stringValue(input, "address1", existing),
     address2: stringValue(input, "address2", existing),
@@ -396,12 +383,12 @@ export function upsertOrder(input: OrderInput) {
   if (existing) {
     db.prepare(`
       UPDATE orders SET
-        created_at=@created_at,sales=@sales,customer=@customer,supplier=@supplier,service=@service,sub_service=@sub_service,
+        client_user_id=@client_user_id,created_at=@created_at,sales=@sales,customer=@customer,supplier=@supplier,service=@service,sub_service=@sub_service,
         label=@label,tracking=@tracking,order_id=@order_id,draft_key=@draft_key,workflow_status=@workflow_status,
-        est_net_cost=@est_net_cost,base_cost=@base_cost,retail=@retail,discount=@discount,sales_price=@sales_price,auto_pricing=@auto_pricing,
+        est_net_cost=@est_net_cost,base_cost=@base_cost,retail=@retail,discount=@discount,discount_note=@discount_note,discount_source=@discount_source,sales_price=@sales_price,auto_pricing=@auto_pricing,
         manual_surcharge=@manual_surcharge,surcharge=@surcharge,import_tax=@import_tax,total_due=@total_due,gross_profit_base=@gross_profit_base,
-        gross_profit_net=@gross_profit_net,gross_margin_pct=@gross_margin_pct,margin_status=@margin_status,note=@note,item=@item,material=@material,declared_value=@declared_value,
-        carton_count=@carton_count,length=@length,width=@width,height=@height,volume=@volume,weight=@weight,
+        gross_profit_net=@gross_profit_net,gross_margin_pct=@gross_margin_pct,margin_status=@margin_status,note=@note,internal_note=@internal_note,item=@item,material=@material,declared_value=@declared_value,
+        carton_count=@carton_count,length=@length,width=@width,height=@height,manual_volume=@manual_volume,calculated_volume=@calculated_volume,volume=@volume,dimensional_divisor=@dimensional_divisor,measurement_mode=@measurement_mode,weight=@weight,
         chargeable_weight=@chargeable_weight,recipient_name=@recipient_name,address1=@address1,address2=@address2,
         city=@city,state=@state,zip=@zip,country=@country,phone=@phone,updated_at=CURRENT_TIMESTAMP
       WHERE id=@id
@@ -410,31 +397,38 @@ export function upsertOrder(input: OrderInput) {
   } else {
     const result = db.prepare(`
       INSERT INTO orders(
-        created_at,sales,customer,supplier,service,sub_service,label,tracking,order_id,draft_key,workflow_status,
-        est_net_cost,base_cost,retail,discount,sales_price,auto_pricing,manual_surcharge,surcharge,import_tax,total_due,gross_profit_base,gross_profit_net,gross_margin_pct,margin_status,
-        note,item,material,declared_value,carton_count,length,width,height,volume,weight,chargeable_weight,recipient_name,
+        client_user_id,created_at,sales,customer,supplier,service,sub_service,label,tracking,order_id,draft_key,workflow_status,
+        est_net_cost,base_cost,retail,discount,discount_note,discount_source,sales_price,auto_pricing,manual_surcharge,surcharge,import_tax,total_due,gross_profit_base,gross_profit_net,gross_margin_pct,margin_status,
+        note,internal_note,item,material,declared_value,carton_count,length,width,height,manual_volume,calculated_volume,volume,dimensional_divisor,measurement_mode,weight,chargeable_weight,recipient_name,
         address1,address2,city,state,zip,country,phone,updated_at
       ) VALUES (
-        @created_at,@sales,@customer,@supplier,@service,@sub_service,@label,@tracking,@order_id,@draft_key,@workflow_status,
-        @est_net_cost,@base_cost,@retail,@discount,@sales_price,@auto_pricing,@manual_surcharge,@surcharge,@import_tax,@total_due,@gross_profit_base,@gross_profit_net,@gross_margin_pct,@margin_status,
-        @note,@item,@material,@declared_value,@carton_count,@length,@width,@height,@volume,@weight,@chargeable_weight,@recipient_name,
+        @client_user_id,@created_at,@sales,@customer,@supplier,@service,@sub_service,@label,@tracking,@order_id,@draft_key,@workflow_status,
+        @est_net_cost,@base_cost,@retail,@discount,@discount_note,@discount_source,@sales_price,@auto_pricing,@manual_surcharge,@surcharge,@import_tax,@total_due,@gross_profit_base,@gross_profit_net,@gross_margin_pct,@margin_status,
+        @note,@internal_note,@item,@material,@declared_value,@carton_count,@length,@width,@height,@manual_volume,@calculated_volume,@volume,@dimensional_divisor,@measurement_mode,@weight,@chargeable_weight,@recipient_name,
         @address1,@address2,@city,@state,@zip,@country,@phone,CURRENT_TIMESTAMP
       )
     `).run(payload);
     id = Number(result.lastInsertRowid);
   }
 
-  if (tracking) {
-    applyLatestSupplierCost(tracking);
-    const current = getOrderByTracking(tracking);
-    if (current) upsertAutoOrderCharge(current);
-  }
+  if(tracking&&!findTrackingOwner(tracking))addOrderTracking({orderId:id,tracking,labelUrl:payload.label,lotNumber:1,isPrimary:true});
+  db.prepare(`
+    UPDATE orders
+    SET system_order_code=COALESCE(NULLIF(system_order_code,''),'DMD-'||strftime('%Y%m%d',COALESCE(created_at,CURRENT_TIMESTAMP))||'-'||printf('%06d',id))
+    WHERE id=?
+  `).run(id);
+  matchSupplierCostsForOrder(id);
   return db.prepare("SELECT * FROM orders WHERE id=?").get(id);
 }
 
 export function addSupplierCost(input: SupplierCostInput) {
   const tracking = text(input.tracking);
   if (!tracking) throw new Error("Tracking là bắt buộc để link chi phí.");
+  const normalizedTracking=normalizeTracking(tracking);
+  if(input.source_key){
+    const duplicate=db.prepare("SELECT id,matched_order_id,total_net_cost FROM supplier_costs WHERE source_key=?").get(input.source_key) as {id:number;matched_order_id:number|null;total_net_cost:number}|undefined;
+    if(duplicate)return {id:duplicate.id,tracking,matched:Boolean(duplicate.matched_order_id),total_net_cost:duplicate.total_net_cost,duplicate:true,warning:"Dòng này đã được import trước đó nên không ghi nhận lại."};
+  }
   const enumValues = validateSupplierCostEnums(input);
   const netPrice = num(input.net_price);
   const fee = num(input.fee);
@@ -443,30 +437,40 @@ export function addSupplierCost(input: SupplierCostInput) {
   const totalNet = money(num(input.total_net_cost) || netPrice + fee + exportCustoms + importCustoms);
   if (!totalNet) throw new Error("Cần Total Net Cost hoặc các thành phần chi phí.");
 
+  const owner=findTrackingOwner(tracking);
+  const extraSurcharge=money(num(input.extra_surcharge));const importTax=money(num(input.import_tax));
   const result = db.prepare(`
     INSERT INTO supplier_costs(
-      supplier,service,sub_service,tracking,occurred_at,item,destination,weight,net_price,fee,
-      export_customs,import_customs,total_net_cost,extra_surcharge,import_tax,note,batch_id
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      supplier,service,sub_service,tracking,normalized_tracking,matched_order_id,matched_order_tracking_id,occurred_at,item,destination,weight,net_price,fee,
+      export_customs,import_customs,total_net_cost,extra_surcharge,import_tax,note,batch_id,source_key
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
-    enumValues.supplier, enumValues.service, enumValues.sub_service, tracking, normalizeDateInput(input.occurred_at, "Ngày chi phí"),
+    enumValues.supplier, enumValues.service, enumValues.sub_service, tracking,normalizedTracking,owner?.order_id||null,owner?.id||null, normalizeDateInput(input.occurred_at, "Ngày chi phí"),
     text(input.item), text(input.destination), num(input.weight), netPrice, fee, exportCustoms, importCustoms,
-    totalNet, money(num(input.extra_surcharge)), money(num(input.import_tax)), text(input.note), input.batch_id || null
+    totalNet,extraSurcharge,importTax,text(input.note), input.batch_id || null,input.source_key||null
   );
 
-  const matched = applyLatestSupplierCost(tracking);
+  const matched=Boolean(owner);
+  if(owner){
+    matchSupplierCostsForOrder(owner.order_id);
+    if(extraSurcharge||importTax){
+      const parts=[] as string[];if(extraSurcharge)parts.push(`Phụ phí ${extraSurcharge} USD`);if(importTax)parts.push(`Thuế nhập khẩu ${importTax} USD`);if(text(input.note))parts.push(text(input.note));
+      appendOrderNote(owner.order_id,`${tracking}: ${parts.join(" · ")}`);
+    }
+  }
   return {
     id: Number(result.lastInsertRowid),
     tracking,
     matched,
     total_net_cost: totalNet,
-    warning: matched ? null : "Chưa có order cùng Tracking; chi phí được giữ lại và sẽ auto-link khi order xuất hiện.",
+    duplicate:false,
+    warning: matched ? null : "Chưa có Order cùng Tracking; chi phí được giữ lại và sẽ tự link khi Tracking xuất hiện.",
   };
 }
 
 export function addLedgerEntry(input: LedgerInput) {
   const amount = money(num(input.amount));
-  if (!amount) throw new Error("Số tiền phải lớn hơn 0.");
+  if (amount<=0) throw new Error("Số tiền phải lớn hơn 0.");
   const type = text(input.entry_type).toUpperCase();
   let direction = input.direction;
   if (!direction) {
@@ -475,10 +479,10 @@ export function addLedgerEntry(input: LedgerInput) {
   }
   const result = db.prepare(`
     INSERT INTO ledger_entries(
-      occurred_at,entry_type,direction,amount,customer,reference_type,reference_id,bill_url,note,batch_id
-    ) VALUES (?,?,?,?,?,?,?,?,?,?)
+      client_user_id,occurred_at,entry_type,direction,amount,customer,reference_type,reference_id,bill_url,note,batch_id
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
   `).run(
-    normalizeDateInput(input.occurred_at, "Ngày giao dịch"), type, direction, amount, text(input.customer) || null,
+    Number(input.client_user_id || 0) || null, normalizeDateInput(input.occurred_at, "Ngày giao dịch"), type, direction, amount, text(input.customer) || null,
     text(input.reference_type) || null, text(input.reference_id) || null, text(input.bill_url) || null,
     text(input.note) || null, input.batch_id || null
   );

@@ -5,9 +5,17 @@ export const runtime = "nodejs";
 export async function GET(req:NextRequest) {
   const auth=requireUser(req); if(auth.error)return auth.error;
   if(auth.user.role==="SALES"){
-    const orders=queryOne<{c:number}>("SELECT COUNT(*) c FROM orders WHERE sales_user_id=?",[auth.user.id])?.c||0;
-    const receivable=queryOne<{v:number}>("SELECT COALESCE(SUM(total_due),0) v FROM orders WHERE sales_user_id=?",[auth.user.id])?.v||0;
-    return NextResponse.json({orders,review:0,unmatched:0,ledger:0,receivable});
+    const scope="client_user_id IN (SELECT id FROM users WHERE role='CLIENT' AND sales_user_id=?)";
+    const orders=queryOne<{c:number}>("SELECT COUNT(*) c FROM orders WHERE "+scope,[auth.user.id])?.c||0;
+    const receivable=queryOne<{v:number}>("SELECT COALESCE(SUM(total_due),0) v FROM orders WHERE "+scope,[auth.user.id])?.v||0;
+    const ledger=queryOne<{balance:number}>("SELECT COALESCE(SUM(CASE WHEN direction='CREDIT' THEN amount ELSE -amount END),0) balance FROM ledger_entries WHERE "+scope,[auth.user.id])?.balance||0;
+    return NextResponse.json({orders,review:0,unmatched:0,ledger,receivable});
+  }
+  if(auth.user.role==="CLIENT"){
+    const orders=queryOne<{c:number}>("SELECT COUNT(*) c FROM orders WHERE client_user_id=?",[auth.user.id])?.c||0;
+    const receivable=queryOne<{v:number}>("SELECT COALESCE(SUM(total_due),0) v FROM orders WHERE client_user_id=?",[auth.user.id])?.v||0;
+    const ledger=queryOne<{balance:number}>("SELECT COALESCE(SUM(CASE WHEN direction='CREDIT' THEN amount ELSE -amount END),0) balance FROM ledger_entries WHERE client_user_id=?",[auth.user.id])?.balance||0;
+    return NextResponse.json({orders,review:0,unmatched:0,ledger,receivable});
   }
   const orders=queryOne<{c:number}>("SELECT COUNT(*) c FROM orders")?.c||0;
   const review=queryOne<{c:number}>("SELECT COUNT(*) c FROM orders WHERE reconciliation_status='REVIEW'")?.c||0;

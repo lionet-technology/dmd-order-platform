@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "verify:rbac": "node scripts/verify-rbac.cjs",
+    "verify:orders": "node scripts/verify-order-flow.cjs"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",

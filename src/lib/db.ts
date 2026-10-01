@@ -10,7 +10,8 @@ export const db = globalForDb.dmdDb ?? new Database(dbPath);
 if (process.env.NODE_ENV !== "production") globalForDb.dmdDb = db;
 
 db.pragma("busy_timeout = 10000");
-db.pragma("foreign_keys = ON");
+// Keep foreign-key enforcement off while legacy schemas are upgraded below.
+db.pragma("foreign_keys = OFF");
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS users (
@@ -18,7 +19,8 @@ CREATE TABLE IF NOT EXISTS users (
   username TEXT NOT NULL UNIQUE COLLATE NOCASE,
   display_name TEXT NOT NULL,
   password_hash TEXT NOT NULL,
-  role TEXT NOT NULL CHECK(role IN ('ADMIN','SALES')),
+  role TEXT NOT NULL CHECK(role IN ('ADMIN','SALES','CLIENT')),
+  sales_user_id INTEGER,
   active INTEGER NOT NULL DEFAULT 1,
   is_root_admin INTEGER NOT NULL DEFAULT 0,
   created_by_user_id INTEGER,
@@ -100,6 +102,39 @@ CREATE INDEX IF NOT EXISTS idx_orders_order_id ON orders(order_id);
 CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer);
 CREATE INDEX IF NOT EXISTS idx_orders_service ON orders(service, sub_service);
 
+CREATE TABLE IF NOT EXISTS order_trackings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  lot_number INTEGER NOT NULL DEFAULT 1,
+  tracking TEXT NOT NULL,
+  normalized_tracking TEXT NOT NULL UNIQUE,
+  label_url TEXT,
+  status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK(status IN ('ACTIVE','REPLACED','CANCELLED')),
+  is_primary INTEGER NOT NULL DEFAULT 0,
+  cost_match_type TEXT NOT NULL DEFAULT 'UNKNOWN' CHECK(cost_match_type IN ('UNKNOWN','DIRECT','INCLUDED_IN_PARENT','NOT_BILLED','MISSING')),
+  cost_parent_tracking_id INTEGER REFERENCES order_trackings(id),
+  replaced_by_tracking_id INTEGER REFERENCES order_trackings(id),
+  created_by_user_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_order_trackings_order ON order_trackings(order_id,lot_number,id);
+CREATE INDEX IF NOT EXISTS idx_order_trackings_status ON order_trackings(order_id,status);
+
+CREATE TABLE IF NOT EXISTS client_service_settings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  service TEXT NOT NULL COLLATE NOCASE,
+  sub_service TEXT NOT NULL DEFAULT '' COLLATE NOCASE,
+  is_enabled INTEGER NOT NULL DEFAULT 1,
+  discount_percent REAL NOT NULL DEFAULT 0,
+  updated_by_user_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(client_user_id,service,sub_service)
+);
+CREATE INDEX IF NOT EXISTS idx_client_service_settings_client ON client_service_settings(client_user_id,service,sub_service);
+
 CREATE TABLE IF NOT EXISTS supplier_costs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   supplier TEXT,
@@ -168,7 +203,62 @@ CREATE TABLE IF NOT EXISTS enum_values (
   UNIQUE(enum_type, value, parent_value)
 );
 CREATE INDEX IF NOT EXISTS idx_enum_values_type_active ON enum_values(enum_type, active, sort_order, value);
+
+CREATE TABLE IF NOT EXISTS order_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  event_type TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  visibility TEXT NOT NULL DEFAULT 'PUBLIC' CHECK(visibility IN ('PUBLIC','ADMIN')),
+  source TEXT NOT NULL DEFAULT 'UI',
+  actor_user_id INTEGER,
+  actor_username TEXT,
+  actor_display_name TEXT,
+  actor_role TEXT,
+  before_json TEXT,
+  after_json TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_order_events_order ON order_events(order_id,created_at DESC,id DESC);
 `);
+
+// SQLite cannot alter a CHECK constraint in place. Rebuild legacy users tables
+// once so the new CLIENT role is accepted without losing existing accounts.
+const usersTableSql = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get() as { sql?: string } | undefined)?.sql || "";
+if (!usersTableSql.includes("'CLIENT'")) {
+  const userColumns = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
+  const hasSalesOwner = userColumns.some((column) => column.name === "sales_user_id");
+  const copySalesOwner = hasSalesOwner ? "sales_user_id" : "NULL";
+  // Disable FK enforcement only for this table rebuild so existing sessions are
+  // preserved and keep pointing at the replacement users table with the same IDs.
+  db.pragma("foreign_keys = OFF");
+  try {
+    db.transaction(() => {
+      db.exec(`
+        DROP TABLE IF EXISTS users_new;
+        CREATE TABLE users_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+          display_name TEXT NOT NULL,
+          password_hash TEXT NOT NULL,
+          role TEXT NOT NULL CHECK(role IN ('ADMIN','SALES','CLIENT')),
+          sales_user_id INTEGER,
+          active INTEGER NOT NULL DEFAULT 1,
+          is_root_admin INTEGER NOT NULL DEFAULT 0,
+          created_by_user_id INTEGER,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        INSERT INTO users_new(id,username,display_name,password_hash,role,sales_user_id,active,is_root_admin,created_by_user_id,created_at,updated_at)
+        SELECT id,username,display_name,password_hash,role,${copySalesOwner},active,is_root_admin,created_by_user_id,created_at,updated_at FROM users;
+        DROP TABLE users;
+        ALTER TABLE users_new RENAME TO users;
+      `);
+    })();
+  } finally {
+    db.pragma("foreign_keys = ON");
+  }
+}
 
 
 function ensureColumn(table: string, name: string, ddl: string) {
@@ -186,14 +276,84 @@ ensureColumn("orders", "auto_pricing", "auto_pricing INTEGER NOT NULL DEFAULT 1"
 ensureColumn("orders", "gross_margin_pct", "gross_margin_pct REAL NOT NULL DEFAULT 0");
 ensureColumn("orders", "margin_status", "margin_status TEXT NOT NULL DEFAULT 'PENDING'");
 ensureColumn("orders", "sales_user_id", "sales_user_id INTEGER");
+ensureColumn("orders", "client_user_id", "client_user_id INTEGER");
 ensureColumn("orders", "created_by_user_id", "created_by_user_id INTEGER");
 ensureColumn("orders", "updated_by_user_id", "updated_by_user_id INTEGER");
+ensureColumn("orders", "manual_volume", "manual_volume REAL");
+ensureColumn("orders", "calculated_volume", "calculated_volume REAL");
+ensureColumn("orders", "dimensional_divisor", "dimensional_divisor REAL NOT NULL DEFAULT 5000");
+ensureColumn("orders", "measurement_mode", "measurement_mode TEXT NOT NULL DEFAULT 'LOT'");
+ensureColumn("orders", "internal_note", "internal_note TEXT");
+ensureColumn("orders", "discount_note", "discount_note TEXT");
+ensureColumn("orders", "discount_source", "discount_source TEXT NOT NULL DEFAULT 'DEFAULT'");
+ensureColumn("orders", "pricing_status", "pricing_status TEXT NOT NULL DEFAULT 'PENDING'");
+ensureColumn("orders", "charge_status", "charge_status TEXT NOT NULL DEFAULT 'PENDING'");
+ensureColumn("orders", "purchase_completed_at", "purchase_completed_at TEXT");
+ensureColumn("orders", "system_order_code", "system_order_code TEXT");
+ensureColumn("orders", "expected_lot_count", "expected_lot_count INTEGER NOT NULL DEFAULT 1");
 ensureColumn("supplier_costs", "created_by_user_id", "created_by_user_id INTEGER");
+ensureColumn("supplier_costs", "normalized_tracking", "normalized_tracking TEXT");
+ensureColumn("supplier_costs", "matched_order_id", "matched_order_id INTEGER");
+ensureColumn("supplier_costs", "matched_order_tracking_id", "matched_order_tracking_id INTEGER");
+ensureColumn("supplier_costs", "source_key", "source_key TEXT");
 ensureColumn("ledger_entries", "created_by_user_id", "created_by_user_id INTEGER");
+ensureColumn("ledger_entries", "client_user_id", "client_user_id INTEGER");
 ensureColumn("users", "is_root_admin", "is_root_admin INTEGER NOT NULL DEFAULT 0");
+ensureColumn("users", "sales_user_id", "sales_user_id INTEGER");
 ensureColumn("import_batches", "created_by_user_id", "created_by_user_id INTEGER");
+ensureColumn("order_trackings", "shipment_status", "shipment_status TEXT NOT NULL DEFAULT 'WAITING_HANDOVER'");
+ensureColumn("order_trackings", "etd_at", "etd_at TEXT");
+ensureColumn("order_trackings", "delivered_at", "delivered_at TEXT");
+ensureColumn("order_trackings", "status_updated_at", "status_updated_at TEXT");
+ensureColumn("order_trackings", "status_updated_by_user_id", "status_updated_by_user_id INTEGER");
 
 db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_single_root_admin ON users(is_root_admin) WHERE is_root_admin=1");
+db.exec("CREATE INDEX IF NOT EXISTS idx_users_sales_owner ON users(sales_user_id,role)");
+db.exec("CREATE INDEX IF NOT EXISTS idx_orders_client_user ON orders(client_user_id)");
+db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_system_code ON orders(system_order_code) WHERE system_order_code IS NOT NULL");
+db.exec("CREATE INDEX IF NOT EXISTS idx_orders_client_order_id ON orders(client_user_id,order_id)");
+db.exec("CREATE INDEX IF NOT EXISTS idx_order_trackings_shipping ON order_trackings(shipment_status,etd_at)");
+db.exec("CREATE INDEX IF NOT EXISTS idx_ledger_client_user ON ledger_entries(client_user_id)");
+db.exec("CREATE INDEX IF NOT EXISTS idx_supplier_costs_normalized_tracking ON supplier_costs(normalized_tracking)");
+db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_supplier_costs_source_key ON supplier_costs(source_key) WHERE source_key IS NOT NULL");
+db.prepare("UPDATE supplier_costs SET normalized_tracking=UPPER(REPLACE(REPLACE(TRIM(tracking),' ',''),'-','')) WHERE normalized_tracking IS NULL OR normalized_tracking=''").run();
+// One-time compatibility migration: every legacy Order tracking becomes the first
+// tracking row. The legacy columns remain as a denormalized primary tracking for
+// older reports while order_trackings becomes the source of truth.
+db.exec(`
+  INSERT OR IGNORE INTO order_trackings(order_id,lot_number,tracking,normalized_tracking,label_url,status,is_primary)
+  SELECT id,1,tracking,UPPER(REPLACE(REPLACE(TRIM(tracking),' ',''),'-','')),NULLIF(label,''),'ACTIVE',1
+  FROM orders WHERE tracking IS NOT NULL AND TRIM(tracking)<>'';
+`);
+const ordersMissingCode=db.prepare("SELECT id,created_at FROM orders WHERE system_order_code IS NULL OR system_order_code='' ORDER BY id").all() as Array<{id:number;created_at:string|null}>;
+const setSystemCode=db.prepare("UPDATE orders SET system_order_code=? WHERE id=?");
+for(const row of ordersMissingCode){
+  const dateMatch=String(row.created_at||"").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const stamp=dateMatch?dateMatch[1]+dateMatch[2]+dateMatch[3]:"LEGACY";
+  setSystemCode.run("DMD-"+stamp+"-"+String(row.id).padStart(6,"0"),row.id);
+}
+// Legacy auto charges used Tracking as their identity. New financial updates use
+// Order ID, so migrate the identity before an update can create a second debit.
+db.transaction(()=>{
+  const legacyCharges=db.prepare(`
+    SELECT le.*,ot.order_id AS migration_order_id
+    FROM ledger_entries le
+    JOIN order_trackings ot ON ot.normalized_tracking=UPPER(REPLACE(REPLACE(TRIM(le.reference_id),' ',''),'-',''))
+    WHERE le.entry_type='ORDER_CHARGE' AND le.reference_type='TRACKING'
+    ORDER BY le.id
+  `).all() as Array<Record<string,unknown>>;
+  for(const charge of legacyCharges){
+    const orderId=Number(charge.migration_order_id);
+    const ref=String(orderId);
+    const current=db.prepare("SELECT id FROM ledger_entries WHERE entry_type='ORDER_CHARGE' AND reference_type='ORDER' AND reference_id=?").get(ref) as {id:number}|undefined;
+    if(current)db.prepare("DELETE FROM ledger_entries WHERE id=?").run(Number(charge.id));
+    else db.prepare("UPDATE ledger_entries SET reference_type='ORDER',reference_id=?,client_user_id=COALESCE(client_user_id,(SELECT client_user_id FROM orders WHERE id=?)) WHERE id=?")
+      .run(ref,orderId,Number(charge.id));
+    db.prepare("INSERT INTO order_events(order_id,event_type,summary,visibility,source,before_json,after_json) VALUES (?,'ORDER_LEDGER_MIGRATED',?,'ADMIN','MIGRATION',?,?)")
+      .run(orderId,current?"Loại bỏ công nợ tự động trùng khi chuyển tham chiếu Tracking sang Order.":"Chuyển tham chiếu công nợ tự động từ Tracking sang Order, giữ nguyên số tiền.",JSON.stringify(charge),JSON.stringify({reference_type:"ORDER",reference_id:ref,duplicate_removed:Boolean(current)}));
+  }
+})();
+db.pragma("foreign_keys = ON");
 const rootAdminCount = (db.prepare("SELECT COUNT(*) c FROM users WHERE is_root_admin=1").get() as {c:number}).c;
 if(rootAdminCount===0){
   const firstAdmin=db.prepare("SELECT id FROM users WHERE role='ADMIN' ORDER BY id ASC LIMIT 1").get() as {id:number}|undefined;
