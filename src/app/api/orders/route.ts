@@ -56,7 +56,8 @@ export async function GET(req: NextRequest) {
     const payload={...order,tracking:active.find(row=>row.is_primary)?.tracking||active[0]?.tracking||null,tracking_count:active.length,tracking_data:JSON.stringify(visible),trackings:visible};
     if(auth.user.role==="ADMIN")return payload;
     const safe:Record<string,unknown>={...payload};
-    for(const key of ["supplier","est_net_cost","true_net_cost","base_cost","retail","gross_profit_base","gross_profit_net","gross_margin_pct","margin_status","reconciliation_delta","internal_note"])delete safe[key];
+    for(const key of ["supplier","est_net_cost","true_net_cost","base_cost","retail","gross_profit_base","gross_profit_net","gross_margin_pct","margin_status","reconciliation_delta"])delete safe[key];
+    if(auth.user.role==="CLIENT")for(const key of ["internal_note","discount_note","discount_source"])delete safe[key];
     return safe;
   });
   return NextResponse.json(paged(items,total,page,pageSize));
@@ -95,7 +96,7 @@ export async function POST(req: NextRequest) {
         sales:auth.user.display_name,
         supplier:undefined,label:undefined,tracking:undefined,est_net_cost:undefined,base_cost:undefined,
         retail:undefined,sales_price:undefined,surcharge:undefined,import_tax:undefined,total_due:undefined,
-        auto_pricing:undefined,volume:undefined,chargeable_weight:undefined,internal_note:undefined,
+        auto_pricing:undefined,volume:undefined,chargeable_weight:undefined,
       };
       const saved=upsertOrder(salesBody) as {id:number};
       db.prepare("UPDATE orders SET client_user_id=?,sales_user_id=?,customer=?,sales=?,created_by_user_id=COALESCE(created_by_user_id,?),updated_by_user_id=? WHERE id=?")
@@ -103,7 +104,7 @@ export async function POST(req: NextRequest) {
       const after=db.prepare("SELECT * FROM orders WHERE id=?").get(saved.id);
       logOrderEvent({orderId:saved.id,eventType:body.id?"ORDER_UPDATED":"ORDER_CREATED",summary:body.id?"Cập nhật thông tin Order.":"Tạo Order mới.",actorId:auth.user.id,before,after});
       const record={...(after as Record<string,unknown>)};
-      for(const key of ["supplier","est_net_cost","true_net_cost","base_cost","retail","gross_profit_base","gross_profit_net","gross_margin_pct","margin_status","reconciliation_delta","internal_note"])delete record[key];
+      for(const key of ["supplier","est_net_cost","true_net_cost","base_cost","retail","gross_profit_base","gross_profit_net","gross_margin_pct","margin_status","reconciliation_delta"])delete record[key];
       return NextResponse.json(record,{status:body.id?200:201});
     }
 

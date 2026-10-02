@@ -64,18 +64,18 @@ async function main() {
   check("Failed tracking save preserves first label",after.trackings.find(x=>x.id===a1.id).label_url===before.trackings.find(x=>x.id===a1.id).label_url);
   const oldBulk=await detail(b.id);
   r=await call("/api/orders/tracking-replacements",{rows:[
-    {old_tracking:prefix+"-B1",new_tracking:prefix+"-B2",new_label_url:"https://labels.test/b2.pdf",reason:"bulk first"},
-    {old_tracking:prefix+"-A1",new_tracking:prefix+"-A1",new_label_url:"https://labels.test/x.pdf",reason:"bulk conflict"}
+    {old_tracking:prefix+"-B1",new_tracking:prefix+"-B2",new_label_url:"https://labels.test/b2.pdf",reason:"Điều chỉnh tuyến vận chuyển"},
+    {old_tracking:prefix+"-A1",new_tracking:prefix+"-A1",new_label_url:"https://labels.test/x.pdf",reason:"Điều chỉnh tuyến vận chuyển"}
   ]},admin);
   const newBulk=await detail(b.id);
   check("Conflicting bulk replacement rejects request",r.status===400,r);
   check("Failed bulk replacement leaves first tracking active",newBulk.trackings.some(x=>x.tracking===prefix+"-B1"&&x.status==="ACTIVE"));
   check("Failed bulk replacement does not create replacement",!newBulk.trackings.some(x=>x.tracking===prefix+"-B2"));
-  check("Failed bulk replacement does not append public note",newBulk.note===oldBulk.note);
+  check("Failed bulk replacement does not append public note",newBulk.public_note===oldBulk.public_note);
   check("Failed bulk replacement does not write audit event",newBulk.events.length===oldBulk.events.length);
-  const originalNote=(await detail(a.id)).internal_note;
   await call("/api/orders",{id:a.id,client_user_id:ca.id,internal_note:"SALES-INJECTION"},sc);
-  check("Sales cannot overwrite admin internal note",(await detail(a.id)).internal_note===originalNote);
+  check("Sales can maintain Private Note",(await detail(a.id)).internal_note==="SALES-INJECTION");
+  check("Client cannot receive Private Note",(await detail(a.id,cc)).internal_note===undefined);
   const nested=(await detail(a.id,cc)).trackings;
   check("Client tracking payload excludes cost allocation internals",nested.every(x=>x.cost_match_type===undefined&&x.cost_parent_tracking_id===undefined));
   const latestA=await detail(a.id);
@@ -117,7 +117,7 @@ async function main() {
   const btrack=(await detail(b.id)).trackings.find(x=>x.status==="ACTIVE");
   const beforeReason=(await detail(b.id)).events.length;
   r=await call("/api/orders/tracking-replacements",{rows:[{old_tracking:btrack.tracking,new_tracking:prefix+"-BFINAL",reason:"",new_label_url:"https://labels.test/f.pdf"}]},admin);
-  check("Missing replacement reason rejected",r.status===400&&(await detail(b.id)).events.length===beforeReason);
+  check("Replacement reason is optional",r.status===200&&(await detail(b.id)).events.length===beforeReason+1);
   const privateDetail=await detail(a.id,cc);
   check("Client history never exposes before/after snapshots",privateDetail.events.every(e=>e.before_json===undefined&&e.after_json===undefined));
   const report={base,created_at:new Date().toISOString(),passed:results.filter(r=>r.passed).length,failed:results.filter(r=>!r.passed).length,results};

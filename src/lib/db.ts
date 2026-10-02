@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS orders (
   gross_profit_base REAL NOT NULL DEFAULT 0,
   gross_profit_net REAL NOT NULL DEFAULT 0,
   note TEXT,
+  public_note TEXT,
   item TEXT,
   material TEXT,
   declared_value REAL,
@@ -152,6 +153,7 @@ CREATE TABLE IF NOT EXISTS supplier_costs (
   total_net_cost REAL NOT NULL DEFAULT 0,
   extra_surcharge REAL NOT NULL DEFAULT 0,
   import_tax REAL NOT NULL DEFAULT 0,
+  surcharge_type TEXT,
   note TEXT,
   batch_id INTEGER REFERENCES import_batches(id),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -271,6 +273,9 @@ function ensureColumn(table: string, name: string, ddl: string) {
   }
 }
 
+const supplierCostColumnsBeforePublicNote = db.prepare("PRAGMA table_info(supplier_costs)").all() as Array<{ name:string }>;
+const supplierCostNeedsPublicNoteBackfill = !supplierCostColumnsBeforePublicNote.some(column=>column.name==="public_note_recorded_at");
+
 ensureColumn("orders", "manual_surcharge", "manual_surcharge REAL NOT NULL DEFAULT 0");
 ensureColumn("orders", "auto_pricing", "auto_pricing INTEGER NOT NULL DEFAULT 1");
 ensureColumn("orders", "gross_margin_pct", "gross_margin_pct REAL NOT NULL DEFAULT 0");
@@ -291,6 +296,7 @@ ensureColumn("orders", "calculated_volume", "calculated_volume REAL");
 ensureColumn("orders", "dimensional_divisor", "dimensional_divisor REAL NOT NULL DEFAULT 5000");
 ensureColumn("orders", "measurement_mode", "measurement_mode TEXT NOT NULL DEFAULT 'LOT'");
 ensureColumn("orders", "internal_note", "internal_note TEXT");
+ensureColumn("orders", "public_note", "public_note TEXT");
 ensureColumn("orders", "discount_note", "discount_note TEXT");
 ensureColumn("orders", "discount_source", "discount_source TEXT NOT NULL DEFAULT 'DEFAULT'");
 ensureColumn("orders", "pricing_status", "pricing_status TEXT NOT NULL DEFAULT 'PENDING'");
@@ -303,6 +309,9 @@ ensureColumn("supplier_costs", "normalized_tracking", "normalized_tracking TEXT"
 ensureColumn("supplier_costs", "matched_order_id", "matched_order_id INTEGER");
 ensureColumn("supplier_costs", "matched_order_tracking_id", "matched_order_tracking_id INTEGER");
 ensureColumn("supplier_costs", "source_key", "source_key TEXT");
+ensureColumn("supplier_costs", "surcharge_type", "surcharge_type TEXT");
+ensureColumn("supplier_costs", "public_note_recorded_at", "public_note_recorded_at TEXT");
+if(supplierCostNeedsPublicNoteBackfill)db.prepare("UPDATE supplier_costs SET public_note_recorded_at=COALESCE(public_note_recorded_at,created_at,CURRENT_TIMESTAMP)").run();
 ensureColumn("ledger_entries", "created_by_user_id", "created_by_user_id INTEGER");
 ensureColumn("ledger_entries", "client_user_id", "client_user_id INTEGER");
 ensureColumn("users", "is_root_admin", "is_root_admin INTEGER NOT NULL DEFAULT 0");

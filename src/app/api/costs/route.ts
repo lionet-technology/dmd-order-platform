@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const result=addSupplierCost(body) as {id:number;matched?:boolean};
     db.prepare("UPDATE supplier_costs SET created_by_user_id=? WHERE id=?").run(auth.user.id,result.id);
-    const cost=db.prepare("SELECT matched_order_id,tracking,total_net_cost,extra_surcharge,import_tax,note FROM supplier_costs WHERE id=?").get(result.id) as {matched_order_id:number|null;tracking:string;total_net_cost:number;extra_surcharge:number;import_tax:number;note:string|null}|undefined;
+    const cost=db.prepare("SELECT matched_order_id,tracking,total_net_cost,extra_surcharge,import_tax,surcharge_type,note FROM supplier_costs WHERE id=?").get(result.id) as {matched_order_id:number|null;tracking:string;total_net_cost:number;extra_surcharge:number;import_tax:number;surcharge_type:string|null;note:string|null}|undefined;
     if(cost?.matched_order_id)logOrderEvent({
       orderId:cost.matched_order_id,eventType:"SUPPLIER_COST_IMPORTED",
       summary:"Cập nhật chi phí theo Tracking "+cost.tracking+": Net Cost True "+cost.total_net_cost+" USD, phụ phí "+(cost.extra_surcharge||0)+" USD, thuế NK "+(cost.import_tax||0)+" USD.",

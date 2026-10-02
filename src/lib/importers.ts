@@ -96,6 +96,7 @@ function importOrders(rows: Row[][], actorId?:number) {
         total_due: pick(row, headers, "Tổng cần thu") as string | number | null,
         auto_pricing: false,
         note: text(pick(row, headers, "Note")),
+        internal_note: headers.has(norm("Private Note"))||headers.has(norm("Note nội bộ"))?text(pick(row, headers, "Private Note", "Note nội bộ")):undefined,
         item: text(pick(row, headers, "Mặt hàng")),
         material: text(pick(row, headers, "Chất liệu")),
         declared_value: pick(row, headers, "Giá trị hàng hoá") as string | number | null,
@@ -193,6 +194,7 @@ function importSalesOrders(rows: Row[][], actor: SalesImportContext) {
         sub_service: text(pick(row, headers, "Sub-Service")),
         order_id: orderId,
         note: text(pick(row, headers, "Note")),
+        internal_note: headers.has(norm("Private Note"))||headers.has(norm("Note nội bộ"))?text(pick(row, headers, "Private Note", "Note nội bộ")):undefined,
         item: text(pick(row, headers, "Mặt hàng")),
         material: text(pick(row, headers, "Chất liệu")),
         declared_value: pick(row, headers, "Giá trị hàng hoá") as string | number | null,
@@ -254,6 +256,7 @@ function importCosts(rows: Row[][], batchId: number, actorId?:number) {
       import_customs: pick(row, headers, "Nhập khẩu") as string | number | null,
       total_net_cost: pick(row, headers, "Total Net Cost", "Total") as string | number | null,
       extra_surcharge: pick(row, headers, "Phụ phí Bổ sung") as string | number | null,
+      surcharge_type: text(pick(row, headers, "Loại phụ phí")),
       import_tax: pick(row, headers, "Thuế NK") as string | number | null,
       note: text(pick(row, headers, "Note")),
       batch_id: batchId,
@@ -262,7 +265,7 @@ function importCosts(rows: Row[][], batchId: number, actorId?:number) {
     if (result.warning) warnings.push(`Tracking ${tracking}: ${result.warning}`);
     if(!result.duplicate){
       db.prepare("UPDATE supplier_costs SET created_by_user_id=? WHERE id=?").run(actorId||null,result.id);
-      const cost=db.prepare("SELECT matched_order_id,tracking,total_net_cost,extra_surcharge,import_tax,note FROM supplier_costs WHERE id=?").get(result.id) as {matched_order_id:number|null;tracking:string;total_net_cost:number;extra_surcharge:number;import_tax:number;note:string|null}|undefined;
+      const cost=db.prepare("SELECT matched_order_id,tracking,total_net_cost,extra_surcharge,import_tax,surcharge_type,note FROM supplier_costs WHERE id=?").get(result.id) as {matched_order_id:number|null;tracking:string;total_net_cost:number;extra_surcharge:number;import_tax:number;surcharge_type:string|null;note:string|null}|undefined;
       if(cost?.matched_order_id)logOrderEvent({orderId:cost.matched_order_id,eventType:"SUPPLIER_COST_IMPORTED",summary:`Cập nhật chi phí theo Tracking ${cost.tracking}: Net Cost True ${cost.total_net_cost} USD, phụ phí ${cost.extra_surcharge||0} USD, thuế NK ${cost.import_tax||0} USD.`,actorId,visibility:"ADMIN",source:"IMPORT",after:cost});
       imported++;
     }
@@ -271,7 +274,7 @@ function importCosts(rows: Row[][], batchId: number, actorId?:number) {
 }
 
 function importTrackingUpdates(rows:Row[][],actorId?:number){
-  const h=findHeader(rows,["Tracking cũ","Tracking mới","URL Label mới","Lý do"]);
+  const h=findHeader(rows,["Tracking cũ","Tracking mới"]);
   if(h<0)throw new Error("Không tìm thấy header Template đổi Tracking.");
   const headers=headerMap(rows[h]);let imported=0;const warnings:string[]=[];
   for(const [offset,row] of rows.slice(h+1).entries()){
@@ -281,9 +284,9 @@ function importTrackingUpdates(rows:Row[][],actorId?:number){
     try{
       if(!oldTracking||!newTracking)throw new Error("Tracking cũ và Tracking mới là bắt buộc.");
       const owner=findTrackingOwner(oldTracking);if(!owner)throw new Error("Không tìm thấy Tracking cũ.");
-      const reason=text(pick(row,headers,"Lý do"));if(!reason)throw new Error("Lý do là bắt buộc.");
+      const reason=text(pick(row,headers,"Lý do"));
       const replacement=replaceOrderTracking({orderId:owner.order_id,oldTrackingId:owner.id,newTracking,newLabelUrl:text(pick(row,headers,"URL Label mới")),reason,actorId});
-      logOrderEvent({orderId:owner.order_id,eventType:"TRACKING_REPLACED",summary:`Đổi Tracking ${oldTracking} → ${newTracking}. Lý do: ${reason}`,actorId,source:"IMPORT",before:owner,after:replacement});
+      logOrderEvent({orderId:owner.order_id,eventType:"TRACKING_REPLACED",summary:`Đổi Tracking ${oldTracking} → ${newTracking}.${reason?` Lý do: ${reason}.`:""}`,actorId,source:"IMPORT",before:owner,after:replacement});
       imported++;
     }catch(error){warnings.push(`Dòng ${h+offset+2}: ${error instanceof Error?error.message:"không thể đổi Tracking"}`)}
   }

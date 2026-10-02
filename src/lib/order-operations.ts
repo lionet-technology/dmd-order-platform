@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { trackingReplacementReason } from "./order-rules";
 
 const text=(value:unknown)=>String(value??"").trim();
 const money=(value:number)=>Math.round((Number(value||0)+Number.EPSILON)*100)/100;
@@ -37,7 +38,7 @@ export function publicOrderTracking(row:OrderTracking){
 
 export function appendOrderNote(orderId:number, message:string, internal=false){
   const clean=text(message); if(!clean)return;
-  const column=internal?"internal_note":"note";
+  const column=internal?"internal_note":"public_note";
   const stamp=new Intl.DateTimeFormat("vi-VN",{timeZone:"Asia/Ho_Chi_Minh",dateStyle:"short",timeStyle:"short"}).format(new Date());
   db.prepare(`UPDATE orders SET ${column}=CASE WHEN COALESCE(${column},'')='' THEN ? ELSE ${column}||char(10)||char(10)||? END,updated_at=CURRENT_TIMESTAMP WHERE id=?`)
     .run(`[${stamp}] ${clean}`,`[${stamp}] ${clean}`,orderId);
@@ -81,16 +82,16 @@ export function updateOrderTracking(input:{orderId:number;id:number;labelUrl?:un
   recomputeOrderFinancials(input.orderId);
 }
 
-export function replaceOrderTracking(input:{orderId:number;oldTrackingId:number;newTracking:unknown;newLabelUrl?:unknown;reason:unknown;actorId?:number|null}){
+export function replaceOrderTracking(input:{orderId:number;oldTrackingId:number;newTracking:unknown;newLabelUrl?:unknown;reason?:unknown;actorId?:number|null}){
   assertOrderOpen(input.orderId);
   const old=db.prepare("SELECT * FROM order_trackings WHERE id=? AND order_id=? AND status='ACTIVE'").get(input.oldTrackingId,input.orderId) as OrderTracking|undefined;
   if(!old)throw new Error("Tracking cũ không hợp lệ hoặc đã được thay thế.");
-  const reason=text(input.reason); if(!reason)throw new Error("Lý do đổi Tracking/Label là bắt buộc.");
+  const reason=trackingReplacementReason(input.reason);
   const created=addOrderTracking({orderId:input.orderId,tracking:input.newTracking,labelUrl:input.newLabelUrl,lotNumber:old.lot_number,actorId:input.actorId,isPrimary:Boolean(old.is_primary),costMatchType:old.cost_match_type,costParentTrackingId:old.cost_parent_tracking_id});
   db.prepare("UPDATE order_trackings SET status='REPLACED',is_primary=0,replaced_by_tracking_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(created.id,old.id);
   db.prepare("UPDATE order_trackings SET cost_parent_tracking_id=?,updated_at=CURRENT_TIMESTAMP WHERE order_id=? AND cost_parent_tracking_id=?").run(created.id,input.orderId,old.id);
   syncLegacyPrimary(input.orderId);
-  appendOrderNote(input.orderId,`Đổi Tracking ${old.tracking} thành ${created.tracking}. Label đã được cập nhật. Lý do: ${reason}`);
+  appendOrderNote(input.orderId,`Tracking ${old.tracking} đã được thay thế bằng ${created.tracking}. Label đã được cập nhật.${reason?` Lý do: ${reason}.`:""}`);
   matchSupplierCostsForOrder(input.orderId);
   return created;
 }
@@ -100,6 +101,23 @@ export function matchSupplierCostsForOrder(orderId:number){
     matched_order_id=?,
     matched_order_tracking_id=(SELECT ot.id FROM order_trackings ot WHERE ot.order_id=? AND ot.normalized_tracking=supplier_costs.normalized_tracking LIMIT 1)
     WHERE normalized_tracking IN (SELECT normalized_tracking FROM order_trackings WHERE order_id=?)`).run(orderId,orderId,orderId);
+  const pending=db.prepare(`SELECT id,tracking,occurred_at,created_at,total_net_cost,extra_surcharge,import_tax,surcharge_type,note
+    FROM supplier_costs WHERE matched_order_id=? AND public_note_recorded_at IS NULL AND (extra_surcharge<>0 OR import_tax<>0) ORDER BY id`).all(orderId) as Array<Record<string,unknown>>;
+  for(const cost of pending){
+    const raw=String(cost.occurred_at||cost.created_at||"");
+    const match=raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const date=match?`${match[3]}/${match[2]}/${match[1]}`:new Intl.DateTimeFormat("vi-VN",{timeZone:"Asia/Ho_Chi_Minh"}).format(new Date());
+    const parts:string[]=[];
+    if(Number(cost.import_tax||0))parts.push(`phát sinh thuế nhập khẩu ${money(Number(cost.import_tax))} USD`);
+    if(Number(cost.extra_surcharge||0))parts.push(`phát sinh phụ phí ${money(Number(cost.extra_surcharge))} USD (${String(cost.surcharge_type||"phụ phí bổ sung").trim()})`);
+    appendOrderNote(orderId,`Ngày ${date}, Tracking ${String(cost.tracking)} ${parts.join("; ")}.`);
+    const internalParts=[`Supplier Cost theo Tracking ${String(cost.tracking)}: Net Cost True ${money(Number(cost.total_net_cost))} USD`];
+    if(Number(cost.extra_surcharge||0))internalParts.push(`phụ phí ${money(Number(cost.extra_surcharge))} USD (${String(cost.surcharge_type||"phụ phí bổ sung")})`);
+    if(Number(cost.import_tax||0))internalParts.push(`thuế nhập khẩu ${money(Number(cost.import_tax))} USD`);
+    if(text(cost.note))internalParts.push(`ghi chú: ${text(cost.note)}`);
+    appendOrderNote(orderId,internalParts.join(" · "),true);
+    db.prepare("UPDATE supplier_costs SET public_note_recorded_at=CURRENT_TIMESTAMP WHERE id=?").run(cost.id);
+  }
   return recomputeOrderFinancials(orderId);
 }
 

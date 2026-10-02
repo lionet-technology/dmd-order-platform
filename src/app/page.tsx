@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { BulkTrackingSheet,OrderDetailPanel,ShipmentStatusPanel,TrackingReplacementSheet } from "./order-workspaces";
+import { TRACKING_REPLACEMENT_REASONS } from "@/lib/order-rules";
 
 type Role = "ADMIN" | "SALES" | "CLIENT";
 type User = { id:number; username:string; display_name:string; role:Role; sales_user_id?:number|null; sales_display_name?:string|null; active?:number; is_root_admin?:number };
@@ -178,7 +179,7 @@ function QuickOrderSheet({role,clients,enums,onDone,edit}:{role:Role;clients:Use
   const blankRow=():SheetRow=>({
     client_user_id:"",customer:"",order_id:"",service:"",sub_service:"",item:"",material:"",
     carton_count:"",weight:"",length:"",width:"",height:"",manual_volume:"",declared_value:"",recipient_name:"",city:"",state:"",
-    zip:"",country:"",note:"",discount:"",discount_note:"",est_net_cost:"",base_cost:"",retail:"",sales_price:"",surcharge:"",import_tax:"",
+    zip:"",country:"",note:"",internal_note:"",discount:"",discount_note:"",est_net_cost:"",base_cost:"",retail:"",sales_price:"",surcharge:"",import_tax:"",
   });
   const editRow=():SheetRow=>{
     const row=blankRow();
@@ -223,7 +224,8 @@ function QuickOrderSheet({role,clients,enums,onDone,edit}:{role:Role;clients:Use
     {key:"height",label:"Cao cm",width:76,type:"number"},{key:"manual_volume",label:"Thể tích cm³",width:105,type:"number"},{key:"declared_value",label:"Giá trị SX USD",width:105,type:"number"},
     {key:"discount",label:"Discount %",width:88,type:"number"},{key:"discount_note",label:"Lý do discount",width:165},
     {key:"recipient_name",label:"Người nhận",width:145},{key:"city",label:"Thành phố",width:115},{key:"state",label:"Bang",width:90},{key:"zip",label:"ZIP",width:90},
-    {key:"country",label:"Nước",width:100,type:"combo",options:countryOptions},{key:"note",label:"Note Order",width:180},
+    {key:"country",label:"Nước",width:100,type:"combo",options:countryOptions},{key:"note",label:"Note",width:180},
+    {key:"internal_note",label:"Private Note",width:190},
   ];
   const columns:SheetColumn[]=role==="ADMIN"?[
     ...common,
@@ -466,9 +468,9 @@ function CostSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>void}){
     {key:"net_price",label:"Net Price",width:95,type:"number"},{key:"fee",label:"Phụ phí",width:90,type:"number"},
     {key:"export_customs",label:"HQ Xuất",width:90,type:"number"},{key:"import_customs",label:"HQ Nhập",width:90,type:"number"},
     {key:"total_net_cost",label:"Total Net",width:100,type:"number"},{key:"extra_surcharge",label:"Phụ phí BS",width:100,type:"number"},
-    {key:"import_tax",label:"Thuế NK",width:90,type:"number"},{key:"note",label:"Note",width:180},
+    {key:"surcharge_type",label:"Loại phụ phí",width:150},{key:"import_tax",label:"Thuế NK",width:90,type:"number"},{key:"note",label:"Private Note",width:180},
   ];
-  const blank=()=>({occurred_at:today(),tracking:"",supplier:"",service:"",sub_service:"",net_price:"",fee:"",export_customs:"",import_customs:"",total_net_cost:"",extra_surcharge:"",import_tax:"",note:""});
+  const blank=()=>({occurred_at:today(),tracking:"",supplier:"",service:"",sub_service:"",net_price:"",fee:"",export_customs:"",import_customs:"",total_net_cost:"",extra_surcharge:"",surcharge_type:"",import_tax:"",note:""});
   return <EntrySheet title="Nhập Supplier Cost" hint="Paste nhiều dòng · Tracking là khóa link Order" columns={columns} blank={blank} storageKey="dmd.costSheetWidths"
     optionsFor={(row,col)=>col.key==="sub_service"?enumOptions(enums,"SUB_SERVICE",row.service):(col.options||[])}
     validate={row=>!row.tracking.trim()?"Thiếu Tracking":row.occurred_at&&!isValidDateText(row.occurred_at)?"Ngày sai định dạng":row.service&&!enumIsValid(enums,"SERVICE",row.service)?"Dịch vụ không hợp lệ":row.sub_service&&!enumIsValid(enums,"SUB_SERVICE",row.sub_service,row.service)?"Sub-Service không hợp lệ":row.supplier&&!enumIsValid(enums,"SUPPLIER",row.supplier)?"Supplier không hợp lệ":""}
@@ -797,7 +799,7 @@ function PurchaseOrderPanel({order,enums,onClose,onDone}:{order:RowData;enums:En
     }catch(error){setMsg("Lỗi: "+(error instanceof Error?error.message:"Không thể lưu"));setBusy(false)}
   }
   async function replaceTracking(){
-    if(!replaceId||!replacement.tracking.trim()||!replacement.reason.trim()){setMsg("Lỗi: Tracking mới và lý do là bắt buộc.");return;}
+    if(!replaceId||!replacement.tracking.trim()){setMsg("Lỗi: Tracking mới là bắt buộc.");return;}
     setBusy(true);setMsg("");
     try{
       await postJson(`/api/orders/${orderId}/trackings`,{action:"replace",old_tracking_id:replaceId,new_tracking:replacement.tracking,new_label_url:replacement.label_url,reason:replacement.reason});
@@ -823,7 +825,7 @@ function PurchaseOrderPanel({order,enums,onClose,onDone}:{order:RowData;enums:En
       </section>
       {history.length>0&&<details className="trackingHistory"><summary>Lịch sử Tracking ({history.length})</summary>{history.map(row=><div key={row.id}><span>{row.tracking}</span><em>{row.status}</em>{row.label_url&&<a href={row.label_url} target="_blank" rel="noreferrer">Label cũ ↗</a>}</div>)}</details>}
     </div>}
-    {replaceId&&<div className="replaceBox"><div className="formHead"><div><span className="eyebrow">TRACKING REPLACEMENT</span><h3>Đổi Tracking và Label</h3></div><button className="closeBtn" onClick={()=>setReplaceId(null)}>×</button></div><div className="formGrid"><Field label="Tracking mới" name="tracking" value={replacement.tracking} onChange={(_,value)=>setReplacement(x=>({...x,tracking:value}))}/><Field label="URL Label mới" name="label_url" value={replacement.label_url} onChange={(_,value)=>setReplacement(x=>({...x,label_url:value}))}/><Field label="Lý do thay đổi" name="reason" value={replacement.reason} onChange={(_,value)=>setReplacement(x=>({...x,reason:value}))}/></div><button className="primaryBtn" onClick={()=>void replaceTracking()}>Xác nhận thay thế</button></div>}
+    {replaceId&&<div className="replaceBox"><div className="formHead"><div><span className="eyebrow">TRACKING REPLACEMENT</span><h3>Đổi Tracking và Label</h3></div><button className="closeBtn" onClick={()=>setReplaceId(null)}>×</button></div><div className="formGrid"><Field label="Tracking mới" name="tracking" value={replacement.tracking} onChange={(_,value)=>setReplacement(x=>({...x,tracking:value}))}/><Field label="URL Label mới" name="label_url" value={replacement.label_url} onChange={(_,value)=>setReplacement(x=>({...x,label_url:value}))}/><label className="field"><span>Lý do thay đổi (không bắt buộc)</span><select value={replacement.reason} onChange={event=>setReplacement(x=>({...x,reason:event.target.value}))}><option value="">Không ghi lý do</option>{TRACKING_REPLACEMENT_REASONS.map(reason=><option key={reason} value={reason}>{reason}</option>)}</select></label></div><button className="primaryBtn" onClick={()=>void replaceTracking()}>Xác nhận thay thế</button></div>}
     <div className="formFooter"><span className={msg.startsWith("Lỗi")?"inlineMsg error":"inlineMsg"}>{msg}</span><div className="purchaseButtons"><button className="secondaryBtn" onClick={onClose}>Đóng</button><button className="secondaryBtn" disabled={busy} onClick={()=>void save(false)}>Lưu nháp</button><button className="primaryBtn" disabled={busy} onClick={()=>void save(true)}>Hoàn tất mua đơn</button></div></div>
   </div>;
 }

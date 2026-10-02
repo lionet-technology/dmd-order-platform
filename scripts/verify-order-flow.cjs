@@ -42,21 +42,23 @@ async function main(){
   addOrderTracking({orderId:first.id,tracking:"1Z-B1",labelUrl:"https://labels.test/b1.pdf",lotNumber:2,actorId:admin.id});
   assert(listOrderTrackings(first.id,false).length===3,"Order should keep multiple trackings across lots");
   updateOrderTracking({orderId:first.id,id:a2.id,costMatchType:"INCLUDED_IN_PARENT",costParentTrackingId:a1.id});
-  const replacement=replaceOrderTracking({orderId:first.id,oldTrackingId:a1.id,newTracking:"1Z-A1-NEW",newLabelUrl:"https://labels.test/a1-new.pdf",reason:"Supplier replaced label",actorId:admin.id});
+  const replacement=replaceOrderTracking({orderId:first.id,oldTrackingId:a1.id,newTracking:"1Z-A1-NEW",newLabelUrl:"https://labels.test/a1-new.pdf",reason:"Cập nhật từ đơn vị vận chuyển",actorId:admin.id});
   const afterReplacement=listOrderTrackings(first.id,true);
   assert(afterReplacement.some(row=>row.id===a1.id&&row.status==="REPLACED"),"old tracking must remain as history");
   assert(afterReplacement.find(row=>row.id===a2.id).cost_parent_tracking_id===replacement.id,"auxiliary cost link should follow the replacement tracking");
   assert(order(first.id).tracking===replacement.tracking,"new primary tracking should sync to legacy Order field");
 
-  const oldCost=addSupplierCost({supplier:"KILOSHIP",service:"ePacket",sub_service:"T11",tracking:"1Z-A1",total_net_cost:25,extra_surcharge:2,import_tax:3,note:"Address correction",source_key:"cost-a1"});
+  const oldCost=addSupplierCost({supplier:"KILOSHIP",service:"ePacket",sub_service:"T11",tracking:"1Z-A1",total_net_cost:25,extra_surcharge:2,surcharge_type:"Phụ phí điều chỉnh địa chỉ",import_tax:3,note:"Address correction",source_key:"cost-a1"});
   const lot2Cost=addSupplierCost({supplier:"KILOSHIP",service:"ePacket",sub_service:"T11",tracking:"1Z-B1",total_net_cost:18,source_key:"cost-b1"});
   assert(oldCost.matched&&lot2Cost.matched,"cost must match current and replaced tracking aliases");
   const reconciled=order(first.id);
   assert(reconciled.true_net_cost===43,"Order True Net Cost should sum billable tracking rows");
   assert(reconciled.extra_surcharge===2&&reconciled.extra_import_tax===3,"tax and surcharge should aggregate across trackings");
   assert(reconciled.total_due===105,"total due should equal sales price plus tax and surcharge");
-  assert(String(reconciled.note).includes("Address correction")&&String(reconciled.note).includes("Đổi Tracking"),"shared Order note should contain tracking and charge events");
-  const duplicate=addSupplierCost({supplier:"KILOSHIP",service:"ePacket",sub_service:"T11",tracking:"1Z-A1",total_net_cost:25,extra_surcharge:2,import_tax:3,note:"Address correction",source_key:"cost-a1"});
+  assert(String(reconciled.public_note).includes("Cập nhật từ đơn vị vận chuyển")&&String(reconciled.public_note).includes("thuế nhập khẩu 3 USD")&&String(reconciled.public_note).includes("phụ phí 2 USD (Phụ phí điều chỉnh địa chỉ)"),"public updates should contain sanitized tracking, tax and surcharge events");
+  assert(!/supplier|net cost/i.test(String(reconciled.public_note)),"public updates must not expose Supplier or Net Cost");
+  assert(String(reconciled.internal_note).includes("Net Cost True")&&String(reconciled.internal_note).includes("Address correction"),"private note should retain reconciliation detail");
+  const duplicate=addSupplierCost({supplier:"KILOSHIP",service:"ePacket",sub_service:"T11",tracking:"1Z-A1",total_net_cost:25,extra_surcharge:2,surcharge_type:"Phụ phí điều chỉnh địa chỉ",import_tax:3,note:"Address correction",source_key:"cost-a1"});
   assert(duplicate.duplicate&&order(first.id).true_net_cost===43,"duplicate import row must not double count");
   console.log(`ORDER FLOW PASS (${checks} assertions)`);
 }

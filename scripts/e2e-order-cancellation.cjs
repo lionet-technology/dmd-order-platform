@@ -20,7 +20,7 @@ async function main(){
   check(response.status===200&&response.data.refund_amount===(issued?90:100),"server ignores forged refund or actor");
   const detail=await call("/api/orders/"+order.id,{cookie:client});const event=detail.data.events.find(x=>x.event_type==="ORDER_CANCELLED");
   check(detail.data.workflow_status==="CANCELLED"&&detail.data.total_due===(issued?10:0),"client sees retained fee");
-  check(event&&event.actor_username===actor.data.user.username&&event.actor_role===actor.data.user.role,"client history shows actual cancelling account");
+  check(event&&event.actor_username===undefined&&event.actor_role===undefined,"client history hides the cancelling account");
   check(detail.data.supplier===undefined&&detail.data.internal_note===undefined&&event.before_json===undefined,"cancelled detail keeps private fields hidden");
   if(issued)check(detail.data.trackings.length===1&&detail.data.trackings[0].status==="CANCELLED","client retains cancelled tracking history");
   const again=await call("/api/orders/"+order.id+"/cancel",{method:"POST",cookie:actor.cookie,body:{}});check(again.status===200&&again.data.already_cancelled,"API retry idempotent");

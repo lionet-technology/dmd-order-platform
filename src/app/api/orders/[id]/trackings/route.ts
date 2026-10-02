@@ -35,7 +35,8 @@ export async function POST(req:NextRequest,{params}:{params:Promise<{id:string}>
     if(action==="replace"){
       const old=db.prepare("SELECT tracking,label_url FROM order_trackings WHERE id=? AND order_id=?").get(Number(body.old_tracking_id),id) as {tracking:string;label_url:string|null}|undefined;
       const replacement=replaceOrderTracking({orderId:id,oldTrackingId:Number(body.old_tracking_id),newTracking:body.new_tracking,newLabelUrl:body.new_label_url,reason:body.reason,actorId:auth.user.id});
-      logOrderEvent({orderId:id,eventType:"TRACKING_REPLACED",summary:"Đổi Tracking "+String(old?.tracking||"")+" thành "+replacement.tracking+". Lý do: "+String(body.reason||""),actorId:auth.user.id,before:old,after:replacement});
+      const reason=String(body.reason||"").trim();
+      logOrderEvent({orderId:id,eventType:"TRACKING_REPLACED",summary:"Đổi Tracking "+String(old?.tracking||"")+" thành "+replacement.tracking+"."+ (reason?" Lý do: "+reason+".":""),actorId:auth.user.id,before:old,after:replacement});
     }else{
       const supplier=body.supplier?canonicalEnumValue("SUPPLIER",String(body.supplier)):String(access.order?.supplier||"");
       const expectedLotCount=Math.max(1,Math.trunc(Number(body.expected_lot_count||access.order?.expected_lot_count||1)));

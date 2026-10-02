@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback,useEffect,useState } from "react";
+import { TRACKING_REPLACEMENT_REASONS } from "@/lib/order-rules";
 
 type Role="ADMIN"|"SALES"|"CLIENT";
 type EnumRow={id:number;enum_type:string;value:string;parent_value:string;active:number;sort_order:number};
@@ -19,7 +20,8 @@ async function post(url:string,body:unknown){return json(url,{method:"POST",head
 export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderId:number;role:Role;onEdit:(row:GenericRow)=>void;onPurchase?:(row:GenericRow)=>void;onDone?:()=>void|Promise<void>}){
   const [data,setData]=useState<GenericRow|null>(null);
   const [tab,setTab]=useState("overview");
-  const [cancelOpen,setCancelOpen]=useState(false),[cancelReason,setCancelReason]=useState(""),[cancelError,setCancelError]=useState(""),[cancelBusy,setCancelBusy]=useState(false);
+  const [historyScope,setHistoryScope]=useState<"all"|"public"|"internal">("all");
+  const [cancelOpen,setCancelOpen]=useState(false),[cancelError,setCancelError]=useState(""),[cancelBusy,setCancelBusy]=useState(false);
   const [error,setError]=useState("");
   useEffect(()=>{void json("/api/orders/"+orderId).then(setData).catch(error=>setError(error.message))},[orderId]);
   if(error)return <div className="loadingState">Lỗi: {error}</div>;
@@ -30,13 +32,16 @@ export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderI
   async function submitCancellation(){
     setCancelBusy(true);setCancelError("");
     try{
-      await post("/api/orders/"+orderId+"/cancel",{reason:cancelReason});
+      await post("/api/orders/"+orderId+"/cancel",{});
       setData(await json("/api/orders/"+orderId));setCancelOpen(false);setTab("history");await onDone?.();
     }catch(error){setCancelError(error instanceof Error?error.message:"Không thể huỷ đơn.")}
     finally{setCancelBusy(false)}
   }
   const active=trackings.filter(row=>row.status==="ACTIVE");
   const events=Array.isArray(data.events)?data.events as GenericRow[]:[];
+  const visibleEvents=role==="ADMIN"&&historyScope!=="all"
+    ?events.filter(event=>historyScope==="public"?event.visibility==="PUBLIC":event.visibility==="ADMIN")
+    :events;
   async function copyAll(){await navigator.clipboard.writeText(active.map(row=>String(row.tracking||"")).filter(Boolean).join("\n"))}
   return <div className="orderDetail">
     <div className="detailHero">
@@ -49,8 +54,8 @@ export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderI
       {!cancelled&&role!=="CLIENT"&&<button className="primaryBtn" onClick={()=>onEdit(data)}>Sửa Order</button>}
       {!cancelled&&<span className="cancelBtnWrap" title={!policy.allowed?policy.reason:""}><button className="secondaryBtn cancelOrderBtn" disabled={!policy.allowed||cancelBusy} aria-disabled={!policy.allowed||cancelBusy} onClick={()=>{setCancelOpen(true);setCancelError("")}}>Huỷ đơn</button></span>}
     </div>
-    {cancelled&&<div className="cancellationSummary"><b>Đã huỷ · Hoàn {String(data.cancellation_refund_percent||0)}%: {money(data.cancellation_refund_amount)}</b><p>Phí giữ lại: {money(data.total_due)}. {data.cancellation_reason?String(data.cancellation_reason):""}</p></div>}
-    {cancelOpen&&<section className="cancellationConfirm"><h3>Xác nhận huỷ đơn</h3><p>Hoàn {policy.refund_percent}% vào Balance: <b>{money(policy.refund_amount)}</b>. Đơn sẽ ngừng xử lý trên hệ thống.</p><p>Tracking/label đã cấp vẫn được lưu trong lịch sử; nhà cung cấp cần xử lý huỷ label riêng.</p><label>Lý do huỷ (không bắt buộc)<textarea maxLength={2000} value={cancelReason} disabled={cancelBusy} onChange={event=>setCancelReason(event.target.value)}/></label>{cancelError&&<p role="alert">{cancelError}</p>}<div className="detailActions"><button className="secondaryBtn" disabled={cancelBusy} onClick={()=>setCancelOpen(false)}>Đóng</button><button className="primaryBtn" disabled={cancelBusy} onClick={()=>void submitCancellation()}>{cancelBusy?"Đang huỷ…":"Xác nhận huỷ đơn"}</button></div></section>}
+    {cancelled&&<div className="cancellationSummary"><b>Đã huỷ · Hoàn {String(data.cancellation_refund_percent||0)}%: {money(data.cancellation_refund_amount)}</b><p>{Number(data.cancellation_refund_percent||0)===90?"Khấu trừ 10% do Tracking/Label đã được cấp.":"Đơn chưa được cấp Tracking/Label nên được hoàn 100%."}</p></div>}
+    {cancelOpen&&<section className="cancellationConfirm"><h3>Xác nhận huỷ đơn</h3><p>Hoàn {policy.refund_percent}% vào Balance: <b>{money(policy.refund_amount)}</b>. Đơn sẽ ngừng xử lý trên hệ thống.</p><p>{Number(policy.refund_percent||0)===90?"Đơn đã được cấp Tracking/Label nên hoàn 90%; 10% còn lại là phí đã phát sinh.":"Đơn chưa được cấp Tracking/Label nên được hoàn 100%."}</p>{cancelError&&<p role="alert">{cancelError}</p>}<div className="detailActions"><button className="secondaryBtn" disabled={cancelBusy} onClick={()=>setCancelOpen(false)}>Đóng</button><button className="primaryBtn" disabled={cancelBusy} onClick={()=>void submitCancellation()}>{cancelBusy?"Đang huỷ…":"Xác nhận huỷ đơn"}</button></div></section>}
     <div className="detailTabs">
       {[["overview","Tổng quan"],["tracking","Tracking & Label"],["finance","Giá & Đối soát"],["history","Lịch sử"]].filter(item=>role==="ADMIN"||item[0]!=="finance").map(item=><button key={item[0]} className={tab===item[0]?"active":""} onClick={()=>setTab(item[0])}>{item[1]}</button>)}
     </div>
@@ -60,7 +65,11 @@ export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderI
         <article className="detailCard"><h3>Hàng hóa</h3><dl><dt>Sản phẩm</dt><dd>{String(data.item||"—")}</dd><dt>Chất liệu</dt><dd>{String(data.material||"—")}</dd><dt>Số lượng Carton</dt><dd>{String(data.carton_count||0)}</dd><dt>Khối lượng</dt><dd>{String(data.weight||0)} kg</dd><dt>Kích thước</dt><dd>{data.length&&data.width&&data.height?String(data.length)+" × "+String(data.width)+" × "+String(data.height)+" cm":"Nhập thể tích tổng"}</dd><dt>Thể tích</dt><dd>{Number(data.volume||0).toLocaleString("en-US")} cm³</dd><dt>Hạng cân</dt><dd><b>{String(data.chargeable_weight||0)} kg</b></dd></dl></article>
         <article className="detailCard"><h3>Dịch vụ</h3><dl><dt>Client</dt><dd>{String(data.customer||"—")}</dd><dt>Sales</dt><dd>{String(data.sales||"—")}</dd><dt>Supplier</dt><dd>{role==="ADMIN"?String(data.supplier||"Chưa chọn"):"—"}</dd><dt>Service</dt><dd>{String(data.service||"—")}</dd><dt>Sub-Service</dt><dd>{String(data.sub_service||"—")}</dd><dt>Tracking/Label</dt><dd>{active.filter(row=>row.label_url).length}/{String(data.carton_count||0)}</dd><dt>Số lượng Lô</dt><dd>{String(data.expected_lot_count||1)}</dd></dl></article>
       </section>
-      <section className="notesSection"><div><h3>Note Order</h3><p>{String(data.note||"Chưa có note.")}</p></div>{role==="ADMIN"&&<div className="internalNote"><h3>Note nội bộ</h3><p>{String(data.internal_note||"Chưa có note nội bộ.")}</p></div>}</section>
+      <section className="notesSection">
+        <div><h3>Note</h3><p>{String(data.note||"Chưa có note.")}</p></div>
+        <div className="publicSystemNote"><h3>Cập nhật công khai</h3><p>{String(data.public_note||"Chưa có cập nhật.")}</p></div>
+        {role!=="CLIENT"&&<div className="internalNote"><h3>Private Note</h3><p>{String(data.internal_note||"Chưa có private note.")}</p></div>}
+      </section>
     </div>}
     {tab==="tracking"&&<div className="detailBody">
       <div className="trackingDetailHead"><div><h3>Tracking & Label</h3><p>{active.length} Tracking active · {active.filter(row=>row.label_url).length}/{String(data.carton_count||0)} Label</p></div><button className="secondaryBtn" disabled={!active.length} onClick={()=>void copyAll()}>Copy Tracking</button></div>
@@ -74,9 +83,12 @@ export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderI
     {tab==="finance"&&role==="ADMIN"&&<div className="detailBody"><section className="financeCards">
       {[["Net Cost Est",data.est_net_cost],["Net Cost True",data.true_net_cost],["Base Cost",data.base_cost],["Retail Price",data.retail],["Discount",String(data.discount||0)+"%"],["Giá bán",data.sales_price],["Phụ phí PS",data.extra_surcharge],["Thuế NK PS",data.extra_import_tax],["Giá tổng",data.total_due]].map(([label,value])=><article key={String(label)}><span>{String(label)}</span><b>{String(label)==="Discount"?String(value):money(value)}</b></article>)}
     </section><div className="reconcileStrip"><span>Đối soát</span><b>{String(data.reconciliation_status||"PENDING")}</b><span>Chi phí có thể về sau và không chặn hoàn tất Order.</span></div></div>}
-    {tab==="history"&&<div className="detailBody"><div className="historyTimeline">{events.length?events.map(event=><article key={String(event.id)}>
-      <i></i><div><time>{displayDate(event.created_at)} · {String(event.actor_display_name||event.actor_username||"Hệ thống")}{event.actor_username?" · @"+String(event.actor_username):""}{event.actor_role?" · "+String(event.actor_role):""}</time><b>{String(event.summary||event.event_type)}</b><span>{String(event.source||"UI")}</span></div>
-    </article>):<p>Order chưa có History log.</p>}</div></div>}
+    {tab==="history"&&<div className="detailBody">
+      {role==="ADMIN"&&<div className="historyFilters">{[["all","Tất cả"],["public","Khách hàng thấy"],["internal","Nội bộ"]].map(([key,label])=><button key={key} className={historyScope===key?"active":""} onClick={()=>setHistoryScope(key as "all"|"public"|"internal")}>{label}</button>)}</div>}
+      <div className="historyTimeline">{visibleEvents.length?visibleEvents.map(event=><article key={String(event.id)} className={event.visibility==="ADMIN"?"internalEvent":"publicEvent"}>
+        <i></i><div><time>{displayDate(event.created_at)}{role==="ADMIN"?" · "+String(event.actor_display_name||event.actor_username||"Hệ thống"):""}{role==="ADMIN"&&event.actor_username?" · @"+String(event.actor_username):""}{role==="ADMIN"&&event.actor_role?" · "+String(event.actor_role):""}</time><b>{String(event.summary||event.event_type)}</b><span>{role==="ADMIN"&&<em className={event.visibility==="ADMIN"?"historyBadge internal":"historyBadge public"}>{event.visibility==="ADMIN"?"Nội bộ":"Khách hàng thấy"}</em>}{String(event.source||"UI")}</span></div>
+      </article>):<p>Không có History log trong nhóm này.</p>}</div>
+    </div>}
   </div>;
 }
 
@@ -129,11 +141,11 @@ export function TrackingReplacementSheet({onDone}:{onDone:()=>void|Promise<void>
   function paste(e:React.ClipboardEvent<HTMLInputElement>,start:number){const raw=e.clipboardData.getData("text/plain");if(!raw.includes("\n")&&!raw.includes("\t"))return;e.preventDefault();const matrix=raw.replace(/\r/g,"").split("\n").filter(Boolean).map(line=>line.split("\t"));setRows(prev=>{const next=[...prev];while(next.length<start+matrix.length)next.push(blankReplacement());matrix.forEach((values,offset)=>{next[start+offset]={...next[start+offset],old_tracking:String(values[0]||"").trim(),new_tracking:String(values[1]||"").trim(),new_label_url:String(values[2]||"").trim(),reason:String(values[3]||"").trim()}});return next})}
   async function preview(){setBusy(true);setMessage("");try{const body=await post("/api/orders/tracking-replacements",{preview:true,rows:active});setRows([...(body.rows||[]),...Array.from({length:Math.max(2,8-(body.rows||[]).length)},blankReplacement)]);setMessage("Đã match Tracking cũ. Kiểm tra Client/người nhận trước khi lưu.")}catch(error){setMessage("Lỗi: "+(error as Error).message)}finally{setBusy(false)}}
   async function save(){setBusy(true);setMessage("");try{const body=await post("/api/orders/tracking-replacements",{rows:active});setMessage("Đã đổi "+body.updated+" Tracking/Label.");setRows(Array.from({length:8},blankReplacement));await onDone()}catch(error){setMessage("Lỗi: "+(error as Error).message)}finally{setBusy(false)}}
-  const ready=active.length>0&&active.every(row=>row.system_order_code&&!row.error&&row.old_tracking&&row.new_tracking&&row.reason);
+  const ready=active.length>0&&active.every(row=>row.system_order_code&&!row.error&&row.old_tracking&&row.new_tracking);
   return <div className="bulkSheet">
-    <div className="bulkSheetToolbar"><div><b>Đổi Tracking & Label hàng loạt</b><span>Match bằng Tracking cũ · Lý do được ghi vào Note chung và History log.</span></div><div className="bulkFilters"><a className="secondaryBtn" href="/templates/dmd-tracking-updates.xlsx">Tải template</a><button className="secondaryBtn" disabled={busy||!active.length} onClick={()=>void preview()}>Kiểm tra dữ liệu</button><button className="primaryBtn" disabled={busy||!ready} onClick={()=>void save()}>Xác nhận thay thế</button></div></div>
-    <div className="bulkSheetScroll"><table><thead><tr><th>Tracking cũ</th><th>Tracking mới</th><th>URL Label mới</th><th>Lý do (public)</th><th>DMD ID</th><th>Client Order ID</th><th>Client</th><th>Người nhận</th><th>Kết quả</th></tr></thead><tbody>
-      {rows.map((row,index)=><tr key={index} className={row.error?"rowError":""}><td><input value={row.old_tracking} onPaste={e=>paste(e,index)} onChange={e=>update(index,"old_tracking",e.target.value)}/></td><td><input value={row.new_tracking} onChange={e=>update(index,"new_tracking",e.target.value)}/></td><td><input value={row.new_label_url} onChange={e=>update(index,"new_label_url",e.target.value)}/></td><td><input value={row.reason} onChange={e=>update(index,"reason",e.target.value)}/></td><td>{row.system_order_code||"—"}</td><td>{row.order_id||"—"}</td><td>{row.customer||"—"}</td><td>{row.recipient_name||"—"}</td><td>{row.error?row.error:row.system_order_code?"✓":"—"}</td></tr>)}
+    <div className="bulkSheetToolbar"><div><b>Đổi Tracking & Label hàng loạt</b><span>Match bằng Tracking cũ · Lý do không bắt buộc và chỉ được chọn từ danh sách công khai.</span></div><div className="bulkFilters"><a className="secondaryBtn" href="/templates/dmd-tracking-updates.xlsx">Tải template</a><button className="secondaryBtn" disabled={busy||!active.length} onClick={()=>void preview()}>Kiểm tra dữ liệu</button><button className="primaryBtn" disabled={busy||!ready} onClick={()=>void save()}>Xác nhận thay thế</button></div></div>
+    <div className="bulkSheetScroll"><table><thead><tr><th>Tracking cũ</th><th>Tracking mới</th><th>URL Label mới</th><th>Lý do công khai (không bắt buộc)</th><th>DMD ID</th><th>Client Order ID</th><th>Client</th><th>Người nhận</th><th>Kết quả</th></tr></thead><tbody>
+      {rows.map((row,index)=><tr key={index} className={row.error?"rowError":""}><td><input value={row.old_tracking} onPaste={e=>paste(e,index)} onChange={e=>update(index,"old_tracking",e.target.value)}/></td><td><input value={row.new_tracking} onChange={e=>update(index,"new_tracking",e.target.value)}/></td><td><input value={row.new_label_url} onChange={e=>update(index,"new_label_url",e.target.value)}/></td><td><select value={row.reason} onChange={e=>update(index,"reason",e.target.value)}><option value="">Không ghi lý do</option>{TRACKING_REPLACEMENT_REASONS.map(reason=><option key={reason} value={reason}>{reason}</option>)}</select></td><td>{row.system_order_code||"—"}</td><td>{row.order_id||"—"}</td><td>{row.customer||"—"}</td><td>{row.recipient_name||"—"}</td><td>{row.error?row.error:row.system_order_code?"✓":"—"}</td></tr>)}
     </tbody></table></div><div className="bulkSheetFooter"><span>{active.length} dòng có dữ liệu</span><b className={message.startsWith("Lỗi")?"error":""}>{busy?"Đang xử lý…":message}</b></div>
   </div>;
 }

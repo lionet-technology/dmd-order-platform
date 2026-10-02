@@ -24,7 +24,7 @@ export function cancellationPolicy(order:Order){
   if(!Number.isFinite(charged)||charged<0)return {allowed:false,reason:"Công nợ của đơn không hợp lệ; cần kiểm tra trước khi huỷ.",refund_percent:0,refund_amount:0};
   return {allowed:true,reason:"",refund_percent:percent,refund_amount:money(charged*percent/100)};
 }
-export function cancelOrder(orderId:number,user:AuthUser,reason:unknown){
+export function cancelOrder(orderId:number,user:AuthUser){
   return db.transaction(()=>{
     const order=db.prepare("SELECT * FROM orders WHERE id=?").get(orderId) as Order|undefined;
     if(!order)throw new CancellationError("Order không tồn tại.",404);
@@ -35,21 +35,21 @@ export function cancelOrder(orderId:number,user:AuthUser,reason:unknown){
     if(order.workflow_status==="CANCELLED")return {cancelled:true,already_cancelled:true,...cancellationPolicy(order)};
     const policy=cancellationPolicy(order);
     if(!policy.allowed)throw new CancellationError(policy.reason);
-    const note=String(reason??"").trim();
-    if(note.length>2000)throw new CancellationError("Lý do huỷ tối đa 2000 ký tự.",400);
     const charged=Number((db.prepare("SELECT COALESCE(SUM(amount),0) amount FROM ledger_entries WHERE entry_type='ORDER_CHARGE' AND direction='DEBIT' AND reference_type='ORDER' AND reference_id=?").get(String(orderId)) as {amount:number}).amount);
     const retained=money(charged-policy.refund_amount);
     const at=new Date().toISOString();
     db.prepare("UPDATE orders SET workflow_status='CANCELLED',cancelled_at=?,cancelled_by_user_id=?,cancellation_reason=?,cancellation_refund_percent=?,cancellation_refund_amount=?,cancelled_original_due=?,total_due=?,updated_by_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
-      .run(at,user.id,note||null,policy.refund_percent,policy.refund_amount,charged,retained,user.id,orderId);
+      .run(at,user.id,null,policy.refund_percent,policy.refund_amount,charged,retained,user.id,orderId);
     // Cancel only in-app tracking availability. Carrier labels need separate supplier processing.
     db.prepare("UPDATE order_trackings SET status='CANCELLED',is_primary=0,updated_at=CURRENT_TIMESTAMP WHERE order_id=? AND status='ACTIVE'").run(orderId);
     if(policy.refund_amount>0)db.prepare("INSERT INTO ledger_entries(occurred_at,entry_type,direction,amount,customer,client_user_id,reference_type,reference_id,note,created_by_user_id) VALUES (?,'REFUND','CREDIT',?,?,?,'ORDER_CANCELLATION',?,?,?)")
       .run(at,policy.refund_amount,order.customer||null,order.client_user_id||null,String(orderId),"Hoàn "+policy.refund_percent+"% khi huỷ "+String(order.system_order_code||order.order_id||orderId),user.id);
     recomputeOrderFinancials(orderId);
-    const summary="Huỷ đơn bởi @"+user.username+" ("+user.role+"). Hoàn "+policy.refund_percent+"%: $"+policy.refund_amount.toFixed(2)+". Phí giữ lại: $"+retained.toFixed(2)+(note?". Lý do: "+note:"");
+    const summary=policy.refund_percent===90
+      ?"Đơn hàng đã được huỷ. Hoàn 90%: $"+policy.refund_amount.toFixed(2)+". Khấu trừ 10% do Tracking/Label đã được cấp."
+      :"Đơn hàng đã được huỷ. Hoàn 100%: $"+policy.refund_amount.toFixed(2)+".";
     appendOrderNote(orderId,summary);
-    logOrderEvent({orderId,eventType:"ORDER_CANCELLED",summary,actorId:user.id,before:{workflow_status:order.workflow_status,total_due:order.total_due},after:{workflow_status:"CANCELLED",refund_percent:policy.refund_percent,refund_amount:policy.refund_amount,retained_amount:retained,reason:note}});
+    logOrderEvent({orderId,eventType:"ORDER_CANCELLED",summary,actorId:user.id,before:{workflow_status:order.workflow_status,total_due:order.total_due},after:{workflow_status:"CANCELLED",refund_percent:policy.refund_percent,refund_amount:policy.refund_amount,retained_amount:retained}});
     return {cancelled:true,already_cancelled:false,refund_percent:policy.refund_percent,refund_amount:policy.refund_amount,retained_amount:retained};
   }).immediate();
 }

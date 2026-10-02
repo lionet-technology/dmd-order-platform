@@ -41,14 +41,15 @@ async function main(){
  check("Sales cannot import supplier costs",(await upload("costs",bytes,sc)).status===403);
  check("Client cannot import orders",(await upload("orders",bytes,cc)).status===403);
  const replacementHeaders=["Tracking cũ","Tracking mới","URL Label mới","Lý do"];
- bytes=await workbook(replacementHeaders,[[prefix+"-OLD",prefix+"-NEW","https://labels.test/new.pdf","Public reason from import"]]);
+ bytes=await workbook(replacementHeaders,[[prefix+"-OLD",prefix+"-NEW","https://labels.test/new.pdf","Điều chỉnh tuyến vận chuyển"]]);
  r=await upload("tracking_updates",bytes,admin);
  check("Tracking Excel replaces by old tracking",r.status===200&&r.data.imported===1,r);
  detail=(await call("/api/orders/"+order.id,undefined,admin)).data;
  check("Tracking Excel retains old tracking",detail.trackings.some(x=>x.tracking===prefix+"-OLD"&&x.status==="REPLACED"));
  check("Tracking Excel keeps financial totals",detail.true_net_cost===42&&detail.total_due===105);
  const publicDetail=(await call("/api/orders/"+order.id,undefined,cc)).data;
- check("Replacement reason is public and audited",publicDetail.note.includes("Public reason from import")&&publicDetail.events.some(x=>x.event_type==="TRACKING_REPLACED"));
+ check("Replacement reason is public and audited",publicDetail.public_note.includes("Điều chỉnh tuyến vận chuyển")&&publicDetail.events.some(x=>x.event_type==="TRACKING_REPLACED"));
+ check("Public note hides Supplier and Net Cost",!/supplier|net cost/i.test(String(publicDetail.public_note)));
  check("Supplier cost audit remains Admin-only",publicDetail.events.every(x=>x.event_type!=="SUPPLIER_COST_IMPORTED"));
  const originalNet=detail.true_net_cost;
  bytes=await workbook(costHeaders,[["KILOSHIP","ePacket","",prefix+"-NEW",5,0,0,"first valid row","01/10/2026"],["UNKNOWN-SUPPLIER","ePacket","",prefix+"-NEW",7,0,0,"invalid second row","01/10/2026"]]);

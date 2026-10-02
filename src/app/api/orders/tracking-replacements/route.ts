@@ -22,14 +22,15 @@ export async function POST(req:NextRequest){
     const body=await req.json();
     const rows=(Array.isArray(body.rows)?body.rows:[]).map((row:Record<string,unknown>)=>inspect(row));
     if(body.preview)return NextResponse.json({rows});
-    const errors=rows.filter((row:Record<string,unknown>)=>row.error||!String(row.new_tracking||"").trim()||!String(row.reason||"").trim());
+    const errors=rows.filter((row:Record<string,unknown>)=>row.error||!String(row.new_tracking||"").trim());
     if(errors.length)return NextResponse.json({error:"Có dòng chưa hợp lệ.",rows},{status:400});
     let updated=0;
     const apply=db.transaction(()=>{
     for(const row of rows as Array<Record<string,unknown>>){
       const before=db.prepare("SELECT * FROM order_trackings WHERE id=?").get(Number(row.tracking_id));
       const replacement=replaceOrderTracking({orderId:Number(row.order_pk),oldTrackingId:Number(row.tracking_id),newTracking:row.new_tracking,newLabelUrl:row.new_label_url,reason:row.reason,actorId:auth.user.id});
-      logOrderEvent({orderId:Number(row.order_pk),eventType:"TRACKING_REPLACED",summary:"Đổi Tracking "+String(row.old_tracking)+" thành "+replacement.tracking+". Lý do: "+String(row.reason),actorId:auth.user.id,before,after:replacement,source:"BULK"});
+      const reason=String(row.reason||"").trim();
+      logOrderEvent({orderId:Number(row.order_pk),eventType:"TRACKING_REPLACED",summary:"Đổi Tracking "+String(row.old_tracking)+" thành "+replacement.tracking+"."+(reason?" Lý do: "+reason+".":""),actorId:auth.user.id,before,after:replacement,source:"BULK"});
       updated++;
     }
     });

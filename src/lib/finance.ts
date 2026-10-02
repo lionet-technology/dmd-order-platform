@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { validateOrderEnums, validateSupplierCostEnums } from "./enums";
-import { addOrderTracking, appendOrderNote, findTrackingOwner, matchSupplierCostsForOrder, normalizeTracking } from "./order-operations";
+import { addOrderTracking, findTrackingOwner, matchSupplierCostsForOrder, normalizeTracking } from "./order-operations";
 
 export type OrderInput = {
   id?: number;
@@ -63,6 +63,7 @@ export type SupplierCostInput = {
   import_customs?: number | string | null;
   total_net_cost?: number | string | null;
   extra_surcharge?: number | string | null;
+  surcharge_type?: string;
   import_tax?: number | string | null;
   note?: string;
   batch_id?: number | null;
@@ -440,25 +441,20 @@ export function addSupplierCost(input: SupplierCostInput) {
 
   const owner=findTrackingOwner(tracking);
   const extraSurcharge=money(num(input.extra_surcharge));const importTax=money(num(input.import_tax));
+  const surchargeType=extraSurcharge?(text(input.surcharge_type)||"phụ phí bổ sung"):"";
   const result = db.prepare(`
     INSERT INTO supplier_costs(
       supplier,service,sub_service,tracking,normalized_tracking,matched_order_id,matched_order_tracking_id,occurred_at,item,destination,weight,net_price,fee,
-      export_customs,import_customs,total_net_cost,extra_surcharge,import_tax,note,batch_id,source_key
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      export_customs,import_customs,total_net_cost,extra_surcharge,import_tax,surcharge_type,note,batch_id,source_key
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     enumValues.supplier, enumValues.service, enumValues.sub_service, tracking,normalizedTracking,owner?.order_id||null,owner?.id||null, normalizeDateInput(input.occurred_at, "Ngày chi phí"),
     text(input.item), text(input.destination), num(input.weight), netPrice, fee, exportCustoms, importCustoms,
-    totalNet,extraSurcharge,importTax,text(input.note), input.batch_id || null,input.source_key||null
+    totalNet,extraSurcharge,importTax,surchargeType,text(input.note), input.batch_id || null,input.source_key||null
   );
 
   const matched=Boolean(owner);
-  if(owner){
-    matchSupplierCostsForOrder(owner.order_id);
-    if(extraSurcharge||importTax){
-      const parts=[] as string[];if(extraSurcharge)parts.push(`Phụ phí ${extraSurcharge} USD`);if(importTax)parts.push(`Thuế nhập khẩu ${importTax} USD`);if(text(input.note))parts.push(text(input.note));
-      appendOrderNote(owner.order_id,`${tracking}: ${parts.join(" · ")}`);
-    }
-  }
+  if(owner)matchSupplierCostsForOrder(owner.order_id);
   return {
     id: Number(result.lastInsertRowid),
     tracking,
