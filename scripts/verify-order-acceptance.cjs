@@ -109,6 +109,7 @@ async function main() {
   const rows=[1,2].map(n=>({order_pk:d.id,tracking:prefix+"-D"+n,label_url:"https://labels.test/d"+n+".pdf",supplier:"KILOSHIP",expected_lot_count:1}));
   r=await call("/api/orders/tracking-queue",{rows},admin);
   check("Bulk assigns two carton tracking/labels",r.status===200&&(await detail(d.id)).workflow_status==="PURCHASED");
+  check("Completed orders are removed from Tracking/Label queue",!(await call("/api/orders/tracking-queue",undefined,admin)).data.rows.some(x=>x.order_pk===d.id));
   const count=(await detail(d.id)).trackings.length;
   await call("/api/orders/tracking-queue",{rows},admin);
   check("Bulk replay does not duplicate tracking records",(await detail(d.id)).trackings.length===count);

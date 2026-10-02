@@ -102,6 +102,7 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
   const [rows,setRows]=useState<QueueRow[]>([]);
   const [service,setService]=useState("");
   const [subService,setSubService]=useState("");
+  const [quickPaste,setQuickPaste]=useState("");
   const [busy,setBusy]=useState(false);
   const [message,setMessage]=useState("");
   const suppliers=enums.filter(row=>row.enum_type==="SUPPLIER"&&row.active!==0);
@@ -109,23 +110,105 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
   const subs=enums.filter(row=>row.enum_type==="SUB_SERVICE"&&row.active!==0&&(!service||row.parent_value===service));
   const load=useCallback(async()=>{setBusy(true);setMessage("");try{const params=new URLSearchParams();if(service)params.set("service",service);if(subService)params.set("sub_service",subService);const body=await json("/api/orders/tracking-queue?"+params);setRows(body.rows||[])}catch(error){setMessage("Lỗi: "+(error as Error).message)}finally{setBusy(false)}},[service,subService]);
   useEffect(()=>{void load()},[load]);
-  function update(index:number,key:keyof QueueRow,value:string){setRows(prev=>prev.map((row,i)=>i===index?{...row,[key]:key==="expected_lot_count"?Number(value||1):value}:row))}
-  function pasteTracking(e:React.ClipboardEvent<HTMLInputElement>,start:number){const raw=e.clipboardData.getData("text/plain");if(!raw.includes("\n")&&!raw.includes("\t"))return;e.preventDefault();const matrix=raw.replace(/\r/g,"").split("\n").filter(Boolean).map(line=>line.split("\t"));setRows(prev=>{const next=[...prev];matrix.forEach((values,offset)=>{if(!next[start+offset])return;next[start+offset]={...next[start+offset],tracking:String(values[0]||"").trim(),label_url:String(values[1]||"").trim()}});return next})}
+  function update(index:number,key:keyof QueueRow,value:string){
+    setRows(prev=>prev.map((row,i)=>i===index?{
+      ...row,[key]:key==="expected_lot_count"?Number(value||1):value,
+    }:row));
+  }
+  function updateOrder(orderPk:number,key:"supplier"|"expected_lot_count",value:string){
+    setRows(prev=>prev.map(row=>row.order_pk===orderPk?{
+      ...row,[key]:key==="expected_lot_count"?Number(value||1):value,
+    }:row));
+  }
+  function parseTrackingPaste(raw:string){
+    return raw.replace(/\r/g,"").split("\n")
+      .map(line=>line.trim())
+      .filter(Boolean)
+      .map(line=>{
+        const values=line.split("\t");
+        if(values.length===1){
+          const match=line.match(/^(\S+)\s+(https?:\/\/\S+)$/i);
+          if(match)return [match[1],match[2]];
+        }
+        return values;
+      })
+      .filter((values,index)=>!(index===0&&String(values[0]||"").trim().toLowerCase()==="tracking"));
+  }
+  function applyTrackingPaste(matrix:string[][],start=0){
+    setRows(prev=>{
+      const next=[...prev];
+      matrix.forEach((values,offset)=>{
+        const index=start+offset;
+        if(!next[index])return;
+        next[index]={
+          ...next[index],
+          tracking:next[index].tracking_id?next[index].tracking:String(values[0]||"").trim(),
+          label_url:String(values[1]||"").trim(),
+        };
+      });
+      return next;
+    });
+  }
+  function pasteTracking(e:React.ClipboardEvent<HTMLInputElement>,start:number){
+    const raw=e.clipboardData.getData("text/plain");
+    if(!raw.includes("\n")&&!raw.includes("\t"))return;
+    e.preventDefault();
+    applyTrackingPaste(parseTrackingPaste(raw),start);
+  }
+  function applyQuickPaste(){
+    const matrix=parseTrackingPaste(quickPaste);
+    if(!matrix.length){setMessage("Lỗi: Chưa có dữ liệu để dán.");return}
+    const applied=Math.min(matrix.length,rows.length);
+    applyTrackingPaste(matrix);
+    setQuickPaste("");
+    setMessage("Đã áp dụng "+applied+" dòng vào sheet"+(matrix.length>rows.length
+      ?"; bỏ qua "+(matrix.length-rows.length)+" dòng vượt quá hàng chờ."
+      :". Kiểm tra trước khi lưu."));
+  }
   async function upload(file:File){setBusy(true);setMessage("");try{const form=new FormData();form.set("file",file);const response=await fetch("/api/orders/tracking-queue",{method:"PUT",body:form});const body=await response.json();if(!response.ok)throw new Error(body.error);setRows(body.rows||[]);setMessage("Đã nạp file vào sheet. Kiểm tra trước khi lưu.")}catch(error){setMessage("Lỗi: "+(error as Error).message)}finally{setBusy(false)}}
   async function save(){setBusy(true);setMessage("");try{const body=await post("/api/orders/tracking-queue",{rows});setMessage("Đã lưu "+body.saved+" Tracking/Label cho "+body.orders+" Order.");await load();await onDone()}catch(error){setMessage("Lỗi: "+(error as Error).message)}finally{setBusy(false)}}
   const params=new URLSearchParams();if(service)params.set("service",service);if(subService)params.set("sub_service",subService);params.set("format","xlsx");
+  const orderGroups=Array.from(rows.reduce((groups,row)=>{
+    const group=groups.get(row.order_pk)||[];
+    group.push(row);
+    groups.set(row.order_pk,group);
+    return groups;
+  },new Map<number,QueueRow[]>()).values());
   return <div className="bulkSheet">
-    <div className="bulkSheetToolbar"><div><b>Hàng chờ Tracking & Label</b><span>Sheet được tạo sẵn theo từng carton; paste 2 cột Tracking + URL Label.</span></div><div className="bulkFilters">
-      <select value={service} onChange={e=>{setService(e.target.value);setSubService("")}}><option value="">Mọi dịch vụ</option>{services.map(row=><option key={row.id}>{row.value}</option>)}</select>
-      <select value={subService} onChange={e=>setSubService(e.target.value)}><option value="">Mọi Sub-Service</option>{subs.map(row=><option key={row.id}>{row.value}</option>)}</select>
+    <div className="bulkSheetToolbar"><div><b>Hàng chờ Tracking & Label</b><span>Chỉ hiển thị Order chưa đủ Tracking/Label · Sheet được tạo sẵn theo từng carton.</span></div><div className="bulkFilters">
+      <label className="bulkFilterField"><span>Dịch vụ</span><select value={service} onChange={e=>{setService(e.target.value);setSubService("")}}><option value="">Tất cả dịch vụ</option>{services.map(row=><option key={row.id}>{row.value}</option>)}</select></label>
+      <label className="bulkFilterField"><span>Sub-Service</span><select value={subService} onChange={e=>setSubService(e.target.value)}><option value="">Tất cả Sub-Service</option>{subs.map(row=><option key={row.id}>{row.value}</option>)}</select></label>
       <a className="secondaryBtn" href={"/api/orders/tracking-queue?"+params.toString()}>Tải Excel</a>
       <label className="secondaryBtn fileButton">Upload Excel<input type="file" accept=".xlsx" onChange={e=>{const file=e.target.files?.[0];if(file)void upload(file)}}/></label>
       <button className="primaryBtn" disabled={busy||!rows.length} onClick={()=>void save()}>Lưu Tracking/Label</button>
     </div></div>
-    <div className="bulkSheetScroll"><table><thead><tr><th>DMD ID</th><th>Client Order ID</th><th>Client</th><th>Người nhận</th><th>Số lượng Carton</th><th>Carton số</th><th>Service</th><th>Supplier</th><th>Số lượng Lô</th><th>Tracking</th><th>URL Label</th></tr></thead>
-      <tbody>{rows.map((row,index)=><tr key={row.system_order_code+"-"+row.carton_slot}><td><b>{row.system_order_code}</b></td><td>{row.client_order_id}</td><td>{row.customer}</td><td>{row.recipient_name}</td><td>{row.carton_count}</td><td>{row.carton_slot}</td><td>{row.service}<small>{row.sub_service}</small></td><td><select value={row.supplier} onChange={e=>update(index,"supplier",e.target.value)}><option value="">Chọn</option>{suppliers.map(item=><option key={item.id}>{item.value}</option>)}</select></td><td><input type="number" min="1" value={row.expected_lot_count} onChange={e=>update(index,"expected_lot_count",e.target.value)}/></td><td><input value={row.tracking} disabled={Boolean(row.tracking_id)} onPaste={e=>pasteTracking(e,index)} onChange={e=>update(index,"tracking",e.target.value)}/></td><td><input value={row.label_url} onChange={e=>update(index,"label_url",e.target.value)}/></td></tr>)}</tbody>
+    <div className="bulkPasteBar">
+      <div><b>Dán nhanh từ Excel/Google Sheets</b><span>Copy 2 cột Tracking + URL Label, mỗi carton một dòng. Có thể dán trực tiếp vào ô Tracking đầu tiên.</span></div>
+      <textarea value={quickPaste} onChange={e=>setQuickPaste(e.target.value)} placeholder={"TRACKING-001\thttps://.../label-001.pdf\nTRACKING-002\thttps://.../label-002.pdf"}/>
+      <button className="secondaryBtn" disabled={!quickPaste.trim()||!rows.length} onClick={applyQuickPaste}>Áp dụng vào sheet</button>
+    </div>
+    <div className="bulkSheetScroll"><table><thead><tr><th>DMD ID</th><th>Client Order ID</th><th>Client</th><th>Người nhận</th><th>Số lượng Carton</th><th>Carton số</th><th>Service</th><th>Supplier (theo Order)</th><th>Số lượng Lô (theo Order)</th><th>Tracking</th><th>URL Label</th></tr></thead>
+      <tbody>{orderGroups.map((group,groupIndex)=>group.map((row,rowIndex)=>{
+        const index=rows.indexOf(row);
+        const rowClass=(groupIndex%2?"orderGroupAlt":"orderGroupBase")+" "+(rowIndex===0?"orderGroupStart":"");
+        return <tr key={row.system_order_code+"-"+row.carton_slot} className={rowClass}>
+          <td><b>{row.system_order_code}</b></td>
+          <td>{row.client_order_id}</td>
+          <td>{row.customer}</td>
+          <td>{row.recipient_name}</td>
+          <td>{row.carton_count}</td>
+          <td>{row.carton_slot}</td>
+          <td>{row.service}<small>{row.sub_service}</small></td>
+          {rowIndex===0&&<>
+            <td rowSpan={group.length} className="orderLevelField"><label><span>Áp dụng toàn Order</span><select value={row.supplier} onChange={e=>updateOrder(row.order_pk,"supplier",e.target.value)}><option value="">Chọn Supplier</option>{suppliers.map(item=><option key={item.id}>{item.value}</option>)}</select></label></td>
+            <td rowSpan={group.length} className="orderLevelField"><label><span>Áp dụng toàn Order</span><input type="number" min="1" value={row.expected_lot_count} onChange={e=>updateOrder(row.order_pk,"expected_lot_count",e.target.value)}/></label></td>
+          </>}
+          <td><input value={row.tracking} disabled={Boolean(row.tracking_id)} onPaste={e=>pasteTracking(e,index)} onChange={e=>update(index,"tracking",e.target.value)}/></td>
+          <td><input value={row.label_url} onChange={e=>update(index,"label_url",e.target.value)}/></td>
+        </tr>;
+      }))}</tbody>
     </table></div>
-    <div className="bulkSheetFooter"><span>{rows.length} carton đang chờ xử lý</span><b className={message.startsWith("Lỗi")?"error":""}>{busy?"Đang xử lý…":message}</b></div>
+    <div className="bulkSheetFooter"><span>{orderGroups.length} Order · {rows.length} carton đang chờ xử lý</span><b className={message.startsWith("Lỗi")?"error":""}>{busy?"Đang xử lý…":message}</b></div>
   </div>;
 }
 
