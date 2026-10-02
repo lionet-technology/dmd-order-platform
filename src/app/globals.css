@@ -456,3 +456,66 @@ tbody tr:hover td{background:#fafbff}
 .purchasePanel{display:flex;flex-direction:column;gap:16px}.purchaseSummary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.purchaseSummary>div{display:flex;flex-direction:column;gap:4px;padding:12px;border:1px solid var(--line);border-radius:10px;background:#f8fafc}.purchaseSummary span,.lotHead span,.trackingRow label>span{font-size:8px;font-weight:850;letter-spacing:.08em;color:#667085;text-transform:uppercase}.purchaseSummary b{font-size:12px}.purchaseFields{display:grid;grid-template-columns:minmax(220px,.65fr) minmax(300px,1.35fr);gap:12px}.lotList{display:flex;flex-direction:column;gap:10px}.lotCard{border:1px solid #dce2ea;border-radius:12px;overflow:hidden}.lotHead{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:#f7f9fc;border-bottom:1px solid #e4e7ec}.lotHead>div{display:flex;flex-direction:column;gap:2px}.trackingRows{display:flex;flex-direction:column}.trackingRow{display:grid;grid-template-columns:28px minmax(150px,1fr) minmax(190px,1.3fr) minmax(150px,.8fr) auto;align-items:end;gap:8px;padding:10px 12px;border-bottom:1px solid #eef0f3}.trackingRow:last-child{border-bottom:0}.trackingRow label{display:flex;flex-direction:column;gap:4px}.trackingRow input,.trackingRow select{height:34px;border:1px solid #d0d5dd;border-radius:7px;padding:0 8px;background:#fff;font-size:10px}.trackingRow input:disabled{background:#f2f4f7;color:#475467}.trackingIndex{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:#eef2ff;color:#3155d9;font-size:9px;font-weight:850;margin-bottom:5px}.trackingActions{display:flex;gap:5px;align-items:center;min-height:34px}.trackingActions button,.trackingActions a{border:0;background:#f2f4f7;color:#344054;border-radius:7px;padding:7px 8px;font-size:9px;font-weight:750;text-decoration:none;white-space:nowrap}.addLotBtn{align-self:flex-start;border:1px dashed #98a2b3;background:#fff;color:#344054;border-radius:9px;padding:9px 12px;font-size:10px;font-weight:750}.trackingHistory{border:1px solid #e4e7ec;border-radius:10px;padding:10px 12px}.trackingHistory summary{font-size:10px;font-weight:800;cursor:pointer}.trackingHistory>div{display:flex;gap:12px;align-items:center;padding:8px 0;border-top:1px solid #eef0f3;font-size:10px}.trackingHistory em{font-style:normal;color:#b54708}.trackingHistory a{margin-left:auto}.replaceBox{border:1px solid #b2c1f4;background:#f8faff;border-radius:12px;padding:12px}.replaceBox .closeBtn{border:0;background:transparent;font-size:20px}.purchaseButtons,.rowActions{display:flex;gap:6px;align-items:center}.primaryRowAction{background:#eef2ff!important;color:#2949c7!important}.trackingCell{position:relative;min-width:125px}.trackingCell summary{cursor:pointer;font-weight:750;color:#2949c7;list-style:none}.trackingCell summary::-webkit-details-marker{display:none}.trackingCell>div{position:absolute;z-index:40;top:24px;left:0;min-width:250px;padding:7px;background:#fff;border:1px solid #dce2ea;border-radius:9px;box-shadow:0 12px 28px rgba(16,24,40,.15)}.trackingCell>div span{display:grid;grid-template-columns:42px 1fr auto;gap:8px;padding:6px;align-items:center;border-bottom:1px solid #eef0f3;white-space:nowrap}.trackingCell>div span:last-child{border-bottom:0}.trackingCell a{color:#2949c7;text-decoration:none}
 .clientServiceEditor{display:flex;flex-direction:column;gap:12px}.serviceSettingList{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:10px;overflow:hidden}.serviceSettingRow{display:grid;grid-template-columns:130px minmax(150px,1fr) 180px 70px;align-items:center;gap:12px;padding:10px 12px;border-bottom:1px solid #eef0f3}.serviceSettingRow:last-child{border-bottom:0}.serviceToggle{display:flex;align-items:center;gap:7px;font-size:9px;color:#475467}.serviceSettingRow>label:last-of-type{display:flex;flex-direction:column;gap:3px}.serviceSettingRow>label:last-of-type>span{font-size:8px;font-weight:800;color:#667085;text-transform:uppercase}.serviceSettingRow>label:last-of-type>div{display:flex;align-items:center}.serviceSettingRow input[type=number]{width:100%;height:32px;border:1px solid #d0d5dd;border-radius:7px 0 0 7px;padding:0 8px}.serviceSettingRow em{height:32px;display:grid;place-items:center;padding:0 9px;border:1px solid #d0d5dd;border-left:0;border-radius:0 7px 7px 0;background:#f8fafc;font-style:normal}
 @media(max-width:900px){.serviceSettingRow{grid-template-columns:1fr 1fr}.serviceSettingRow>label:last-of-type{grid-column:1/2}.purchaseSummary{grid-template-columns:1fr}.purchaseFields{grid-template-columns:1fr}.trackingRow{grid-template-columns:28px 1fr}.trackingRow label,.trackingActions{grid-column:2}.purchaseButtons{width:100%;flex-wrap:wrap}.purchaseButtons>*{flex:1}}
+
+/* 2026 UI polish — visual consistency only, no workflow/layout restructuring */
+:root{
+  --radius-sm:8px;--radius-md:10px;--radius-lg:14px;
+  --control-h:38px;--shadow-sm:0 1px 2px rgba(16,24,40,.05);
+  --focus-ring:0 0 0 3px rgba(49,85,217,.14);
+}
+body{font-size:14px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+button,a,input,select,textarea{transition:border-color .15s ease,background-color .15s ease,color .15s ease,box-shadow .15s ease,opacity .15s ease}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:0;box-shadow:var(--focus-ring)}
+
+h1{font-size:29px;line-height:1.16;font-weight:750;letter-spacing:-.025em}
+h2{font-size:21px;line-height:1.25;font-weight:750;letter-spacing:-.015em}
+h3{font-size:15px;line-height:1.35;font-weight:750}
+.eyebrow{font-size:10px;font-weight:800;letter-spacing:.11em}
+.pageHeader p{font-size:12.5px;line-height:1.55}.crumb{font-size:11.5px}.crumb b{font-size:12px}
+
+.primaryBtn,.secondaryBtn{min-height:var(--control-h);padding:0 14px;border-radius:var(--radius-sm);display:inline-flex;align-items:center;justify-content:center;gap:6px;font-size:11px;font-weight:700;line-height:1;box-shadow:var(--shadow-sm)}
+.primaryBtn{border-color:#2949c7;background:#3155d9}.primaryBtn:hover:not(:disabled){background:#2949c7;box-shadow:0 2px 5px rgba(49,85,217,.18)}
+.secondaryBtn{border-color:#d0d5dd;color:#344054}.secondaryBtn:hover:not(:disabled){border-color:#b8c0cc;background:#f8fafc;color:#172033}
+.textBtn{font-size:11px;font-weight:700}.iconBtn{width:38px;height:38px;border-radius:var(--radius-sm);font-size:18px}
+.rowAction,.linkBtn,.editBtn,.activateBtn,.deactivateBtn{min-height:30px;padding:0 9px;border-radius:7px;font-size:9.5px;font-weight:700;display:inline-flex;align-items:center;justify-content:center}
+
+.panel,.metricCard,.quickPanel,.importCard,.detailCard{border-radius:12px;box-shadow:var(--shadow-sm)}
+.metricCard{padding:17px;gap:6px}.metricCard>span{font-size:10.5px;font-weight:700;letter-spacing:.035em}.metricCard>b{font-size:24px;font-weight:750}.metricCard small{font-size:10.5px}
+.panelHead{padding:15px 16px}.panelHead p{font-size:10.5px}
+
+.dataToolbar{min-height:62px;padding:11px 13px;gap:10px}.dataToolbar>span{font-size:10px}
+.searchBox{height:38px;border-radius:9px;padding:0 10px;box-shadow:var(--shadow-sm)}.searchBox:focus-within{border-color:#8098ed;box-shadow:var(--focus-ring)}.searchBox input{font-size:11.5px}.searchBox>span{font-size:17px}
+.orderFilters select,.smartSelectTrigger,.enumCreate>input,.enumInlineInput,.shipmentTools select,.shipmentTools input{height:36px;border-radius:8px;font-size:10.5px}
+.smartSelectTrigger{box-shadow:var(--shadow-sm)}.smartSelectTrigger.open{box-shadow:var(--focus-ring)}.smartSelectInput{font-size:10.5px;font-weight:600}
+.smartSelectMenu{border-radius:10px;box-shadow:0 12px 30px rgba(16,24,40,.14)}.smartSelectMenu button{min-height:34px;font-size:10.5px}
+
+.tableWrap{scrollbar-gutter:stable}
+table{font-size:11px}th{padding:10px 11px;font-size:9px;font-weight:750;letter-spacing:.045em;background:#f7f8fa;color:#596579}td{padding:10px 11px;color:#344054;line-height:1.4}
+tbody tr:hover td{background:#f8faff}.status{padding:4px 8px;font-size:9px;font-weight:750}.pager{min-height:52px;font-size:10.5px}.pager button{min-height:31px;padding:0 10px;font-size:10px}
+
+.field{gap:6px}.field>span{font-size:10px;font-weight:700;color:#475467}.field input,.field select,.field textarea{min-height:38px;border-radius:8px;padding:9px 10px;font-size:11px;line-height:1.4;box-shadow:var(--shadow-sm)}.field textarea{min-height:72px}.field input:focus,.field select:focus,.field textarea:focus{border-color:#8098ed;box-shadow:var(--focus-ring)}
+.formHint{font-size:11.5px}.formFooter{min-height:40px}.inlineMsg{font-size:10.5px}
+
+.modalPanel{border-radius:16px;box-shadow:0 24px 80px rgba(15,23,42,.26)}.modalHeader{height:68px;padding:0 20px}.modalHeader h2{font-size:18px;font-weight:750}.modalBody{padding:20px}
+
+.sideNav button{min-height:40px;font-size:12px;font-weight:650;border-radius:8px}.sideNav button.active{background:#253451;box-shadow:inset 0 0 0 1px rgba(255,255,255,.04)}
+.topbar{box-shadow:0 1px 0 rgba(16,24,40,.02)}
+
+.sheetToolbar b,.bulkSheetToolbar b{font-size:11.5px}.sheetToolbar span,.bulkSheetToolbar span{font-size:9px;line-height:1.4}
+.sheetTools .secondaryBtn,.sheetTools .primaryBtn{min-height:32px;padding:0 10px;font-size:9.5px}
+.sheetTable{font-size:9.75px}.sheetTable th{height:29px;padding:5px 7px;font-size:8.75px}.sheetTable td{height:28px}.sheetCell input{height:27px;padding:3px 6px;font-size:9.75px}.sheetCell .smartSelect,.sheetCell .smartSelectTrigger{height:27px}.sheetCell .smartSelectInput{height:26px;font-size:9.75px}.sheetRowActions button{width:26px;height:26px;border-radius:6px}
+
+.bulkSheetToolbar{padding:10px 12px}.bulkFilterField{padding:6px 8px;border-radius:8px}.bulkFilterField>span{font-size:8px!important}.bulkFilterField select{height:29px!important;font-size:9.5px!important}.bulkPasteBar{padding:10px 12px}.bulkPasteBar b{font-size:10px}.bulkPasteBar span{font-size:8.5px}.bulkPasteBar textarea{height:58px;border-radius:8px;font-size:9.5px;line-height:1.5}
+.bulkSheetScroll table,.shipmentTable table,.statusUpdateSheet table{font-size:9.5px}.bulkSheetScroll th,.shipmentTable th,.statusUpdateSheet th{padding:8px;font-size:8.5px;font-weight:750;color:#596579}.bulkSheetScroll td,.shipmentTable td,.statusUpdateSheet td{padding:6px 8px}.bulkSheetScroll input,.bulkSheetScroll select,.shipmentTable select,.statusUpdateSheet input,.statusUpdateSheet select{height:30px;border-radius:7px;font-size:9.5px}.orderLevelField label>span{font-size:7.5px}.bulkSheetFooter{min-height:42px;font-size:9.5px}
+
+.detailHero h2{font-size:24px;font-weight:750}.detailHero p{font-size:11px}.detailTabs{padding:4px;border-radius:9px}.detailTabs button{height:36px;font-size:10.5px;font-weight:700}.detailCard h3,.notesSection h3{font-size:12.5px}.detailCard p,.notesSection p{font-size:10.75px}.detailCard dl{font-size:10.5px}.trackingDetailRow b{font-size:11px}.historyFilters button{min-height:31px;font-size:9.5px}.historyTimeline b{font-size:10.75px}.historyTimeline time{font-size:9px}
+
+.purchaseSummary span,.lotHead span,.trackingRow label>span{font-size:8.5px}.purchaseSummary b{font-size:12.5px}.trackingRow input,.trackingRow select{height:36px;border-radius:8px;font-size:10.5px}.trackingActions button,.trackingActions a{min-height:30px;padding:0 9px;font-size:9.5px}.addLotBtn{min-height:36px;padding:0 12px;font-size:10px}
+
+@media(max-width:700px){
+  h1,.pageHeader h1{font-size:24px}.pageHeader p{font-size:11px}
+  .primaryBtn,.secondaryBtn{min-height:38px;font-size:10.5px}
+  table{font-size:10px}th{font-size:8.25px}td{padding:9px}
+  .modalPanel{border-radius:0}.modalBody{padding:13px 10px}
+  .field input,.field select,.field textarea{font-size:16px}
+}
