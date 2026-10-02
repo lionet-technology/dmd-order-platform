@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { BulkTrackingSheet,OrderDetailPanel,ShipmentStatusPanel,TrackingReplacementSheet } from "./order-workspaces";
 
 type Role = "ADMIN" | "SALES" | "CLIENT";
@@ -157,41 +157,6 @@ function SelectField({
     <span>{label}</span>
     <SmartSelect value={value} onChange={v=>onChange(name,v)} options={options} allowCustom={allowCustom} invalid={!valid}/>
     {!valid&&<small className="fieldError">Giá trị không nằm trong danh sách hợp lệ.</small>}
-  </label>;
-}
-
-function EnumField({
-  label,name,value,onChange,options,type,parent="",required=false,wide=false,existingValue="",
-}:{
-  label:string;name:string;value:string;onChange:(name:string,value:string)=>void;
-  options:Array<{value:string;label:string}>;type:EnumType;parent?:string;required?:boolean;wide?:boolean;existingValue?:string;
-}) {
-  const exactExisting=existingValue&&value.trim().toLowerCase()===existingValue.trim().toLowerCase();
-  const valid=!value.trim()||options.some(o=>o.value.toLowerCase()===value.trim().toLowerCase())||Boolean(exactExisting);
-  return <label className={wide?"field wide":"field"}>
-    <span>{label}{required&&<b> *</b>}</span>
-    <SmartSelect value={value} onChange={v=>onChange(name,v)} options={options} invalid={!valid} placeholder="Nhập hoặc chọn"/>
-    {!valid&&<small className="fieldError">{ENUM_LABELS[type]} không hợp lệ{parent?` cho ${parent}`:""}.</small>}
-  </label>;
-}
-
-function DateField({label,name,value,onChange,required=false}:{
-  label:string;name:string;value:string;onChange:(name:string,value:string)=>void;required?:boolean;
-}) {
-  const invalid=Boolean(value)&&!isValidDateText(value);
-  return <label className="field">
-    <span>{label}{required&&<b> *</b>}</span>
-    <input
-      name={name}
-      type="text"
-      inputMode="numeric"
-      value={value}
-      placeholder="dd/mm/yyyy"
-      required={required}
-      className={invalid?"inputError":""}
-      onChange={e=>onChange(name,e.target.value)}
-    />
-    {invalid&&<small className="fieldError">Ngày không hợp lệ, dùng dd/mm/yyyy.</small>}
   </label>;
 }
 

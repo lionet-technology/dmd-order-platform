@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "verify:rbac": "node scripts/verify-rbac.cjs",
     "verify:orders": "node scripts/verify-order-flow.cjs",
     "verify:cancellation": "node scripts/verify-order-cancellation.cjs"
@@ -24,6 +24,8 @@
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.3",
     "@types/react-dom": "^19.0.2",
+    "eslint": "9.39.5",
+    "eslint-config-next": "^16.3.8",
     "typescript": "^5.7.2",
     "write-excel-file": "^4.1.1"
   }

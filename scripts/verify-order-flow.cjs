@@ -39,7 +39,7 @@ async function main(){
 
   const a1=addOrderTracking({orderId:first.id,tracking:"1Z-A1",labelUrl:"https://labels.test/a1.pdf",lotNumber:1,actorId:admin.id,isPrimary:true});
   const a2=addOrderTracking({orderId:first.id,tracking:"1Z-A2",labelUrl:"https://labels.test/a2.pdf",lotNumber:1,actorId:admin.id});
-  const b1=addOrderTracking({orderId:first.id,tracking:"1Z-B1",labelUrl:"https://labels.test/b1.pdf",lotNumber:2,actorId:admin.id});
+  addOrderTracking({orderId:first.id,tracking:"1Z-B1",labelUrl:"https://labels.test/b1.pdf",lotNumber:2,actorId:admin.id});
   assert(listOrderTrackings(first.id,false).length===3,"Order should keep multiple trackings across lots");
   updateOrderTracking({orderId:first.id,id:a2.id,costMatchType:"INCLUDED_IN_PARENT",costParentTrackingId:a1.id});
   const replacement=replaceOrderTracking({orderId:first.id,oldTrackingId:a1.id,newTracking:"1Z-A1-NEW",newLabelUrl:"https://labels.test/a1-new.pdf",reason:"Supplier replaced label",actorId:admin.id});

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback,useEffect,useMemo,useState } from "react";
+import { useCallback,useEffect,useState } from "react";
 
 type Role="ADMIN"|"SALES"|"CLIENT";
 type EnumRow={id:number;enum_type:string;value:string;parent_value:string;active:number;sort_order:number};
@@ -16,8 +16,6 @@ function money(value:unknown){return new Intl.NumberFormat("en-US",{style:"curre
 function displayDate(value:unknown){const raw=String(value||"");const match=raw.match(/^(\d{4})-(\d{2})-(\d{2})/);return match?match[3]+"/"+match[2]+"/"+match[1]:raw||"—"}
 async function json(url:string,options?:RequestInit){const response=await fetch(url,options);const data=await response.json();if(!response.ok)throw new Error(data.error||"Không thể xử lý dữ liệu");return data}
 async function post(url:string,body:unknown){return json(url,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)})}
-function activeTrackings(data:GenericRow){return (Array.isArray(data.trackings)?data.trackings:[]).filter((row:GenericRow)=>row.status==="ACTIVE")}
-
 export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderId:number;role:Role;onEdit:(row:GenericRow)=>void;onPurchase?:(row:GenericRow)=>void;onDone?:()=>void|Promise<void>}){
   const [data,setData]=useState<GenericRow|null>(null);
   const [tab,setTab]=useState("overview");
@@ -51,8 +49,8 @@ export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderI
       {!cancelled&&role!=="CLIENT"&&<button className="primaryBtn" onClick={()=>onEdit(data)}>Sửa Order</button>}
       {!cancelled&&<button className="secondaryBtn" disabled={!policy.allowed||cancelBusy} title={policy.reason} onClick={()=>{setCancelOpen(true);setCancelError("")}}>Huỷ đơn</button>}
     </div>
-    {cancelled?<div className="detailBody"><b>Đã huỷ · Hoàn {String(data.cancellation_refund_percent||0)}%: {money(data.cancellation_refund_amount)}</b><p>Phí giữ lại: {money(data.total_due)}. {data.cancellation_reason?String(data.cancellation_reason):""}</p></div>:!policy.allowed&&<p className="detailBody">{policy.reason}</p>}
-    {cancelOpen&&<section className="detailBody"><h3>Xác nhận huỷ đơn</h3><p>Hoàn {policy.refund_percent}% vào Balance: <b>{money(policy.refund_amount)}</b>. Đơn sẽ ngừng xử lý trên hệ thống.</p><p>Tracking/label đã cấp vẫn được lưu trong lịch sử; nhà cung cấp cần xử lý huỷ label riêng.</p><label>Lý do huỷ (không bắt buộc)<textarea maxLength={2000} value={cancelReason} disabled={cancelBusy} onChange={event=>setCancelReason(event.target.value)}/></label>{cancelError&&<p role="alert">{cancelError}</p>}<div className="detailActions"><button className="secondaryBtn" disabled={cancelBusy} onClick={()=>setCancelOpen(false)}>Đóng</button><button className="primaryBtn" disabled={cancelBusy} onClick={()=>void submitCancellation()}>{cancelBusy?"Đang huỷ…":"Xác nhận huỷ đơn"}</button></div></section>}
+    {cancelled?<div className="cancellationSummary"><b>Đã huỷ · Hoàn {String(data.cancellation_refund_percent||0)}%: {money(data.cancellation_refund_amount)}</b><p>Phí giữ lại: {money(data.total_due)}. {data.cancellation_reason?String(data.cancellation_reason):""}</p></div>:!policy.allowed&&<p className="cancellationNotice">{policy.reason}</p>}
+    {cancelOpen&&<section className="cancellationConfirm"><h3>Xác nhận huỷ đơn</h3><p>Hoàn {policy.refund_percent}% vào Balance: <b>{money(policy.refund_amount)}</b>. Đơn sẽ ngừng xử lý trên hệ thống.</p><p>Tracking/label đã cấp vẫn được lưu trong lịch sử; nhà cung cấp cần xử lý huỷ label riêng.</p><label>Lý do huỷ (không bắt buộc)<textarea maxLength={2000} value={cancelReason} disabled={cancelBusy} onChange={event=>setCancelReason(event.target.value)}/></label>{cancelError&&<p role="alert">{cancelError}</p>}<div className="detailActions"><button className="secondaryBtn" disabled={cancelBusy} onClick={()=>setCancelOpen(false)}>Đóng</button><button className="primaryBtn" disabled={cancelBusy} onClick={()=>void submitCancellation()}>{cancelBusy?"Đang huỷ…":"Xác nhận huỷ đơn"}</button></div></section>}
     <div className="detailTabs">
       {[["overview","Tổng quan"],["tracking","Tracking & Label"],["finance","Giá & Đối soát"],["history","Lịch sử"]].filter(item=>role==="ADMIN"||item[0]!=="finance").map(item=><button key={item[0]} className={tab===item[0]?"active":""} onClick={()=>setTab(item[0])}>{item[1]}</button>)}
     </div>

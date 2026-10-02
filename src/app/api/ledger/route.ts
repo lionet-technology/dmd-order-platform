@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const clientRaw=body.client_user_id;
-    let client=clientRaw?getClientAccount(clientRaw,true):undefined;
+    const client=clientRaw?getClientAccount(clientRaw,true):undefined;
     if(auth.user.role==="SALES"){
       if(!client)return NextResponse.json({error:"Hãy chọn Client hợp lệ trước khi ghi Balance."},{status:400});
       if(!canAccessClient(auth.user,client))return NextResponse.json({error:"Client này không thuộc Sales đang đăng nhập."},{status:403});
