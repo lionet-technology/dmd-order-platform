@@ -67,7 +67,7 @@ export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderI
       </section>
       <section className="notesSection">
         <div><h3>Note</h3><p>{String(data.note||"Chưa có note.")}</p></div>
-        <div className="publicSystemNote"><h3>Cập nhật công khai</h3><p>{String(data.public_note||"Chưa có cập nhật.")}</p></div>
+        <div className="publicSystemNote"><h3>{role==="CLIENT"?"History Log":"Cập nhật công khai"}</h3><p>{String(data.public_note||"Chưa có lịch sử cập nhật.")}</p></div>
         {role!=="CLIENT"&&<div className="internalNote"><h3>Private Note</h3><p>{String(data.internal_note||"Chưa có private note.")}</p></div>}
       </section>
     </div>}
