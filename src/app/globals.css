@@ -512,6 +512,66 @@ tbody tr:hover td{background:#f8faff}.status{padding:4px 8px;font-size:9px;font-
 
 .purchaseSummary span,.lotHead span,.trackingRow label>span{font-size:8.5px}.purchaseSummary b{font-size:12.5px}.trackingRow input,.trackingRow select{height:36px;border-radius:8px;font-size:10.5px}.trackingActions button,.trackingActions a{min-height:30px;padding:0 9px;font-size:9.5px}.addLotBtn{min-height:36px;padding:0 12px;font-size:10px}
 
+/* Desktop refinement — preserve structure, improve rhythm and control sizing */
+@media(min-width:1101px){
+  .pageContent{padding:24px 30px 48px}
+  .pageHeader{align-items:center;gap:24px;margin-bottom:18px}
+  .pageHeader>div:first-child{max-width:720px}
+  .pageHeader h1{margin:4px 0 5px;font-size:28px}
+  .pageActions{gap:8px;flex-wrap:nowrap}
+  .pageActions>.primaryBtn,.pageActions>.secondaryBtn{height:40px;min-height:40px;padding:0 14px;white-space:nowrap;font-size:11px}
+
+  .orderToolbar{grid-template-columns:minmax(360px,1fr) auto auto;gap:12px;padding:12px 14px}
+  .searchBox{height:40px}
+  .orderFilters{gap:7px}
+  .orderFilters .smartSelect.compact:nth-child(1){width:154px}
+  .orderFilters .smartSelect.compact:nth-child(2){width:144px}
+  .orderFilters .smartSelect.compact:nth-child(3){width:144px}
+  .orderFilters .smartSelect.compact:nth-child(4){width:138px}
+  .orderFilters .smartSelectTrigger{height:38px}
+  .orderFilters .smartSelectInput{height:36px}
+  .clearFilters{height:38px;padding:0 8px}
+
+  .tableWrap{max-height:calc(100vh - 275px)}
+  table{font-size:11.25px}
+  th{padding:10px 12px;font-size:9.25px}
+  td{padding:11px 12px}
+  .rowAction{min-height:30px;padding:0 10px;font-size:10px}
+  .status{padding:4px 9px;font-size:9.25px}
+  .pager{padding:0 14px}
+
+  .modalPanel:not(.fullscreenModal):not(.compactModal){width:min(1180px,94vw);max-height:90vh}
+  .modalHeader{padding:0 22px}
+  .modalBody{padding:20px 22px 22px}
+  .detailHero{padding:6px 2px 18px;gap:24px}
+  .detailHero h2{font-size:25px}
+  .detailHero p{font-size:11.5px}
+  .detailActions{gap:8px}
+  .detailActions .primaryBtn,.detailActions .secondaryBtn{min-height:36px;height:36px;padding:0 12px;font-size:10.5px}
+  .detailTabs{margin-top:2px}
+  .detailTabs button{height:38px;font-size:11px}
+  .detailGrid{gap:12px}
+  .detailCard{padding:16px}
+  .detailCard h3,.notesSection h3{font-size:13px}
+  .detailCard p,.notesSection p{font-size:11.25px}
+  .detailCard dl{font-size:11px;grid-template-columns:120px 1fr;gap:8px}
+  .notesSection{gap:12px}.notesSection>div{padding:14px}
+
+  .shipmentToolbar{padding:12px 14px}
+  .shipmentViews button{height:34px;padding:0 13px;font-size:10px}
+  .shipmentTools{gap:8px}
+  .shipmentTools input,.shipmentTools select{height:38px;font-size:10.5px}
+
+  .bulkSheetToolbar{padding:12px 14px}
+  .bulkFilters{gap:8px}
+  .bulkFilters .primaryBtn,.bulkFilters .secondaryBtn{min-height:36px;height:36px}
+  .bulkFilterField{padding:6px 8px}
+  .bulkFilterField select{height:30px!important}
+  .bulkPasteBar{padding:11px 14px;gap:12px}
+  .bulkSheetScroll th{padding:9px 10px}.bulkSheetScroll td{padding:7px 9px}
+  .bulkSheetScroll input,.bulkSheetScroll select{height:32px;font-size:9.75px}
+}
+
 @media(max-width:700px){
   h1,.pageHeader h1{font-size:24px}.pageHeader p{font-size:11px}
   .primaryBtn,.secondaryBtn{min-height:38px;font-size:10.5px}
