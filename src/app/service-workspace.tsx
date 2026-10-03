@@ -6,8 +6,9 @@ type EnumRow={id:number;enum_type:string;value:string;parent_value:string;active
 type RouteRow={
   id:number;service:string;sub_service:string;supplier:string;active:number;
   template_id?:number;template_name?:string;output_mode?:string;active_version_id?:number;version_number?:number;
-  original_filename?:string;placeholder_map_json?:string;validation_json?:string;
+  original_filename?:string;placeholder_map_json?:string;validation_json?:string;route_variables_json?:string;
 };
+type RouteVariable={key:string;value:string};
 type RepeatDraft={sheet:string;row:string;scope:"ORDER"|"LOT"|"CARTON"|"CARTON_ITEM"};
 type UploadResult={
   template_id:number;version:{id:number;version_number:number};placeholders:Array<{sheet:string;cell:string;token:string}>;
@@ -28,6 +29,7 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
   const [selected,setSelected]=useState<RouteRow|null>(null);
   const [form,setForm]=useState({service:"",sub_service:"",supplier:""});
   const [template,setTemplate]=useState({name:"",output_mode:"MULTI_ORDER"});
+  const [routeVariables,setRouteVariables]=useState<RouteVariable[]>([]);
   const [sections,setSections]=useState<RepeatDraft[]>([{sheet:"",row:"2",scope:"CARTON"}]);
   const [file,setFile]=useState<File|null>(null);
   const [result,setResult]=useState<UploadResult|null>(null);
@@ -48,6 +50,16 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
     try{
       await responseJson(await fetch("/api/service-routes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(form)}));
       setForm({service:"",sub_service:"",supplier:""});setMessage("Đã lưu Service Route.");await load();
+    }catch(error){setMessage("Lỗi: "+(error as Error).message)}
+    finally{setBusy(false)}
+  }
+  async function saveRouteVariables(){
+    if(!selected)return;
+    setBusy(true);setMessage("");
+    try{
+      const variables=Object.fromEntries(routeVariables.map(row=>[row.key.trim(),row.value]));
+      await responseJson(await fetch("/api/service-routes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:selected.id,service:selected.service,sub_service:selected.sub_service,supplier:selected.supplier,route_variables:variables,active:selected.active})}));
+      setMessage("Đã lưu biến cố định cho cấu hình dịch vụ.");await load();
     }catch(error){setMessage("Lỗi: "+(error as Error).message)}
     finally{setBusy(false)}
   }
@@ -100,12 +112,22 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
         <button className="primaryBtn" disabled={busy||!form.service||!form.supplier} onClick={()=>void createRoute()}>＋ Thêm cấu hình</button>
       </div>
       <div className="tableWrap routeTable"><table><thead><tr><th>Service</th><th>Sub-Service</th><th>Supplier</th><th>Purchase Template</th><th>Output</th><th>Status</th><th></th></tr></thead><tbody>
-        {routes.length?routes.map(row=><tr key={row.id} className={selected?.id===row.id?"selectedRoute":""}><td><b>{row.service}</b></td><td>{row.sub_service||"—"}</td><td>{row.supplier}</td><td>{row.template_name||"Chưa có Purchase Template"}{row.version_number?<small>Active v{row.version_number}</small>:null}</td><td>{row.output_mode||"—"}</td><td><span className={row.active?"status goodStatus":"status neutralStatus"}>{row.active?"Active":"Inactive"}</span></td><td><button className="editBtn" onClick={()=>{setSelected(row);setTemplate({name:row.template_name||row.service+" "+row.supplier,output_mode:row.output_mode||"MULTI_ORDER"});setResult(null)}}>Cấu hình Template</button></td></tr>):<tr><td colSpan={7} className="empty">Chưa có Service Route.</td></tr>}
+        {routes.length?routes.map(row=><tr key={row.id} className={selected?.id===row.id?"selectedRoute":""}><td><b>{row.service}</b></td><td>{row.sub_service||"—"}</td><td>{row.supplier}</td><td>{row.template_name||"Chưa có Purchase Template"}{row.version_number?<small>Active v{row.version_number}</small>:null}</td><td>{row.output_mode||"—"}</td><td><span className={row.active?"status goodStatus":"status neutralStatus"}>{row.active?"Active":"Inactive"}</span></td><td><button className="editBtn" onClick={()=>{setSelected(row);setTemplate({name:row.template_name||row.service+" "+row.supplier,output_mode:row.output_mode||"MULTI_ORDER"});let vars:Record<string,string>={};try{vars=JSON.parse(row.route_variables_json||"{}")}catch{}setRouteVariables(Object.entries(vars).map(([key,value])=>({key,value:String(value)})));setResult(null)}}>Cấu hình</button></td></tr>):<tr><td colSpan={7} className="empty">Chưa có Service Route.</td></tr>}
       </tbody></table></div>
     </section>
 
     {selected&&<section className="templateConfigCard">
       <div className="configHead"><div><b>Purchase Template · {selected.service} / {selected.sub_service||"—"} / {selected.supplier}</b><span>Upload workbook thật của Supplier, validate placeholder, preview rồi mới activate.</span></div><button className="iconBtn" onClick={()=>setSelected(null)}>×</button></div>
+      <div className="routeVariablesEditor">
+        <div className="routeVariablesHead"><div><b>Biến cố định cho template</b><span>Dữ liệu cố định của cấu hình này. Dùng trong Excel bằng <code>{"{{route.service_code}}"}</code>, <code>{"{{route.sender_address}}"}</code>…</span></div><button className="secondaryBtn" disabled={busy} onClick={()=>void saveRouteVariables()}>Lưu biến cố định</button></div>
+        {routeVariables.map((row,index)=><div className="routeVariableRow" key={index}>
+          <input placeholder="Key, ví dụ service_code" value={row.key} onChange={e=>setRouteVariables(prev=>prev.map((item,i)=>i===index?{...item,key:e.target.value}:item))}/>
+          <input placeholder="Giá trị cố định" value={row.value} onChange={e=>setRouteVariables(prev=>prev.map((item,i)=>i===index?{...item,value:e.target.value}:item))}/>
+          <code>{row.key.trim()?"{{route."+row.key.trim().toLowerCase()+"}}":"{{route.key}}"}</code>
+          <button className="editBtn" onClick={()=>setRouteVariables(prev=>prev.filter((_,i)=>i!==index))}>Bỏ</button>
+        </div>)}
+        <button className="textBtn" onClick={()=>setRouteVariables(prev=>[...prev,{key:"",value:""}])}>＋ Thêm biến cố định</button>
+      </div>
       <div className="templateGrid">
         <label><span>Tên Template</span><input value={template.name} onChange={e=>setTemplate({...template,name:e.target.value})}/></label>
         <label><span>Output Mode</span><select value={template.output_mode} onChange={e=>setTemplate({...template,output_mode:e.target.value})}><option value="MULTI_ORDER">Multi Order</option><option value="PER_ORDER">Per Order</option><option value="PER_LOT">Per Lot</option></select></label>

@@ -197,6 +197,7 @@ CREATE TABLE IF NOT EXISTS service_route_configs (
   service TEXT NOT NULL COLLATE NOCASE,
   sub_service TEXT NOT NULL DEFAULT '' COLLATE NOCASE,
   supplier TEXT NOT NULL COLLATE NOCASE,
+  route_variables_json TEXT NOT NULL DEFAULT '{}',
   active INTEGER NOT NULL DEFAULT 1,
   created_by_user_id INTEGER,
   updated_by_user_id INTEGER,
@@ -434,6 +435,7 @@ ensureColumn("orders", "system_order_code", "system_order_code TEXT");
 ensureColumn("orders", "expected_lot_count", "expected_lot_count INTEGER NOT NULL DEFAULT 1");
 ensureColumn("client_service_settings", "default_sub_service", "default_sub_service TEXT NOT NULL DEFAULT ''");
 ensureColumn("client_service_settings", "default_supplier", "default_supplier TEXT NOT NULL DEFAULT ''");
+ensureColumn("service_route_configs", "route_variables_json", "route_variables_json TEXT NOT NULL DEFAULT '{}'");
 ensureColumn("supplier_costs", "created_by_user_id", "created_by_user_id INTEGER");
 ensureColumn("supplier_costs", "normalized_tracking", "normalized_tracking TEXT");
 ensureColumn("supplier_costs", "matched_order_id", "matched_order_id INTEGER");

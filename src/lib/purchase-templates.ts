@@ -27,6 +27,7 @@ const safeName=(value:string)=>value.replace(/[\\/:*?"<>|]+/g,"-").replace(/\s+/
 
 type DataRow=Record<string,unknown>;
 type ExportContext={order:DataRow;lot?:DataRow;carton?:DataRow;item?:DataRow};
+type RouteVariables=Record<string,string>;
 
 export async function scanPurchaseWorkbook(buffer:Buffer){
   const workbook=new ExcelJS.Workbook();
@@ -41,12 +42,16 @@ export async function scanPurchaseWorkbook(buffer:Buffer){
         for(const match of raw.matchAll(TOKEN)){
           const entry={sheet:sheet.name,cell:cell.address,token:match[1]};
           placeholders.push(entry);
-          if(!known.has(match[1]))unknown.push(entry);
+          if(!known.has(match[1])&&!/^route\.[a-z][a-z0-9_]*$/.test(match[1]))unknown.push(entry);
         }
       });
     });
   });
   return {placeholders,unknown,sheets:workbook.worksheets.map(sheet=>sheet.name)};
+}
+
+export function missingRoutePlaceholders(placeholders:Array<{token:string}>,routeVariables:Record<string,string>){
+  return [...new Set(placeholders.filter(row=>row.token.startsWith("route.")&&!text(routeVariables[row.token.slice(6)])).map(row=>row.token))];
 }
 
 export function validateRepeatSections(raw:unknown,sheets:string[]):RepeatSection[]{
@@ -114,7 +119,7 @@ function contextsFor(orderIds:number[],scope:RepeatScope,lotId?:number){
   return contexts;
 }
 
-function valueFor(token:string,context:ExportContext):unknown{
+function valueFor(token:string,context:ExportContext,routeVariables:RouteVariables={}):unknown{
   const {order,lot,carton,item}=context;
   const aliases:Record<string,unknown>={
     recipient_name:order.recipient_name,address_1:order.address1,address_2:order.address2,city:order.city,state:order.state,
@@ -130,6 +135,7 @@ function valueFor(token:string,context:ExportContext):unknown{
     carton_total_manufacturing_value:carton?.total_manufacturing_value,
   };
   if(token in aliases)return aliases[token]??"";
+  if(token.startsWith("route."))return routeVariables[token.slice(6)]??"";
   const namespaced:Record<string,DataRow|undefined>={order,lot,carton,item};
   const [root,...path]=token.split(".");
   const source=namespaced[root];
@@ -143,20 +149,20 @@ function valueFor(token:string,context:ExportContext):unknown{
   return source[keyMap[key]||key]??"";
 }
 
-function fillCell(cell:ExcelJS.Cell,context:ExportContext){
+function fillCell(cell:ExcelJS.Cell,context:ExportContext,routeVariables:RouteVariables={}){
   if(typeof cell.value!=="string")return;
   const original=cell.value;
   const matches=[...original.matchAll(TOKEN)];
   if(!matches.length)return;
   if(matches.length===1&&matches[0][0]===original){
-    const value=valueFor(matches[0][1],context);
+    const value=valueFor(matches[0][1],context,routeVariables);
     cell.value=typeof value==="number"&&Number.isFinite(value)?value:text(value);
     return;
   }
-  cell.value=original.replace(TOKEN,(_,token)=>text(valueFor(token,context)));
+  cell.value=original.replace(TOKEN,(_,token)=>text(valueFor(token,context,routeVariables)));
 }
 
-async function renderWorkbook(input:{storedPath:string;repeatSections:RepeatSection[];orderIds:number[];lotId?:number}){
+async function renderWorkbook(input:{storedPath:string;repeatSections:RepeatSection[];orderIds:number[];lotId?:number;routeVariables?:RouteVariables}){
   const workbook=new ExcelJS.Workbook();
   await workbook.xlsx.readFile(input.storedPath);
   const occupied=new Map<string,Array<[number,number]>>();
@@ -167,7 +173,7 @@ async function renderWorkbook(input:{storedPath:string;repeatSections:RepeatSect
     const contexts=contextsFor(input.orderIds,section.scope,input.lotId);
     if(!contexts.length)throw new Error("Không có dữ liệu cho repeat section "+section.sheet+"!"+section.row+".");
     if(contexts.length>1)worksheet.duplicateRow(section.row,contexts.length-1,true);
-    contexts.forEach((context,index)=>worksheet.getRow(section.row+index).eachCell({includeEmpty:true},cell=>fillCell(cell,context)));
+    contexts.forEach((context,index)=>worksheet.getRow(section.row+index).eachCell({includeEmpty:true},cell=>fillCell(cell,context,input.routeVariables)));
     const ranges=occupied.get(section.sheet)||[];
     ranges.push([section.row,section.row+contexts.length-1]);occupied.set(section.sheet,ranges);
   }
@@ -176,7 +182,7 @@ async function renderWorkbook(input:{storedPath:string;repeatSections:RepeatSect
     const ranges=occupied.get(sheet.name)||[];
     sheet.eachRow({includeEmpty:true},row=>{
       if(ranges.some(([from,to])=>row.number>=from&&row.number<=to))return;
-      row.eachCell({includeEmpty:true},cell=>fillCell(cell,base));
+      row.eachCell({includeEmpty:true},cell=>fillCell(cell,base,input.routeVariables));
     });
   });
   const result=await workbook.xlsx.writeBuffer();
@@ -185,12 +191,12 @@ async function renderWorkbook(input:{storedPath:string;repeatSections:RepeatSect
 
 type TemplateRecord={
   template_id:number;template_name:string;output_mode:"MULTI_ORDER"|"PER_ORDER"|"PER_LOT";repeat_sections_json:string;
-  active_version_id:number;version_number:number;stored_path:string;service:string;sub_service:string;supplier:string;
+  active_version_id:number;version_number:number;stored_path:string;service:string;sub_service:string;supplier:string;route_variables_json:string;
 };
 
 export function resolvePurchaseTemplate(order:DataRow){
   return db.prepare(
-    "SELECT pt.id template_id,pt.name template_name,pt.output_mode,pt.repeat_sections_json,pv.id active_version_id,pv.version_number,pv.stored_path,rc.service,rc.sub_service,rc.supplier "+
+    "SELECT pt.id template_id,pt.name template_name,pt.output_mode,pt.repeat_sections_json,pv.id active_version_id,pv.version_number,pv.stored_path,rc.service,rc.sub_service,rc.supplier,rc.route_variables_json "+
     "FROM service_route_configs rc JOIN purchase_templates pt ON pt.route_config_id=rc.id AND pt.active=1 "+
     "JOIN purchase_template_versions pv ON pv.template_id=pt.id AND pv.status='ACTIVE' "+
     "WHERE rc.active=1 AND lower(rc.service)=lower(?) AND lower(rc.sub_service)=lower(?) AND lower(rc.supplier)=lower(?) LIMIT 1"
@@ -199,14 +205,15 @@ export function resolvePurchaseTemplate(order:DataRow){
 
 export async function generatePreview(versionId:number,orderId:number){
   const row=db.prepare(
-    "SELECT pt.id template_id,pt.name template_name,pt.output_mode,pt.repeat_sections_json,pv.id active_version_id,pv.version_number,pv.stored_path,rc.service,rc.sub_service,rc.supplier "+
+    "SELECT pt.id template_id,pt.name template_name,pt.output_mode,pt.repeat_sections_json,pv.id active_version_id,pv.version_number,pv.stored_path,rc.service,rc.sub_service,rc.supplier,rc.route_variables_json "+
     "FROM purchase_template_versions pv JOIN purchase_templates pt ON pt.id=pv.template_id JOIN service_route_configs rc ON rc.id=pt.route_config_id WHERE pv.id=?"
   ).get(versionId) as TemplateRecord|undefined;
   if(!row)throw new Error("Không tìm thấy version template.");
   const sections=JSON.parse(row.repeat_sections_json||"[]") as RepeatSection[];
   const data=exportData(orderId);
   const lotId=row.output_mode==="PER_LOT"?Number(data.lots[0]?.id||0)||undefined:undefined;
-  return {buffer:await renderWorkbook({storedPath:row.stored_path,repeatSections:sections,orderIds:[orderId],lotId}),filename:"PREVIEW_"+safeName(text(data.order.system_order_code||orderId))+".xlsx"};
+  const routeVariables=JSON.parse(row.route_variables_json||"{}") as RouteVariables;
+  return {buffer:await renderWorkbook({storedPath:row.stored_path,repeatSections:sections,orderIds:[orderId],lotId,routeVariables}),filename:"PREVIEW_"+safeName(text(data.order.system_order_code||orderId))+".xlsx"};
 }
 
 export async function generatePurchaseFiles(orderIds:number[]){
@@ -224,18 +231,19 @@ export async function generatePurchaseFiles(orderIds:number[]){
   const files:Array<{name:string;buffer:Buffer;service:string}>=[];
   for(const group of groups.values()){
     const sections=JSON.parse(group.template.repeat_sections_json||"[]") as RepeatSection[];
+    const routeVariables=JSON.parse(group.template.route_variables_json||"{}") as RouteVariables;
     if(group.template.output_mode==="MULTI_ORDER"){
-      files.push({name:safeName(group.template.service+"_"+group.template.sub_service+"_"+group.template.supplier+"_"+group.orderIds.length+"-orders")+".xlsx",buffer:await renderWorkbook({storedPath:group.template.stored_path,repeatSections:sections,orderIds:group.orderIds}),service:group.template.service});
+      files.push({name:safeName(group.template.service+"_"+group.template.sub_service+"_"+group.template.supplier+"_"+group.orderIds.length+"-orders")+".xlsx",buffer:await renderWorkbook({storedPath:group.template.stored_path,repeatSections:sections,orderIds:group.orderIds,routeVariables}),service:group.template.service});
     }else if(group.template.output_mode==="PER_ORDER"){
       for(const orderId of group.orderIds){
         const order=db.prepare("SELECT system_order_code FROM orders WHERE id=?").get(orderId) as {system_order_code:string};
-        files.push({name:safeName(group.template.service+"_"+order.system_order_code)+".xlsx",buffer:await renderWorkbook({storedPath:group.template.stored_path,repeatSections:sections,orderIds:[orderId]}),service:group.template.service});
+        files.push({name:safeName(group.template.service+"_"+order.system_order_code)+".xlsx",buffer:await renderWorkbook({storedPath:group.template.stored_path,repeatSections:sections,orderIds:[orderId],routeVariables}),service:group.template.service});
       }
     }else{
       for(const orderId of group.orderIds){
         const data=exportData(orderId);
         for(const lot of data.lots){
-          files.push({name:safeName(group.template.service+"_"+text(data.order.system_order_code)+"_Lot-"+text(lot.lot_number))+".xlsx",buffer:await renderWorkbook({storedPath:group.template.stored_path,repeatSections:sections,orderIds:[orderId],lotId:Number(lot.id)}),service:group.template.service});
+          files.push({name:safeName(group.template.service+"_"+text(data.order.system_order_code)+"_Lot-"+text(lot.lot_number))+".xlsx",buffer:await renderWorkbook({storedPath:group.template.stored_path,repeatSections:sections,orderIds:[orderId],lotId:Number(lot.id),routeVariables}),service:group.template.service});
         }
       }
     }

@@ -31,7 +31,7 @@ const {createUser}=require(path.join(root,"src/lib/auth.ts"));
 const {upsertOrder,addSupplierCost}=require(path.join(root,"src/lib/finance.ts"));
 const {saveOrderShipmentStructure,validatePurchaseReadiness}=require(path.join(root,"src/lib/order-shipments.ts"));
 const {addOrderTracking}=require(path.join(root,"src/lib/order-operations.ts"));
-const {generatePurchaseFiles,scanPurchaseWorkbook,genericPurchaseRows}=require(path.join(root,"src/lib/purchase-templates.ts"));
+const {generatePurchaseFiles,scanPurchaseWorkbook,genericPurchaseRows,missingRoutePlaceholders}=require(path.join(root,"src/lib/purchase-templates.ts"));
 const {listOrderEvents,publishPublicNote}=require(path.join(root,"src/lib/order-audit.ts"));
 
 let checks=0;
@@ -89,13 +89,15 @@ async function main(){
 
   const workbook=new ExcelJS.Workbook();
   const sheet=workbook.addWorksheet("Invoice");
-  sheet.addRow(["DMD Order","Lot","Carton","SKU","Qty","Line value","Lot total","Order total"]);
-  sheet.addRow(["{{order.dmd_order_id}}","{{lot.number}}","{{carton.number}}","{{item.sku}}","{{item.quantity}}","{{item.total_manufacturing_value}}","{{lot.total_manufacturing_value}}","{{order.total_manufacturing_value}}"]);
+  sheet.addRow(["DMD Order","Lot","Carton","SKU","Qty","Line value","Lot total","Order total","Supplier Service","Sender"]);
+  sheet.addRow(["{{order.dmd_order_id}}","{{lot.number}}","{{carton.number}}","{{item.sku}}","{{item.quantity}}","{{item.total_manufacturing_value}}","{{lot.total_manufacturing_value}}","{{order.total_manufacturing_value}}","{{route.service_code}}","{{route.sender_address}}"]);
   await workbook.xlsx.writeFile(templatePath);
   const scan=await scanPurchaseWorkbook(fs.readFileSync(templatePath));
-  assert(scan.unknown.length===0&&scan.placeholders.length===8,"template scanner should accept documented placeholders");
+  assert(scan.unknown.length===0&&scan.placeholders.length===10,"template scanner should accept order and route placeholders");
+  assert(missingRoutePlaceholders(scan.placeholders,{service_code:"EP_T11"}).includes("route.sender_address"),"template validation should catch missing route variables");
 
-  const routeId=Number(db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier,created_by_user_id) VALUES (?,?,?,?)").run("ePacket","T11","KILOSHIP",admin.id).lastInsertRowid);
+  const routeVariables={service_code:"EP_T11",sender_address:"DMD Warehouse, Hanoi"};
+  const routeId=Number(db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier,route_variables_json,created_by_user_id) VALUES (?,?,?,?,?)").run("ePacket","T11","KILOSHIP",JSON.stringify(routeVariables),admin.id).lastInsertRowid);
   const templateId=Number(db.prepare("INSERT INTO purchase_templates(route_config_id,name,output_mode,repeat_sections_json,created_by_user_id) VALUES (?,?,?,?,?)")
     .run(routeId,"Invoice per Lot","PER_LOT",JSON.stringify([{sheet:"Invoice",row:2,scope:"CARTON_ITEM"}]),admin.id).lastInsertRowid);
   db.prepare("INSERT INTO purchase_template_versions(template_id,version_number,original_filename,stored_path,status,placeholder_map_json,validation_json,created_by_user_id,activated_at) VALUES (?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)")
@@ -108,6 +110,7 @@ async function main(){
   assert(flattened.some(value=>value.includes("SKU-A")&&!value.includes("SKU-B")),"Lot 1 file should contain only Lot 1 goods");
   assert(flattened.some(value=>value.includes("SKU-B")&&!value.includes("SKU-A")),"Lot 2 file should contain only Lot 2 goods");
   assert(flattened.every(value=>value.includes("16")),"each Lot file should retain the computed Order total");
+  assert(flattened.every(value=>value.includes("EP_T11")&&value.includes("DMD Warehouse, Hanoi")),"route variables should render into every generated workbook");
   const generic=genericPurchaseRows([order.id]);
   assert(generic.length===2&&generic[0].order_total_manufacturing_value===16,"generic fallback should expose carton-item rows and computed totals");
 

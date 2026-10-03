@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { scanPurchaseWorkbook,validateRepeatSections } from "@/lib/purchase-templates";
+import { missingRoutePlaceholders,scanPurchaseWorkbook,validateRepeatSections } from "@/lib/purchase-templates";
 
 export const runtime="nodejs";
 
@@ -37,10 +37,14 @@ export async function POST(req:NextRequest){
     const buffer=Buffer.from(await file.arrayBuffer());
     const scan=await scanPurchaseWorkbook(buffer);
     const sections=validateRepeatSections(rawSections,scan.sheets);
+    let routeVariables:Record<string,string>={};
+    try{routeVariables=JSON.parse(String(route.route_variables_json||"{}"))}catch{}
     const errors:string[]=[];
     const warnings:string[]=[];
     if(!scan.placeholders.length)errors.push("Workbook không có placeholder nào.");
     if(scan.unknown.length)errors.push("Có placeholder hệ thống không biết: "+[...new Set(scan.unknown.map(row=>row.token))].join(", "));
+    const missingRouteVariables=missingRoutePlaceholders(scan.placeholders,routeVariables);
+    if(missingRouteVariables.length)errors.push("Chưa cấu hình biến cố định: "+missingRouteVariables.join(", "));
     if(outputMode==="MULTI_ORDER"&&!sections.length)errors.push("MULTI_ORDER cần ít nhất một dòng lặp.");
     for(const section of sections){
       const hasToken=scan.placeholders.some(row=>row.sheet===section.sheet&&Number(row.cell.match(/\d+$/)?.[0]||0)===section.row);
