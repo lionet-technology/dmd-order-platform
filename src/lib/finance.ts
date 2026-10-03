@@ -47,6 +47,7 @@ export type OrderInput = {
   zip?: string;
   country?: string;
   phone?: string;
+  recipient_email?: string;
 };
 
 export type SupplierCostInput = {
@@ -392,6 +393,7 @@ export function upsertOrder(input: OrderInput) {
     zip: stringValue(input, "zip", existing),
     country: enumValues.country,
     phone: stringValue(input, "phone", existing),
+    recipient_email: stringValue(input, "recipient_email", existing),
   };
 
   let id: number;
@@ -405,7 +407,7 @@ export function upsertOrder(input: OrderInput) {
         gross_profit_net=@gross_profit_net,gross_margin_pct=@gross_margin_pct,margin_status=@margin_status,note=@note,internal_note=@internal_note,item=@item,material=@material,declared_value=@declared_value,
         carton_count=@carton_count,length=@length,width=@width,height=@height,manual_volume=@manual_volume,calculated_volume=@calculated_volume,volume=@volume,dimensional_divisor=@dimensional_divisor,measurement_mode=@measurement_mode,weight=@weight,
         chargeable_weight=@chargeable_weight,recipient_name=@recipient_name,address1=@address1,address2=@address2,
-        city=@city,state=@state,zip=@zip,country=@country,phone=@phone,updated_at=CURRENT_TIMESTAMP
+        city=@city,state=@state,zip=@zip,country=@country,phone=@phone,recipient_email=@recipient_email,updated_at=CURRENT_TIMESTAMP
       WHERE id=@id
     `).run({ ...payload, id: existing.id });
     id = existing.id;
@@ -415,12 +417,12 @@ export function upsertOrder(input: OrderInput) {
         client_user_id,created_at,sales,customer,supplier,service,sub_service,label,tracking,order_id,draft_key,workflow_status,
         est_net_cost,base_cost,retail,discount,discount_note,discount_source,sales_price,auto_pricing,manual_surcharge,surcharge,import_tax,total_due,gross_profit_base,gross_profit_net,gross_margin_pct,margin_status,
         note,internal_note,item,material,declared_value,carton_count,length,width,height,manual_volume,calculated_volume,volume,dimensional_divisor,measurement_mode,weight,chargeable_weight,recipient_name,
-        address1,address2,city,state,zip,country,phone,updated_at
+        address1,address2,city,state,zip,country,phone,recipient_email,updated_at
       ) VALUES (
         @client_user_id,@created_at,@sales,@customer,@supplier,@service,@sub_service,@label,@tracking,@order_id,@draft_key,@workflow_status,
         @est_net_cost,@base_cost,@retail,@discount,@discount_note,@discount_source,@sales_price,@auto_pricing,@manual_surcharge,@surcharge,@import_tax,@total_due,@gross_profit_base,@gross_profit_net,@gross_margin_pct,@margin_status,
         @note,@internal_note,@item,@material,@declared_value,@carton_count,@length,@width,@height,@manual_volume,@calculated_volume,@volume,@dimensional_divisor,@measurement_mode,@weight,@chargeable_weight,@recipient_name,
-        @address1,@address2,@city,@state,@zip,@country,@phone,CURRENT_TIMESTAMP
+        @address1,@address2,@city,@state,@zip,@country,@phone,@recipient_email,CURRENT_TIMESTAMP
       )
     `).run(payload);
     id = Number(result.lastInsertRowid);

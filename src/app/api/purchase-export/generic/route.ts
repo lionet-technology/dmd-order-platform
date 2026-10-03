@@ -8,7 +8,7 @@ export const runtime="nodejs";
 const columns=[
   ["dmd_id","DMD ID"],["client_order_id","Client Order ID"],["client","Client"],["recipient_name","Recipient Name"],
   ["address_1","Address 1"],["address_2","Address 2"],["city","City"],["state","State"],["postal_code","ZIP / Postal Code"],
-  ["country","Country"],["phone","Phone"],["lot_number","Lot"],["carton_count","Carton Count"],["carton_slot","Carton Slot"],
+  ["country","Country"],["phone","Phone"],["recipient_email","Recipient Email"],["lot_number","Lot"],["carton_count","Carton Count"],["carton_slot","Carton Slot"],
   ["sku","SKU"],["item","Item"],["quantity","Quantity"],["material","Material"],
   ["unit_manufacturing_value","Unit Manufacturing Value"],["line_manufacturing_value","Line Manufacturing Value"],
   ["order_total_manufacturing_value","Order Total Manufacturing Value"],["lot_total_manufacturing_value","Lot Total Manufacturing Value"],

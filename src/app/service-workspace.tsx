@@ -6,6 +6,8 @@ type EnumRow={id:number;enum_type:string;value:string;parent_value:string;active
 type RouteRow={
   id:number;service:string;sub_service:string;supplier:string;active:number;
   template_id?:number;template_name?:string;output_mode?:string;active_version_id?:number;version_number?:number;
+  purchase_template_id?:number;purchase_template_name?:string;purchase_output_mode?:string;purchase_active_version_id?:number;purchase_version_number?:number;
+  manifest_template_id?:number;manifest_template_name?:string;manifest_output_mode?:string;manifest_active_version_id?:number;manifest_version_number?:number;
   original_filename?:string;placeholder_map_json?:string;validation_json?:string;route_variables_json?:string;
 };
 type RouteVariable={key:string;value:string};
@@ -28,6 +30,7 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
   const [routes,setRoutes]=useState<RouteRow[]>([]);
   const [selected,setSelected]=useState<RouteRow|null>(null);
   const [form,setForm]=useState({service:"",sub_service:"",supplier:""});
+  const [templateKind,setTemplateKind]=useState<"PURCHASE"|"MANIFEST">("PURCHASE");
   const [template,setTemplate]=useState({name:"",output_mode:"MULTI_ORDER"});
   const [routeVariables,setRouteVariables]=useState<RouteVariable[]>([]);
   const [sections,setSections]=useState<RepeatDraft[]>([{sheet:"",row:"2",scope:"CARTON"}]);
@@ -63,18 +66,26 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
     }catch(error){setMessage("Lỗi: "+(error as Error).message)}
     finally{setBusy(false)}
   }
+  function chooseTemplateKind(kind:"PURCHASE"|"MANIFEST",route:RouteRow=selected as RouteRow){
+    if(!route)return;
+    setTemplateKind(kind);setResult(null);setFile(null);
+    if(kind==="MANIFEST")setTemplate({name:route.manifest_template_name||route.service+" Manifest "+route.supplier,output_mode:route.manifest_output_mode||"MULTI_ORDER"});
+    else setTemplate({name:route.purchase_template_name||route.template_name||route.service+" "+route.supplier,output_mode:route.purchase_output_mode||route.output_mode||"MULTI_ORDER"});
+  }
   async function upload(){
     if(!selected||!file){setMessage("Lỗi: Chọn Service Route và file .xlsx.");return}
     setBusy(true);setMessage("");setResult(null);
     try{
       const data=new FormData();
-      data.set("route_config_id",String(selected.id));if(selected.template_id)data.set("template_id",String(selected.template_id));
-      data.set("name",template.name);data.set("output_mode",template.output_mode);
+      data.set("route_config_id",String(selected.id));
+      const currentTemplateId=templateKind==="MANIFEST"?selected.manifest_template_id:(selected.purchase_template_id||selected.template_id);
+      if(currentTemplateId)data.set("template_id",String(currentTemplateId));
+      data.set("template_kind",templateKind);data.set("name",template.name);data.set("output_mode",template.output_mode);
       data.set("repeat_sections",JSON.stringify(sections.filter(row=>row.sheet.trim()).map(row=>({sheet:row.sheet.trim(),row:Number(row.row),scope:row.scope}))));
       data.set("file",file);
       const body=await responseJson(await fetch("/api/purchase-templates",{method:"POST",body:data})) as UploadResult;
       setResult(body);
-      setMessage(body.errors.length?"Template có lỗi, chưa thể activate.":"Đã upload và validate version "+body.version.version_number+".");
+      setMessage(body.errors.length?"Template có lỗi, chưa thể activate.":"Đã upload và validate "+(templateKind==="MANIFEST"?"Manifest":"Purchase")+" version "+body.version.version_number+".");
       await load();
     }catch(error){setMessage("Lỗi: "+(error as Error).message)}
     finally{setBusy(false)}
@@ -104,20 +115,21 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
   const suppliers=options(enums,"SUPPLIER");
   return <div className="serviceConfigWorkspace">
     <section className="routeConfigCard">
-      <div className="configHead"><div><b>Service Route Configuration</b><span>Quan hệ Service + optional Sub-Service + Supplier dùng để tự resolve Purchase Template.</span></div></div>
+      <div className="configHead"><div><b>Service Route Configuration</b><span>Mỗi cấu hình Service + optional Sub-Service + Supplier có thể có Purchase Template và Manifest Template riêng.</span></div></div>
       <div className="routeCreate">
         <label><span>Service</span><select value={form.service} onChange={e=>setForm({...form,service:e.target.value,sub_service:""})}><option value="">Chọn Service</option>{services.map(row=><option key={row.id}>{row.value}</option>)}</select></label>
         <label><span>Sub-Service</span><select value={form.sub_service} disabled={!form.service} onChange={e=>setForm({...form,sub_service:e.target.value})}><option value="">{form.service?"Không có":"Chọn Service trước"}</option>{subServices.map(row=><option key={row.id}>{row.value}</option>)}</select></label>
         <label><span>Supplier</span><select value={form.supplier} onChange={e=>setForm({...form,supplier:e.target.value})}><option value="">Chọn Supplier</option>{suppliers.map(row=><option key={row.id}>{row.value}</option>)}</select></label>
         <button className="primaryBtn" disabled={busy||!form.service||!form.supplier} onClick={()=>void createRoute()}>＋ Thêm cấu hình</button>
       </div>
-      <div className="tableWrap routeTable"><table><thead><tr><th>Service</th><th>Sub-Service</th><th>Supplier</th><th>Purchase Template</th><th>Output</th><th>Status</th><th></th></tr></thead><tbody>
-        {routes.length?routes.map(row=><tr key={row.id} className={selected?.id===row.id?"selectedRoute":""}><td><b>{row.service}</b></td><td>{row.sub_service||"—"}</td><td>{row.supplier}</td><td>{row.template_name||"Chưa có Purchase Template"}{row.version_number?<small>Active v{row.version_number}</small>:null}</td><td>{row.output_mode||"—"}</td><td><span className={row.active?"status goodStatus":"status neutralStatus"}>{row.active?"Active":"Inactive"}</span></td><td><button className="editBtn" onClick={()=>{setSelected(row);setTemplate({name:row.template_name||row.service+" "+row.supplier,output_mode:row.output_mode||"MULTI_ORDER"});let vars:Record<string,string>={};try{vars=JSON.parse(row.route_variables_json||"{}")}catch{}setRouteVariables(Object.entries(vars).map(([key,value])=>({key,value:String(value)})));setResult(null)}}>Cấu hình</button></td></tr>):<tr><td colSpan={7} className="empty">Chưa có Service Route.</td></tr>}
+      <div className="tableWrap routeTable"><table><thead><tr><th>Service</th><th>Sub-Service</th><th>Supplier</th><th>Purchase Template</th><th>Manifest Template</th><th>Status</th><th></th></tr></thead><tbody>
+        {routes.length?routes.map(row=><tr key={row.id} className={selected?.id===row.id?"selectedRoute":""}><td><b>{row.service}</b></td><td>{row.sub_service||"—"}</td><td>{row.supplier}</td><td>{row.purchase_template_name||row.template_name||"Chưa có"}{row.purchase_version_number||row.version_number?<small>Active v{row.purchase_version_number||row.version_number}</small>:null}</td><td>{row.manifest_template_name||"Chưa có"}{row.manifest_version_number?<small>Active v{row.manifest_version_number}</small>:null}</td><td><span className={row.active?"status goodStatus":"status neutralStatus"}>{row.active?"Active":"Inactive"}</span></td><td><button className="editBtn" onClick={()=>{setSelected(row);chooseTemplateKind("PURCHASE",row);let vars:Record<string,string>={};try{vars=JSON.parse(row.route_variables_json||"{}")}catch{}setRouteVariables(Object.entries(vars).map(([key,value])=>({key,value:String(value)})))}}>Cấu hình</button></td></tr>):<tr><td colSpan={7} className="empty">Chưa có Service Route.</td></tr>}
       </tbody></table></div>
     </section>
 
     {selected&&<section className="templateConfigCard">
-      <div className="configHead"><div><b>Purchase Template · {selected.service} / {selected.sub_service||"—"} / {selected.supplier}</b><span>Upload workbook thật của Supplier, validate placeholder, preview rồi mới activate.</span></div><button className="iconBtn" onClick={()=>setSelected(null)}>×</button></div>
+      <div className="configHead"><div><b>Cấu hình file · {selected.service} / {selected.sub_service||"—"} / {selected.supplier}</b><span>Purchase = file mua label/đơn. Manifest = file khai báo sau khi đã có Tracking.</span></div><button className="iconBtn" onClick={()=>setSelected(null)}>×</button></div>
+      <div className="templateKindTabs"><button className={templateKind==="PURCHASE"?"active":""} onClick={()=>chooseTemplateKind("PURCHASE")}>Purchase Template</button><button className={templateKind==="MANIFEST"?"active":""} onClick={()=>chooseTemplateKind("MANIFEST")}>Manifest Template</button></div>
       <div className="routeVariablesEditor">
         <div className="routeVariablesHead"><div><b>Biến cố định cho template</b><span>Dữ liệu cố định của cấu hình này. Dùng trong Excel bằng <code>{"{{route.service_code}}"}</code>, <code>{"{{route.sender_address}}"}</code>…</span></div><button className="secondaryBtn" disabled={busy} onClick={()=>void saveRouteVariables()}>Lưu biến cố định</button></div>
         {routeVariables.map((row,index)=><div className="routeVariableRow" key={index}>
@@ -130,7 +142,7 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
       </div>
       <div className="templateGrid">
         <label><span>Tên Template</span><input value={template.name} onChange={e=>setTemplate({...template,name:e.target.value})}/></label>
-        <label><span>Output Mode</span><select value={template.output_mode} onChange={e=>setTemplate({...template,output_mode:e.target.value})}><option value="MULTI_ORDER">Multi Order</option><option value="PER_ORDER">Per Order</option><option value="PER_LOT">Per Lot</option></select></label>
+        <label><span>Cách chia file</span><select value={template.output_mode} onChange={e=>setTemplate({...template,output_mode:e.target.value})}><option value="MULTI_ORDER">Gộp nhiều Order</option><option value="PER_ORDER">Tách theo Order</option><option value="PER_LOT">Tách theo Lot</option></select></label>
         <label className="file"><input type="file" accept=".xlsx" onChange={e=>setFile(e.target.files?.[0]||null)}/><span>{file?.name||"Chọn workbook .xlsx"}</span></label>
       </div>
       <div className="repeatEditor"><div><b>Dòng lặp</b><span>Mỗi dòng mẫu trong file tương ứng với dữ liệu nào. Bỏ trống Sheet nếu template chỉ thay các ô cố định.</span></div>
@@ -142,7 +154,7 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
         </div>)}
         <button className="textBtn" onClick={()=>setSections(prev=>[...prev,{sheet:"",row:"2",scope:"CARTON_ITEM"}])}>＋ Thêm dòng lặp</button>
       </div>
-      <div className="templateActions"><button className="primaryBtn" disabled={busy||!file||!template.name} onClick={()=>void upload()}>Upload & Validate</button>
+      <div className="templateActions"><button className="primaryBtn" disabled={busy||!file||!template.name} onClick={()=>void upload()}>Upload & Validate {templateKind==="MANIFEST"?"Manifest":"Purchase"}</button>
         {result&&<><select value={sampleOrderId} onChange={e=>setSampleOrderId(e.target.value)}><option value="">Chọn Order mẫu</option>{samples.map(order=><option key={order.id} value={order.id}>{order.system_order_code} · {order.customer}</option>)}</select><button className="secondaryBtn" disabled={busy||!sampleOrderId} onClick={()=>void preview()}>Tạo file preview</button><button className="secondaryBtn" disabled={busy||Boolean(result.errors.length)} onClick={()=>void activate()}>Activate version</button></>}
       </div>
       {result&&<div className="validationResult">

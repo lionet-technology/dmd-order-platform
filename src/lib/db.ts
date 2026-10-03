@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS orders (
   zip TEXT,
   country TEXT,
   phone TEXT,
+  recipient_email TEXT,
   reconciliation_status TEXT NOT NULL DEFAULT 'PENDING',
   reconciliation_delta REAL,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -211,6 +212,7 @@ CREATE TABLE IF NOT EXISTS purchase_templates (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   route_config_id INTEGER NOT NULL REFERENCES service_route_configs(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
+  template_kind TEXT NOT NULL DEFAULT 'PURCHASE' CHECK(template_kind IN ('PURCHASE','MANIFEST')),
   output_mode TEXT NOT NULL CHECK(output_mode IN ('MULTI_ORDER','PER_ORDER','PER_LOT')),
   repeat_sections_json TEXT NOT NULL DEFAULT '[]',
   output_naming TEXT,
@@ -221,7 +223,6 @@ CREATE TABLE IF NOT EXISTS purchase_templates (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_purchase_templates_route ON purchase_templates(route_config_id,active);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_purchase_templates_one_active ON purchase_templates(route_config_id) WHERE active=1;
 
 CREATE TABLE IF NOT EXISTS purchase_template_versions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -433,9 +434,11 @@ ensureColumn("orders", "charge_status", "charge_status TEXT NOT NULL DEFAULT 'PE
 ensureColumn("orders", "purchase_completed_at", "purchase_completed_at TEXT");
 ensureColumn("orders", "system_order_code", "system_order_code TEXT");
 ensureColumn("orders", "expected_lot_count", "expected_lot_count INTEGER NOT NULL DEFAULT 1");
+ensureColumn("orders", "recipient_email", "recipient_email TEXT");
 ensureColumn("client_service_settings", "default_sub_service", "default_sub_service TEXT NOT NULL DEFAULT ''");
 ensureColumn("client_service_settings", "default_supplier", "default_supplier TEXT NOT NULL DEFAULT ''");
 ensureColumn("service_route_configs", "route_variables_json", "route_variables_json TEXT NOT NULL DEFAULT '{}'");
+ensureColumn("purchase_templates", "template_kind", "template_kind TEXT NOT NULL DEFAULT 'PURCHASE'");
 ensureColumn("supplier_costs", "created_by_user_id", "created_by_user_id INTEGER");
 ensureColumn("supplier_costs", "normalized_tracking", "normalized_tracking TEXT");
 ensureColumn("supplier_costs", "matched_order_id", "matched_order_id INTEGER");
@@ -458,6 +461,8 @@ ensureColumn("order_trackings", "status_updated_by_user_id", "status_updated_by_
 ensureColumn("order_trackings", "carton_id", "carton_id INTEGER");
 ensureColumn("supplier_costs", "order_lot_id", "order_lot_id INTEGER");
 
+db.exec("DROP INDEX IF EXISTS idx_purchase_templates_one_active");
+db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_purchase_templates_one_active_kind ON purchase_templates(route_config_id,template_kind) WHERE active=1");
 db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_single_root_admin ON users(is_root_admin) WHERE is_root_admin=1");
 db.exec("CREATE INDEX IF NOT EXISTS idx_users_sales_owner ON users(sales_user_id,role)");
 db.exec("CREATE INDEX IF NOT EXISTS idx_orders_client_user ON orders(client_user_id)");

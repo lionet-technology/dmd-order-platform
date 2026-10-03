@@ -25,11 +25,16 @@ function routeVariables(value:unknown){
 export async function GET(req:NextRequest){
   const auth=requireUser(req,"ADMIN");if(auth.error)return auth.error;
   const rows=db.prepare(
-    "SELECT rc.*,pt.id template_id,pt.name template_name,pt.output_mode,pt.repeat_sections_json,pt.active template_active,"+
-    "pv.id active_version_id,pv.version_number,pv.original_filename,pv.placeholder_map_json,pv.validation_json "+
+    "SELECT rc.*,"+
+    "ppt.id template_id,ppt.id purchase_template_id,ppt.name template_name,ppt.name purchase_template_name,ppt.output_mode,ppt.output_mode purchase_output_mode,ppt.repeat_sections_json,ppt.active template_active,"+
+    "ppv.id active_version_id,ppv.id purchase_active_version_id,ppv.version_number,ppv.version_number purchase_version_number,ppv.original_filename,ppv.placeholder_map_json,ppv.validation_json,"+
+    "mpt.id manifest_template_id,mpt.name manifest_template_name,mpt.output_mode manifest_output_mode,mpt.repeat_sections_json manifest_repeat_sections_json,"+
+    "mpv.id manifest_active_version_id,mpv.version_number manifest_version_number,mpv.original_filename manifest_original_filename,mpv.placeholder_map_json manifest_placeholder_map_json,mpv.validation_json manifest_validation_json "+
     "FROM service_route_configs rc "+
-    "LEFT JOIN purchase_templates pt ON pt.route_config_id=rc.id AND pt.active=1 "+
-    "LEFT JOIN purchase_template_versions pv ON pv.template_id=pt.id AND pv.status='ACTIVE' "+
+    "LEFT JOIN purchase_templates ppt ON ppt.route_config_id=rc.id AND ppt.active=1 AND ppt.template_kind='PURCHASE' "+
+    "LEFT JOIN purchase_template_versions ppv ON ppv.template_id=ppt.id AND ppv.status='ACTIVE' "+
+    "LEFT JOIN purchase_templates mpt ON mpt.route_config_id=rc.id AND mpt.active=1 AND mpt.template_kind='MANIFEST' "+
+    "LEFT JOIN purchase_template_versions mpv ON mpv.template_id=mpt.id AND mpv.status='ACTIVE' "+
     "ORDER BY rc.active DESC,rc.service,rc.sub_service,rc.supplier"
   ).all();
   return NextResponse.json(rows);

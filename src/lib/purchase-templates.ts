@@ -7,16 +7,16 @@ export type RepeatScope=typeof REPEAT_SCOPES[number];
 export type RepeatSection={sheet:string;row:number;scope:RepeatScope};
 
 export const PURCHASE_PLACEHOLDERS=[
-  "recipient_name","address_1","address_2","city","state","postal_code","country","phone",
+  "recipient_name","address_1","address_2","city","state","postal_code","country","phone","recipient_email","recipient_address",
   "item_description","sku","quantity","material","unit_manufacturing_value","line_manufacturing_value",
-  "weight","length","width","height","volume","chargeable_weight","carton_count","carton_slot",
+  "weight","weight_g","length","width","height","volume","chargeable_weight","carton_count","carton_slot","row.index",
   "lot_count","lot_number","client_order_id","dmd_order_id","client","service","sub_service","supplier",
   "tracking","label_url","order_total_manufacturing_value","lot_total_manufacturing_value","carton_total_manufacturing_value",
   "order.recipient_name","order.address_1","order.address_2","order.city","order.state","order.postal_code",
-  "order.country","order.phone","order.client_order_id","order.dmd_order_id","order.client","order.service",
+  "order.country","order.phone","order.recipient_email","order.recipient_address","order.client_order_id","order.dmd_order_id","order.client","order.service",
   "order.sub_service","order.supplier","order.carton_count","order.lot_count","order.total_manufacturing_value",
   "lot.number","lot.net_cost","lot.total_manufacturing_value",
-  "carton.number","carton.weight","carton.length","carton.width","carton.height","carton.volume",
+  "carton.number","carton.weight","carton.weight_g","carton.length","carton.width","carton.height","carton.volume",
   "carton.chargeable_weight","carton.tracking","carton.label_url","carton.total_manufacturing_value",
   "item.sku","item.description","item.quantity","item.material","item.unit_manufacturing_value","item.total_manufacturing_value",
 ] as const;
@@ -26,7 +26,7 @@ const text=(value:unknown)=>String(value??"").trim();
 const safeName=(value:string)=>value.replace(/[\\/:*?"<>|]+/g,"-").replace(/\s+/g,"-").slice(0,100)||"Purchase";
 
 type DataRow=Record<string,unknown>;
-type ExportContext={order:DataRow;lot?:DataRow;carton?:DataRow;item?:DataRow};
+type ExportContext={order:DataRow;lot?:DataRow;carton?:DataRow;item?:DataRow;row?:DataRow};
 type RouteVariables=Record<string,string>;
 
 export async function scanPurchaseWorkbook(buffer:Buffer){
@@ -116,16 +116,19 @@ function contextsFor(orderIds:number[],scope:RepeatScope,lotId?:number){
       contexts.push({order:data.order,lot,carton,item});
     }
   }
-  return contexts;
+  return contexts.map((context,index)=>({...context,row:{index:index+1}}));
 }
 
 function valueFor(token:string,context:ExportContext,routeVariables:RouteVariables={}):unknown{
-  const {order,lot,carton,item}=context;
+  const {order,lot,carton,item,row}=context;
+  const weight=Number(carton?.weight||order.weight||0);
+  const recipientAddress=[order.address1,order.address2].map(text).filter(Boolean).join(" ");
   const aliases:Record<string,unknown>={
     recipient_name:order.recipient_name,address_1:order.address1,address_2:order.address2,city:order.city,state:order.state,
-    postal_code:order.zip,country:order.country,phone:order.phone,item_description:item?.description||order.item,sku:item?.sku,
-    quantity:item?.quantity,material:item?.material||order.material,unit_manufacturing_value:item?.unit_manufacturing_value,
-    line_manufacturing_value:item?.total_manufacturing_value,weight:carton?.weight||order.weight,length:carton?.length||order.length,
+    postal_code:order.zip,country:order.country,phone:order.phone,recipient_email:order.recipient_email,recipient_address:recipientAddress,
+    item_description:item?.description||order.item,sku:item?.sku,quantity:Number(item?.quantity||0)||1,material:item?.material||order.material,
+    unit_manufacturing_value:item?.unit_manufacturing_value??order.declared_value,line_manufacturing_value:item?.total_manufacturing_value??order.declared_value,
+    weight,weight_g:weight*1000,length:carton?.length||order.length,
     width:carton?.width||order.width,height:carton?.height||order.height,volume:carton?.volume||order.volume,
     chargeable_weight:carton?.chargeable_weight||order.chargeable_weight,carton_count:order.carton_count,
     carton_slot:carton?.carton_number,lot_count:order.expected_lot_count,lot_number:lot?.lot_number,
@@ -136,7 +139,7 @@ function valueFor(token:string,context:ExportContext,routeVariables:RouteVariabl
   };
   if(token in aliases)return aliases[token]??"";
   if(token.startsWith("route."))return routeVariables[token.slice(6)]??"";
-  const namespaced:Record<string,DataRow|undefined>={order,lot,carton,item};
+  const namespaced:Record<string,DataRow|undefined>={order,lot,carton,item,row};
   const [root,...path]=token.split(".");
   const source=namespaced[root];
   if(!source)return "";
@@ -144,8 +147,12 @@ function valueFor(token:string,context:ExportContext,routeVariables:RouteVariabl
   const keyMap:Record<string,string>={
     address_1:"address1",address_2:"address2",postal_code:"zip",client_order_id:"order_id",dmd_order_id:"system_order_code",
     client:"customer",lot_count:"expected_lot_count",number:root==="lot"?"lot_number":"carton_number",
-    description:"description",quantity:"quantity",total_manufacturing_value:"total_manufacturing_value",
+    description:"description",quantity:"quantity",total_manufacturing_value:"total_manufacturing_value",recipient_email:"recipient_email",
   };
+  if(root==="order"&&key==="recipient_address")return recipientAddress;
+  if(root==="carton"&&key==="weight_g")return Number(carton?.weight||order.weight||0)*1000;
+  if(root==="item"&&key==="quantity")return Number(item?.quantity||0)||1;
+  if(root==="item"&&key==="unit_manufacturing_value")return item?.unit_manufacturing_value??order.declared_value??"";
   return source[keyMap[key]||key]??"";
 }
 
@@ -191,21 +198,24 @@ async function renderWorkbook(input:{storedPath:string;repeatSections:RepeatSect
 
 type TemplateRecord={
   template_id:number;template_name:string;output_mode:"MULTI_ORDER"|"PER_ORDER"|"PER_LOT";repeat_sections_json:string;
-  active_version_id:number;version_number:number;stored_path:string;service:string;sub_service:string;supplier:string;route_variables_json:string;
+  active_version_id:number;version_number:number;stored_path:string;service:string;sub_service:string;supplier:string;route_variables_json:string;template_kind:"PURCHASE"|"MANIFEST";
 };
 
-export function resolvePurchaseTemplate(order:DataRow){
+export function resolveRouteTemplate(order:DataRow,kind:"PURCHASE"|"MANIFEST"="PURCHASE"){
   return db.prepare(
-    "SELECT pt.id template_id,pt.name template_name,pt.output_mode,pt.repeat_sections_json,pv.id active_version_id,pv.version_number,pv.stored_path,rc.service,rc.sub_service,rc.supplier,rc.route_variables_json "+
-    "FROM service_route_configs rc JOIN purchase_templates pt ON pt.route_config_id=rc.id AND pt.active=1 "+
+    "SELECT pt.id template_id,pt.name template_name,pt.template_kind,pt.output_mode,pt.repeat_sections_json,pv.id active_version_id,pv.version_number,pv.stored_path,rc.service,rc.sub_service,rc.supplier,rc.route_variables_json "+
+    "FROM service_route_configs rc JOIN purchase_templates pt ON pt.route_config_id=rc.id AND pt.active=1 AND pt.template_kind=? "+
     "JOIN purchase_template_versions pv ON pv.template_id=pt.id AND pv.status='ACTIVE' "+
     "WHERE rc.active=1 AND lower(rc.service)=lower(?) AND lower(rc.sub_service)=lower(?) AND lower(rc.supplier)=lower(?) LIMIT 1"
-  ).get(text(order.service),text(order.sub_service),text(order.supplier)) as TemplateRecord|undefined;
+  ).get(kind,text(order.service),text(order.sub_service),text(order.supplier)) as TemplateRecord|undefined;
 }
+
+export function resolvePurchaseTemplate(order:DataRow){return resolveRouteTemplate(order,"PURCHASE")}
+export function resolveManifestTemplate(order:DataRow){return resolveRouteTemplate(order,"MANIFEST")}
 
 export async function generatePreview(versionId:number,orderId:number){
   const row=db.prepare(
-    "SELECT pt.id template_id,pt.name template_name,pt.output_mode,pt.repeat_sections_json,pv.id active_version_id,pv.version_number,pv.stored_path,rc.service,rc.sub_service,rc.supplier,rc.route_variables_json "+
+    "SELECT pt.id template_id,pt.name template_name,pt.template_kind,pt.output_mode,pt.repeat_sections_json,pv.id active_version_id,pv.version_number,pv.stored_path,rc.service,rc.sub_service,rc.supplier,rc.route_variables_json "+
     "FROM purchase_template_versions pv JOIN purchase_templates pt ON pt.id=pv.template_id JOIN service_route_configs rc ON rc.id=pt.route_config_id WHERE pv.id=?"
   ).get(versionId) as TemplateRecord|undefined;
   if(!row)throw new Error("Không tìm thấy version template.");
@@ -216,40 +226,51 @@ export async function generatePreview(versionId:number,orderId:number){
   return {buffer:await renderWorkbook({storedPath:row.stored_path,repeatSections:sections,orderIds:[orderId],lotId,routeVariables}),filename:"PREVIEW_"+safeName(text(data.order.system_order_code||orderId))+".xlsx"};
 }
 
-export async function generatePurchaseFiles(orderIds:number[]){
+export function validateManifestReadiness(orderId:number){
+  const base=validatePurchaseReadiness(orderId);if(!base.ready)return base;
+  const cartons=db.prepare("SELECT id,carton_number FROM order_cartons WHERE order_id=? ORDER BY carton_number").all(orderId) as Array<{id:number;carton_number:number}>;
+  const missing=cartons.filter(carton=>!db.prepare("SELECT id FROM order_trackings WHERE order_id=? AND carton_id=? AND status='ACTIVE' LIMIT 1").get(orderId,carton.id));
+  return missing.length?{ready:false,issues:missing.map(carton=>({message:"Carton "+carton.carton_number+" chưa có Tracking"}))}:{ready:true,issues:[]};
+}
+
+async function generateRouteFiles(orderIds:number[],kind:"PURCHASE"|"MANIFEST"){
   const missing:Array<{order_id:number;dmd_id:string;reason:string}>=[];
   const groups=new Map<number,{template:TemplateRecord;orderIds:number[]}>();
   for(const orderId of [...new Set(orderIds)]){
     const order=db.prepare("SELECT * FROM orders WHERE id=?").get(orderId) as DataRow|undefined;
     if(!order){missing.push({order_id:orderId,dmd_id:String(orderId),reason:"Order không tồn tại"});continue}
-    const readiness=validatePurchaseReadiness(orderId);
+    const readiness=kind==="MANIFEST"?validateManifestReadiness(orderId):validatePurchaseReadiness(orderId);
     if(!readiness.ready){missing.push({order_id:orderId,dmd_id:text(order.system_order_code),reason:readiness.issues.map(row=>row.message).join(" ")});continue}
-    const template=resolvePurchaseTemplate(order);
-    if(!template){missing.push({order_id:orderId,dmd_id:text(order.system_order_code),reason:"Chưa có Purchase Template"});continue}
+    const template=resolveRouteTemplate(order,kind);
+    if(!template){missing.push({order_id:orderId,dmd_id:text(order.system_order_code),reason:kind==="MANIFEST"?"Chưa có Manifest Template":"Chưa có Purchase Template"});continue}
     const group=groups.get(template.template_id)||{template,orderIds:[]};group.orderIds.push(orderId);groups.set(template.template_id,group);
   }
   const files:Array<{name:string;buffer:Buffer;service:string}>=[];
   for(const group of groups.values()){
     const sections=JSON.parse(group.template.repeat_sections_json||"[]") as RepeatSection[];
     const routeVariables=JSON.parse(group.template.route_variables_json||"{}") as RouteVariables;
+    const prefix=kind==="MANIFEST"?"Manifest":"Purchase";
     if(group.template.output_mode==="MULTI_ORDER"){
-      files.push({name:safeName(group.template.service+"_"+group.template.sub_service+"_"+group.template.supplier+"_"+group.orderIds.length+"-orders")+".xlsx",buffer:await renderWorkbook({storedPath:group.template.stored_path,repeatSections:sections,orderIds:group.orderIds,routeVariables}),service:group.template.service});
+      files.push({name:safeName(prefix+"_"+group.template.service+"_"+group.template.sub_service+"_"+group.template.supplier+"_"+group.orderIds.length+"-orders")+".xlsx",buffer:await renderWorkbook({storedPath:group.template.stored_path,repeatSections:sections,orderIds:group.orderIds,routeVariables}),service:group.template.service});
     }else if(group.template.output_mode==="PER_ORDER"){
       for(const orderId of group.orderIds){
         const order=db.prepare("SELECT system_order_code FROM orders WHERE id=?").get(orderId) as {system_order_code:string};
-        files.push({name:safeName(group.template.service+"_"+order.system_order_code)+".xlsx",buffer:await renderWorkbook({storedPath:group.template.stored_path,repeatSections:sections,orderIds:[orderId],routeVariables}),service:group.template.service});
+        files.push({name:safeName(prefix+"_"+group.template.service+"_"+order.system_order_code)+".xlsx",buffer:await renderWorkbook({storedPath:group.template.stored_path,repeatSections:sections,orderIds:[orderId],routeVariables}),service:group.template.service});
       }
     }else{
       for(const orderId of group.orderIds){
         const data=exportData(orderId);
         for(const lot of data.lots){
-          files.push({name:safeName(group.template.service+"_"+text(data.order.system_order_code)+"_Lot-"+text(lot.lot_number))+".xlsx",buffer:await renderWorkbook({storedPath:group.template.stored_path,repeatSections:sections,orderIds:[orderId],lotId:Number(lot.id),routeVariables}),service:group.template.service});
+          files.push({name:safeName(prefix+"_"+group.template.service+"_"+text(data.order.system_order_code)+"_Lot-"+text(lot.lot_number))+".xlsx",buffer:await renderWorkbook({storedPath:group.template.stored_path,repeatSections:sections,orderIds:[orderId],lotId:Number(lot.id),routeVariables}),service:group.template.service});
         }
       }
     }
   }
   return {files,missing,valid_order_count:[...groups.values()].reduce((sum,group)=>sum+group.orderIds.length,0)};
 }
+
+export async function generatePurchaseFiles(orderIds:number[]){return generateRouteFiles(orderIds,"PURCHASE")}
+export async function generateManifestFiles(orderIds:number[]){return generateRouteFiles(orderIds,"MANIFEST")}
 
 export function genericPurchaseRows(orderIds:number[]){
   const rows:Array<Record<string,unknown>>=[];
@@ -261,7 +282,7 @@ export function genericPurchaseRows(orderIds:number[]){
       for(const item of cartonItems)rows.push({
         dmd_id:data.order.system_order_code,client_order_id:data.order.order_id,client:data.order.customer,
         recipient_name:data.order.recipient_name,address_1:data.order.address1,address_2:data.order.address2,city:data.order.city,
-        state:data.order.state,postal_code:data.order.zip,country:data.order.country,phone:data.order.phone,
+        state:data.order.state,postal_code:data.order.zip,country:data.order.country,phone:data.order.phone,recipient_email:data.order.recipient_email,
         lot_number:carton.lot_number,carton_count:data.order.carton_count,carton_slot:carton.carton_number,
         sku:item.sku,item:item.description,quantity:item.quantity,material:item.material,
         unit_manufacturing_value:item.unit_manufacturing_value,line_manufacturing_value:item.total_manufacturing_value,

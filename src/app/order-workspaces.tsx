@@ -139,7 +139,7 @@ export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderI
     </div>
     {tab==="overview"&&<div className="detailBody">
       <section className="detailGrid">
-        <article className="detailCard"><h3>Người nhận</h3><b>{String(data.recipient_name||"—")}</b><p>{String(data.address1||"")}{data.address2?<><br/>{String(data.address2)}</>:null}</p><p>{[data.city,data.state,data.zip].filter(Boolean).join(", ")}</p><p>{String(data.country||"")} · {String(data.phone||"")}</p></article>
+        <article className="detailCard"><h3>Người nhận</h3><b>{String(data.recipient_name||"—")}</b><p>{String(data.address1||"")}{data.address2?<><br/>{String(data.address2)}</>:null}</p><p>{[data.city,data.state,data.zip].filter(Boolean).join(", ")}</p><p>{String(data.country||"")} · {String(data.phone||"")}</p>{data.recipient_email?<p>{String(data.recipient_email)}</p>:null}</article>
         <article className="detailCard"><h3>Hàng hóa</h3><dl><dt>Sản phẩm</dt><dd>{String(data.item||"—")}</dd><dt>Chất liệu</dt><dd>{String(data.material||"—")}</dd><dt>Số lượng Carton</dt><dd>{String(data.carton_count||0)}</dd><dt>Khối lượng</dt><dd>{String(data.weight||0)} kg</dd><dt>Kích thước</dt><dd>{data.length&&data.width&&data.height?String(data.length)+" × "+String(data.width)+" × "+String(data.height)+" cm":"Nhập thể tích tổng"}</dd><dt>Thể tích</dt><dd>{Number(data.volume||0).toLocaleString("en-US")} cm³</dd><dt>Hạng cân</dt><dd><b>{String(data.chargeable_weight||0)} kg</b></dd></dl></article>
         <article className="detailCard"><h3>Dịch vụ</h3><dl><dt>Client</dt><dd>{String(data.customer||"—")}</dd><dt>Sales</dt><dd>{String(data.sales||"—")}</dd><dt>Supplier</dt><dd>{role==="ADMIN"?String(data.supplier||"Chưa chọn"):"—"}</dd><dt>Service</dt><dd>{String(data.service||"—")}</dd><dt>Sub-Service</dt><dd>{String(data.sub_service||"—")}</dd><dt>Tracking/Label</dt><dd>{active.filter(row=>row.label_url).length}/{String(data.carton_count||0)}</dd><dt>Số lượng Lô</dt><dd>{String(data.expected_lot_count||1)}</dd></dl></article>
       </section>
@@ -174,11 +174,12 @@ type QueueRow={
   order_pk:number;system_order_code:string;client_order_id:string;customer:string;recipient_name:string;
   service:string;sub_service:string;carton_count:number;carton_slot:number;carton_id:number|null;supplier:string;
   expected_lot_count:number;tracking_id:number|null;tracking:string;label_url:string;
-  purchase_status:string;purchase_issue:string;
+  purchase_status:string;purchase_issue:string;manifest_status:string;manifest_issue:string;
 };
 
 export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>void|Promise<void>}){
   const [rows,setRows]=useState<QueueRow[]>([]);
+  const [mode,setMode]=useState<"PURCHASE"|"MANIFEST">("PURCHASE");
   const [service,setService]=useState("");
   const [subService,setSubService]=useState("");
   const [supplierFilter,setSupplierFilter]=useState("");
@@ -197,6 +198,7 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
       if(service)params.set("service",service);
       if(subService)params.set("sub_service",subService);
       if(supplierFilter)params.set("supplier",supplierFilter);
+      params.set("mode",mode);
       const body=await json("/api/orders/tracking-queue?"+params);
       const nextRows=body.rows||[];
       setRows(nextRows);
@@ -204,7 +206,7 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
       setSelectedOrders(prev=>prev.filter(id=>ids.has(id)));
     }catch(error){setMessage("Lỗi: "+(error as Error).message)}
     finally{setBusy(false)}
-  },[service,subService,supplierFilter]);
+  },[service,subService,supplierFilter,mode]);
   useEffect(()=>{void load()},[load]);
 
   function update(index:number,key:keyof QueueRow,value:string){
@@ -301,14 +303,15 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
     if(!selectedOrders.length){setMessage("Lỗi: Chọn ít nhất một Order.");return}
     setBusy(true);setMessage("");
     try{
-      await persist();
-      const response=await fetch(generic?"/api/purchase-export/generic":"/api/purchase-export",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({order_ids:selectedOrders})});
+      if(mode==="PURCHASE")await persist();
+      const endpoint=mode==="MANIFEST"?"/api/manifest-export":generic?"/api/purchase-export/generic":"/api/purchase-export";
+      const response=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({order_ids:selectedOrders})});
       if(!response.ok){const body=await response.json();throw new Error(body.error+(body.missing?.length?" · "+body.missing.map((row:{dmd_id:string;reason:string})=>row.dmd_id+": "+row.reason).join(" | "):""))}
       downloadBlob(response,await response.blob());
       const skipped=skippedDetail(response.headers.get("x-dmd-skipped-detail"));
-      setMessage(generic
-        ?"Đã xuất Generic cho "+selectedOrders.length+" Order."
-        :"Đã xuất file mua đơn"+(skipped.length?"; bỏ qua "+skipped.map(row=>row.dmd_id+" ("+row.reason+")").join(", "):"."));
+      setMessage(mode==="MANIFEST"
+        ?"Đã xuất Manifest"+(skipped.length?"; bỏ qua "+skipped.map(row=>row.dmd_id+" ("+row.reason+")").join(", "):".")
+        :generic?"Đã xuất Generic cho "+selectedOrders.length+" Order.":"Đã xuất file mua đơn"+(skipped.length?"; bỏ qua "+skipped.map(row=>row.dmd_id+" ("+row.reason+")").join(", "):"."));
       await load();await onDone();
     }catch(error){setMessage("Lỗi: "+(error as Error).message)}
     finally{setBusy(false)}
@@ -318,7 +321,7 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
   if(service)params.set("service",service);
   if(subService)params.set("sub_service",subService);
   if(supplierFilter)params.set("supplier",supplierFilter);
-  params.set("format","xlsx");
+  params.set("mode",mode);params.set("format","xlsx");
   const orderGroups=Array.from(rows.reduce((groups,row)=>{
     const group=groups.get(row.order_pk)||[];group.push(row);groups.set(row.order_pk,group);return groups;
   },new Map<number,QueueRow[]>()).values());
@@ -327,26 +330,27 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
   function toggleOrder(id:number){setSelectedOrders(prev=>prev.includes(id)?prev.filter(value=>value!==id):[...prev,id])}
 
   return <div className="bulkSheet">
-    <div className="bulkSheetToolbar"><div><b>Mua đơn hàng loạt</b><span>1. Chọn Order → 2. Xuất file mua đơn → 3. Nhập Tracking/Label theo carton.</span></div><div className="bulkFilters">
+    <div className="bulkSheetToolbar"><div><b>Mua đơn & Manifest hàng loạt</b><span>Purchase: xuất file mua label rồi nhập Tracking. Manifest: xuất hồ sơ sau khi đã có Tracking.</span></div><div className="bulkFilters">
       <label className="bulkFilterField"><span>Dịch vụ</span><select value={service} onChange={e=>{setService(e.target.value);setSubService("")}}><option value="">Tất cả dịch vụ</option>{services.map(row=><option key={row.id}>{row.value}</option>)}</select></label>
       <label className="bulkFilterField"><span>Sub-Service</span><select value={subService} onChange={e=>setSubService(e.target.value)}><option value="">Tất cả Sub-Service</option>{subs.map(row=><option key={row.id}>{row.value}</option>)}</select></label>
       <label className="bulkFilterField"><span>Supplier</span><select value={supplierFilter} onChange={e=>setSupplierFilter(e.target.value)}><option value="">Tất cả Supplier</option>{suppliers.map(row=><option key={row.id}>{row.value}</option>)}</select></label>
-      <button className="secondaryBtn" disabled={busy||!selectedOrders.length} onClick={()=>void exportOrders(true)}>Xuất Generic</button>
-      <button className="primaryBtn" disabled={busy||!selectedOrders.length} onClick={()=>void exportOrders(false)}>Xuất file mua đơn ({selectedOrders.length})</button>
+      {mode==="PURCHASE"&&<button className="secondaryBtn" disabled={busy||!selectedOrders.length} onClick={()=>void exportOrders(true)}>Xuất Generic</button>}
+      <button className="primaryBtn" disabled={busy||!selectedOrders.length} onClick={()=>void exportOrders(false)}>{mode==="MANIFEST"?"Xuất Manifest":"Xuất file mua đơn"} ({selectedOrders.length})</button>
     </div></div>
+    <div className="purchaseModeTabs"><button className={mode==="PURCHASE"?"active":""} onClick={()=>{setMode("PURCHASE");setSelectedOrders([])}}>1–3 · Mua Label & Tracking</button><button className={mode==="MANIFEST"?"active":""} onClick={()=>{setMode("MANIFEST");setSelectedOrders([])}}>4 · Manifest hải quan</button></div>
     <div className="purchaseSelectionBar">
       <label><input type="checkbox" checked={allSelected} onChange={()=>setSelectedOrders(allSelected?[]:allIds)}/> Chọn tất cả {orderGroups.length} Order sau filter</label>
-      <div>
+      {mode==="PURCHASE"?<div>
         <a className="secondaryBtn" href={"/api/orders/tracking-queue?"+params.toString()}>Tải file Tracking</a>
         <label className="secondaryBtn fileButton">Upload Tracking<input type="file" accept=".xlsx" onChange={e=>{const file=e.target.files?.[0];if(file)void upload(file)}}/></label>
         <button className="secondaryBtn" disabled={busy||!rows.length} onClick={()=>void save()}>Lưu Tracking/Label</button>
-      </div>
+      </div>:<div><span>Chỉ hiển thị Order đã có Tracking. Chọn các Order thực tế gửi đi rồi xuất Manifest.</span></div>}
     </div>
-    <div className="bulkPasteBar">
+    {mode==="PURCHASE"&&<div className="bulkPasteBar">
       <div><b>Dán nhanh từ Excel/Google Sheets</b><span>Copy 2 cột Tracking + URL Label, mỗi carton một dòng. Có thể dán trực tiếp vào ô Tracking đầu tiên.</span></div>
       <textarea value={quickPaste} onChange={e=>setQuickPaste(e.target.value)} placeholder={"TRACKING-001\thttps://.../label-001.pdf\nTRACKING-002\thttps://.../label-002.pdf"}/>
       <button className="secondaryBtn" disabled={!quickPaste.trim()||!rows.length} onClick={applyQuickPaste}>Áp dụng vào sheet</button>
-    </div>
+    </div>}
     <div className="bulkSheetScroll"><table><thead><tr><th>Chọn</th><th>DMD ID</th><th>Client Order ID</th><th>Client</th><th>Người nhận</th><th>Template</th><th>Carton</th><th>Service</th><th>Sub-Service (Order)</th><th>Supplier (Order)</th><th>Số lô (Order)</th><th>Tracking</th><th>URL Label</th></tr></thead>
       <tbody>{orderGroups.map((group,groupIndex)=>group.map((row,rowIndex)=>{
         const index=rows.indexOf(row);
@@ -355,16 +359,16 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
           {rowIndex===0&&<td rowSpan={group.length} className="orderLevelField"><input type="checkbox" checked={selectedOrders.includes(row.order_pk)} onChange={()=>toggleOrder(row.order_pk)}/></td>}
           <td><b>{row.system_order_code}</b></td>
           <td>{row.client_order_id}</td><td>{row.customer}</td><td>{row.recipient_name}</td>
-          {rowIndex===0&&<td rowSpan={group.length} className="orderLevelField"><span className={"templateState "+row.purchase_status.toLowerCase()}>{row.purchase_status==="READY"?"Ready":row.purchase_status==="MISSING_DATA"?"Thiếu dữ liệu":row.purchase_status==="CHECK_AFTER_SAVE"?"Cần lưu lại":"Chưa có Template"}</span>{row.purchase_issue&&<small>{row.purchase_issue}</small>}</td>}
+          {rowIndex===0&&<td rowSpan={group.length} className="orderLevelField">{(()=>{const status=mode==="MANIFEST"?row.manifest_status:row.purchase_status;const issue=mode==="MANIFEST"?row.manifest_issue:row.purchase_issue;return <><span className={"templateState "+String(status||"MISSING_TEMPLATE").toLowerCase()}>{status==="READY"?"Ready":status==="MISSING_DATA"?"Thiếu dữ liệu":status==="CHECK_AFTER_SAVE"?"Cần lưu lại":"Chưa có Template"}</span>{issue&&<small>{issue}</small>}</>})()}</td>}
           <td>{row.carton_slot}/{row.carton_count}</td>
           <td>{row.service}</td>
           {rowIndex===0&&<>
-            <td rowSpan={group.length} className="orderLevelField"><label><span>Áp dụng toàn Order</span><select value={row.sub_service} onChange={e=>updateOrder(row.order_pk,"sub_service",e.target.value)}><option value="">Không có</option>{subsFor(row.service).map(item=><option key={item.id}>{item.value}</option>)}</select></label></td>
-            <td rowSpan={group.length} className="orderLevelField"><label><span>Áp dụng toàn Order</span><select value={row.supplier} onChange={e=>updateOrder(row.order_pk,"supplier",e.target.value)}><option value="">Chọn Supplier</option>{suppliers.map(item=><option key={item.id}>{item.value}</option>)}</select></label></td>
-            <td rowSpan={group.length} className="orderLevelField"><label><span>Áp dụng toàn Order</span><input type="number" min="1" value={row.expected_lot_count} onChange={e=>updateOrder(row.order_pk,"expected_lot_count",e.target.value)}/></label></td>
+            <td rowSpan={group.length} className="orderLevelField"><label><span>Áp dụng toàn Order</span><select disabled={mode==="MANIFEST"} value={row.sub_service} onChange={e=>updateOrder(row.order_pk,"sub_service",e.target.value)}><option value="">Không có</option>{subsFor(row.service).map(item=><option key={item.id}>{item.value}</option>)}</select></label></td>
+            <td rowSpan={group.length} className="orderLevelField"><label><span>Áp dụng toàn Order</span><select disabled={mode==="MANIFEST"} value={row.supplier} onChange={e=>updateOrder(row.order_pk,"supplier",e.target.value)}><option value="">Chọn Supplier</option>{suppliers.map(item=><option key={item.id}>{item.value}</option>)}</select></label></td>
+            <td rowSpan={group.length} className="orderLevelField"><label><span>Áp dụng toàn Order</span><input disabled={mode==="MANIFEST"} type="number" min="1" value={row.expected_lot_count} onChange={e=>updateOrder(row.order_pk,"expected_lot_count",e.target.value)}/></label></td>
           </>}
-          <td><input value={row.tracking} disabled={Boolean(row.tracking_id)} onPaste={e=>pasteTracking(e,index)} onChange={e=>update(index,"tracking",e.target.value)}/></td>
-          <td><input value={row.label_url} onChange={e=>update(index,"label_url",e.target.value)}/></td>
+          <td><input value={row.tracking} disabled={mode==="MANIFEST"||Boolean(row.tracking_id)} onPaste={e=>pasteTracking(e,index)} onChange={e=>update(index,"tracking",e.target.value)}/></td>
+          <td><input value={row.label_url} disabled={mode==="MANIFEST"} onChange={e=>update(index,"label_url",e.target.value)}/></td>
         </tr>;
       }))}</tbody>
     </table></div>

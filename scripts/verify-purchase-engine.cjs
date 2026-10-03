@@ -8,6 +8,7 @@ const ExcelJS=require("exceljs");
 const root=path.resolve(__dirname,"..");
 const dbPath=process.env.DMD_VERIFY_DB||path.join(os.tmpdir(),"dmd-purchase-engine-"+process.pid+".db");
 const templatePath=path.join(os.tmpdir(),"dmd-purchase-template-"+process.pid+".xlsx");
+const manifestPath=path.join(os.tmpdir(),"dmd-manifest-template-"+process.pid+".xlsx");
 process.env.DMD_DB_PATH=dbPath;
 process.env.NODE_ENV="test";
 for(const suffix of ["","-shm","-wal"])fs.rmSync(dbPath+suffix,{force:true});
@@ -31,7 +32,7 @@ const {createUser}=require(path.join(root,"src/lib/auth.ts"));
 const {upsertOrder,addSupplierCost}=require(path.join(root,"src/lib/finance.ts"));
 const {saveOrderShipmentStructure,validatePurchaseReadiness}=require(path.join(root,"src/lib/order-shipments.ts"));
 const {addOrderTracking}=require(path.join(root,"src/lib/order-operations.ts"));
-const {generatePurchaseFiles,scanPurchaseWorkbook,genericPurchaseRows,missingRoutePlaceholders}=require(path.join(root,"src/lib/purchase-templates.ts"));
+const {generatePurchaseFiles,generateManifestFiles,scanPurchaseWorkbook,genericPurchaseRows,missingRoutePlaceholders,validateManifestReadiness}=require(path.join(root,"src/lib/purchase-templates.ts"));
 const {listOrderEvents,publishPublicNote}=require(path.join(root,"src/lib/order-audit.ts"));
 
 let checks=0;
@@ -55,7 +56,7 @@ async function main(){
     client_user_id:client.id,created_at:"03/10/2026",order_id:"PURCHASE-001",customer:"Client",sales:"Sales",
     service:"ePacket",sub_service:"T11",supplier:"KILOSHIP",item:"Legacy summary",material:"Mixed",carton_count:2,
     weight:5,length:30,width:20,height:10,declared_value:16,sales_price:100,recipient_name:"Jane Doe",
-    address1:"1 Main St",city:"Austin",state:"TX",zip:"78701",country:"US",phone:"+1 555 0100",
+    address1:"1 Main St",address2:"Apt 2",city:"Austin",state:"TX",zip:"78701",country:"US",phone:"+1 555 0100",recipient_email:"jane@example.com",
   });
   const structure=saveOrderShipmentStructure(order.id,{lot_count:2,cartons:[
     {carton_number:1,lot_number:1,weight:2,length:20,width:10,height:10,items:[
@@ -71,6 +72,7 @@ async function main(){
   const cartons=structure.cartons;
   addOrderTracking({orderId:order.id,tracking:"LOT-1-TRACK",labelUrl:"https://labels.test/1.pdf",cartonId:Number(cartons[0].id),actorId:admin.id});
   addOrderTracking({orderId:order.id,tracking:"LOT-2-TRACK",labelUrl:"https://labels.test/2.pdf",cartonId:Number(cartons[1].id),actorId:admin.id});
+  assert(validateManifestReadiness(order.id).ready,"manifest should be ready once every carton has an active Tracking");
   addSupplierCost({supplier:"KILOSHIP",service:"ePacket",sub_service:"T11",tracking:"LOT-1-TRACK",total_net_cost:10,source_key:"purchase-cost-1"});
   addSupplierCost({supplier:"KILOSHIP",service:"ePacket",sub_service:"T11",tracking:"LOT-2-TRACK",total_net_cost:20,extra_surcharge:5,import_tax:7,surcharge_type:"Remote area",source_key:"purchase-cost-2"});
 
@@ -96,12 +98,24 @@ async function main(){
   assert(scan.unknown.length===0&&scan.placeholders.length===10,"template scanner should accept order and route placeholders");
   assert(missingRoutePlaceholders(scan.placeholders,{service_code:"EP_T11"}).includes("route.sender_address"),"template validation should catch missing route variables");
 
+  const manifestWorkbook=new ExcelJS.Workbook();
+  const manifestSheet=manifestWorkbook.addWorksheet("Manifest");
+  manifestSheet.addRow(["Index","Email","Address","Weight gram","Tracking","Item","Qty","Service","Sender"]);
+  manifestSheet.addRow(["{{row.index}}","{{order.recipient_email}}","{{order.recipient_address}}","{{carton.weight_g}}","{{carton.tracking}}","{{item_description}}","{{quantity}}","{{route.service_code}}","{{route.sender_address}}"]);
+  await manifestWorkbook.xlsx.writeFile(manifestPath);
+  const manifestScan=await scanPurchaseWorkbook(fs.readFileSync(manifestPath));
+  assert(manifestScan.unknown.length===0&&manifestScan.placeholders.length===9,"manifest scanner should accept row index, email and gram placeholders");
+
   const routeVariables={service_code:"EP_T11",sender_address:"DMD Warehouse, Hanoi"};
   const routeId=Number(db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier,route_variables_json,created_by_user_id) VALUES (?,?,?,?,?)").run("ePacket","T11","KILOSHIP",JSON.stringify(routeVariables),admin.id).lastInsertRowid);
   const templateId=Number(db.prepare("INSERT INTO purchase_templates(route_config_id,name,output_mode,repeat_sections_json,created_by_user_id) VALUES (?,?,?,?,?)")
     .run(routeId,"Invoice per Lot","PER_LOT",JSON.stringify([{sheet:"Invoice",row:2,scope:"CARTON_ITEM"}]),admin.id).lastInsertRowid);
   db.prepare("INSERT INTO purchase_template_versions(template_id,version_number,original_filename,stored_path,status,placeholder_map_json,validation_json,created_by_user_id,activated_at) VALUES (?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)")
     .run(templateId,1,"invoice.xlsx",templatePath,"ACTIVE",JSON.stringify(scan.placeholders),JSON.stringify({errors:[],warnings:[]}),admin.id);
+  const manifestTemplateId=Number(db.prepare("INSERT INTO purchase_templates(route_config_id,name,template_kind,output_mode,repeat_sections_json,created_by_user_id) VALUES (?,?,?,?,?,?)")
+    .run(routeId,"Manifest","MANIFEST","MULTI_ORDER",JSON.stringify([{sheet:"Manifest",row:2,scope:"CARTON"}]),admin.id).lastInsertRowid);
+  db.prepare("INSERT INTO purchase_template_versions(template_id,version_number,original_filename,stored_path,status,placeholder_map_json,validation_json,created_by_user_id,activated_at) VALUES (?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)")
+    .run(manifestTemplateId,1,"manifest.xlsx",manifestPath,"ACTIVE",JSON.stringify(manifestScan.placeholders),JSON.stringify({errors:[],warnings:[]}),admin.id);
 
   const generated=await generatePurchaseFiles([order.id]);
   assert(generated.missing.length===0&&generated.files.length===2,"PER_LOT template should generate one file for each Lot");
@@ -111,8 +125,16 @@ async function main(){
   assert(flattened.some(value=>value.includes("SKU-B")&&!value.includes("SKU-A")),"Lot 2 file should contain only Lot 2 goods");
   assert(flattened.every(value=>value.includes("16")),"each Lot file should retain the computed Order total");
   assert(flattened.every(value=>value.includes("EP_T11")&&value.includes("DMD Warehouse, Hanoi")),"route variables should render into every generated workbook");
+  const manifestGenerated=await generateManifestFiles([order.id]);
+  assert(manifestGenerated.missing.length===0&&manifestGenerated.files.length===1,"MULTI_ORDER manifest should generate one file");
+  const manifestRendered=await (async()=>{const book=new ExcelJS.Workbook();await book.xlsx.load(manifestGenerated.files[0].buffer);return book.getWorksheet("Manifest").getSheetValues().map(row=>Array.isArray(row)?row.slice(1):row)})();
+  const manifestText=JSON.stringify(manifestRendered);
+  assert(manifestText.includes("jane@example.com")&&manifestText.includes("1 Main St Apt 2"),"manifest should render recipient email and combined address");
+  assert(manifestText.includes("2000")&&manifestText.includes("3000"),"manifest should convert carton kg to grams");
+  assert(manifestText.includes("LOT-1-TRACK")&&manifestText.includes("LOT-2-TRACK"),"manifest should include Tracking for each carton");
+  assert(manifestText.includes("[1,")||manifestText.includes(",1,"),"manifest should render a sequential row index");
   const generic=genericPurchaseRows([order.id]);
-  assert(generic.length===2&&generic[0].order_total_manufacturing_value===16,"generic fallback should expose carton-item rows and computed totals");
+  assert(generic.length===2&&generic[0].order_total_manufacturing_value===16&&generic[0].recipient_email==="jane@example.com","generic fallback should expose carton-item rows, computed totals and recipient email");
 
   console.log("PURCHASE ENGINE PASS ("+checks+" assertions)");
 }
@@ -121,4 +143,5 @@ main().catch(error=>{console.error(error.stack||error);process.exitCode=1}).fina
   try{db.close()}catch{}
   for(const suffix of ["","-shm","-wal"])fs.rmSync(dbPath+suffix,{force:true});
   fs.rmSync(templatePath,{force:true});
+  fs.rmSync(manifestPath,{force:true});
 });

@@ -115,6 +115,7 @@ function importOrders(rows: Row[][], actorId?:number) {
         zip: text(pick(row, headers, "ZIP*")),
         country: text(pick(row, headers, "Nước*")),
         phone: text(pick(row, headers, "Điện thoại")),
+        recipient_email: text(pick(row,headers,"Email người nhận")||pick(row,headers,"Email")),
       }) as { id:number };
       if (clientAccount) {
         db.prepare("UPDATE orders SET client_user_id=?,sales_user_id=?,sales=? WHERE id=?")

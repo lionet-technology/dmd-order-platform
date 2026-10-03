@@ -179,8 +179,8 @@ type SheetColumn = { key:string; label:string; width?:number; type?:"text"|"numb
 function QuickOrderSheet({role,clients,enums,onDone,edit}:{role:Role;clients:User[];enums:EnumRow[];onDone:()=>void;edit?:RowData|null}) {
   const blankRow=():SheetRow=>({
     client_user_id:"",customer:"",order_id:"",service:"",sub_service:"",item:"",material:"",
-    carton_count:"",weight:"",length:"",width:"",height:"",manual_volume:"",declared_value:"",recipient_name:"",city:"",state:"",
-    zip:"",country:"",note:"",internal_note:"",discount:"",discount_note:"",est_net_cost:"",base_cost:"",retail:"",sales_price:"",surcharge:"",import_tax:"",
+    carton_count:"",weight:"",length:"",width:"",height:"",manual_volume:"",declared_value:"",recipient_name:"",address1:"",address2:"",phone:"",recipient_email:"",city:"",state:"",
+    zip:"",country:"",note:"",internal_note:"",discount:"",discount_note:"",est_net_cost:"",base_cost:"",retail:"",sales_price:"",surcharge:"",import_tax:"", 
   });
   const editRow=():SheetRow=>{
     const row=blankRow();
@@ -224,7 +224,8 @@ function QuickOrderSheet({role,clients,enums,onDone,edit}:{role:Role;clients:Use
     {key:"length",label:"Dài cm",width:76,type:"number"},{key:"width",label:"Rộng cm",width:76,type:"number"},
     {key:"height",label:"Cao cm",width:76,type:"number"},{key:"manual_volume",label:"Thể tích cm³",width:105,type:"number"},{key:"declared_value",label:"Giá trị SX USD",width:105,type:"number"},
     {key:"discount",label:"Discount %",width:88,type:"number"},{key:"discount_note",label:"Lý do discount",width:165},
-    {key:"recipient_name",label:"Người nhận",width:145},{key:"city",label:"Thành phố",width:115},{key:"state",label:"Bang",width:90},{key:"zip",label:"ZIP",width:90},
+    {key:"recipient_name",label:"Người nhận",width:145},{key:"phone",label:"Điện thoại",width:125},{key:"recipient_email",label:"Email người nhận",width:170},
+    {key:"address1",label:"Địa chỉ 1",width:200},{key:"address2",label:"Địa chỉ 2",width:180},{key:"city",label:"Thành phố",width:115},{key:"state",label:"Bang",width:90},{key:"zip",label:"ZIP",width:90},
     {key:"country",label:"Nước",width:100,type:"combo",options:countryOptions},
     {key:"internal_note",label:"Note Private",width:190},
   ];

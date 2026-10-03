@@ -5,7 +5,7 @@ import { canonicalEnumValue } from "@/lib/enums";
 import { addOrderTracking,normalizeTracking,updateOrderTracking } from "@/lib/order-operations";
 import { ensureOrderShipmentStructure } from "@/lib/order-shipments";
 import { validatePurchaseReadiness } from "@/lib/order-shipments";
-import { resolvePurchaseTemplate } from "@/lib/purchase-templates";
+import { resolveManifestTemplate,resolvePurchaseTemplate,validateManifestReadiness } from "@/lib/purchase-templates";
 import { logAdminEvent,logOrderEvent } from "@/lib/order-audit";
 import { readSheet } from "read-excel-file/node";
 import writeXlsxFile from "write-excel-file/node";
@@ -16,7 +16,7 @@ type QueueRow={
   order_pk:number;system_order_code:string;client_order_id:string;customer:string;recipient_name:string;
   service:string;sub_service:string;carton_count:number;carton_slot:number;carton_id:number|null;supplier:string;
   expected_lot_count:number;tracking_id:number|null;tracking:string;label_url:string;
-  purchase_status:string;purchase_issue:string;
+  purchase_status:string;purchase_issue:string;manifest_status:string;manifest_issue:string;
 };
 
 function baseOrders(service="",subService="",supplier=""){
@@ -30,19 +30,25 @@ function baseOrders(service="",subService="",supplier=""){
   ).all(...params) as Array<Record<string,unknown>>;
 }
 
-function queueRows(service="",subService="",supplier=""){
+function queueRows(service="",subService="",supplier="",mode:"PURCHASE"|"MANIFEST"="PURCHASE"){
   const rows:QueueRow[]=[];
   for(const order of baseOrders(service,subService,supplier)){
     const trackings=db.prepare("SELECT * FROM order_trackings WHERE order_id=? AND status='ACTIVE' ORDER BY id").all(order.id) as Array<Record<string,unknown>>;
     const cartonCount=Math.max(1,Number(order.carton_count||1));
-    const complete=trackings.filter(row=>String(row.label_url||"").trim()).length>=cartonCount&&trackings.length>=cartonCount;
-    if(complete)continue;
+    const trackingComplete=trackings.length>=cartonCount;
+    const purchaseComplete=trackingComplete&&trackings.filter(row=>String(row.label_url||"").trim()).length>=cartonCount;
+    if(mode==="PURCHASE"&&purchaseComplete)continue;
+    if(mode==="MANIFEST"&&!trackings.length)continue;
     const count=Math.max(cartonCount,trackings.length);
     ensureOrderShipmentStructure(Number(order.id));
     const template=resolvePurchaseTemplate(order);
     const readiness=validatePurchaseReadiness(Number(order.id));
     const purchaseStatus=!template?"MISSING_TEMPLATE":readiness.ready?"READY":"MISSING_DATA";
     const purchaseIssue=!template?"Chưa có Purchase Template":readiness.issues.map(issue=>issue.message).join(" ");
+    const manifestTemplate=resolveManifestTemplate(order);
+    const manifestReadiness=validateManifestReadiness(Number(order.id));
+    const manifestStatus=!manifestTemplate?"MISSING_TEMPLATE":manifestReadiness.ready?"READY":"MISSING_DATA";
+    const manifestIssue=!manifestTemplate?"Chưa có Manifest Template":manifestReadiness.issues.map(issue=>issue.message).join(" ");
     const cartons=db.prepare("SELECT id FROM order_cartons WHERE order_id=? ORDER BY carton_number").all(order.id) as Array<{id:number}>;
     for(let index=0;index<count;index++){
       const carton=cartons[index];
@@ -53,7 +59,7 @@ function queueRows(service="",subService="",supplier=""){
         sub_service:String(order.sub_service||""),carton_count:cartonCount,carton_slot:index+1,carton_id:carton?.id||null,supplier:String(order.supplier||""),
         expected_lot_count:Math.max(1,Number(order.expected_lot_count||1)),tracking_id:tracking?Number(tracking.id):null,
         tracking:String(tracking?.tracking||""),label_url:String(tracking?.label_url||""),
-        purchase_status:purchaseStatus,purchase_issue:purchaseIssue,
+        purchase_status:purchaseStatus,purchase_issue:purchaseIssue,manifest_status:manifestStatus,manifest_issue:manifestIssue,
       });
     }
   }
@@ -69,7 +75,8 @@ export async function GET(req:NextRequest){
   const service=String(req.nextUrl.searchParams.get("service")||"");
   const subService=String(req.nextUrl.searchParams.get("sub_service")||"");
   const supplier=String(req.nextUrl.searchParams.get("supplier")||"");
-  const rows=queueRows(service,subService,supplier);
+  const mode=String(req.nextUrl.searchParams.get("mode")||"PURCHASE").toUpperCase()==="MANIFEST"?"MANIFEST":"PURCHASE";
+  const rows=queueRows(service,subService,supplier,mode);
   if(req.nextUrl.searchParams.get("format")==="xlsx"){
     const headers=["DMD ID","Client Order ID","Client","Người nhận","Service","Sub-Service","Số lượng Carton","Carton số","Supplier","Số lượng Lô","Tracking","URL Label"];
     const excelRows=[
@@ -110,7 +117,7 @@ export async function PUT(req:NextRequest){
         supplier:text(cell(source,headers,"Supplier"))||String(order.supplier||""),
         expected_lot_count:Math.max(1,Number(cell(source,headers,"Số lượng Lô")||order.expected_lot_count||1)),
         tracking_id:existing?.id||null,tracking:trackingValue,label_url:text(cell(source,headers,"URL Label")),
-        purchase_status:"",purchase_issue:"",
+        purchase_status:"",purchase_issue:"",manifest_status:"",manifest_issue:"",
       });
     }
     return NextResponse.json({rows,total:rows.length});

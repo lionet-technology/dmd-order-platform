@@ -28,8 +28,11 @@ export async function POST(req:NextRequest){
     const routeId=Number(form.get("route_config_id")||0);
     const route=db.prepare("SELECT * FROM service_route_configs WHERE id=? AND active=1").get(routeId) as Record<string,unknown>|undefined;
     if(!route)throw new Error("Service Route không hợp lệ hoặc đã inactive.");
+    const templateKind=String(form.get("template_kind")||"PURCHASE").toUpperCase();
+    if(!["PURCHASE","MANIFEST"].includes(templateKind))throw new Error("Loại template không hợp lệ.");
+    const templateLabel=templateKind==="MANIFEST"?"Manifest Template":"Purchase Template";
     const name=String(form.get("name")||"").trim();
-    if(!name)throw new Error("Tên Purchase Template là bắt buộc.");
+    if(!name)throw new Error("Tên "+templateLabel+" là bắt buộc.");
     const outputMode=String(form.get("output_mode")||"").toUpperCase();
     if(!["MULTI_ORDER","PER_ORDER","PER_LOT"].includes(outputMode))throw new Error("Output mode không hợp lệ.");
     let rawSections:unknown=[];
@@ -53,19 +56,19 @@ export async function POST(req:NextRequest){
     let templateId=Number(form.get("template_id")||0);
     const tx=db.transaction(()=>{
       if(templateId){
-        const existing=db.prepare("SELECT id FROM purchase_templates WHERE id=? AND route_config_id=?").get(templateId,routeId);
-        if(!existing)throw new Error("Purchase Template không thuộc Service Route này.");
-        db.prepare("UPDATE purchase_templates SET name=?,output_mode=?,repeat_sections_json=?,updated_by_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
-          .run(name,outputMode,JSON.stringify(sections),auth.user.id,templateId);
+        const existing=db.prepare("SELECT id FROM purchase_templates WHERE id=? AND route_config_id=? AND template_kind=?").get(templateId,routeId,templateKind);
+        if(!existing)throw new Error(templateLabel+" không thuộc Service Route này.");
+        db.prepare("UPDATE purchase_templates SET name=?,template_kind=?,output_mode=?,repeat_sections_json=?,updated_by_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+          .run(name,templateKind,outputMode,JSON.stringify(sections),auth.user.id,templateId);
       }else{
-        const existing=db.prepare("SELECT id FROM purchase_templates WHERE route_config_id=? AND active=1").get(routeId) as {id:number}|undefined;
+        const existing=db.prepare("SELECT id FROM purchase_templates WHERE route_config_id=? AND template_kind=? AND active=1").get(routeId,templateKind) as {id:number}|undefined;
         if(existing){
           templateId=existing.id;
-          db.prepare("UPDATE purchase_templates SET name=?,output_mode=?,repeat_sections_json=?,updated_by_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
-            .run(name,outputMode,JSON.stringify(sections),auth.user.id,templateId);
+          db.prepare("UPDATE purchase_templates SET name=?,template_kind=?,output_mode=?,repeat_sections_json=?,updated_by_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+            .run(name,templateKind,outputMode,JSON.stringify(sections),auth.user.id,templateId);
         }else{
-          const result=db.prepare("INSERT INTO purchase_templates(route_config_id,name,output_mode,repeat_sections_json,created_by_user_id,updated_by_user_id) VALUES (?,?,?,?,?,?)")
-            .run(routeId,name,outputMode,JSON.stringify(sections),auth.user.id,auth.user.id);
+          const result=db.prepare("INSERT INTO purchase_templates(route_config_id,name,template_kind,output_mode,repeat_sections_json,created_by_user_id,updated_by_user_id) VALUES (?,?,?,?,?,?,?)")
+            .run(routeId,name,templateKind,outputMode,JSON.stringify(sections),auth.user.id,auth.user.id);
           templateId=Number(result.lastInsertRowid);
         }
       }
@@ -80,7 +83,7 @@ export async function POST(req:NextRequest){
     });
     const versionId=tx.immediate();
     const version=db.prepare("SELECT * FROM purchase_template_versions WHERE id=?").get(versionId);
-    return NextResponse.json({template_id:templateId,version,...scan,sections,errors,warnings},{status:201});
+    return NextResponse.json({template_id:templateId,template_kind:templateKind,version,...scan,sections,errors,warnings},{status:201});
   }catch(error){
     return NextResponse.json({error:error instanceof Error?error.message:"Không thể upload Purchase Template."},{status:400});
   }
