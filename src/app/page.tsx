@@ -780,6 +780,11 @@ function SearchBar({value,onChange,placeholder}:{value:string;onChange:(v:string
   return <div className="searchBox"><span>⌕</span><input value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}/>{value&&<button onClick={()=>onChange("")}>×</button>}</div>;
 }
 
+function OrderSearchBar({value,onChange}:{value:string;onChange:(v:string)=>void}) {
+  const count=value.split(/[\n,]+/).map(term=>term.trim()).filter(Boolean).length;
+  return <div className="searchBox orderSearchBox"><span>⌕</span><textarea rows={1} value={value} onChange={e=>onChange(e.target.value)} placeholder="Tìm Order ID, Tracking, khách hàng, dịch vụ… Dán nhiều Tracking / Client Order ID bằng dòng hoặc dấu phẩy."/>{count>1&&<em>{count} mã</em>}{value&&<button onClick={()=>onChange("")}>×</button>}</div>;
+}
+
 function Modal({title,onClose,children,size="wide"}:{title:string;onClose:()=>void;children:React.ReactNode;size?:"wide"|"compact"|"fullscreen"}) {
   const panelClass=size==="compact"?"modalPanel compactModal":size==="fullscreen"?"modalPanel fullscreenModal":"modalPanel";
   return <div className={size==="fullscreen"?"modalBackdrop fullscreenBackdrop":"modalBackdrop"} onMouseDown={e=>{if(e.currentTarget===e.target)onClose()}}>
@@ -1062,7 +1067,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
             actions={role!=="CLIENT"?<><button className="secondaryBtn" onClick={()=>setImportKind(role==="ADMIN"?"orders":"sales_orders")}>⇩ Import</button>{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkTracking(true)}>▦ Mua đơn hàng loạt</button>}{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkReplacement(true)}>⇄ Đổi Tracking</button>}<button className="primaryBtn" onClick={()=>openEntry("order")}>＋ Tạo Order</button></>:undefined}/>
           <div className="panel dataPanel">
             <div className="dataToolbar orderToolbar">
-              <SearchBar value={search} onChange={setSearch} placeholder="Tìm Order ID, Tracking, khách hàng, dịch vụ..."/>
+              <OrderSearchBar value={search} onChange={setSearch}/>
               <div className="orderFilters">
                 <SmartSelect compact allowCustom={false} value={orderFilters.status} onChange={v=>setOrderFilters(x=>({...x,status:v}))} options={[{value:"",label:"Mọi trạng thái"},{value:"PENDING_PURCHASE",label:"Chờ mua đơn"},{value:"PURCHASING",label:"Đang mua đơn"},{value:"PURCHASED",label:"Đã mua đơn"},{value:"RECONCILED",label:"Đã đối soát"},{value:"CANCELLED",label:"Đã huỷ"}]}/>
                 <SmartSelect compact value={orderFilters.service} onChange={v=>setOrderFilters(x=>({...x,service:v}))} allowCustom={false} options={[{value:"",label:"Mọi dịch vụ"},...enumOptions(enums,"SERVICE")]}/>

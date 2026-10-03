@@ -19,33 +19,20 @@ type QueueRow={
   purchase_status:string;purchase_issue:string;
 };
 
-function searchTerms(value:string){
-  return [...new Set(value.split(/[\n,]+/).map(item=>item.trim()).filter(Boolean))];
-}
-
-function baseOrders(service="",subService="",supplier="",query=""){
+function baseOrders(service="",subService="",supplier=""){
   const where=["COALESCE(o.workflow_status,'')<>'CANCELLED'"];
   const params:unknown[]=[];
   if(service){where.push("o.service=?");params.push(service)}
   if(subService){where.push("o.sub_service=?");params.push(subService)}
   if(supplier){where.push("o.supplier=?");params.push(supplier)}
-  const terms=searchTerms(query);
-  if(terms.length){
-    const clauses:string[]=[];
-    for(const term of terms){
-      clauses.push("(lower(COALESCE(o.system_order_code,'')) LIKE lower(?) OR lower(COALESCE(o.order_id,'')) LIKE lower(?) OR EXISTS (SELECT 1 FROM order_trackings ot WHERE ot.order_id=o.id AND ot.normalized_tracking=?))");
-      params.push("%"+term+"%","%"+term+"%",normalizeTracking(term));
-    }
-    where.push("("+clauses.join(" OR ")+")");
-  }
   return db.prepare(
     "SELECT o.* FROM orders o WHERE "+where.join(" AND ")+" ORDER BY COALESCE(o.created_at,o.updated_at) ASC,o.id ASC"
   ).all(...params) as Array<Record<string,unknown>>;
 }
 
-function queueRows(service="",subService="",supplier="",query=""){
+function queueRows(service="",subService="",supplier=""){
   const rows:QueueRow[]=[];
-  for(const order of baseOrders(service,subService,supplier,query)){
+  for(const order of baseOrders(service,subService,supplier)){
     const trackings=db.prepare("SELECT * FROM order_trackings WHERE order_id=? AND status='ACTIVE' ORDER BY id").all(order.id) as Array<Record<string,unknown>>;
     const cartonCount=Math.max(1,Number(order.carton_count||1));
     const complete=trackings.filter(row=>String(row.label_url||"").trim()).length>=cartonCount&&trackings.length>=cartonCount;
@@ -82,8 +69,7 @@ export async function GET(req:NextRequest){
   const service=String(req.nextUrl.searchParams.get("service")||"");
   const subService=String(req.nextUrl.searchParams.get("sub_service")||"");
   const supplier=String(req.nextUrl.searchParams.get("supplier")||"");
-  const query=String(req.nextUrl.searchParams.get("q")||"");
-  const rows=queueRows(service,subService,supplier,query);
+  const rows=queueRows(service,subService,supplier);
   if(req.nextUrl.searchParams.get("format")==="xlsx"){
     const headers=["DMD ID","Client Order ID","Client","Người nhận","Service","Sub-Service","Số lượng Carton","Carton số","Supplier","Số lượng Lô","Tracking","URL Label"];
     const excelRows=[

@@ -182,7 +182,6 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
   const [service,setService]=useState("");
   const [subService,setSubService]=useState("");
   const [supplierFilter,setSupplierFilter]=useState("");
-  const [query,setQuery]=useState("");
   const [selectedOrders,setSelectedOrders]=useState<number[]>([]);
   const [quickPaste,setQuickPaste]=useState("");
   const [busy,setBusy]=useState(false);
@@ -198,7 +197,6 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
       if(service)params.set("service",service);
       if(subService)params.set("sub_service",subService);
       if(supplierFilter)params.set("supplier",supplierFilter);
-      if(query.trim())params.set("q",query);
       const body=await json("/api/orders/tracking-queue?"+params);
       const nextRows=body.rows||[];
       setRows(nextRows);
@@ -206,8 +204,8 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
       setSelectedOrders(prev=>prev.filter(id=>ids.has(id)));
     }catch(error){setMessage("Lỗi: "+(error as Error).message)}
     finally{setBusy(false)}
-  },[service,subService,supplierFilter,query]);
-  useEffect(()=>{const id=setTimeout(()=>void load(),250);return()=>clearTimeout(id)},[load]);
+  },[service,subService,supplierFilter]);
+  useEffect(()=>{void load()},[load]);
 
   function update(index:number,key:keyof QueueRow,value:string){
     setRows(prev=>prev.map((row,i)=>i===index?{
@@ -320,7 +318,6 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
   if(service)params.set("service",service);
   if(subService)params.set("sub_service",subService);
   if(supplierFilter)params.set("supplier",supplierFilter);
-  if(query.trim())params.set("q",query);
   params.set("format","xlsx");
   const orderGroups=Array.from(rows.reduce((groups,row)=>{
     const group=groups.get(row.order_pk)||[];group.push(row);groups.set(row.order_pk,group);return groups;
@@ -331,7 +328,6 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
 
   return <div className="bulkSheet">
     <div className="bulkSheetToolbar"><div><b>Mua đơn hàng loạt</b><span>1. Chọn Order → 2. Xuất file mua đơn → 3. Nhập Tracking/Label theo carton.</span></div><div className="bulkFilters">
-      <label className="bulkSearchField"><span>Tìm Order hàng loạt</span><textarea value={query} onChange={e=>setQuery(e.target.value)} placeholder={"Tracking / Client Order ID / DMD ID\nDán nhiều mã, cách nhau bằng xuống dòng hoặc dấu phẩy"}/>{query.trim()&&<small>{query.split(/[\n,]+/).map(value=>value.trim()).filter(Boolean).length} mã tìm kiếm</small>}</label>
       <label className="bulkFilterField"><span>Dịch vụ</span><select value={service} onChange={e=>{setService(e.target.value);setSubService("")}}><option value="">Tất cả dịch vụ</option>{services.map(row=><option key={row.id}>{row.value}</option>)}</select></label>
       <label className="bulkFilterField"><span>Sub-Service</span><select value={subService} onChange={e=>setSubService(e.target.value)}><option value="">Tất cả Sub-Service</option>{subs.map(row=><option key={row.id}>{row.value}</option>)}</select></label>
       <label className="bulkFilterField"><span>Supplier</span><select value={supplierFilter} onChange={e=>setSupplierFilter(e.target.value)}><option value="">Tất cả Supplier</option>{suppliers.map(row=><option key={row.id}>{row.value}</option>)}</select></label>

@@ -23,9 +23,20 @@ export async function GET(req: NextRequest) {
   }
 
   if(q){
-    where.push("(system_order_code LIKE ? OR order_id LIKE ? OR tracking LIKE ? OR customer LIKE ? OR recipient_name LIKE ? OR service LIKE ? OR sales LIKE ? OR EXISTS(SELECT 1 FROM order_trackings ot WHERE ot.order_id=orders.id AND ot.tracking LIKE ?))");
-    const like="%"+q+"%";
-    params.push(like,like,like,like,like,like,like,like);
+    const bulkTerms=[...new Set(q.split(/[\n,]+/).map(term=>term.trim()).filter(Boolean))];
+    if(bulkTerms.length>1){
+      const clauses:string[]=[];
+      for(const term of bulkTerms){
+        const normalized=term.toUpperCase().replace(/[\s-]+/g,"");
+        clauses.push("(lower(COALESCE(system_order_code,''))=lower(?) OR lower(COALESCE(order_id,''))=lower(?) OR UPPER(REPLACE(REPLACE(COALESCE(tracking,''),' ',''),'-',''))=? OR EXISTS(SELECT 1 FROM order_trackings ot WHERE ot.order_id=orders.id AND ot.normalized_tracking=?))");
+        params.push(term,term,normalized,normalized);
+      }
+      where.push("("+clauses.join(" OR ")+")");
+    }else{
+      where.push("(system_order_code LIKE ? OR order_id LIKE ? OR tracking LIKE ? OR customer LIKE ? OR recipient_name LIKE ? OR service LIKE ? OR sales LIKE ? OR EXISTS(SELECT 1 FROM order_trackings ot WHERE ot.order_id=orders.id AND ot.tracking LIKE ?))");
+      const like="%"+q+"%";
+      params.push(like,like,like,like,like,like,like,like);
+    }
   }
   const status=String(req.nextUrl.searchParams.get("status")||"").trim();
   const service=String(req.nextUrl.searchParams.get("service")||"").trim();
