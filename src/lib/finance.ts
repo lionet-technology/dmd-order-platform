@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { validateOrderEnums, validateSupplierCostEnums } from "./enums";
 import { addOrderTracking, findTrackingOwner, matchSupplierCostsForOrder, normalizeTracking } from "./order-operations";
+import { ensureOrderShipmentStructure } from "./order-shipments";
 
 export type OrderInput = {
   id?: number;
@@ -264,10 +265,20 @@ export function upsertOrder(input: OrderInput) {
   if (!orderId && !tracking) throw new Error("Cần Order ID hoặc Tracking.");
 
   const customer = stringValue(input, "customer", existing);
+  const requestedService=String(input.service??existing?.service??"").trim();
+  const primarySetting=clientUserId&&requestedService
+    ? db.prepare("SELECT * FROM client_service_settings WHERE client_user_id=? AND lower(service)=lower(?) AND sub_service='' LIMIT 1").get(clientUserId,requestedService) as {is_enabled:number;discount_percent:number;default_sub_service:string;default_supplier:string}|undefined
+    : undefined;
+  const effectiveSubService=!existing&&!String(input.sub_service??"").trim()&&primarySetting?.default_sub_service
+    ? primarySetting.default_sub_service
+    : input.sub_service;
+  const effectiveSupplier=!existing&&!String(input.supplier??"").trim()&&primarySetting?.default_supplier
+    ? primarySetting.default_supplier
+    : input.supplier;
   const enumValues = validateOrderEnums({
     service: input.service,
-    sub_service: input.sub_service,
-    supplier: input.supplier,
+    sub_service: effectiveSubService,
+    supplier: effectiveSupplier,
     country: input.country,
   }, existing);
   const service = enumValues.service;
@@ -299,6 +310,8 @@ export function upsertOrder(input: OrderInput) {
   const estNet=numericValue(input,"est_net_cost",existing);
   const supplier=enumValues.supplier;
   const setting=clientUserId?db.prepare(`SELECT * FROM client_service_settings WHERE client_user_id=? AND lower(service)=lower(?) AND (lower(sub_service)=lower(?) OR sub_service='') ORDER BY CASE WHEN lower(sub_service)=lower(?) THEN 0 ELSE 1 END LIMIT 1`).get(clientUserId,service,subService,subService) as {is_enabled:number;discount_percent:number}|undefined:undefined;
+  const serviceChanged=!existing||String(existing.service||"").toLowerCase()!==service.toLowerCase();
+  if(clientUserId&&serviceChanged&&!setting)throw new Error("Client này chưa được cấp quyền sử dụng dịch vụ đã chọn.");
   if(setting&&setting.is_enabled===0)throw new Error("Client này đang bị chặn sử dụng dịch vụ đã chọn.");
   const hasDiscount=input.discount!==undefined&&input.discount!==null&&input.discount!=="";
   const defaultDiscount=Number(setting?.discount_percent||0);
@@ -413,7 +426,11 @@ export function upsertOrder(input: OrderInput) {
     id = Number(result.lastInsertRowid);
   }
 
-  if(tracking&&!findTrackingOwner(tracking))addOrderTracking({orderId:id,tracking,labelUrl:payload.label,lotNumber:1,isPrimary:true});
+  ensureOrderShipmentStructure(id);
+  if(tracking&&!findTrackingOwner(tracking)){
+    const carton=db.prepare("SELECT id FROM order_cartons WHERE order_id=? AND carton_number=1").get(id) as {id:number}|undefined;
+    addOrderTracking({orderId:id,tracking,labelUrl:payload.label,lotNumber:1,cartonId:carton?.id||null,isPrimary:true});
+  }
   db.prepare(`
     UPDATE orders
     SET system_order_code=COALESCE(NULLIF(system_order_code,''),'DMD-'||strftime('%Y%m%d',COALESCE(created_at,CURRENT_TIMESTAMP))||'-'||printf('%06d',id))

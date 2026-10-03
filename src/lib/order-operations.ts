@@ -1,5 +1,7 @@
 import { db } from "./db";
 import { trackingReplacementReason } from "./order-rules";
+import { logAdminEvent,publishPublicNote } from "./order-audit";
+import { syncLotCostsForOrder } from "./order-shipments";
 
 const text=(value:unknown)=>String(value??"").trim();
 const money=(value:number)=>Math.round((Number(value||0)+Number.EPSILON)*100)/100;
@@ -9,6 +11,7 @@ export type CostMatchType = "UNKNOWN" | "DIRECT" | "INCLUDED_IN_PARENT" | "NOT_B
 
 export type OrderTracking = {
   id:number; order_id:number; lot_number:number; tracking:string; normalized_tracking:string;
+  carton_id:number|null;
   label_url:string|null; status:TrackingStatus; is_primary:number; cost_match_type:CostMatchType;
   cost_parent_tracking_id:number|null; replaced_by_tracking_id:number|null;
   shipment_status:string;etd_at:string|null;delivered_at:string|null;
@@ -38,7 +41,8 @@ export function publicOrderTracking(row:OrderTracking){
 
 export function appendOrderNote(orderId:number, message:string, internal=false){
   const clean=text(message); if(!clean)return;
-  const column=internal?"internal_note":"public_note";
+  if(!internal)throw new Error("Note công khai phải dùng publishPublicNote() và event type trong allowlist.");
+  const column="internal_note";
   const stamp=new Intl.DateTimeFormat("vi-VN",{timeZone:"Asia/Ho_Chi_Minh",dateStyle:"short",timeStyle:"short"}).format(new Date());
   db.prepare(`UPDATE orders SET ${column}=CASE WHEN COALESCE(${column},'')='' THEN ? ELSE ${column}||char(10)||char(10)||? END,updated_at=CURRENT_TIMESTAMP WHERE id=?`)
     .run(`[${stamp}] ${clean}`,`[${stamp}] ${clean}`,orderId);
@@ -49,26 +53,32 @@ function syncLegacyPrimary(orderId:number){
   db.prepare("UPDATE orders SET tracking=?,label=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(primary?.tracking||null,primary?.label_url||null,orderId);
 }
 
-export function addOrderTracking(input:{orderId:number;tracking:unknown;labelUrl?:unknown;lotNumber?:unknown;actorId?:number|null;isPrimary?:boolean;costMatchType?:CostMatchType;costParentTrackingId?:number|null}){
+export function addOrderTracking(input:{orderId:number;tracking:unknown;labelUrl?:unknown;lotNumber?:unknown;cartonId?:number|null;actorId?:number|null;isPrimary?:boolean;costMatchType?:CostMatchType;costParentTrackingId?:number|null}){
   assertOrderOpen(input.orderId);
   const tracking=text(input.tracking); const normalized=normalizeTracking(tracking);
   if(!normalized)throw new Error("Tracking là bắt buộc.");
   const duplicate=db.prepare("SELECT order_id FROM order_trackings WHERE normalized_tracking=?").get(normalized) as {order_id:number}|undefined;
   if(duplicate)throw new Error(duplicate.order_id===input.orderId?"Tracking đã có trong Order này.":"Tracking đã thuộc một Order khác.");
-  const lot=Math.max(1,Math.trunc(Number(input.lotNumber||1))||1);
+  const carton=input.cartonId?db.prepare("SELECT c.id,l.lot_number FROM order_cartons c LEFT JOIN order_lots l ON l.id=c.order_lot_id WHERE c.id=? AND c.order_id=?").get(input.cartonId,input.orderId) as {id:number;lot_number:number|null}|undefined:undefined;
+  if(input.cartonId&&!carton)throw new Error("Carton không thuộc Order này.");
+  const lot=Math.max(1,Math.trunc(Number(carton?.lot_number||input.lotNumber||1))||1);
   const hasPrimary=(db.prepare("SELECT COUNT(*) c FROM order_trackings WHERE order_id=? AND status='ACTIVE' AND is_primary=1").get(input.orderId) as {c:number}).c>0;
-  const result=db.prepare(`INSERT INTO order_trackings(order_id,lot_number,tracking,normalized_tracking,label_url,is_primary,cost_match_type,cost_parent_tracking_id,created_by_user_id)
-    VALUES (?,?,?,?,?,?,?,?,?)`).run(input.orderId,lot,tracking,normalized,text(input.labelUrl)||null,input.isPrimary||!hasPrimary?1:0,input.costMatchType||"UNKNOWN",input.costParentTrackingId||null,input.actorId||null);
+  const result=db.prepare(`INSERT INTO order_trackings(order_id,lot_number,carton_id,tracking,normalized_tracking,label_url,is_primary,cost_match_type,cost_parent_tracking_id,created_by_user_id)
+    VALUES (?,?,?,?,?,?,?,?,?,?)`).run(input.orderId,lot,carton?.id||null,tracking,normalized,text(input.labelUrl)||null,input.isPrimary||!hasPrimary?1:0,input.costMatchType||"UNKNOWN",input.costParentTrackingId||null,input.actorId||null);
   syncLegacyPrimary(input.orderId);
   matchSupplierCostsForOrder(input.orderId);
   return db.prepare("SELECT * FROM order_trackings WHERE id=?").get(result.lastInsertRowid) as OrderTracking;
 }
 
-export function updateOrderTracking(input:{orderId:number;id:number;labelUrl?:unknown;lotNumber?:unknown;costMatchType?:CostMatchType;costParentTrackingId?:number|null;isPrimary?:boolean}){
+export function updateOrderTracking(input:{orderId:number;id:number;labelUrl?:unknown;lotNumber?:unknown;cartonId?:number|null;costMatchType?:CostMatchType;costParentTrackingId?:number|null;isPrimary?:boolean}){
   assertOrderOpen(input.orderId);
   const row=db.prepare("SELECT * FROM order_trackings WHERE id=? AND order_id=?").get(input.id,input.orderId) as OrderTracking|undefined;
   if(!row)throw new Error("Tracking không thuộc Order này.");
-  const lot=input.lotNumber===undefined?row.lot_number:Math.max(1,Math.trunc(Number(input.lotNumber)||1));
+  const carton=input.cartonId?db.prepare("SELECT c.id,l.lot_number FROM order_cartons c LEFT JOIN order_lots l ON l.id=c.order_lot_id WHERE c.id=? AND c.order_id=?").get(input.cartonId,input.orderId) as {id:number;lot_number:number|null}|undefined:undefined;
+  if(input.cartonId&&!carton)throw new Error("Carton không thuộc Order này.");
+  const lot=carton?.lot_number||(
+    input.lotNumber===undefined?row.lot_number:Math.max(1,Math.trunc(Number(input.lotNumber)||1))
+  );
   const match=input.costMatchType||row.cost_match_type;
   const parent=match==="INCLUDED_IN_PARENT"?Number(input.costParentTrackingId||0)||null:null;
   if(parent){
@@ -76,8 +86,8 @@ export function updateOrderTracking(input:{orderId:number;id:number;labelUrl?:un
     if(!valid)throw new Error("Tracking gánh chi phí không thuộc Order này.");
   }
   if(input.isPrimary)db.prepare("UPDATE order_trackings SET is_primary=0 WHERE order_id=?").run(input.orderId);
-  db.prepare("UPDATE order_trackings SET lot_number=?,label_url=?,cost_match_type=?,cost_parent_tracking_id=?,is_primary=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
-    .run(lot,input.labelUrl===undefined?row.label_url:text(input.labelUrl)||null,match,parent,input.isPrimary?1:row.is_primary,row.id);
+  db.prepare("UPDATE order_trackings SET lot_number=?,carton_id=?,label_url=?,cost_match_type=?,cost_parent_tracking_id=?,is_primary=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+    .run(lot,input.cartonId===undefined?row.carton_id:carton?.id||null,input.labelUrl===undefined?row.label_url:text(input.labelUrl)||null,match,parent,input.isPrimary?1:row.is_primary,row.id);
   syncLegacyPrimary(input.orderId);
   recomputeOrderFinancials(input.orderId);
 }
@@ -86,12 +96,12 @@ export function replaceOrderTracking(input:{orderId:number;oldTrackingId:number;
   assertOrderOpen(input.orderId);
   const old=db.prepare("SELECT * FROM order_trackings WHERE id=? AND order_id=? AND status='ACTIVE'").get(input.oldTrackingId,input.orderId) as OrderTracking|undefined;
   if(!old)throw new Error("Tracking cũ không hợp lệ hoặc đã được thay thế.");
-  const reason=trackingReplacementReason(input.reason);
-  const created=addOrderTracking({orderId:input.orderId,tracking:input.newTracking,labelUrl:input.newLabelUrl,lotNumber:old.lot_number,actorId:input.actorId,isPrimary:Boolean(old.is_primary),costMatchType:old.cost_match_type,costParentTrackingId:old.cost_parent_tracking_id});
+  trackingReplacementReason(input.reason);
+  const created=addOrderTracking({orderId:input.orderId,tracking:input.newTracking,labelUrl:input.newLabelUrl,lotNumber:old.lot_number,cartonId:old.carton_id,actorId:input.actorId,isPrimary:Boolean(old.is_primary),costMatchType:old.cost_match_type,costParentTrackingId:old.cost_parent_tracking_id});
   db.prepare("UPDATE order_trackings SET status='REPLACED',is_primary=0,replaced_by_tracking_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(created.id,old.id);
   db.prepare("UPDATE order_trackings SET cost_parent_tracking_id=?,updated_at=CURRENT_TIMESTAMP WHERE order_id=? AND cost_parent_tracking_id=?").run(created.id,input.orderId,old.id);
   syncLegacyPrimary(input.orderId);
-  appendOrderNote(input.orderId,`Tracking ${old.tracking} đã được thay thế bằng ${created.tracking}. Label đã được cập nhật.${reason?` Lý do: ${reason}.`:""}`);
+  publishPublicNote({orderId:input.orderId,eventType:"TRACKING_LABEL_CHANGED",summary:`Tracking ${old.tracking} đã được thay thế bằng ${created.tracking}. Label đã được cập nhật.`,actorId:input.actorId,publicData:{old_tracking:old.tracking,new_tracking:created.tracking,label_updated:Boolean(text(input.newLabelUrl))}});
   matchSupplierCostsForOrder(input.orderId);
   return created;
 }
@@ -101,6 +111,12 @@ export function matchSupplierCostsForOrder(orderId:number){
     matched_order_id=?,
     matched_order_tracking_id=(SELECT ot.id FROM order_trackings ot WHERE ot.order_id=? AND ot.normalized_tracking=supplier_costs.normalized_tracking LIMIT 1)
     WHERE normalized_tracking IN (SELECT normalized_tracking FROM order_trackings WHERE order_id=?)`).run(orderId,orderId,orderId);
+  const unaudited=db.prepare(`SELECT id,tracking,occurred_at,created_at,total_net_cost,extra_surcharge,import_tax,surcharge_type,note,supplier,service,sub_service
+    FROM supplier_costs WHERE matched_order_id=? AND audit_recorded_at IS NULL ORDER BY id`).all(orderId) as Array<Record<string,unknown>>;
+  for(const cost of unaudited){
+    logAdminEvent({orderId,eventType:"SUPPLIER_COST_MATCHED",summary:`Supplier Cost đã khớp Tracking ${String(cost.tracking)}.`,after:cost});
+    db.prepare("UPDATE supplier_costs SET audit_recorded_at=CURRENT_TIMESTAMP WHERE id=?").run(cost.id);
+  }
   const pending=db.prepare(`SELECT id,tracking,occurred_at,created_at,total_net_cost,extra_surcharge,import_tax,surcharge_type,note
     FROM supplier_costs WHERE matched_order_id=? AND public_note_recorded_at IS NULL AND (extra_surcharge<>0 OR import_tax<>0) ORDER BY id`).all(orderId) as Array<Record<string,unknown>>;
   for(const cost of pending){
@@ -110,14 +126,11 @@ export function matchSupplierCostsForOrder(orderId:number){
     const parts:string[]=[];
     if(Number(cost.import_tax||0))parts.push(`phát sinh thuế nhập khẩu ${money(Number(cost.import_tax))} USD`);
     if(Number(cost.extra_surcharge||0))parts.push(`phát sinh phụ phí ${money(Number(cost.extra_surcharge))} USD (${String(cost.surcharge_type||"phụ phí bổ sung").trim()})`);
-    appendOrderNote(orderId,`Ngày ${date}, Tracking ${String(cost.tracking)} ${parts.join("; ")}.`);
-    const internalParts=[`Supplier Cost theo Tracking ${String(cost.tracking)}: Net Cost True ${money(Number(cost.total_net_cost))} USD`];
-    if(Number(cost.extra_surcharge||0))internalParts.push(`phụ phí ${money(Number(cost.extra_surcharge))} USD (${String(cost.surcharge_type||"phụ phí bổ sung")})`);
-    if(Number(cost.import_tax||0))internalParts.push(`thuế nhập khẩu ${money(Number(cost.import_tax))} USD`);
-    if(text(cost.note))internalParts.push(`ghi chú: ${text(cost.note)}`);
-    appendOrderNote(orderId,internalParts.join(" · "),true);
+    if(Number(cost.import_tax||0))publishPublicNote({orderId,eventType:"TAX_NOTICE",summary:`Ngày ${date}, Tracking ${String(cost.tracking)} phát sinh thuế nhập khẩu ${money(Number(cost.import_tax))} USD.`,publicData:{tracking:String(cost.tracking),amount:money(Number(cost.import_tax)),currency:"USD"}});
+    if(Number(cost.extra_surcharge||0))publishPublicNote({orderId,eventType:"SURCHARGE_NOTICE",summary:`Ngày ${date}, Tracking ${String(cost.tracking)} phát sinh phụ phí ${money(Number(cost.extra_surcharge))} USD (${String(cost.surcharge_type||"phụ phí bổ sung").trim()}).`,publicData:{tracking:String(cost.tracking),amount:money(Number(cost.extra_surcharge)),currency:"USD",surcharge_type:String(cost.surcharge_type||"phụ phí bổ sung")}});
     db.prepare("UPDATE supplier_costs SET public_note_recorded_at=CURRENT_TIMESTAMP WHERE id=?").run(cost.id);
   }
+  syncLotCostsForOrder(orderId);
   return recomputeOrderFinancials(orderId);
 }
 

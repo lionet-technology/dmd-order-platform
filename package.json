@@ -9,10 +9,13 @@
     "lint": "eslint .",
     "verify:rbac": "node scripts/verify-rbac.cjs",
     "verify:orders": "node scripts/verify-order-flow.cjs",
-    "verify:cancellation": "node scripts/verify-order-cancellation.cjs"
+    "verify:cancellation": "node scripts/verify-order-cancellation.cjs",
+    "verify:purchase": "node scripts/verify-purchase-engine.cjs"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",
+    "exceljs": "^4.4.0",
+    "jszip": "^3.10.2",
     "next": "^16.3.6",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",

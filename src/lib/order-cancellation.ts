@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { canAccessClient,getClientAccount,type AuthUser } from "./auth";
-import { appendOrderNote,recomputeOrderFinancials } from "./order-operations";
-import { logOrderEvent } from "./order-audit";
+import { recomputeOrderFinancials } from "./order-operations";
+import { logInternalEvent,publishPublicNote } from "./order-audit";
 
 type Order=Record<string,unknown>&{id:number};
 const money=(value:number)=>Math.round((value+Number.EPSILON)*100)/100;
@@ -48,8 +48,8 @@ export function cancelOrder(orderId:number,user:AuthUser){
     const summary=policy.refund_percent===90
       ?"Đơn hàng đã được huỷ. Hoàn 90%: $"+policy.refund_amount.toFixed(2)+". Khấu trừ 10% do Tracking/Label đã được cấp."
       :"Đơn hàng đã được huỷ. Hoàn 100%: $"+policy.refund_amount.toFixed(2)+".";
-    appendOrderNote(orderId,summary);
-    logOrderEvent({orderId,eventType:"ORDER_CANCELLED",summary,actorId:user.id,before:{workflow_status:order.workflow_status,total_due:order.total_due},after:{workflow_status:"CANCELLED",refund_percent:policy.refund_percent,refund_amount:policy.refund_amount,retained_amount:retained}});
+    publishPublicNote({orderId,eventType:"REFUND",summary,actorId:user.id,publicData:{amount:policy.refund_amount,currency:"USD",reason:"ORDER_CANCELLATION",refund_percent:policy.refund_percent}});
+    logInternalEvent({orderId,eventType:"ORDER_CANCELLED",summary:"Đơn hàng đã được huỷ.",actorId:user.id,before:{workflow_status:order.workflow_status,total_due:order.total_due},after:{workflow_status:"CANCELLED",refund_percent:policy.refund_percent,refund_amount:policy.refund_amount,retained_amount:retained}});
     return {cancelled:true,already_cancelled:false,refund_percent:policy.refund_percent,refund_amount:policy.refund_amount,retained_amount:retained};
   }).immediate();
 }
