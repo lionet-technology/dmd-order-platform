@@ -18,9 +18,9 @@ async function main(){
   const quote=await call("/api/orders/"+order.id,{cookie:actor.cookie});check(quote.data.cancellation.allowed&&quote.data.cancellation.refund_percent===(issued?90:100)&&quote.data.cancellation.refund_amount===(issued?90:100),"server refund quote for "+actor.data?.user?.role);
   const response=await call("/api/orders/"+order.id+"/cancel",{method:"POST",cookie:actor.cookie,body:{reason:"HTTP cancellation test",refund_percent:100,refund_amount:999999,actor_user_id:999}});
   check(response.status===200&&response.data.refund_amount===(issued?90:100),"server ignores forged refund or actor");
-  const detail=await call("/api/orders/"+order.id,{cookie:client});const event=detail.data.events.find(x=>x.event_type==="ORDER_CANCELLED");
+  const detail=await call("/api/orders/"+order.id,{cookie:client});const event=detail.data.events.find(x=>x.event_type==="REFUND");
   check(detail.data.workflow_status==="CANCELLED"&&detail.data.total_due===(issued?10:0),"client sees retained fee");
-  check(event&&event.actor_username===undefined&&event.actor_role===undefined,"client history hides the cancelling account");
+  check(event&&!detail.data.events.some(x=>x.event_type==="ORDER_CANCELLED")&&detail.data.events.every(x=>x.actor_username===undefined&&x.actor_role===undefined&&x.actor_user_id===undefined),"client receives public refund notice while cancellation audit and account remain hidden");
   check(detail.data.supplier===undefined&&detail.data.internal_note===undefined&&event.before_json===undefined,"cancelled detail keeps private fields hidden");
   if(issued)check(detail.data.trackings.length===1&&detail.data.trackings[0].status==="CANCELLED","client retains cancelled tracking history");
   const again=await call("/api/orders/"+order.id+"/cancel",{method:"POST",cookie:actor.cookie,body:{}});check(again.status===200&&again.data.already_cancelled,"API retry idempotent");

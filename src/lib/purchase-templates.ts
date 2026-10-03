@@ -106,7 +106,11 @@ function contextsFor(orderIds:number[],scope:RepeatScope,lotId?:number){
     if(scope==="CARTON"){
       for(const carton of data.cartons.filter(row=>!lotId||lotIds.has(Number(row.order_lot_id)))){
         const lot=data.lots.find(row=>Number(row.id)===Number(carton.order_lot_id));
-        contexts.push({order:data.order,lot,carton});
+        const item=data.items.find(row=>Number(row.carton_id)===Number(carton.id))||{
+          description:data.order.item,material:data.order.material,quantity:1,
+          unit_manufacturing_value:data.order.declared_value,
+        };
+        contexts.push({order:data.order,lot,carton,item});
       }
       continue;
     }

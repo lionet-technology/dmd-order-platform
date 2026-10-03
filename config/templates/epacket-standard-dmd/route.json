@@ -1,0 +1,13 @@
+{
+  "service": "ePacket",
+  "sub_service": "Standard",
+  "supplier": "DMD",
+  "route_variables": {
+    "sender_address": "32 ngõ   285 Khuất Duy Tiến, cầu Giấy, Hà Nội",
+    "service_code": "Epacket Zero",
+    "purchase_service_code": "EPK",
+    "internal_service": "Standard"
+  },
+  "output_mode": "MULTI_ORDER",
+  "repeat_sections": [{"sheet": "Sheet1", "row": 2, "scope": "CARTON"}]
+}

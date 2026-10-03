@@ -100,11 +100,11 @@ async function main(){
 
   const manifestWorkbook=new ExcelJS.Workbook();
   const manifestSheet=manifestWorkbook.addWorksheet("Manifest");
-  manifestSheet.addRow(["Index","Email","Address","Weight gram","Tracking","Item","Qty","Service","Sender"]);
-  manifestSheet.addRow(["{{row.index}}","{{order.recipient_email}}","{{order.recipient_address}}","{{carton.weight_g}}","{{carton.tracking}}","{{item_description}}","{{quantity}}","{{route.service_code}}","{{route.sender_address}}"]);
+  manifestSheet.addRow(["Index","Email","Address","Weight gram","Tracking","Item","Qty","Service","Sender","Unit value","Carton total"]);
+  manifestSheet.addRow(["{{row.index}}","{{order.recipient_email}}","{{order.recipient_address}}","{{carton.weight_g}}","{{carton.tracking}}","{{item.description}}","{{item.quantity}}","{{route.service_code}}","{{route.sender_address}}","{{item.unit_manufacturing_value}}","{{carton.total_manufacturing_value}}"]);
   await manifestWorkbook.xlsx.writeFile(manifestPath);
   const manifestScan=await scanPurchaseWorkbook(fs.readFileSync(manifestPath));
-  assert(manifestScan.unknown.length===0&&manifestScan.placeholders.length===9,"manifest scanner should accept row index, email and gram placeholders");
+  assert(manifestScan.unknown.length===0&&manifestScan.placeholders.length===11,"manifest scanner should accept row index, email and gram placeholders");
 
   const routeVariables={service_code:"EP_T11",sender_address:"DMD Warehouse, Hanoi"};
   const routeId=Number(db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier,route_variables_json,created_by_user_id) VALUES (?,?,?,?,?)").run("ePacket","T11","KILOSHIP",JSON.stringify(routeVariables),admin.id).lastInsertRowid);
@@ -129,6 +129,8 @@ async function main(){
   assert(manifestGenerated.missing.length===0&&manifestGenerated.files.length===1,"MULTI_ORDER manifest should generate one file");
   const manifestRendered=await (async()=>{const book=new ExcelJS.Workbook();await book.xlsx.load(manifestGenerated.files[0].buffer);return book.getWorksheet("Manifest").getSheetValues().map(row=>Array.isArray(row)?row.slice(1):row)})();
   const manifestText=JSON.stringify(manifestRendered);
+  assert(manifestRendered[2][5]==="Shirt"&&manifestRendered[3][5]==="Shoes","CARTON scope must select the representative item belonging to each carton");
+  assert(manifestRendered[2][6]===2&&manifestRendered[2][9]===3&&manifestRendered[2][10]===6,"representative quantity and unit value must remain distinct from the carton total");
   assert(manifestText.includes("jane@example.com")&&manifestText.includes("1 Main St Apt 2"),"manifest should render recipient email and combined address");
   assert(manifestText.includes("2000")&&manifestText.includes("3000"),"manifest should convert carton kg to grams");
   assert(manifestText.includes("LOT-1-TRACK")&&manifestText.includes("LOT-2-TRACK"),"manifest should include Tracking for each carton");
@@ -136,6 +138,35 @@ async function main(){
   const generic=genericPurchaseRows([order.id]);
   assert(generic.length===2&&generic[0].order_total_manufacturing_value===16&&generic[0].recipient_email==="jane@example.com","generic fallback should expose carton-item rows, computed totals and recipient email");
 
+  const realDir=path.join(root,"config/templates/epacket-standard-dmd");
+  const realConfig=JSON.parse(fs.readFileSync(path.join(realDir,"route.json"),"utf8"));
+  db.prepare("UPDATE service_route_configs SET route_variables_json=? WHERE id=?").run(JSON.stringify(realConfig.route_variables),routeId);
+  for(const [id,kind] of [[templateId,"purchase"],[manifestTemplateId,"manifest"]]){
+    const file=path.join(realDir,kind+".xlsx");
+    const scanned=await scanPurchaseWorkbook(fs.readFileSync(file));
+    assert(!scanned.unknown.length&&!missingRoutePlaceholders(scanned.placeholders,realConfig.route_variables).length,"real "+kind+" workbook must validate");
+    db.prepare("UPDATE purchase_templates SET output_mode='MULTI_ORDER',repeat_sections_json=? WHERE id=?").run(JSON.stringify(realConfig.repeat_sections),id);
+    db.prepare("UPDATE purchase_template_versions SET stored_path=? WHERE template_id=?").run(file,id);
+  }
+  for(const kind of ["purchase","manifest"]){
+    const result=await (kind==="purchase"?generatePurchaseFiles:generateManifestFiles)([order.id]);
+    const book=new ExcelJS.Workbook();await book.xlsx.load(result.files[0].buffer);
+    const rows=book.getWorksheet("Sheet1").getSheetValues();
+    assert(!JSON.stringify(rows).includes("{{"),"real "+kind+" output must resolve every placeholder");
+    if(kind==="purchase"){
+      assert(rows[2][2]==="PURCHASE-001"&&rows[2][15]===6&&rows[3][15]===10,"real Purchase must map Client Order ID and carton declared totals");
+      assert(rows[2][14]===2000&&rows[2][17]==="EPK"&&rows[2][18]==="Standard"&&!rows[2][19],"real Purchase must render grams and service codes without Tracking");
+    }else{
+      assert(rows[2][6]==="LOT-1-TRACK"&&rows[3][6]==="LOT-2-TRACK"&&rows[2][5]==="Epacket Zero","real Manifest must use per-carton Tracking and its own service code");
+      assert(rows[2][25]===2&&rows[2][26]===3&&rows[2][8]===6&&rows[3][27]==="Shoes","real Manifest must preserve representative item and carton value meanings");
+      assert(rows[2][16]==="jane@example.com"&&!rows[2][24]&&!rows[2][28]&&!rows[2][29],"real Manifest must include optional email and leave requested columns blank");
+    }
+  }
+
+  db.prepare("DELETE FROM order_trackings WHERE order_id=? AND carton_id=?").run(order.id,cartons[0].id);
+  assert(!validateManifestReadiness(order.id).ready,"Manifest must reject a carton without active Tracking");
+  const blockedManifest=await generateManifestFiles([order.id]);
+  assert(!blockedManifest.files.length&&blockedManifest.missing.length===1,"real Manifest export must block incomplete Tracking");
   console.log("PURCHASE ENGINE PASS ("+checks+" assertions)");
 }
 
