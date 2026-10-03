@@ -1,6 +1,6 @@
 # ePacket / Standard / DMD
 
-`purchase.xlsx` buys labels before tracking is assigned. `manifest.xlsx` declares the cartons actually shipped after every carton has active tracking. Both repeat Sheet1 row 2 per carton and combine orders into one workbook. Apply variables from `route.json` only to this route.
+`purchase.xlsx` buys labels before tracking is assigned. `manifest.xlsx` declares the cartons actually shipped using only the scanned active tracking/carton selection. Both repeat Sheet1 row 2 per carton and combine orders into one workbook. Apply variables from `route.json` only to this route.
 
 Purchase mapping: Order Partner uses `order.client_order_id` (sample DEMO01); HAWBValue (USD) uses `carton.total_manufacturing_value`, the sum of allocated quantities × unit manufacturing values. These interpretations fit the source columns and examples; the supplier files do not contain explicit definitions. Values must be entered in USD; this template does not convert currency.
 

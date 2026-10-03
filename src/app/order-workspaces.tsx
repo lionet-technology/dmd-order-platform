@@ -179,7 +179,7 @@ type QueueRow={
 
 export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>void|Promise<void>}){
   const [rows,setRows]=useState<QueueRow[]>([]);
-  const [mode,setMode]=useState<"PURCHASE"|"MANIFEST">("PURCHASE");
+  const [mode]=useState<"PURCHASE"|"MANIFEST">("PURCHASE");
   const [service,setService]=useState("");
   const [subService,setSubService]=useState("");
   const [supplierFilter,setSupplierFilter]=useState("");
@@ -330,14 +330,14 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
   function toggleOrder(id:number){setSelectedOrders(prev=>prev.includes(id)?prev.filter(value=>value!==id):[...prev,id])}
 
   return <div className="bulkSheet">
-    <div className="bulkSheetToolbar"><div><b>Mua đơn & Manifest hàng loạt</b><span>Purchase: xuất file mua label rồi nhập Tracking. Manifest: xuất hồ sơ sau khi đã có Tracking.</span></div><div className="bulkFilters">
+    <div className="bulkSheetToolbar"><div><b>Mua đơn hàng loạt</b><span>Xuất file mua label rồi nhập Tracking. Manifest được scan riêng tại Xuất hàng.</span></div><div className="bulkFilters">
       <label className="bulkFilterField"><span>Dịch vụ</span><select value={service} onChange={e=>{setService(e.target.value);setSubService("")}}><option value="">Tất cả dịch vụ</option>{services.map(row=><option key={row.id}>{row.value}</option>)}</select></label>
       <label className="bulkFilterField"><span>Sub-Service</span><select value={subService} onChange={e=>setSubService(e.target.value)}><option value="">Tất cả Sub-Service</option>{subs.map(row=><option key={row.id}>{row.value}</option>)}</select></label>
       <label className="bulkFilterField"><span>Supplier</span><select value={supplierFilter} onChange={e=>setSupplierFilter(e.target.value)}><option value="">Tất cả Supplier</option>{suppliers.map(row=><option key={row.id}>{row.value}</option>)}</select></label>
       {mode==="PURCHASE"&&<button className="secondaryBtn" disabled={busy||!selectedOrders.length} onClick={()=>void exportOrders(true)}>Xuất Generic</button>}
       <button className="primaryBtn" disabled={busy||!selectedOrders.length} onClick={()=>void exportOrders(false)}>{mode==="MANIFEST"?"Xuất Manifest":"Xuất file mua đơn"} ({selectedOrders.length})</button>
     </div></div>
-    <div className="purchaseModeTabs"><button className={mode==="PURCHASE"?"active":""} onClick={()=>{setMode("PURCHASE");setSelectedOrders([])}}>1–3 · Mua Label & Tracking</button><button className={mode==="MANIFEST"?"active":""} onClick={()=>{setMode("MANIFEST");setSelectedOrders([])}}>4 · Manifest hải quan</button></div>
+
     <div className="purchaseSelectionBar">
       <label><input type="checkbox" checked={allSelected} onChange={()=>setSelectedOrders(allSelected?[]:allIds)}/> Chọn tất cả {orderGroups.length} Order sau filter</label>
       {mode==="PURCHASE"?<div>

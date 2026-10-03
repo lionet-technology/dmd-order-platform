@@ -1,7 +1,7 @@
 import { NextRequest,NextResponse } from "next/server";
 import JSZip from "jszip";
 import { requireUser } from "@/lib/auth";
-import { generateManifestFiles } from "@/lib/purchase-templates";
+import { generateScannedManifestFiles } from "@/lib/purchase-templates";
 
 export const runtime="nodejs";
 
@@ -9,9 +9,8 @@ export async function POST(req:NextRequest){
   const auth=requireUser(req,"ADMIN");if(auth.error)return auth.error;
   try{
     const body=await req.json();
-    const orderIds=(Array.isArray(body.order_ids)?body.order_ids:[]).map(Number).filter(Boolean);
-    if(!orderIds.length)throw new Error("Chọn ít nhất một Order.");
-    const result=await generateManifestFiles(orderIds);
+    const trackings=(Array.isArray(body.trackings)?body.trackings:[]).map(String);
+    const result=await generateScannedManifestFiles(trackings);
     if(!result.files.length)return NextResponse.json({error:"Không có Order đủ điều kiện để xuất Manifest.",...result},{status:422});
     const skipped=Buffer.from(JSON.stringify(result.missing),"utf8").toString("base64");
     if(result.files.length===1){

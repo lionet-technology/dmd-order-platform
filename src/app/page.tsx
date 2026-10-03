@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { BulkTrackingSheet,OrderDetailPanel,ShipmentStatusPanel,TrackingReplacementSheet } from "./order-workspaces";
+import { ManifestScanPanel } from "./manifest-workspace";
 import { ServiceConfigurationPanel } from "./service-workspace";
 import { TRACKING_REPLACEMENT_REASONS } from "@/lib/order-rules";
 
@@ -895,6 +896,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   const [purchaseOrder,setPurchaseOrder]=useState<RowData|null>(null);
   const [viewOrder,setViewOrder]=useState<RowData|null>(null);
   const [bulkTracking,setBulkTracking]=useState(false);
+  const [manifestScan,setManifestScan]=useState(false);
   const [bulkReplacement,setBulkReplacement]=useState(false);
   const [importKind,setImportKind]=useState<ImportKind|null>(null);
   const [orderFilters,setOrderFilters]=useState({status:"",service:"",salesUserId:"",reconcile:""});
@@ -1065,7 +1067,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
 
         {section==="orders"&&<>
           <PageHeader eyebrow="OPERATIONS" title="Orders" description={role==="ADMIN"?"Quản lý toàn bộ đơn hàng và trạng thái xử lý.":role==="SALES"?"Quản lý Orders của các Client được phân công.":"Theo dõi Orders của tài khoản Client này."}
-            actions={role!=="CLIENT"?<><button className="secondaryBtn" onClick={()=>setImportKind(role==="ADMIN"?"orders":"sales_orders")}>⇩ Import</button>{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkTracking(true)}>▦ Mua đơn hàng loạt</button>}{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkReplacement(true)}>⇄ Đổi Tracking</button>}<button className="primaryBtn" onClick={()=>openEntry("order")}>＋ Tạo Order</button></>:undefined}/>
+            actions={role!=="CLIENT"?<><button className="secondaryBtn" onClick={()=>setImportKind(role==="ADMIN"?"orders":"sales_orders")}>⇩ Import</button>{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkTracking(true)}>▦ Mua đơn hàng loạt</button>}{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setManifestScan(true)}>Manifest / Xuất hàng</button>}{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkReplacement(true)}>⇄ Đổi Tracking</button>}<button className="primaryBtn" onClick={()=>openEntry("order")}>＋ Tạo Order</button></>:undefined}/>
           <div className="panel dataPanel">
             <div className="dataToolbar orderToolbar">
               <OrderSearchBar value={search} onChange={setSearch}/>
@@ -1132,6 +1134,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
 
     {viewOrder&&<Modal size="wide" title="Chi tiết Order" onClose={()=>setViewOrder(null)}><OrderDetailPanel orderId={Number(viewOrder.id)} role={role} onDone={refresh} onEdit={row=>{setViewOrder(null);openEntry("order",row as RowData)}} onPurchase={role==="ADMIN"?row=>{setViewOrder(null);setPurchaseOrder(row as RowData)}:undefined}/></Modal>}
 
+    {role==="ADMIN"&&manifestScan&&<Modal size="fullscreen" title="Manifest / Xuất hàng" onClose={()=>setManifestScan(false)}><ManifestScanPanel/></Modal>}
     {role==="ADMIN"&&bulkTracking&&<Modal size="fullscreen" title="Mua đơn hàng loạt" onClose={()=>setBulkTracking(false)}><BulkTrackingSheet enums={enums} onDone={refresh}/></Modal>}
 
     {role==="ADMIN"&&bulkReplacement&&<Modal size="fullscreen" title="Đổi Tracking & Label hàng loạt" onClose={()=>setBulkReplacement(false)}><TrackingReplacementSheet onDone={refresh}/></Modal>}

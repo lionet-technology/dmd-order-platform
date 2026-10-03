@@ -32,7 +32,7 @@ const {createUser}=require(path.join(root,"src/lib/auth.ts"));
 const {upsertOrder,addSupplierCost}=require(path.join(root,"src/lib/finance.ts"));
 const {saveOrderShipmentStructure,validatePurchaseReadiness}=require(path.join(root,"src/lib/order-shipments.ts"));
 const {addOrderTracking}=require(path.join(root,"src/lib/order-operations.ts"));
-const {generatePurchaseFiles,generateManifestFiles,scanPurchaseWorkbook,genericPurchaseRows,missingRoutePlaceholders,validateManifestReadiness}=require(path.join(root,"src/lib/purchase-templates.ts"));
+const {generatePurchaseFiles,generateScannedManifestFiles,lookupManifestTracking,generateManifestFiles,scanPurchaseWorkbook,genericPurchaseRows,missingRoutePlaceholders,validateManifestReadiness}=require(path.join(root,"src/lib/purchase-templates.ts"));
 const {listOrderEvents,publishPublicNote}=require(path.join(root,"src/lib/order-audit.ts"));
 
 let checks=0;
@@ -125,6 +125,16 @@ async function main(){
   assert(flattened.some(value=>value.includes("SKU-B")&&!value.includes("SKU-A")),"Lot 2 file should contain only Lot 2 goods");
   assert(flattened.every(value=>value.includes("16")),"each Lot file should retain the computed Order total");
   assert(flattened.every(value=>value.includes("EP_T11")&&value.includes("DMD Warehouse, Hanoi")),"route variables should render into every generated workbook");
+  const scanned=await generateScannedManifestFiles(["lot 2 track"]);
+  const scannedBook=new ExcelJS.Workbook();await scannedBook.xlsx.load(scanned.files[0].buffer);
+  const scannedText=JSON.stringify(scannedBook.getWorksheet("Manifest").getSheetValues());
+  assert(scannedText.includes("LOT-2-TRACK")&&!scannedText.includes("LOT-1-TRACK"),"scan must export only the selected carton of a multi-carton Order");
+  assert(lookupManifestTracking("lot 2 track").carton_id===cartons[1].id,"scanner normalizes tracking and resolves exact carton");
+  for(const input of [["missing"],["LOT-2-TRACK","lot 2 track"]]){let blocked=false;try{await generateScannedManifestFiles(input)}catch{blocked=true}assert(blocked,"scan rejects unknown and duplicate tracking")}
+  db.prepare("UPDATE order_trackings SET status='REPLACED' WHERE carton_id=?").run(cartons[0].id);
+  let inactiveBlocked=false;try{await generateScannedManifestFiles(["LOT-1-TRACK"])}catch{inactiveBlocked=true}assert(inactiveBlocked,"export revalidates replaced tracking");
+  const partial=await generateScannedManifestFiles(["LOT-2-TRACK"]);assert(partial.files.length===1,"unscanned inactive sibling must not block export");
+  db.prepare("UPDATE order_trackings SET status='ACTIVE' WHERE carton_id=?").run(cartons[0].id);
   const manifestGenerated=await generateManifestFiles([order.id]);
   assert(manifestGenerated.missing.length===0&&manifestGenerated.files.length===1,"MULTI_ORDER manifest should generate one file");
   const manifestRendered=await (async()=>{const book=new ExcelJS.Workbook();await book.xlsx.load(manifestGenerated.files[0].buffer);return book.getWorksheet("Manifest").getSheetValues().map(row=>Array.isArray(row)?row.slice(1):row)})();

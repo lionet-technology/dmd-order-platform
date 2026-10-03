@@ -95,10 +95,11 @@ function exportData(orderId:number):{order:DataRow;lots:DataRow[];cartons:DataRo
   };
 }
 
-function contextsFor(orderIds:number[],scope:RepeatScope,lotId?:number){
+function contextsFor(orderIds:number[],scope:RepeatScope,lotId?:number,cartonIds?:number[]){
   const contexts:ExportContext[]=[];
   for(const orderId of orderIds){
     const data=exportData(orderId);
+    if(cartonIds){data.cartons=data.cartons.filter(row=>cartonIds.includes(Number(row.id)));data.items=data.items.filter(row=>cartonIds.includes(Number(row.carton_id)));data.lots=data.lots.filter(row=>data.cartons.some(c=>Number(c.order_lot_id)===Number(row.id)))}
     const lots=lotId?data.lots.filter(row=>Number(row.id)===lotId):data.lots;
     const lotIds=new Set(lots.map(row=>Number(row.id)));
     if(scope==="ORDER"){contexts.push({order:data.order});continue}
@@ -173,7 +174,7 @@ function fillCell(cell:ExcelJS.Cell,context:ExportContext,routeVariables:RouteVa
   cell.value=original.replace(TOKEN,(_,token)=>text(valueFor(token,context,routeVariables)));
 }
 
-async function renderWorkbook(input:{storedPath:string;repeatSections:RepeatSection[];orderIds:number[];lotId?:number;routeVariables?:RouteVariables}){
+async function renderWorkbook(input:{storedPath:string;repeatSections:RepeatSection[];orderIds:number[];lotId?:number;cartonIds?:number[];routeVariables?:RouteVariables}){
   const workbook=new ExcelJS.Workbook();
   await workbook.xlsx.readFile(input.storedPath);
   const occupied=new Map<string,Array<[number,number]>>();
@@ -181,14 +182,14 @@ async function renderWorkbook(input:{storedPath:string;repeatSections:RepeatSect
   for(const section of sections){
     const worksheet=workbook.getWorksheet(section.sheet);
     if(!worksheet)throw new Error("Không tìm thấy sheet "+section.sheet+".");
-    const contexts=contextsFor(input.orderIds,section.scope,input.lotId);
+    const contexts=contextsFor(input.orderIds,section.scope,input.lotId,input.cartonIds);
     if(!contexts.length)throw new Error("Không có dữ liệu cho repeat section "+section.sheet+"!"+section.row+".");
     if(contexts.length>1)worksheet.duplicateRow(section.row,contexts.length-1,true);
     contexts.forEach((context,index)=>worksheet.getRow(section.row+index).eachCell({includeEmpty:true},cell=>fillCell(cell,context,input.routeVariables)));
     const ranges=occupied.get(section.sheet)||[];
     ranges.push([section.row,section.row+contexts.length-1]);occupied.set(section.sheet,ranges);
   }
-  const base=contextsFor(input.orderIds,input.lotId?"LOT":"ORDER",input.lotId)[0]||contextsFor(input.orderIds,"ORDER")[0];
+  const base=(input.cartonIds?contextsFor(input.orderIds,"CARTON",input.lotId,input.cartonIds)[0]:undefined)||contextsFor(input.orderIds,input.lotId?"LOT":"ORDER",input.lotId)[0]||contextsFor(input.orderIds,"ORDER")[0];
   workbook.eachSheet(sheet=>{
     const ranges=occupied.get(sheet.name)||[];
     sheet.eachRow({includeEmpty:true},row=>{
@@ -298,4 +299,35 @@ export function genericPurchaseRows(orderIds:number[]){
     }
   }
   return rows;
+}
+
+export function lookupManifestTracking(tracking:string){
+  const key=tracking.replace(/[\s-]+/g,"").toUpperCase();
+  const row=db.prepare("SELECT ot.id tracking_id,ot.tracking,ot.status,ot.carton_id,o.id order_pk,o.system_order_code,o.order_id,o.customer,o.recipient_name,o.service,o.sub_service,o.supplier,o.workflow_status FROM order_trackings ot JOIN orders o ON o.id=ot.order_id WHERE ot.normalized_tracking=?").get(key) as DataRow|undefined;
+  if(!row)throw new Error("Tracking không tồn tại: "+tracking);
+  if(row.status!=="ACTIVE"||row.workflow_status==="CANCELLED")throw new Error("Tracking không còn active: "+tracking);
+  if(!row.carton_id||!db.prepare("SELECT id FROM order_cartons WHERE id=? AND order_id=?").get(row.carton_id,row.order_pk))throw new Error("Tracking chưa gắn đúng carton: "+tracking);
+  return row;
+}
+
+export async function generateScannedManifestFiles(trackings:string[]){
+  if(!trackings.length||trackings.length>1000)throw new Error("Scan từ 1 đến 1000 tracking.");
+  const rows=trackings.map(lookupManifestTracking);
+  if(new Set(rows.map(r=>r.tracking_id)).size!==rows.length)throw new Error("Tracking bị trùng.");
+  if(new Set(rows.map(r=>r.carton_id)).size!==rows.length)throw new Error("Mỗi carton chỉ được xuất một lần.");
+  const groups=new Map<string,{template:TemplateRecord;orderIds:number[];cartonIds:number[];lotId?:number}>();
+  for(const row of rows){
+    const template=resolveManifestTemplate(row);
+    if(!template)throw new Error("Chưa có Manifest Template cho "+row.service+" / "+row.sub_service+" / "+row.supplier);
+    const sections=JSON.parse(template.repeat_sections_json||"[]") as RepeatSection[];
+    if(!sections.length||sections.some(s=>s.scope!=="CARTON"&&s.scope!=="CARTON_ITEM"))throw new Error("Manifest scan cần template lặp theo Carton hoặc Carton Item.");
+    const lot=db.prepare("SELECT order_lot_id FROM order_cartons WHERE id=?").get(row.carton_id) as {order_lot_id:number};
+    const key=String(template.template_id)+(template.output_mode!=="MULTI_ORDER"?":"+row.order_pk:"")+(template.output_mode==="PER_LOT"?":"+lot.order_lot_id:"");
+    const group=groups.get(key)||{template,orderIds:[],cartonIds:[],lotId:template.output_mode==="PER_LOT"?lot.order_lot_id:undefined};
+    group.orderIds=[...new Set([...group.orderIds,Number(row.order_pk)])];group.cartonIds.push(Number(row.carton_id));groups.set(key,group);
+  }
+  const files=[];
+  for(const [key,group] of groups){files.push({name:safeName("Manifest_"+group.template.service+"_"+group.template.sub_service+"_"+group.template.supplier+"_"+key)+".xlsx",service:group.template.service,buffer:await renderWorkbook({storedPath:group.template.stored_path,repeatSections:JSON.parse(group.template.repeat_sections_json),orderIds:group.orderIds,cartonIds:group.cartonIds,lotId:group.lotId,routeVariables:JSON.parse(group.template.route_variables_json||"{}")})})}
+  for(const row of rows){const active=lookupManifestTracking(String(row.tracking));if(active.tracking_id!==row.tracking_id||active.carton_id!==row.carton_id)throw new Error("Tracking đã thay đổi; hãy scan lại.")}
+  return {files,missing:[],valid_order_count:new Set(rows.map(r=>r.order_pk)).size};
 }
