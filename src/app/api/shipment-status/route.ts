@@ -2,7 +2,7 @@ import { NextRequest,NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { normalizeDateInput } from "@/lib/finance";
-import { logOrderEvent } from "@/lib/order-audit";
+import { logOrderEvent,publishPublicNote } from "@/lib/order-audit";
 import { assertOrderOpen } from "@/lib/order-operations";
 
 export const runtime="nodejs";
@@ -56,6 +56,9 @@ export async function POST(req:NextRequest){
           .run(status,etd,delivered,auth.user.id,Number(current.id));
         if(status!=="WAITING_HANDOVER")db.prepare("UPDATE orders SET fulfillment_started_at=COALESCE(fulfillment_started_at,CURRENT_TIMESTAMP) WHERE id=?").run(Number(current.order_id));
         logOrderEvent({orderId:Number(current.order_id),eventType:"SHIPMENT_STATUS_UPDATED",summary:"Cập nhật Tracking "+String(current.tracking)+": "+String(current.shipment_status||"WAITING_HANDOVER")+" → "+status+", ETD "+etd+".",actorId:auth.user.id,before:current,after:{shipment_status:status,etd_at:etd,delivered_at:delivered}});
+        if(status==="DELIVERED"&&String(current.shipment_status||"")!=="DELIVERED"){
+          publishPublicNote({orderId:Number(current.order_id),eventType:"DELIVERED",summary:"Tracking "+String(current.tracking)+" đã Delivered"+(delivered?" ngày "+delivered:"")+".",actorId:auth.user.id,publicData:{tracking:String(current.tracking),delivered_at:delivered}});
+        }
         updated++;
       }
     });

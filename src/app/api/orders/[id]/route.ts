@@ -2,7 +2,7 @@ import { NextRequest,NextResponse } from "next/server";
 import { canAccessClient,getClientAccount,requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { listOrderTrackings,publicOrderTracking } from "@/lib/order-operations";
-import { listOrderEvents } from "@/lib/order-audit";
+import { listOrderEvents,publicNoteText,sanitizePrivateNoteForSales } from "@/lib/order-audit";
 import { cancellationPolicy } from "@/lib/order-cancellation";
 
 export const runtime="nodejs";
@@ -17,16 +17,14 @@ export async function GET(req:NextRequest,{params}:{params:Promise<{id:string}>}
     if(!client||!canAccessClient(auth.user,client))return NextResponse.json({error:"Không có quyền xem Order này."},{status:403});
   }
   const trackings=listOrderTrackings(id,auth.user.role==="ADMIN"||order.workflow_status==="CANCELLED");
-  const events=(listOrderEvents(id,auth.user.role==="ADMIN") as Array<Record<string,unknown>>).map(row=>{
-    if(auth.user.role==="ADMIN")return row;
-    const {before_json,after_json,actor_user_id,actor_username,actor_display_name,actor_role,...safe}=row;
-    void before_json;void after_json;void actor_user_id;void actor_username;void actor_display_name;void actor_role;
-    return safe;
-  });
+  const events=listOrderEvents(id,auth.user.role);
   const payload={...order,cancellation:cancellationPolicy(order as Record<string,unknown>&{id:number}),trackings:auth.user.role==="ADMIN"?trackings:trackings.filter(row=>row.status==="ACTIVE"||(order.workflow_status==="CANCELLED"&&row.status==="CANCELLED")).map(publicOrderTracking),events};
   if(auth.user.role==="ADMIN")return NextResponse.json(payload);
   const safe:Record<string,unknown>={...payload};
+  safe.public_note=publicNoteText(id);
+  delete safe.note;
   for(const key of ["supplier","est_net_cost","true_net_cost","base_cost","retail","gross_profit_base","gross_profit_net","gross_margin_pct","margin_status","reconciliation_delta"])delete safe[key];
   if(auth.user.role==="CLIENT")for(const key of ["internal_note","discount_note","discount_source"])delete safe[key];
+  else safe.internal_note=sanitizePrivateNoteForSales(order.internal_note,order.supplier);
   return NextResponse.json(safe);
 }

@@ -13,6 +13,7 @@ const {db}=require(path.join(root,"src/lib/db.ts"));
 const {createUser}=require(path.join(root,"src/lib/auth.ts"));
 const {upsertOrder,addSupplierCost}=require(path.join(root,"src/lib/finance.ts"));
 const {addOrderTracking,updateOrderTracking,replaceOrderTracking,listOrderTrackings}=require(path.join(root,"src/lib/order-operations.ts"));
+const {listOrderEvents}=require(path.join(root,"src/lib/order-audit.ts"));
 let checks=0;function assert(condition,message){checks++;if(!condition)throw new Error(`ASSERTION FAILED: ${message}`)}
 function order(id){return db.prepare("SELECT * FROM orders WHERE id=?").get(id)}
 async function main(){
@@ -55,9 +56,15 @@ async function main(){
   assert(reconciled.true_net_cost===43,"Order True Net Cost should sum billable tracking rows");
   assert(reconciled.extra_surcharge===2&&reconciled.extra_import_tax===3,"tax and surcharge should aggregate across trackings");
   assert(reconciled.total_due===105,"total due should equal sales price plus tax and surcharge");
-  assert(String(reconciled.public_note).includes("Cập nhật từ đơn vị vận chuyển")&&String(reconciled.public_note).includes("thuế nhập khẩu 3 USD")&&String(reconciled.public_note).includes("phụ phí 2 USD (Phụ phí điều chỉnh địa chỉ)"),"public updates should contain sanitized tracking, tax and surcharge events");
+  assert(String(reconciled.public_note).includes("đã được thay thế")&&String(reconciled.public_note).includes("thuế nhập khẩu 3 USD")&&String(reconciled.public_note).includes("phụ phí 2 USD (Phụ phí điều chỉnh địa chỉ)"),"public updates should contain sanitized tracking, tax and surcharge events");
+  assert(!String(reconciled.public_note).includes("Cập nhật từ đơn vị vận chuyển"),"tracking replacement reason must remain internal");
   assert(!/supplier|net cost/i.test(String(reconciled.public_note)),"public updates must not expose Supplier or Net Cost");
-  assert(String(reconciled.internal_note).includes("Net Cost True")&&String(reconciled.internal_note).includes("Address correction"),"private note should retain reconciliation detail");
+  assert(!/supplier|net cost|address correction/i.test(String(reconciled.internal_note||"")),"private note must not receive supplier reconciliation detail");
+  assert(reconciled.gross_profit_net===57,"gross profit must equal sales price minus net cost and exclude surcharge/tax");
+  const salesEvents=listOrderEvents(first.id,"SALES");
+  const adminEvents=listOrderEvents(first.id,"ADMIN");
+  assert(!salesEvents.some(event=>event.event_type==="SUPPLIER_COST_MATCHED"),"Sales history must hide supplier cost events");
+  assert(adminEvents.some(event=>event.event_type==="SUPPLIER_COST_MATCHED"),"Admin history should retain supplier cost audit");
   const duplicate=addSupplierCost({supplier:"KILOSHIP",service:"ePacket",sub_service:"T11",tracking:"1Z-A1",total_net_cost:25,extra_surcharge:2,surcharge_type:"Phụ phí điều chỉnh địa chỉ",import_tax:3,note:"Address correction",source_key:"cost-a1"});
   assert(duplicate.duplicate&&order(first.id).true_net_cost===43,"duplicate import row must not double count");
   console.log(`ORDER FLOW PASS (${checks} assertions)`);

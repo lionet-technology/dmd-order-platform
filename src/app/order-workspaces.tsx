@@ -17,6 +17,84 @@ function money(value:unknown){return new Intl.NumberFormat("en-US",{style:"curre
 function displayDate(value:unknown){const raw=String(value||"");const match=raw.match(/^(\d{4})-(\d{2})-(\d{2})/);return match?match[3]+"/"+match[2]+"/"+match[1]:raw||"—"}
 async function json(url:string,options?:RequestInit){const response=await fetch(url,options);const data=await response.json();if(!response.ok)throw new Error(data.error||"Không thể xử lý dữ liệu");return data}
 async function post(url:string,body:unknown){return json(url,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)})}
+type ShipmentItemDraft={sku:string;description:string;material:string;quantity:string;unit_manufacturing_value:string;currency:string};
+type ShipmentCartonDraft={id?:number;carton_number:number;lot_number:number;weight:string;length:string;width:string;height:string;volume:string;chargeable_weight:string;items:ShipmentItemDraft[]};
+const blankShipmentItem=():ShipmentItemDraft=>({sku:"",description:"",material:"",quantity:"1",unit_manufacturing_value:"",currency:"USD"});
+
+function ShipmentStructureEditor({orderId,role}:{orderId:number;role:Role}){
+  const [cartons,setCartons]=useState<ShipmentCartonDraft[]>([]);
+  const [lotCount,setLotCount]=useState(1);
+  const [busy,setBusy]=useState(true);
+  const [message,setMessage]=useState("");
+  const load=useCallback(async()=>{
+    setBusy(true);setMessage("");
+    try{
+      const body=await json("/api/orders/"+orderId+"/shipment-structure");
+      const allocations=Array.isArray(body.allocations)?body.allocations as GenericRow[]:[];
+      const next=(body.cartons as GenericRow[]).map(carton=>({
+        id:Number(carton.id),carton_number:Number(carton.carton_number),lot_number:Number(carton.lot_number||1),
+        weight:String(carton.weight??""),length:String(carton.length??""),width:String(carton.width??""),height:String(carton.height??""),
+        volume:String(carton.volume??""),chargeable_weight:String(carton.chargeable_weight??""),
+        items:allocations.filter(row=>Number(row.carton_id)===Number(carton.id)).map(row=>({
+          sku:String(row.sku||""),description:String(row.description||""),material:String(row.material||""),quantity:String(row.quantity||1),
+          unit_manufacturing_value:String(row.unit_manufacturing_value??""),currency:String(row.currency||"USD"),
+        })),
+      })) as ShipmentCartonDraft[];
+      setCartons(next.map(row=>({...row,items:row.items.length?row.items:[blankShipmentItem()]})));
+      setLotCount(Math.max(1,(body.lots||[]).length));
+    }catch(error){setMessage("Lỗi: "+(error as Error).message)}
+    finally{setBusy(false)}
+  },[orderId]);
+  useEffect(()=>{void load()},[load]);
+  function updateCarton(index:number,key:keyof Omit<ShipmentCartonDraft,"items">,value:string|number){setCartons(prev=>prev.map((row,i)=>i===index?{...row,[key]:value}:row))}
+  function updateItem(cartonIndex:number,itemIndex:number,key:keyof ShipmentItemDraft,value:string){setCartons(prev=>prev.map((row,i)=>i===cartonIndex?{...row,items:row.items.map((item,j)=>j===itemIndex?{...item,[key]:value}:item)}:row))}
+  function addCarton(){setCartons(prev=>[...prev,{carton_number:prev.length+1,lot_number:1,weight:"",length:"",width:"",height:"",volume:"",chargeable_weight:"",items:[blankShipmentItem()]}])}
+  function removeCarton(index:number){setCartons(prev=>prev.filter((_,i)=>i!==index).map((row,i)=>({...row,carton_number:i+1})))}
+  const valueOf=(item:ShipmentItemDraft)=>Number(item.quantity||0)*Number(item.unit_manufacturing_value||0);
+  const total=cartons.reduce((sum,carton)=>sum+carton.items.reduce((subtotal,item)=>subtotal+valueOf(item),0),0);
+  async function save(){
+    setBusy(true);setMessage("");
+    try{
+      const payload={lot_count:cartons.length===1?1:lotCount,cartons:cartons.map(carton=>({...carton,lot_number:cartons.length===1?1:carton.lot_number,weight:Number(carton.weight)||null,length:Number(carton.length)||null,width:Number(carton.width)||null,height:Number(carton.height)||null,volume:Number(carton.volume)||null,chargeable_weight:Number(carton.chargeable_weight)||null,items:carton.items.map(item=>({...item,quantity:Number(item.quantity)||1,unit_manufacturing_value:item.unit_manufacturing_value===""?null:Number(item.unit_manufacturing_value)}))}))};
+      const response=await fetch("/api/orders/"+orderId+"/shipment-structure",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+      const body=await response.json();if(!response.ok)throw new Error(body.error);
+      setMessage("Đã lưu khai báo "+cartons.length+" carton / "+(cartons.length===1?1:lotCount)+" lô.");await load();
+    }catch(error){setMessage("Lỗi: "+(error as Error).message)}
+    finally{setBusy(false)}
+  }
+  if(busy&&!cartons.length)return <div className="loadingState">Đang tải khai báo Carton…</div>;
+  return <div className="shipmentStructure">
+    <div className="shipmentStructureHead"><div><h3>Khai báo Carton & SKU</h3><p>{cartons.length===1?"Chế độ nhanh: một Order, một Carton, tự động thuộc Lot 1.":"Mỗi carton cần cân nặng, kích thước, Lot và hàng hóa bên trong."}</p></div><div><span>Tổng giá trị sản xuất</span><b>{money(total)}</b></div></div>
+    {cartons.length>1&&role!=="CLIENT"&&<div className="lotCountControl"><label>Số lượng lô <input type="number" min="1" max={cartons.length} value={lotCount} onChange={e=>setLotCount(Math.max(1,Number(e.target.value||1)))}/></label><span>Các lô dùng chung Service, Sub-Service và Supplier của Order.</span></div>}
+    <div className="cartonEditorList">{cartons.map((carton,cartonIndex)=><section className="cartonEditor" key={carton.id||carton.carton_number}>
+      <div className="cartonEditorHead"><div><b>{cartons.length===1?"Thông tin kiện hàng":"Carton "+carton.carton_number}</b>{cartons.length>1&&<span>Lot {carton.lot_number}</span>}</div>{role!=="CLIENT"&&cartons.length>1&&<button className="editBtn" onClick={()=>removeCarton(cartonIndex)}>Bỏ carton</button>}</div>
+      <div className="cartonMeasureGrid">
+        {cartons.length>1&&<label><span>Thuộc Lot</span><select disabled={role==="CLIENT"} value={carton.lot_number} onChange={e=>updateCarton(cartonIndex,"lot_number",Number(e.target.value))}>{Array.from({length:lotCount},(_,i)=><option key={i+1} value={i+1}>Lot {i+1}</option>)}</select></label>}
+        <label><span>Weight (kg)</span><input disabled={role==="CLIENT"} type="number" step="0.001" value={carton.weight} onChange={e=>updateCarton(cartonIndex,"weight",e.target.value)}/></label>
+        <label><span>Dài (cm)</span><input disabled={role==="CLIENT"} type="number" step="0.1" value={carton.length} onChange={e=>updateCarton(cartonIndex,"length",e.target.value)}/></label>
+        <label><span>Rộng (cm)</span><input disabled={role==="CLIENT"} type="number" step="0.1" value={carton.width} onChange={e=>updateCarton(cartonIndex,"width",e.target.value)}/></label>
+        <label><span>Cao (cm)</span><input disabled={role==="CLIENT"} type="number" step="0.1" value={carton.height} onChange={e=>updateCarton(cartonIndex,"height",e.target.value)}/></label>
+        <label><span>Thể tích (cm³)</span><input disabled={role==="CLIENT"} type="number" value={carton.volume} onChange={e=>updateCarton(cartonIndex,"volume",e.target.value)}/></label>
+        <label><span>Chargeable Weight</span><input disabled={role==="CLIENT"} type="number" step="0.001" value={carton.chargeable_weight} onChange={e=>updateCarton(cartonIndex,"chargeable_weight",e.target.value)}/></label>
+      </div>
+      <div className="cartonItems"><div className="cartonItemHead"><b>Sản phẩm trong {cartons.length===1?"kiện":"carton"}</b><span>Tổng: {money(carton.items.reduce((sum,item)=>sum+valueOf(item),0))}</span></div>
+        {carton.items.map((item,itemIndex)=><div className="cartonItemRow" key={itemIndex}>
+          <input disabled={role==="CLIENT"} placeholder="SKU" value={item.sku} onChange={e=>updateItem(cartonIndex,itemIndex,"sku",e.target.value)}/>
+          <input disabled={role==="CLIENT"} placeholder="Tên sản phẩm" value={item.description} onChange={e=>updateItem(cartonIndex,itemIndex,"description",e.target.value)}/>
+          <input disabled={role==="CLIENT"} placeholder="Chất liệu" value={item.material} onChange={e=>updateItem(cartonIndex,itemIndex,"material",e.target.value)}/>
+          <input disabled={role==="CLIENT"} type="number" min="0.001" step="0.001" placeholder="SL" value={item.quantity} onChange={e=>updateItem(cartonIndex,itemIndex,"quantity",e.target.value)}/>
+          <input disabled={role==="CLIENT"} type="number" min="0" step="0.01" placeholder="Giá trị/đơn vị" value={item.unit_manufacturing_value} onChange={e=>updateItem(cartonIndex,itemIndex,"unit_manufacturing_value",e.target.value)}/>
+          <b>{money(valueOf(item))}</b>
+          {role!=="CLIENT"&&carton.items.length>1&&<button className="editBtn" onClick={()=>setCartons(prev=>prev.map((row,i)=>i===cartonIndex?{...row,items:row.items.filter((_,j)=>j!==itemIndex)}:row))}>Bỏ</button>}
+        </div>)}
+        {role!=="CLIENT"&&<button className="textBtn" onClick={()=>setCartons(prev=>prev.map((row,i)=>i===cartonIndex?{...row,items:[...row.items,blankShipmentItem()]}:row))}>＋ Thêm sản phẩm</button>}
+      </div>
+    </section>)}</div>
+    {role!=="CLIENT"&&<div className="shipmentStructureActions"><button className="secondaryBtn" onClick={addCarton}>＋ Thêm carton</button><button className="primaryBtn" disabled={busy} onClick={()=>void save()}>Lưu khai báo kiện hàng</button></div>}
+    {message&&<p className={message.startsWith("Lỗi")?"inlineMsg error":"inlineMsg"}>{message}</p>}
+  </div>;
+}
+
 export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderId:number;role:Role;onEdit:(row:GenericRow)=>void;onPurchase?:(row:GenericRow)=>void;onDone?:()=>void|Promise<void>}){
   const [data,setData]=useState<GenericRow|null>(null);
   const [tab,setTab]=useState("overview");
@@ -40,7 +118,7 @@ export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderI
   const active=trackings.filter(row=>row.status==="ACTIVE");
   const events=Array.isArray(data.events)?data.events as GenericRow[]:[];
   const visibleEvents=role==="ADMIN"&&historyScope!=="all"
-    ?events.filter(event=>historyScope==="public"?event.visibility==="PUBLIC":event.visibility==="ADMIN")
+    ?events.filter(event=>historyScope==="public"?event.visibility==="PUBLIC":event.visibility!=="PUBLIC")
     :events;
   async function copyAll(){await navigator.clipboard.writeText(active.map(row=>String(row.tracking||"")).filter(Boolean).join("\n"))}
   return <div className="orderDetail">
@@ -57,7 +135,7 @@ export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderI
     {cancelled&&<div className="cancellationSummary"><b>Đã huỷ · Hoàn {String(data.cancellation_refund_percent||0)}%: {money(data.cancellation_refund_amount)}</b><p>{Number(data.cancellation_refund_percent||0)===90?"Khấu trừ 10% do Tracking/Label đã được cấp.":"Đơn chưa được cấp Tracking/Label nên được hoàn 100%."}</p></div>}
     {cancelOpen&&<section className="cancellationConfirm"><h3>Xác nhận huỷ đơn</h3><p>Hoàn {policy.refund_percent}% vào Balance: <b>{money(policy.refund_amount)}</b>. Đơn sẽ ngừng xử lý trên hệ thống.</p><p>{Number(policy.refund_percent||0)===90?"Đơn đã được cấp Tracking/Label nên hoàn 90%; 10% còn lại là phí đã phát sinh.":"Đơn chưa được cấp Tracking/Label nên được hoàn 100%."}</p>{cancelError&&<p role="alert">{cancelError}</p>}<div className="detailActions"><button className="secondaryBtn" disabled={cancelBusy} onClick={()=>setCancelOpen(false)}>Đóng</button><button className="primaryBtn" disabled={cancelBusy} onClick={()=>void submitCancellation()}>{cancelBusy?"Đang huỷ…":"Xác nhận huỷ đơn"}</button></div></section>}
     <div className="detailTabs">
-      {[["overview","Tổng quan"],["tracking","Tracking & Label"],["finance","Giá & Đối soát"],["history","Lịch sử"]].filter(item=>role==="ADMIN"||item[0]!=="finance").map(item=><button key={item[0]} className={tab===item[0]?"active":""} onClick={()=>setTab(item[0])}>{item[1]}</button>)}
+      {[["overview","Tổng quan"],["cartons","Carton & SKU"],["tracking","Tracking & Label"],["finance","Giá & Đối soát"],["history","Lịch sử"]].filter(item=>role==="ADMIN"||item[0]!=="finance").map(item=><button key={item[0]} className={tab===item[0]?"active":""} onClick={()=>setTab(item[0])}>{item[1]}</button>)}
     </div>
     {tab==="overview"&&<div className="detailBody">
       <section className="detailGrid">
@@ -66,11 +144,11 @@ export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderI
         <article className="detailCard"><h3>Dịch vụ</h3><dl><dt>Client</dt><dd>{String(data.customer||"—")}</dd><dt>Sales</dt><dd>{String(data.sales||"—")}</dd><dt>Supplier</dt><dd>{role==="ADMIN"?String(data.supplier||"Chưa chọn"):"—"}</dd><dt>Service</dt><dd>{String(data.service||"—")}</dd><dt>Sub-Service</dt><dd>{String(data.sub_service||"—")}</dd><dt>Tracking/Label</dt><dd>{active.filter(row=>row.label_url).length}/{String(data.carton_count||0)}</dd><dt>Số lượng Lô</dt><dd>{String(data.expected_lot_count||1)}</dd></dl></article>
       </section>
       <section className="notesSection">
-        <div><h3>Note</h3><p>{String(data.note||"Chưa có note.")}</p></div>
-        <div className="publicSystemNote"><h3>{role==="CLIENT"?"History Log":"Cập nhật công khai"}</h3><p>{String(data.public_note||"Chưa có lịch sử cập nhật.")}</p></div>
-        {role!=="CLIENT"&&<div className="internalNote"><h3>Private Note</h3><p>{String(data.internal_note||"Chưa có private note.")}</p></div>}
+        <div className="publicSystemNote"><h3>Note</h3><p>{String(data.public_note||"Chưa có cập nhật công khai.")}</p></div>
+        {role!=="CLIENT"&&<div className="internalNote"><h3>Note Private</h3><p>{String(data.internal_note||"Chưa có note private.")}</p></div>}
       </section>
     </div>}
+    {tab==="cartons"&&<div className="detailBody"><ShipmentStructureEditor orderId={orderId} role={role}/></div>}
     {tab==="tracking"&&<div className="detailBody">
       <div className="trackingDetailHead"><div><h3>Tracking & Label</h3><p>{active.length} Tracking active · {active.filter(row=>row.label_url).length}/{String(data.carton_count||0)} Label</p></div><button className="secondaryBtn" disabled={!active.length} onClick={()=>void copyAll()}>Copy Tracking</button></div>
       <div className="trackingDetailList">{trackings.map(row=><article key={String(row.id)} className={row.status==="ACTIVE"?"trackingDetailRow":"trackingDetailRow inactive"}>
@@ -85,8 +163,8 @@ export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderI
     </section><div className="reconcileStrip"><span>Đối soát</span><b>{String(data.reconciliation_status||"PENDING")}</b><span>Chi phí có thể về sau và không chặn hoàn tất Order.</span></div></div>}
     {tab==="history"&&<div className="detailBody">
       {role==="ADMIN"&&<div className="historyFilters">{[["all","Tất cả"],["public","Khách hàng thấy"],["internal","Nội bộ"]].map(([key,label])=><button key={key} className={historyScope===key?"active":""} onClick={()=>setHistoryScope(key as "all"|"public"|"internal")}>{label}</button>)}</div>}
-      <div className="historyTimeline">{visibleEvents.length?visibleEvents.map(event=><article key={String(event.id)} className={event.visibility==="ADMIN"?"internalEvent":"publicEvent"}>
-        <i></i><div><time>{displayDate(event.created_at)}{role==="ADMIN"?" · "+String(event.actor_display_name||event.actor_username||"Hệ thống"):""}{role==="ADMIN"&&event.actor_username?" · @"+String(event.actor_username):""}{role==="ADMIN"&&event.actor_role?" · "+String(event.actor_role):""}</time><b>{String(event.summary||event.event_type)}</b><span>{role==="ADMIN"&&<em className={event.visibility==="ADMIN"?"historyBadge internal":"historyBadge public"}>{event.visibility==="ADMIN"?"Nội bộ":"Khách hàng thấy"}</em>}{String(event.source||"UI")}</span></div>
+      <div className="historyTimeline">{visibleEvents.length?visibleEvents.map(event=><article key={String(event.id)} className={event.visibility!=="PUBLIC"?"internalEvent":"publicEvent"}>
+        <i></i><div><time>{displayDate(event.created_at)}{role==="ADMIN"?" · "+String(event.actor_display_name||event.actor_username||"Hệ thống"):""}{role==="ADMIN"&&event.actor_username?" · @"+String(event.actor_username):""}{role==="ADMIN"&&event.actor_role?" · "+String(event.actor_role):""}</time><b>{String(event.summary||event.event_type)}</b><span>{role==="ADMIN"&&<em className={event.visibility!=="PUBLIC"?"historyBadge internal":"historyBadge public"}>{event.visibility==="ADMIN"?"Admin Audit":event.visibility==="INTERNAL"?"Nội bộ":"Khách hàng thấy"}</em>}{String(event.source||"UI")}</span></div>
       </article>):<p>Không có History log trong nhóm này.</p>}</div>
     </div>}
   </div>;
@@ -94,30 +172,51 @@ export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderI
 
 type QueueRow={
   order_pk:number;system_order_code:string;client_order_id:string;customer:string;recipient_name:string;
-  service:string;sub_service:string;carton_count:number;carton_slot:number;supplier:string;
+  service:string;sub_service:string;carton_count:number;carton_slot:number;carton_id:number|null;supplier:string;
   expected_lot_count:number;tracking_id:number|null;tracking:string;label_url:string;
+  purchase_status:string;purchase_issue:string;
 };
 
 export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>void|Promise<void>}){
   const [rows,setRows]=useState<QueueRow[]>([]);
   const [service,setService]=useState("");
   const [subService,setSubService]=useState("");
+  const [supplierFilter,setSupplierFilter]=useState("");
+  const [selectedOrders,setSelectedOrders]=useState<number[]>([]);
   const [quickPaste,setQuickPaste]=useState("");
   const [busy,setBusy]=useState(false);
   const [message,setMessage]=useState("");
   const suppliers=enums.filter(row=>row.enum_type==="SUPPLIER"&&row.active!==0);
   const services=enums.filter(row=>row.enum_type==="SERVICE"&&row.active!==0);
   const subs=enums.filter(row=>row.enum_type==="SUB_SERVICE"&&row.active!==0&&(!service||row.parent_value===service));
-  const load=useCallback(async()=>{setBusy(true);setMessage("");try{const params=new URLSearchParams();if(service)params.set("service",service);if(subService)params.set("sub_service",subService);const body=await json("/api/orders/tracking-queue?"+params);setRows(body.rows||[])}catch(error){setMessage("Lỗi: "+(error as Error).message)}finally{setBusy(false)}},[service,subService]);
+  const subsFor=(parent:string)=>enums.filter(row=>row.enum_type==="SUB_SERVICE"&&row.active!==0&&row.parent_value===parent);
+  const load=useCallback(async()=>{
+    setBusy(true);setMessage("");
+    try{
+      const params=new URLSearchParams();
+      if(service)params.set("service",service);
+      if(subService)params.set("sub_service",subService);
+      if(supplierFilter)params.set("supplier",supplierFilter);
+      const body=await json("/api/orders/tracking-queue?"+params);
+      const nextRows=body.rows||[];
+      setRows(nextRows);
+      const ids=new Set<number>(nextRows.map((row:QueueRow)=>row.order_pk));
+      setSelectedOrders(prev=>prev.filter(id=>ids.has(id)));
+    }catch(error){setMessage("Lỗi: "+(error as Error).message)}
+    finally{setBusy(false)}
+  },[service,subService,supplierFilter]);
   useEffect(()=>{void load()},[load]);
+
   function update(index:number,key:keyof QueueRow,value:string){
     setRows(prev=>prev.map((row,i)=>i===index?{
       ...row,[key]:key==="expected_lot_count"?Number(value||1):value,
     }:row));
   }
-  function updateOrder(orderPk:number,key:"supplier"|"expected_lot_count",value:string){
+  function updateOrder(orderPk:number,key:"sub_service"|"supplier"|"expected_lot_count",value:string){
     setRows(prev=>prev.map(row=>row.order_pk===orderPk?{
       ...row,[key]:key==="expected_lot_count"?Number(value||1):value,
+      purchase_status:key==="expected_lot_count"?row.purchase_status:"CHECK_AFTER_SAVE",
+      purchase_issue:key==="expected_lot_count"?row.purchase_issue:"Lưu thay đổi để kiểm tra lại template",
     }:row));
   }
   function parseTrackingPaste(raw:string){
@@ -159,47 +258,108 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
     const matrix=parseTrackingPaste(quickPaste);
     if(!matrix.length){setMessage("Lỗi: Chưa có dữ liệu để dán.");return}
     const applied=Math.min(matrix.length,rows.length);
-    applyTrackingPaste(matrix);
-    setQuickPaste("");
-    setMessage("Đã áp dụng "+applied+" dòng vào sheet"+(matrix.length>rows.length
-      ?"; bỏ qua "+(matrix.length-rows.length)+" dòng vượt quá hàng chờ."
-      :". Kiểm tra trước khi lưu."));
+    applyTrackingPaste(matrix);setQuickPaste("");
+    setMessage("Đã áp dụng "+applied+" dòng vào sheet"+(matrix.length>rows.length?"; bỏ qua "+(matrix.length-rows.length)+" dòng vượt quá hàng chờ.":". Kiểm tra trước khi lưu."));
   }
-  async function upload(file:File){setBusy(true);setMessage("");try{const form=new FormData();form.set("file",file);const response=await fetch("/api/orders/tracking-queue",{method:"PUT",body:form});const body=await response.json();if(!response.ok)throw new Error(body.error);setRows(body.rows||[]);setMessage("Đã nạp file vào sheet. Kiểm tra trước khi lưu.")}catch(error){setMessage("Lỗi: "+(error as Error).message)}finally{setBusy(false)}}
-  async function save(){setBusy(true);setMessage("");try{const body=await post("/api/orders/tracking-queue",{rows});setMessage("Đã lưu "+body.saved+" Tracking/Label cho "+body.orders+" Order.");await load();await onDone()}catch(error){setMessage("Lỗi: "+(error as Error).message)}finally{setBusy(false)}}
-  const params=new URLSearchParams();if(service)params.set("service",service);if(subService)params.set("sub_service",subService);params.set("format","xlsx");
+  async function upload(file:File){
+    setBusy(true);setMessage("");
+    try{
+      const form=new FormData();form.set("file",file);
+      const response=await fetch("/api/orders/tracking-queue",{method:"PUT",body:form});
+      const body=await response.json();if(!response.ok)throw new Error(body.error);
+      setRows(body.rows||[]);setMessage("Đã nạp file vào sheet. Kiểm tra trước khi lưu.");
+    }catch(error){setMessage("Lỗi: "+(error as Error).message)}
+    finally{setBusy(false)}
+  }
+  async function persist(){
+    return post("/api/orders/tracking-queue",{rows});
+  }
+  async function save(){
+    setBusy(true);setMessage("");
+    try{
+      const body=await persist();
+      setMessage("Đã lưu "+body.saved+" Tracking/Label cho "+body.orders+" Order.");
+      await load();await onDone();
+    }catch(error){setMessage("Lỗi: "+(error as Error).message)}
+    finally{setBusy(false)}
+  }
+  function downloadBlob(response:Response,blob:Blob){
+    const disposition=response.headers.get("content-disposition")||"";
+    const filename=disposition.match(/filename="?([^";]+)"?/)?.[1]||"purchase-export.xlsx";
+    const url=URL.createObjectURL(blob);
+    const link=document.createElement("a");link.href=url;link.download=filename;document.body.appendChild(link);link.click();link.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+  function skippedDetail(header:string|null){
+    if(!header)return [] as Array<{dmd_id:string;reason:string}>;
+    try{
+      const bytes=Uint8Array.from(atob(header),char=>char.charCodeAt(0));
+      return JSON.parse(new TextDecoder().decode(bytes)) as Array<{dmd_id:string;reason:string}>;
+    }catch{return [] as Array<{dmd_id:string;reason:string}>}
+  }
+  async function exportOrders(generic=false){
+    if(!selectedOrders.length){setMessage("Lỗi: Chọn ít nhất một Order.");return}
+    setBusy(true);setMessage("");
+    try{
+      await persist();
+      const response=await fetch(generic?"/api/purchase-export/generic":"/api/purchase-export",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({order_ids:selectedOrders})});
+      if(!response.ok){const body=await response.json();throw new Error(body.error+(body.missing?.length?" · "+body.missing.map((row:{dmd_id:string;reason:string})=>row.dmd_id+": "+row.reason).join(" | "):""))}
+      downloadBlob(response,await response.blob());
+      const skipped=skippedDetail(response.headers.get("x-dmd-skipped-detail"));
+      setMessage(generic
+        ?"Đã xuất Generic cho "+selectedOrders.length+" Order."
+        :"Đã xuất file mua đơn"+(skipped.length?"; bỏ qua "+skipped.map(row=>row.dmd_id+" ("+row.reason+")").join(", "):"."));
+      await load();await onDone();
+    }catch(error){setMessage("Lỗi: "+(error as Error).message)}
+    finally{setBusy(false)}
+  }
+
+  const params=new URLSearchParams();
+  if(service)params.set("service",service);
+  if(subService)params.set("sub_service",subService);
+  if(supplierFilter)params.set("supplier",supplierFilter);
+  params.set("format","xlsx");
   const orderGroups=Array.from(rows.reduce((groups,row)=>{
-    const group=groups.get(row.order_pk)||[];
-    group.push(row);
-    groups.set(row.order_pk,group);
-    return groups;
+    const group=groups.get(row.order_pk)||[];group.push(row);groups.set(row.order_pk,group);return groups;
   },new Map<number,QueueRow[]>()).values());
+  const allIds=orderGroups.map(group=>group[0].order_pk);
+  const allSelected=Boolean(allIds.length)&&allIds.every(id=>selectedOrders.includes(id));
+  function toggleOrder(id:number){setSelectedOrders(prev=>prev.includes(id)?prev.filter(value=>value!==id):[...prev,id])}
+
   return <div className="bulkSheet">
-    <div className="bulkSheetToolbar"><div><b>Hàng chờ Tracking & Label</b><span>Chỉ hiển thị Order chưa đủ Tracking/Label · Sheet được tạo sẵn theo từng carton.</span></div><div className="bulkFilters">
+    <div className="bulkSheetToolbar"><div><b>Mua đơn hàng loạt</b><span>1. Chọn Order → 2. Xuất file mua đơn → 3. Nhập Tracking/Label theo carton.</span></div><div className="bulkFilters">
       <label className="bulkFilterField"><span>Dịch vụ</span><select value={service} onChange={e=>{setService(e.target.value);setSubService("")}}><option value="">Tất cả dịch vụ</option>{services.map(row=><option key={row.id}>{row.value}</option>)}</select></label>
       <label className="bulkFilterField"><span>Sub-Service</span><select value={subService} onChange={e=>setSubService(e.target.value)}><option value="">Tất cả Sub-Service</option>{subs.map(row=><option key={row.id}>{row.value}</option>)}</select></label>
-      <a className="secondaryBtn" href={"/api/orders/tracking-queue?"+params.toString()}>Tải Excel</a>
-      <label className="secondaryBtn fileButton">Upload Excel<input type="file" accept=".xlsx" onChange={e=>{const file=e.target.files?.[0];if(file)void upload(file)}}/></label>
-      <button className="primaryBtn" disabled={busy||!rows.length} onClick={()=>void save()}>Lưu Tracking/Label</button>
+      <label className="bulkFilterField"><span>Supplier</span><select value={supplierFilter} onChange={e=>setSupplierFilter(e.target.value)}><option value="">Tất cả Supplier</option>{suppliers.map(row=><option key={row.id}>{row.value}</option>)}</select></label>
+      <button className="secondaryBtn" disabled={busy||!selectedOrders.length} onClick={()=>void exportOrders(true)}>Xuất Generic</button>
+      <button className="primaryBtn" disabled={busy||!selectedOrders.length} onClick={()=>void exportOrders(false)}>Xuất file mua đơn ({selectedOrders.length})</button>
     </div></div>
+    <div className="purchaseSelectionBar">
+      <label><input type="checkbox" checked={allSelected} onChange={()=>setSelectedOrders(allSelected?[]:allIds)}/> Chọn tất cả {orderGroups.length} Order sau filter</label>
+      <div>
+        <a className="secondaryBtn" href={"/api/orders/tracking-queue?"+params.toString()}>Tải file Tracking</a>
+        <label className="secondaryBtn fileButton">Upload Tracking<input type="file" accept=".xlsx" onChange={e=>{const file=e.target.files?.[0];if(file)void upload(file)}}/></label>
+        <button className="secondaryBtn" disabled={busy||!rows.length} onClick={()=>void save()}>Lưu Tracking/Label</button>
+      </div>
+    </div>
     <div className="bulkPasteBar">
       <div><b>Dán nhanh từ Excel/Google Sheets</b><span>Copy 2 cột Tracking + URL Label, mỗi carton một dòng. Có thể dán trực tiếp vào ô Tracking đầu tiên.</span></div>
       <textarea value={quickPaste} onChange={e=>setQuickPaste(e.target.value)} placeholder={"TRACKING-001\thttps://.../label-001.pdf\nTRACKING-002\thttps://.../label-002.pdf"}/>
       <button className="secondaryBtn" disabled={!quickPaste.trim()||!rows.length} onClick={applyQuickPaste}>Áp dụng vào sheet</button>
     </div>
-    <div className="bulkSheetScroll"><table><thead><tr><th>DMD ID</th><th>Client Order ID</th><th>Client</th><th>Người nhận</th><th>Số lượng Carton</th><th>Carton số</th><th>Service</th><th>Supplier (theo Order)</th><th>Số lượng Lô (theo Order)</th><th>Tracking</th><th>URL Label</th></tr></thead>
+    <div className="bulkSheetScroll"><table><thead><tr><th>Chọn</th><th>DMD ID</th><th>Client Order ID</th><th>Client</th><th>Người nhận</th><th>Template</th><th>Carton</th><th>Service</th><th>Sub-Service (Order)</th><th>Supplier (Order)</th><th>Số lô (Order)</th><th>Tracking</th><th>URL Label</th></tr></thead>
       <tbody>{orderGroups.map((group,groupIndex)=>group.map((row,rowIndex)=>{
         const index=rows.indexOf(row);
         const rowClass=(groupIndex%2?"orderGroupAlt":"orderGroupBase")+" "+(rowIndex===0?"orderGroupStart":"");
         return <tr key={row.system_order_code+"-"+row.carton_slot} className={rowClass}>
+          {rowIndex===0&&<td rowSpan={group.length} className="orderLevelField"><input type="checkbox" checked={selectedOrders.includes(row.order_pk)} onChange={()=>toggleOrder(row.order_pk)}/></td>}
           <td><b>{row.system_order_code}</b></td>
-          <td>{row.client_order_id}</td>
-          <td>{row.customer}</td>
-          <td>{row.recipient_name}</td>
-          <td>{row.carton_count}</td>
-          <td>{row.carton_slot}</td>
-          <td>{row.service}<small>{row.sub_service}</small></td>
+          <td>{row.client_order_id}</td><td>{row.customer}</td><td>{row.recipient_name}</td>
+          {rowIndex===0&&<td rowSpan={group.length} className="orderLevelField"><span className={"templateState "+row.purchase_status.toLowerCase()}>{row.purchase_status==="READY"?"Ready":row.purchase_status==="MISSING_DATA"?"Thiếu dữ liệu":row.purchase_status==="CHECK_AFTER_SAVE"?"Cần lưu lại":"Chưa có Template"}</span>{row.purchase_issue&&<small>{row.purchase_issue}</small>}</td>}
+          <td>{row.carton_slot}/{row.carton_count}</td>
+          <td>{row.service}</td>
           {rowIndex===0&&<>
+            <td rowSpan={group.length} className="orderLevelField"><label><span>Áp dụng toàn Order</span><select value={row.sub_service} onChange={e=>updateOrder(row.order_pk,"sub_service",e.target.value)}><option value="">Không có</option>{subsFor(row.service).map(item=><option key={item.id}>{item.value}</option>)}</select></label></td>
             <td rowSpan={group.length} className="orderLevelField"><label><span>Áp dụng toàn Order</span><select value={row.supplier} onChange={e=>updateOrder(row.order_pk,"supplier",e.target.value)}><option value="">Chọn Supplier</option>{suppliers.map(item=><option key={item.id}>{item.value}</option>)}</select></label></td>
             <td rowSpan={group.length} className="orderLevelField"><label><span>Áp dụng toàn Order</span><input type="number" min="1" value={row.expected_lot_count} onChange={e=>updateOrder(row.order_pk,"expected_lot_count",e.target.value)}/></label></td>
           </>}
@@ -208,7 +368,7 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
         </tr>;
       }))}</tbody>
     </table></div>
-    <div className="bulkSheetFooter"><span>{orderGroups.length} Order · {rows.length} carton đang chờ xử lý</span><b className={message.startsWith("Lỗi")?"error":""}>{busy?"Đang xử lý…":message}</b></div>
+    <div className="bulkSheetFooter"><span>{orderGroups.length} Order · {rows.length} carton đang chờ · đã chọn {selectedOrders.length} Order</span><b className={message.startsWith("Lỗi")?"error":""}>{busy?"Đang xử lý…":message}</b></div>
   </div>;
 }
 

@@ -6,6 +6,7 @@ async function main(){
  const admin=(await call("/api/auth/login",{username:"e2e.admin",password:"TestPass123!"})).cookie;
  const user=async(role,suffix,sales)=>{const r=await call("/api/users",{username:prefix+"."+suffix,display_name:prefix+" "+suffix,role,password:"TestPass123!",sales_user_id:sales},admin);if(r.status!==201)throw Error(JSON.stringify(r));return r.data};
  const sales=await user("SALES","sales"),client=await user("CLIENT","client",sales.id);
+ await call("/api/client-services",{client_user_id:client.id,service:"ePacket",sub_service:"",is_enabled:true,discount_percent:0},admin);
  const sc=(await call("/api/auth/login",{username:sales.username,password:"TestPass123!"})).cookie,cc=(await call("/api/auth/login",{username:client.username,password:"TestPass123!"})).cookie;
  const write=(await import("write-excel-file/node")).default;
  const workbook=async(headers,rows)=>write([headers,...rows].map(row=>row.map(value=>({type:String,value:String(value)})))).toBuffer();
@@ -48,9 +49,9 @@ async function main(){
  check("Tracking Excel retains old tracking",detail.trackings.some(x=>x.tracking===prefix+"-OLD"&&x.status==="REPLACED"));
  check("Tracking Excel keeps financial totals",detail.true_net_cost===42&&detail.total_due===105);
  const publicDetail=(await call("/api/orders/"+order.id,undefined,cc)).data;
- check("Replacement reason is public and audited",publicDetail.public_note.includes("Điều chỉnh tuyến vận chuyển")&&publicDetail.events.some(x=>x.event_type==="TRACKING_REPLACED"));
+ check("Replacement is public without internal reason",!publicDetail.public_note.includes("Điều chỉnh tuyến vận chuyển")&&publicDetail.events.some(x=>x.event_type==="TRACKING_LABEL_CHANGED"));
  check("Public note hides Supplier and Net Cost",!/supplier|net cost/i.test(String(publicDetail.public_note)));
- check("Supplier cost audit remains Admin-only",publicDetail.events.every(x=>x.event_type!=="SUPPLIER_COST_IMPORTED"));
+ check("Supplier cost audit remains Admin-only",publicDetail.events.every(x=>x.event_type!=="SUPPLIER_COST_MATCHED"));
  const originalNet=detail.true_net_cost;
  bytes=await workbook(costHeaders,[["KILOSHIP","ePacket","",prefix+"-NEW",5,0,0,"first valid row","01/10/2026"],["UNKNOWN-SUPPLIER","ePacket","",prefix+"-NEW",7,0,0,"invalid second row","01/10/2026"]]);
  r=await upload("costs",bytes,admin);

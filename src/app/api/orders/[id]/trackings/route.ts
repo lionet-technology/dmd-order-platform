@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { addOrderTracking, assertOrderOpen, listOrderTrackings, replaceOrderTracking, updateOrderTracking } from "@/lib/order-operations";
 import { canonicalEnumValue } from "@/lib/enums";
 import { logOrderEvent } from "@/lib/order-audit";
+import { ensureOrderShipmentStructure } from "@/lib/order-shipments";
 
 export const runtime="nodejs";
 
@@ -41,10 +42,15 @@ export async function POST(req:NextRequest,{params}:{params:Promise<{id:string}>
       const supplier=body.supplier?canonicalEnumValue("SUPPLIER",String(body.supplier)):String(access.order?.supplier||"");
       const expectedLotCount=Math.max(1,Math.trunc(Number(body.expected_lot_count||access.order?.expected_lot_count||1)));
       db.prepare("UPDATE orders SET supplier=?,internal_note=?,expected_lot_count=?,updated_by_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(supplier||null,String(body.internal_note||""),expectedLotCount,auth.user.id,id);
-      for(const raw of Array.isArray(body.trackings)?body.trackings:[]){
+      ensureOrderShipmentStructure(id);
+      const cartons=db.prepare("SELECT id FROM order_cartons WHERE order_id=? ORDER BY carton_number").all(id) as Array<{id:number}>;
+      const trackingRows=Array.isArray(body.trackings)?body.trackings:[];
+      for(let index=0;index<trackingRows.length;index++){
+        const raw=trackingRows[index];
         if(!String(raw.tracking||"").trim())continue;
-        if(raw.id)updateOrderTracking({orderId:id,id:Number(raw.id),labelUrl:raw.label_url,lotNumber:raw.lot_number,costMatchType:raw.cost_match_type,costParentTrackingId:raw.cost_parent_tracking_id,isPrimary:Boolean(raw.is_primary)});
-        else addOrderTracking({orderId:id,tracking:raw.tracking,labelUrl:raw.label_url,lotNumber:raw.lot_number,actorId:auth.user.id,costMatchType:raw.cost_match_type,costParentTrackingId:raw.cost_parent_tracking_id});
+        const cartonId=Number(raw.carton_id||cartons[index]?.id||0)||null;
+        if(raw.id)updateOrderTracking({orderId:id,id:Number(raw.id),labelUrl:raw.label_url,lotNumber:raw.lot_number,cartonId,costMatchType:raw.cost_match_type,costParentTrackingId:raw.cost_parent_tracking_id,isPrimary:Boolean(raw.is_primary)});
+        else addOrderTracking({orderId:id,tracking:raw.tracking,labelUrl:raw.label_url,lotNumber:raw.lot_number,cartonId,actorId:auth.user.id,costMatchType:raw.cost_match_type,costParentTrackingId:raw.cost_parent_tracking_id});
       }
       const active=(db.prepare("SELECT COUNT(*) c FROM order_trackings WHERE order_id=? AND status='ACTIVE'").get(id) as {c:number}).c;
       const complete=Boolean(body.complete);

@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { BulkTrackingSheet,OrderDetailPanel,ShipmentStatusPanel,TrackingReplacementSheet } from "./order-workspaces";
+import { ServiceConfigurationPanel } from "./service-workspace";
 import { TRACKING_REPLACEMENT_REASONS } from "@/lib/order-rules";
 
 type Role = "ADMIN" | "SALES" | "CLIENT";
@@ -224,8 +225,8 @@ function QuickOrderSheet({role,clients,enums,onDone,edit}:{role:Role;clients:Use
     {key:"height",label:"Cao cm",width:76,type:"number"},{key:"manual_volume",label:"Thể tích cm³",width:105,type:"number"},{key:"declared_value",label:"Giá trị SX USD",width:105,type:"number"},
     {key:"discount",label:"Discount %",width:88,type:"number"},{key:"discount_note",label:"Lý do discount",width:165},
     {key:"recipient_name",label:"Người nhận",width:145},{key:"city",label:"Thành phố",width:115},{key:"state",label:"Bang",width:90},{key:"zip",label:"ZIP",width:90},
-    {key:"country",label:"Nước",width:100,type:"combo",options:countryOptions},{key:"note",label:"Note",width:180},
-    {key:"internal_note",label:"Private Note",width:190},
+    {key:"country",label:"Nước",width:100,type:"combo",options:countryOptions},
+    {key:"internal_note",label:"Note Private",width:190},
   ];
   const columns:SheetColumn[]=role==="ADMIN"?[
     ...common,
@@ -520,14 +521,54 @@ function ImportCard({ kind, title, detail, templateHref, onDone }:{
 }
 
 function ClientServiceSettingsEditor({client,enums,onClose}:{client:User;enums:EnumRow[];onClose:()=>void}){
+  type SettingDraft={is_enabled:boolean;discount_percent:string;default_sub_service:string;default_supplier:string};
   const services=enumOptions(enums,"SERVICE");
-  const [settings,setSettings]=useState<Record<string,{is_enabled:boolean;discount_percent:string}>>({});
+  const suppliers=enumOptions(enums,"SUPPLIER");
+  const [settings,setSettings]=useState<Record<string,SettingDraft>>({});
+  const [balance,setBalance]=useState(0);
   const [busy,setBusy]=useState(false);const [msg,setMsg]=useState("");
-  useEffect(()=>{void(async()=>{const res=await fetch(`/api/client-services?clientUserId=${client.id}`);if(!res.ok)return;const rows=await res.json();const next:Record<string,{is_enabled:boolean;discount_percent:string}>={};for(const row of rows)if(!row.sub_service)next[row.service]={is_enabled:Boolean(row.is_enabled),discount_percent:String(row.discount_percent||0)};setSettings(next)})()},[client.id]);
-  function value(service:string){return settings[service]||{is_enabled:true,discount_percent:"0"}}
-  function update(service:string,patch:Partial<{is_enabled:boolean;discount_percent:string}>){setSettings(prev=>({...prev,[service]:{...value(service),...patch}}))}
-  async function save(service:string){setBusy(true);setMsg("");try{const current=value(service);await postJson("/api/client-services",{client_user_id:client.id,service,is_enabled:current.is_enabled,discount_percent:Number(current.discount_percent||0)});setMsg(`Đã lưu ${service}.`)}catch(error){setMsg("Lỗi: "+(error instanceof Error?error.message:"Không thể lưu"))}finally{setBusy(false)}}
-  return <div className="clientServiceEditor"><p className="formHint">Bật/tắt dịch vụ cho Client và đặt Discount mặc định. Discount ngoại lệ vẫn có thể nhập trên từng Order kèm lý do.</p><div className="serviceSettingList">{services.map(option=>{const row=value(option.value);return <div className="serviceSettingRow" key={option.value}><label className="serviceToggle"><input type="checkbox" checked={row.is_enabled} onChange={e=>update(option.value,{is_enabled:e.target.checked})}/><span>{row.is_enabled?"Được sử dụng":"Đang bị chặn"}</span></label><b>{option.label}</b><label><span>Discount mặc định</span><div><input type="number" min="0" max="100" step="0.01" value={row.discount_percent} onChange={e=>update(option.value,{discount_percent:e.target.value})}/><em>%</em></div></label><button className="secondaryBtn" disabled={busy} onClick={()=>void save(option.value)}>Lưu</button></div>})}</div><div className="formFooter"><span className={msg.startsWith("Lỗi")?"inlineMsg error":"inlineMsg"}>{msg}</span><button className="secondaryBtn" onClick={onClose}>Đóng</button></div></div>;
+  const key=(service:string,sub="")=>service+"::"+sub;
+  useEffect(()=>{void(async()=>{
+    const res=await fetch("/api/client-services?view=setup&clientUserId="+client.id);if(!res.ok)return;
+    const body=await res.json();const next:Record<string,SettingDraft>={};
+    for(const row of body.settings||[])next[key(row.service,row.sub_service)]={is_enabled:Boolean(row.is_enabled),discount_percent:String(row.discount_percent||0),default_sub_service:String(row.default_sub_service||""),default_supplier:String(row.default_supplier||"")};
+    setSettings(next);setBalance(Number(body.balance||0));
+  })()},[client.id]);
+  function value(service:string,sub=""){
+    return settings[key(service,sub)]||{is_enabled:sub?true:false,discount_percent:"0",default_sub_service:"",default_supplier:""};
+  }
+  function update(service:string,sub:string,patch:Partial<SettingDraft>){setSettings(prev=>({...prev,[key(service,sub)]:{...value(service,sub),...patch}}))}
+  async function save(service:string,sub=""){
+    setBusy(true);setMsg("");
+    try{
+      const current=value(service,sub);
+      await postJson("/api/client-services",{client_user_id:client.id,service,sub_service:sub,is_enabled:current.is_enabled,discount_percent:Number(current.discount_percent||0),default_sub_service:sub?"":current.default_sub_service,default_supplier:sub?"":current.default_supplier});
+      setMsg("Đã lưu "+service+(sub?" / "+sub:"")+".");
+    }catch(error){setMsg("Lỗi: "+(error instanceof Error?error.message:"Không thể lưu"))}
+    finally{setBusy(false)}
+  }
+  return <div className="clientServiceEditor">
+    <div className="clientServiceSummary"><div><span>Client</span><b>{client.display_name}</b></div><div><span>Balance hiện tại</span><b>{money(balance)}</b></div></div>
+    <p className="formHint">Chỉ các Service được bật mới dùng được khi tạo Order. Default Sub-Service/Supplier tự điền nhưng Admin vẫn có thể override khi mua đơn.</p>
+    <div className="serviceSettingList">{services.map(option=>{
+      const row=value(option.value);
+      const subOptions=enumOptions(enums,"SUB_SERVICE",option.value);
+      return <section className="serviceSettingBlock" key={option.value}>
+        <div className="serviceSettingRow">
+          <b>{option.label}</b>
+          <label className="serviceToggle"><input type="checkbox" checked={row.is_enabled} onChange={e=>update(option.value,"",{is_enabled:e.target.checked})}/><span>{row.is_enabled?"Được sử dụng":"Đang bị chặn"}</span></label>
+          <label><span>Discount mặc định</span><div><input type="number" min="0" max="100" step="0.01" value={row.discount_percent} onChange={e=>update(option.value,"",{discount_percent:e.target.value})}/><em>%</em></div></label>
+          <button className="secondaryBtn" disabled={busy} onClick={()=>void save(option.value)}>Lưu</button>
+        </div>
+        {row.is_enabled&&<div className="serviceDefaults">
+          <label><span>Default Sub-Service</span><select value={row.default_sub_service} onChange={e=>update(option.value,"",{default_sub_service:e.target.value})}><option value="">Không có</option>{subOptions.map(sub=><option key={sub.value}>{sub.value}</option>)}</select></label>
+          <label><span>Default Supplier</span><select value={row.default_supplier} onChange={e=>update(option.value,"",{default_supplier:e.target.value})}><option value="">Chưa đặt</option>{suppliers.map(supplier=><option key={supplier.value}>{supplier.value}</option>)}</select></label>
+        </div>}
+        {row.is_enabled&&subOptions.length>0&&<details className="subDiscounts"><summary>Discount theo Sub-Service</summary>{subOptions.map(sub=>{const child=value(option.value,sub.value);return <div key={sub.value}><label><input type="checkbox" checked={child.is_enabled} onChange={e=>update(option.value,sub.value,{is_enabled:e.target.checked})}/>{sub.value}</label><label><input type="number" min="0" max="100" step="0.01" value={child.discount_percent} onChange={e=>update(option.value,sub.value,{discount_percent:e.target.value})}/><em>%</em></label><button className="editBtn" disabled={busy} onClick={()=>void save(option.value,sub.value)}>Lưu</button></div>})}</details>}
+      </section>;
+    })}</div>
+    <div className="formFooter"><span className={msg.startsWith("Lỗi")?"inlineMsg error":"inlineMsg"}>{msg}</span><button className="secondaryBtn" onClick={onClose}>Đóng</button></div>
+  </div>;
 }
 
 function UserManager({users,enums,onDone,currentUser}:{users:User[];enums:EnumRow[];onDone:()=>void;currentUser:User}) {
@@ -954,13 +995,13 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
     {key:"ledger",label:"Balance Ledger",icon:"≋"},
     {key:"costs",label:"Supplier Costs",icon:"$ ",adminOnly:true},
     {key:"recon",label:"Reconciliation",icon:"✓",adminOnly:true},
-    {key:"masterdata",label:"Danh mục",icon:"☷",adminOnly:true},
+    {key:"masterdata",label:"Dịch vụ",icon:"☷",adminOnly:true},
     {key:"accounts",label:"Tài khoản",icon:"♙",adminOnly:true},
   ];
 
   const titleMap:Record<AppSection,string>={
     dashboard:"Tổng quan",orders:"Orders",shipping:"Theo dõi vận chuyển",costs:"Supplier Costs",
-    recon:"Reconciliation",ledger:"Balance Ledger",masterdata:"Danh mục",accounts:"Tài khoản",
+    recon:"Reconciliation",ledger:"Balance Ledger",masterdata:"Dịch vụ",accounts:"Tài khoản",
   };
 
   return <div className="appShell">
@@ -1018,7 +1059,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
 
         {section==="orders"&&<>
           <PageHeader eyebrow="OPERATIONS" title="Orders" description={role==="ADMIN"?"Quản lý toàn bộ đơn hàng và trạng thái xử lý.":role==="SALES"?"Quản lý Orders của các Client được phân công.":"Theo dõi Orders của tài khoản Client này."}
-            actions={role!=="CLIENT"?<><button className="secondaryBtn" onClick={()=>setImportKind(role==="ADMIN"?"orders":"sales_orders")}>⇩ Import</button>{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkTracking(true)}>▦ Nhập Tracking hàng loạt</button>}{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkReplacement(true)}>⇄ Đổi Tracking</button>}<button className="primaryBtn" onClick={()=>openEntry("order")}>＋ Tạo Order</button></>:undefined}/>
+            actions={role!=="CLIENT"?<><button className="secondaryBtn" onClick={()=>setImportKind(role==="ADMIN"?"orders":"sales_orders")}>⇩ Import</button>{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkTracking(true)}>▦ Mua đơn hàng loạt</button>}{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkReplacement(true)}>⇄ Đổi Tracking</button>}<button className="primaryBtn" onClick={()=>openEntry("order")}>＋ Tạo Order</button></>:undefined}/>
           <div className="panel dataPanel">
             <div className="dataToolbar orderToolbar">
               <SearchBar value={search} onChange={setSearch} placeholder="Tìm Order ID, Tracking, khách hàng, dịch vụ..."/>
@@ -1071,8 +1112,9 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
         </>}
 
         {role==="ADMIN"&&section==="masterdata"&&<>
-          <PageHeader eyebrow="MASTER DATA" title="Danh mục nhập liệu" description="Quản lý Dịch vụ, Sub-Service, Supplier và Nước. Có thể thêm, sửa, deactivate/activate; không xóa dữ liệu lịch sử."/>
-          <div className="panel"><EnumManager rows={allEnums} onDone={refresh}/></div>
+          <PageHeader eyebrow="SERVICE CONFIGURATION" title="Dịch vụ" description="Cấu hình route Service / Sub-Service / Supplier và Purchase Template tương ứng."/>
+          <ServiceConfigurationPanel enums={allEnums}/>
+          <details className="panel masterDataDetails"><summary>Master data: Service, Sub-Service, Supplier và Nước</summary><EnumManager rows={allEnums} onDone={refresh}/></details>
         </>}
 
         {role==="ADMIN"&&section==="accounts"&&<>
@@ -1084,7 +1126,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
 
     {viewOrder&&<Modal size="wide" title="Chi tiết Order" onClose={()=>setViewOrder(null)}><OrderDetailPanel orderId={Number(viewOrder.id)} role={role} onDone={refresh} onEdit={row=>{setViewOrder(null);openEntry("order",row as RowData)}} onPurchase={role==="ADMIN"?row=>{setViewOrder(null);setPurchaseOrder(row as RowData)}:undefined}/></Modal>}
 
-    {role==="ADMIN"&&bulkTracking&&<Modal size="fullscreen" title="Nhập Tracking & Label hàng loạt" onClose={()=>setBulkTracking(false)}><BulkTrackingSheet enums={enums} onDone={refresh}/></Modal>}
+    {role==="ADMIN"&&bulkTracking&&<Modal size="fullscreen" title="Mua đơn hàng loạt" onClose={()=>setBulkTracking(false)}><BulkTrackingSheet enums={enums} onDone={refresh}/></Modal>}
 
     {role==="ADMIN"&&bulkReplacement&&<Modal size="fullscreen" title="Đổi Tracking & Label hàng loạt" onClose={()=>setBulkReplacement(false)}><TrackingReplacementSheet onDone={refresh}/></Modal>}
 

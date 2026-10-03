@@ -42,6 +42,7 @@ const loginRoute = require(path.join(root, "src/app/api/auth/login/route.ts"));
 const usersRoute = require(path.join(root, "src/app/api/users/route.ts"));
 const userRoute = require(path.join(root, "src/app/api/users/[id]/route.ts"));
 const ordersRoute = require(path.join(root, "src/app/api/orders/route.ts"));
+const clientServicesRoute = require(path.join(root, "src/app/api/client-services/route.ts"));
 const ledgerRoute = require(path.join(root, "src/app/api/ledger/route.ts"));
 const summaryRoute = require(path.join(root, "src/app/api/summary/route.ts"));
 const { db } = require(path.join(root, "src/lib/db.ts"));
@@ -116,6 +117,14 @@ async function main() {
     display_name: "Client B", username: "client.b", password, role: "CLIENT", sales_user_id: salesB.body.id,
   }, adminCookie));
   assert(clientA.status === 201 && clientB.status === 201, "admin should create Clients with Sales owners");
+  const serviceAccess = await post(clientServicesRoute.POST, "http://local/api/client-services", {
+    client_user_id: clientA.body.id,
+    service: "ePacket",
+    sub_service: "",
+    is_enabled: true,
+    discount_percent: 0,
+  }, adminCookie);
+  assert(serviceAccess.status === 200, "admin should enable a Service before Sales creates the Client Order");
 
   const invalidClient = await post(usersRoute.POST, "http://local/api/users", {
     display_name: "No Owner", username: "no.owner", password, role: "CLIENT",
