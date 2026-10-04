@@ -2,9 +2,11 @@
 
 import { useCallback,useEffect,useState } from "react";
 
+type SegmentRule={rule_type:string;segments:string[];priority:number;active:boolean;config:Record<string,unknown>};
+type Segmentation={enabled:boolean;rules:SegmentRule[]};
 type EnumRow={id:number;enum_type:string;value:string;parent_value:string;active:number;sort_order:number};
 type RouteRow={
-  id:number;service:string;sub_service:string;supplier:string;active:number;
+  id:number;service:string;sub_service:string;supplier:string;active:number;segmentation?:Segmentation;
   template_id?:number;template_name?:string;output_mode?:string;active_version_id?:number;version_number?:number;
   purchase_template_id?:number;purchase_template_name?:string;purchase_output_mode?:string;purchase_active_version_id?:number;purchase_version_number?:number;
   manifest_template_id?:number;manifest_template_name?:string;manifest_output_mode?:string;manifest_active_version_id?:number;manifest_version_number?:number;
@@ -38,6 +40,9 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
   const [routes,setRoutes]=useState<RouteRow[]>([]);
   const [selected,setSelected]=useState<RouteRow|null>(null);
   const [form,setForm]=useState({service:"",sub_service:"",supplier:""});
+  const [segmentation,setSegmentation]=useState<Segmentation>({enabled:false,rules:[]});
+  const [segmentDrafts,setSegmentDrafts]=useState<string[]>([]);
+  const [configDrafts,setConfigDrafts]=useState<string[]>([]);
   const [templateKind,setTemplateKind]=useState<"PURCHASE"|"MANIFEST">("PURCHASE");
   const [template,setTemplate]=useState({name:"",output_mode:"MULTI_ORDER"});
   const [routeVariables,setRouteVariables]=useState<RouteVariable[]>([]);
@@ -74,6 +79,18 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
     }catch(error){setMessage("Lỗi: "+(error as Error).message)}
     finally{setBusy(false)}
   }
+  async function saveRouteSegmentation(){
+    if(!selected)return;
+    setBusy(true);setMessage("");
+    try{
+      const rules=segmentation.rules.map((rule,index)=>({...rule,segments:(segmentDrafts[index]||"").split(",").map(value=>value.trim()).filter(Boolean),config:JSON.parse(configDrafts[index]||"{}")}));
+      const saved=await responseJson(await fetch("/api/service-routes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:selected.id,service:selected.service,sub_service:selected.sub_service,supplier:selected.supplier,active:selected.active,segmentation:{...segmentation,rules}})})) as RouteRow;
+      setSelected(saved);setSegmentation(saved.segmentation!);setSegmentDrafts(saved.segmentation!.rules.map(rule=>rule.segments.join(", ")));setConfigDrafts(saved.segmentation!.rules.map(rule=>JSON.stringify(rule.config,null,2)));
+      setMessage("Đã lưu phân loại xuất hàng nâng cao.");await load();
+    }catch(error){setMessage("Lỗi: "+(error as Error).message)}
+    finally{setBusy(false)}
+  }
+  function updateSegmentRule(index:number,changes:Partial<SegmentRule>){setSegmentation(prev=>({...prev,rules:prev.rules.map((rule,i)=>i===index?{...rule,...changes}:rule)}))}
   function chooseTemplateKind(kind:"PURCHASE"|"MANIFEST",route:RouteRow=selected as RouteRow){
     if(!route)return;
     setTemplateKind(kind);setResult(null);setFile(null);
@@ -131,12 +148,33 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
         <button className="primaryBtn" disabled={busy||!form.service||!form.supplier} onClick={()=>void createRoute()}>＋ Thêm cấu hình</button>
       </div>
       <div className="tableWrap routeTable"><table><thead><tr><th>Service</th><th>Sub-Service</th><th>Supplier</th><th>Purchase Template</th><th>Manifest Template</th><th>Status</th><th></th></tr></thead><tbody>
-        {routes.length?routes.map(row=><tr key={row.id} className={selected?.id===row.id?"selectedRoute":""}><td><b>{row.service}</b></td><td>{row.sub_service||"—"}</td><td>{row.supplier}</td><td>{row.purchase_template_name||row.template_name||"Chưa có"}{row.purchase_version_number||row.version_number?<small>Active v{row.purchase_version_number||row.version_number}<ActiveTemplateDownload versionId={row.purchase_active_version_id||row.active_version_id} kind="Purchase"/></small>:null}</td><td>{row.manifest_template_name||"Chưa có"}{row.manifest_version_number?<small>Active v{row.manifest_version_number}<ActiveTemplateDownload versionId={row.manifest_active_version_id} kind="Manifest"/></small>:null}</td><td><span className={row.active?"status goodStatus":"status neutralStatus"}>{row.active?"Active":"Inactive"}</span></td><td><button className="editBtn" onClick={()=>{setSelected(row);chooseTemplateKind("PURCHASE",row);let vars:Record<string,string>={};try{vars=JSON.parse(row.route_variables_json||"{}")}catch{}setRouteVariables(Object.entries(vars).map(([key,value])=>({key,value:String(value)})))}}>Cấu hình</button></td></tr>):<tr><td colSpan={7} className="empty">Chưa có Service Route.</td></tr>}
+        {routes.length?routes.map(row=><tr key={row.id} className={selected?.id===row.id?"selectedRoute":""}><td><b>{row.service}</b></td><td>{row.sub_service||"—"}</td><td>{row.supplier}</td><td>{row.purchase_template_name||row.template_name||"Chưa có"}{row.purchase_version_number||row.version_number?<small>Active v{row.purchase_version_number||row.version_number}<ActiveTemplateDownload versionId={row.purchase_active_version_id||row.active_version_id} kind="Purchase"/></small>:null}</td><td>{row.manifest_template_name||"Chưa có"}{row.manifest_version_number?<small>Active v{row.manifest_version_number}<ActiveTemplateDownload versionId={row.manifest_active_version_id} kind="Manifest"/></small>:null}</td><td><span className={row.active?"status goodStatus":"status neutralStatus"}>{row.active?"Active":"Inactive"}</span></td><td><button className="editBtn" onClick={()=>{setSelected(row);setSegmentation(row.segmentation||{enabled:false,rules:[]});setSegmentDrafts((row.segmentation?.rules||[]).map(rule=>rule.segments.join(", ")));setConfigDrafts((row.segmentation?.rules||[]).map(rule=>JSON.stringify(rule.config,null,2)));chooseTemplateKind("PURCHASE",row);let vars:Record<string,string>={};try{vars=JSON.parse(row.route_variables_json||"{}")}catch{}setRouteVariables(Object.entries(vars).map(([key,value])=>({key,value:String(value)})))}}>Cấu hình</button></td></tr>):<tr><td colSpan={7} className="empty">Chưa có Service Route.</td></tr>}
       </tbody></table></div>
     </section>
 
     {selected&&<section className="templateConfigCard">
       <div className="configHead"><div><b>Cấu hình file · {selected.service} / {selected.sub_service||"—"} / {selected.supplier}</b><span>Purchase = file mua label/đơn. Manifest = file khai báo sau khi đã có Tracking.</span></div><button className="iconBtn" onClick={()=>setSelected(null)}>×</button></div>
+      <div className="routeVariablesEditor segmentationEditor">
+        <div className="routeVariablesHead"><div><b>Phân loại xuất hàng nâng cao</b><span>Route chính vẫn là Service + optional Sub-Service + Supplier.</span></div><button className="secondaryBtn" disabled={busy} onClick={()=>void saveRouteSegmentation()}>Lưu phân vùng</button></div>
+        <label className="segmentationToggle"><input type="checkbox" role="switch" checked={segmentation.enabled} disabled={busy} onChange={e=>setSegmentation({...segmentation,enabled:e.target.checked})}/> Bật phân vùng cho route này</label>
+        {!segmentation.enabled?<p>Đang tắt — không áp dụng segment rule.</p>:<>
+          <p role="status">{segmentation.rules.some(rule=>rule.active&&rule.segments.length)?"Đang hoạt động":"Chưa cấu hình rule"}</p>
+          <p>Trạng thái phản ánh cấu hình rule. Chỉ kiểm tra phân vùng khi evaluator trả về segment cụ thể. ZIP_US / US_ZIP_REGION East/West chưa có ZIP matching.</p>
+          {segmentation.rules.map((rule,index)=><fieldset key={index} disabled={busy}>
+            <legend>Rule {index+1}</legend>
+            <div className="templateGrid">
+              <label><span>Rule type</span><input list="segmentRuleTypes" value={rule.rule_type} onChange={e=>updateSegmentRule(index,{rule_type:e.target.value})}/></label>
+              <label><span>Segments (cách nhau bằng dấu phẩy)</span><input value={segmentDrafts[index]||""} onChange={e=>{setSegmentDrafts(prev=>prev.map((value,i)=>i===index?e.target.value:value));updateSegmentRule(index,{segments:e.target.value.split(",").map(value=>value.trim()).filter(Boolean)})}}/></label>
+              <label><span>Priority (cao chạy trước)</span><input type="number" min="-10000" max="10000" value={rule.priority} onChange={e=>updateSegmentRule(index,{priority:Number(e.target.value)})}/></label>
+              <label><span>Trạng thái rule</span><select value={rule.active?"active":"inactive"} onChange={e=>updateSegmentRule(index,{active:e.target.value==="active"})}><option value="active">Active</option><option value="inactive">Inactive</option></select></label>
+            </div>
+            <label><span>Cấu hình mở rộng (JSON object)</span><textarea aria-label={"Cấu hình mở rộng rule "+(index+1)} rows={3} value={configDrafts[index]||"{}"} onChange={e=>setConfigDrafts(prev=>prev.map((value,i)=>i===index?e.target.value:value))}/></label>
+            <button className="editBtn" onClick={()=>{setSegmentation({...segmentation,rules:segmentation.rules.filter((_,i)=>i!==index)});setConfigDrafts(prev=>prev.filter((_,i)=>i!==index));setSegmentDrafts(prev=>prev.filter((_,i)=>i!==index))}}>Bỏ rule</button>
+          </fieldset>)}
+          <datalist id="segmentRuleTypes"><option value="US_ZIP_REGION"/><option value="ZIP_US"/></datalist>
+          <button className="textBtn" disabled={busy} onClick={()=>{setSegmentation({...segmentation,rules:[...segmentation.rules,{rule_type:"US_ZIP_REGION",segments:["EAST","WEST"],priority:0,active:false,config:{}}]});setConfigDrafts(prev=>[...prev,"{}"]);setSegmentDrafts(prev=>[...prev,"EAST, WEST"])}}>＋ Thêm rule</button>
+        </>}
+      </div>
       <div className="templateKindTabs"><button className={templateKind==="PURCHASE"?"active":""} onClick={()=>chooseTemplateKind("PURCHASE")}>Purchase Template</button><button className={templateKind==="MANIFEST"?"active":""} onClick={()=>chooseTemplateKind("MANIFEST")}>Manifest Template</button></div>
       <div className="routeVariablesEditor">
         <div className="routeVariablesHead"><div><b>Biến cố định cho template</b><span>Dữ liệu cố định của cấu hình này. Dùng trong Excel bằng <code>{"{{route.service_code}}"}</code>, <code>{"{{route.sender_address}}"}</code>…</span></div><button className="secondaryBtn" disabled={busy} onClick={()=>void saveRouteVariables()}>Lưu biến cố định</button></div>

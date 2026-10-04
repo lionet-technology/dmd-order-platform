@@ -51,11 +51,25 @@ async function main(){
  check(guard.warehouseGuard(order,carton).reason_code==="ROUTE_HOLD","route hold");
  db.prepare("UPDATE service_route_configs SET warehouse_hold=0 WHERE id=?").run(routeId);
  db.prepare("INSERT INTO warehouse_routing_rules(route_config_id,evaluator_key) VALUES (?,'test')").run(routeId);
- check(guard.warehouseGuard(order,{...carton,segment_key:"east"}).reason_code==="RULE_UNAVAILABLE","unknown evaluator fails closed");
+ check(guard.warehouseGuard(order,{...carton,segment_key:"east"}).decision==="ALLOW","disabled segmentation ignores rules");
+ db.prepare("UPDATE service_route_configs SET segmentation_enabled=1 WHERE id=?").run(routeId);
+ check(guard.warehouseGuard(order,{...carton,segment_key:"east"}).decision==="ALLOW","unknown evaluator allows scaffold");
  guard.registerWarehouseSegmentEvaluator("test",()=>"west");
  check(guard.warehouseGuard(order,{...carton,segment_key:"east"}).reason_code==="SEGMENT_MISMATCH","segment mismatch");
  check(guard.warehouseGuard(order,{...carton,segment_key:"west"}).decision==="ALLOW","segment match");
+ db.prepare("UPDATE manifest_cartons SET segment_key='east' WHERE id=?").run(cartonId);
+ const segmentScan=await json(await cartonsRoute.POST(req("http://local/api/manifest-cartons","POST",{identifier:"WH-TRACK-1",manifest_carton_id:cartonId},warehouseCookie)));
+ check(segmentScan.status===400&&segmentScan.body.reason_code==="SEGMENT_MISMATCH","scan API enforces concrete mismatch");
+ check(flow.manifestCartonDetail(cartonId).items.length===1,"mismatch scan rolls back items");
+ let segmentCloseBlocked=false;try{flow.closeManifestCarton(cartonId,warehouse.id)}catch(error){segmentCloseBlocked=error.reason_code==="SEGMENT_MISMATCH"}
+ check(segmentCloseBlocked&&flow.manifestCartonDetail(cartonId).carton.status==="OPEN","close rejects concrete mismatch atomically");
+ db.prepare("UPDATE service_route_configs SET segmentation_enabled=0 WHERE id=?").run(routeId);
+ const disabledScan=await json(await cartonsRoute.POST(req("http://local/api/manifest-cartons","POST",{identifier:"WH-TRACK-1",manifest_carton_id:cartonId},warehouseCookie)));
+ check(disabledScan.status===201,"OFF permits scan despite rule mismatch");
+ flow.removeManifestIdentifier("WH-TRACK-1",cartonId,warehouse.id);
+ db.prepare("UPDATE manifest_cartons SET segment_key=NULL WHERE id=?").run(cartonId);
  db.prepare("DELETE FROM warehouse_routing_rules").run();
+ db.prepare("UPDATE service_route_configs SET segmentation_enabled=0 WHERE id=?").run(routeId);
  flow.changeManifestStatus(cartonId,"pause",warehouse.id);
  check(flow.manifestCartonDetail(cartonId).carton.status==="PAUSED","pause");
  check((await json(await cartonsRoute.POST(req("http://local/api/manifest-cartons","POST",{identifier:"WH-TRACK-1",manifest_carton_id:cartonId},warehouseCookie)))).status===400,"paused rejects scan");

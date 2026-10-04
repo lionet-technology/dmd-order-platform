@@ -3,6 +3,8 @@ import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { canonicalEnumValue } from "@/lib/enums";
 
+import { parseSegmentation, readSegmentation, saveSegmentation } from "@/lib/route-segmentation";
+
 export const runtime="nodejs";
 
 function routeVariables(value:unknown){
@@ -37,13 +39,14 @@ export async function GET(req:NextRequest){
     "LEFT JOIN purchase_template_versions mpv ON mpv.template_id=mpt.id AND mpv.status='ACTIVE' "+
     "ORDER BY rc.active DESC,rc.service,rc.sub_service,rc.supplier"
   ).all();
-  return NextResponse.json(rows);
+  return NextResponse.json((rows as Array<{id:number}>).map(row=>({...row,segmentation:readSegmentation(row.id)})));
 }
 
 export async function POST(req:NextRequest){
   const auth=requireUser(req,"ADMIN");if(auth.error)return auth.error;
   try{
     const body=await req.json();
+    const segmentation=Object.prototype.hasOwnProperty.call(body,"segmentation")?parseSegmentation(body.segmentation):null;
     const service=canonicalEnumValue("SERVICE",body.service);
     const subService=body.sub_service?canonicalEnumValue("SUB_SERVICE",body.sub_service,service):"";
     const supplier=canonicalEnumValue("SUPPLIER",body.supplier);
@@ -53,24 +56,28 @@ export async function POST(req:NextRequest){
     const existing=body.id
       ? db.prepare("SELECT id FROM service_route_configs WHERE id=?").get(Number(body.id)) as {id:number}|undefined
       : db.prepare("SELECT id FROM service_route_configs WHERE lower(service)=lower(?) AND lower(sub_service)=lower(?) AND lower(supplier)=lower(?)").get(service,subService,supplier) as {id:number}|undefined;
-    let id:number;
-    if(existing){
-      id=existing.id;
-      const previous=db.prepare("SELECT * FROM service_route_configs WHERE id=?").get(id) as Record<string,unknown>;
-      if([service,subService,supplier].some((value,index)=>value.toLowerCase()!==String(previous[["service","sub_service","supplier"][index]]).toLowerCase())&&db.prepare("SELECT id FROM manifest_cartons WHERE route_config_id=? LIMIT 1").get(id))throw new Error("Route đã gắn với thùng kho. Hãy tạo route mới để giữ lịch sử thùng.");
-      if(variables){
-        db.prepare("UPDATE service_route_configs SET service=?,sub_service=?,supplier=?,route_variables_json=?,active=?,updated_by_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
-          .run(service,subService,supplier,JSON.stringify(variables),active,auth.user.id,id);
+    const id=db.transaction(()=>{
+      let id:number;
+      if(existing){
+        id=existing.id;
+        const previous=db.prepare("SELECT * FROM service_route_configs WHERE id=?").get(id) as Record<string,unknown>;
+        if([service,subService,supplier].some((value,index)=>value.toLowerCase()!==String(previous[["service","sub_service","supplier"][index]]).toLowerCase())&&db.prepare("SELECT id FROM manifest_cartons WHERE route_config_id=? LIMIT 1").get(id))throw new Error("Route đã gắn với thùng kho. Hãy tạo route mới để giữ lịch sử thùng.");
+        if(variables){
+          db.prepare("UPDATE service_route_configs SET service=?,sub_service=?,supplier=?,route_variables_json=?,active=?,updated_by_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+            .run(service,subService,supplier,JSON.stringify(variables),active,auth.user.id,id);
+        }else{
+          db.prepare("UPDATE service_route_configs SET service=?,sub_service=?,supplier=?,active=?,updated_by_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+            .run(service,subService,supplier,active,auth.user.id,id);
+        }
       }else{
-        db.prepare("UPDATE service_route_configs SET service=?,sub_service=?,supplier=?,active=?,updated_by_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
-          .run(service,subService,supplier,active,auth.user.id,id);
+        const result=db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier,route_variables_json,active,created_by_user_id,updated_by_user_id) VALUES (?,?,?,?,?,?,?)")
+          .run(service,subService,supplier,JSON.stringify(variables||{}),active,auth.user.id,auth.user.id);
+        id=Number(result.lastInsertRowid);
       }
-    }else{
-      const result=db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier,route_variables_json,active,created_by_user_id,updated_by_user_id) VALUES (?,?,?,?,?,?,?)")
-        .run(service,subService,supplier,JSON.stringify(variables||{}),active,auth.user.id,auth.user.id);
-      id=Number(result.lastInsertRowid);
-    }
-    return NextResponse.json(db.prepare("SELECT * FROM service_route_configs WHERE id=?").get(id),{status:existing?200:201});
+      if(segmentation)saveSegmentation(id,segmentation);
+      return id;
+    })();
+    return NextResponse.json({...db.prepare("SELECT * FROM service_route_configs WHERE id=?").get(id) as Record<string,unknown>,segmentation:readSegmentation(id)},{status:existing?200:201});
   }catch(error){
     return NextResponse.json({error:error instanceof Error?error.message:"Không thể lưu cấu hình tuyến."},{status:400});
   }

@@ -610,6 +610,7 @@ if (!(db.prepare("SELECT sql FROM sqlite_master WHERE name='manifest_cartons'").
 db.exec("DROP INDEX IF EXISTS idx_manifest_cartons_one_open_service");
 ensureColumn("manifest_cartons","route_config_id","route_config_id INTEGER REFERENCES service_route_configs(id)");
 ensureColumn("manifest_cartons","segment_key","segment_key TEXT");
+ensureColumn("service_route_configs","segmentation_enabled","segmentation_enabled INTEGER NOT NULL DEFAULT 0 CHECK(segmentation_enabled IN (0,1))");
 ensureColumn("service_route_configs","warehouse_hold","warehouse_hold INTEGER NOT NULL DEFAULT 0");
 db.exec(`
  CREATE TABLE IF NOT EXISTS warehouse_order_holds (
@@ -636,6 +637,7 @@ db.exec(`
  AND rc.sub_service=COALESCE(o.sub_service,'') COLLATE NOCASE AND rc.supplier=COALESCE(o.supplier,'') COLLATE NOCASE
  WHERE i.manifest_carton_id=manifest_cartons.id LIMIT 1) WHERE route_config_id IS NULL;
 `);
+ensureColumn("warehouse_routing_rules","priority","priority INTEGER NOT NULL DEFAULT 0");
 db.pragma("foreign_keys = ON");
 const rootAdminCount = (db.prepare("SELECT COUNT(*) c FROM users WHERE is_root_admin=1").get() as {c:number}).c;
 if(rootAdminCount===0){

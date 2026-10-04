@@ -11,6 +11,7 @@
     "verify:orders": "node scripts/verify-order-flow.cjs",
     "verify:cancellation": "node scripts/verify-order-cancellation.cjs",
     "verify:purchase": "node scripts/verify-purchase-engine.cjs",
+    "verify:segmentation": "node scripts/verify-route-segmentation.cjs",
     "verify:manifest": "node scripts/verify-manifest-cartons.cjs"
   },
   "dependencies": {
