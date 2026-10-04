@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
   username TEXT NOT NULL UNIQUE COLLATE NOCASE,
   display_name TEXT NOT NULL,
   password_hash TEXT NOT NULL,
-  role TEXT NOT NULL CHECK(role IN ('ADMIN','SALES','CLIENT')),
+  role TEXT NOT NULL CHECK(role IN ('ADMIN','SALES','CLIENT','WAREHOUSE')),
   sales_user_id INTEGER,
   active INTEGER NOT NULL DEFAULT 1,
   is_root_admin INTEGER NOT NULL DEFAULT 0,
@@ -240,6 +240,35 @@ CREATE TABLE IF NOT EXISTS purchase_template_versions (
 );
 CREATE INDEX IF NOT EXISTS idx_purchase_template_versions_template ON purchase_template_versions(template_id,status,version_number DESC);
 
+CREATE TABLE IF NOT EXISTS manifest_cartons (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  carton_code TEXT NOT NULL UNIQUE,
+  service TEXT NOT NULL COLLATE NOCASE,
+  manifest_date TEXT NOT NULL,
+  daily_sequence INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'OPEN' CHECK(status IN ('OPEN','CLOSED')),
+  created_by_user_id INTEGER,
+  closed_by_user_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  closed_at TEXT,
+  exported_at TEXT,
+  UNIQUE(service,manifest_date,daily_sequence)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_manifest_cartons_one_open_service ON manifest_cartons(service) WHERE status='OPEN';
+CREATE INDEX IF NOT EXISTS idx_manifest_cartons_recent ON manifest_cartons(manifest_date DESC,daily_sequence DESC);
+
+CREATE TABLE IF NOT EXISTS manifest_carton_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  manifest_carton_id INTEGER NOT NULL REFERENCES manifest_cartons(id) ON DELETE CASCADE,
+  order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE RESTRICT,
+  order_carton_id INTEGER NOT NULL REFERENCES order_cartons(id) ON DELETE RESTRICT,
+  tracking_id INTEGER NOT NULL REFERENCES order_trackings(id) ON DELETE RESTRICT,
+  added_by_user_id INTEGER,
+  added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(order_carton_id)
+);
+CREATE INDEX IF NOT EXISTS idx_manifest_carton_items_carton ON manifest_carton_items(manifest_carton_id,added_at,id);
+
 CREATE TABLE IF NOT EXISTS supplier_costs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   supplier TEXT,
@@ -355,9 +384,9 @@ if(!orderEventsTableSql.includes("'INTERNAL'")){
 }
 
 // SQLite cannot alter a CHECK constraint in place. Rebuild legacy users tables
-// once so the new CLIENT role is accepted without losing existing accounts.
+// when a new role is added without losing existing accounts or sessions.
 const usersTableSql = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get() as { sql?: string } | undefined)?.sql || "";
-if (!usersTableSql.includes("'CLIENT'")) {
+if (!usersTableSql.includes("'WAREHOUSE'")) {
   const userColumns = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
   const hasSalesOwner = userColumns.some((column) => column.name === "sales_user_id");
   const copySalesOwner = hasSalesOwner ? "sales_user_id" : "NULL";
@@ -365,7 +394,9 @@ if (!usersTableSql.includes("'CLIENT'")) {
   // preserved and keep pointing at the replacement users table with the same IDs.
   db.pragma("foreign_keys = OFF");
   try {
-    db.transaction(() => {
+    const migrateUsers=db.transaction(() => {
+      const currentSql=(db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get() as {sql?:string}|undefined)?.sql||"";
+      if(currentSql.includes("'WAREHOUSE'"))return;
       db.exec(`
         DROP TABLE IF EXISTS users_new;
         CREATE TABLE users_new (
@@ -373,7 +404,7 @@ if (!usersTableSql.includes("'CLIENT'")) {
           username TEXT NOT NULL UNIQUE COLLATE NOCASE,
           display_name TEXT NOT NULL,
           password_hash TEXT NOT NULL,
-          role TEXT NOT NULL CHECK(role IN ('ADMIN','SALES','CLIENT')),
+          role TEXT NOT NULL CHECK(role IN ('ADMIN','SALES','CLIENT','WAREHOUSE')),
           sales_user_id INTEGER,
           active INTEGER NOT NULL DEFAULT 1,
           is_root_admin INTEGER NOT NULL DEFAULT 0,
@@ -386,7 +417,8 @@ if (!usersTableSql.includes("'CLIENT'")) {
         DROP TABLE users;
         ALTER TABLE users_new RENAME TO users;
       `);
-    })();
+    });
+    migrateUsers.immediate();
   } finally {
     db.pragma("foreign_keys = ON");
   }

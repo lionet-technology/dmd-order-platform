@@ -3,7 +3,7 @@
 import { useCallback,useEffect,useState } from "react";
 import { TRACKING_REPLACEMENT_REASONS } from "@/lib/order-rules";
 
-type Role="ADMIN"|"SALES"|"CLIENT";
+type Role="ADMIN"|"SALES"|"CLIENT"|"WAREHOUSE";
 type EnumRow={id:number;enum_type:string;value:string;parent_value:string;active:number;sort_order:number};
 type GenericRow=Record<string,unknown>;
 

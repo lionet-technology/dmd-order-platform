@@ -2,7 +2,7 @@ import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypt
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "./db";
 
-export type UserRole = "ADMIN" | "SALES" | "CLIENT";
+export type UserRole = "ADMIN" | "SALES" | "CLIENT" | "WAREHOUSE";
 export type AuthUser = {
   id: number;
   username: string;
@@ -93,6 +93,7 @@ export function getClientAccount(id: unknown, activeOnly = false): ClientAccount
 export function canAccessClient(user: AuthUser, client: ClientAccount) {
   if (user.role === "ADMIN") return true;
   if (user.role === "CLIENT") return client.id === user.id;
+  if (user.role === "WAREHOUSE") return false;
   return client.sales_user_id === user.id;
 }
 
@@ -133,6 +134,13 @@ export function requireUser(req: NextRequest, role?: UserRole) {
   if (!user) return { error: NextResponse.json({ error:"Unauthorized" }, { status:401 }) };
   if (role && user.role !== role) return { error: NextResponse.json({ error:"Forbidden" }, { status:403 }) };
   return { user };
+}
+
+export function requireAnyRole(req:NextRequest,roles:UserRole[]){
+  const user=currentUser(req);
+  if(!user)return {error:NextResponse.json({error:"Unauthorized"},{status:401})};
+  if(!roles.includes(user.role))return {error:NextResponse.json({error:"Forbidden"},{status:403})};
+  return {user};
 }
 
 export function publicUser(user: AuthUser) {

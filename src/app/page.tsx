@@ -6,11 +6,11 @@ import { ManifestScanPanel } from "./manifest-workspace";
 import { ServiceConfigurationPanel } from "./service-workspace";
 import { TRACKING_REPLACEMENT_REASONS } from "@/lib/order-rules";
 
-type Role = "ADMIN" | "SALES" | "CLIENT";
+type Role = "ADMIN" | "SALES" | "CLIENT" | "WAREHOUSE";
 type User = { id:number; username:string; display_name:string; role:Role; sales_user_id?:number|null; sales_display_name?:string|null; active?:number; is_root_admin?:number };
 type RowData = Record<string, string | number | null>;
 type PagedRows = { items:RowData[]; total:number; page:number; pageSize:number; totalPages:number };
-type AppSection = "dashboard"|"orders"|"shipping"|"costs"|"recon"|"ledger"|"accounts"|"masterdata";
+type AppSection = "dashboard"|"orders"|"manifest"|"shipping"|"costs"|"recon"|"ledger"|"accounts"|"masterdata";
 type Summary = { orders:number; review:number; unmatched:number; ledger:number; receivable:number };
 type ManualKind = "order" | "cost" | "balance";
 type ImportKind = "orders"|"sales_orders"|"costs"|"tracking_updates"|"balance";
@@ -611,13 +611,13 @@ function UserManager({users,enums,onDone,currentUser}:{users:User[];enums:EnumRo
 
   return <div className="accountPanel">
     <form className="formCard" onSubmit={create}>
-      <div className="formHead"><div><span className="eyebrow">ACCOUNT MANAGEMENT</span><h3>Tạo tài khoản Admin / Sales / Client</h3></div></div>
-      <p className="formHint">Client được gán bắt buộc cho một Sales. Sales chỉ thao tác Orders và Balance của các Client mình phụ trách; Client chỉ được xem dữ liệu của chính mình.</p>
+      <div className="formHead"><div><span className="eyebrow">ACCOUNT MANAGEMENT</span><h3>Tạo tài khoản Admin / Sales / Client / Nhân viên kho</h3></div></div>
+      <p className="formHint">Nhân viên kho chỉ sử dụng khu vực Manifest. Client được gán bắt buộc cho một Sales và chỉ xem dữ liệu của chính mình.</p>
       <div className="formGrid">
         <Field label="Tên hiển thị" name="display_name" value={form.display_name} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} required/>
         <Field label="Username" name="username" value={form.username} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} required/>
         <Field label="Mật khẩu ban đầu" name="password" type="password" value={form.password} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} required/>
-        <SelectField label="Role" name="role" value={form.role} onChange={(n,v)=>setForm(x=>({...x,[n]:v,sales_user_id:v==="CLIENT"?x.sales_user_id:""}))} allowCustom={false} requireOption options={[{value:"SALES",label:"Sales"},{value:"CLIENT",label:"Client"},{value:"ADMIN",label:"Admin"}]}/>
+        <SelectField label="Role" name="role" value={form.role} onChange={(n,v)=>setForm(x=>({...x,[n]:v,sales_user_id:v==="CLIENT"?x.sales_user_id:""}))} allowCustom={false} requireOption options={[{value:"WAREHOUSE",label:"Nhân viên kho"},{value:"SALES",label:"Sales"},{value:"CLIENT",label:"Client"},{value:"ADMIN",label:"Admin"}]}/>
         {form.role==="CLIENT"&&<SelectField label="Sales phụ trách" name="sales_user_id" value={form.sales_user_id} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} allowCustom={false} requireOption options={salesUsers.map(user=>({value:String(user.id),label:user.display_name+" (@"+user.username+")"}))}/>}
       </div>
       <div className="formFooter"><span className={msg.startsWith("Lỗi")?"inlineMsg error":"inlineMsg"}>{msg}</span><button className="primaryBtn" disabled={busy}>{busy?"Đang tạo…":"Tạo tài khoản"}</button></div>
@@ -884,7 +884,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   const [users,setUsers]=useState<User[]>([]);
   const [enums,setEnums]=useState<EnumRow[]>([]);
   const [allEnums,setAllEnums]=useState<EnumRow[]>([]);
-  const [section,setSection]=useState<AppSection>(role==="ADMIN"?"dashboard":"orders");
+  const [section,setSection]=useState<AppSection>(role==="ADMIN"?"dashboard":role==="WAREHOUSE"?"manifest":"orders");
   const [data,setData]=useState<PagedRows>({items:[],total:0,page:1,pageSize:20,totalPages:1});
   const [recent,setRecent]=useState<RowData[]>([]);
   const [page,setPage]=useState(1);
@@ -896,7 +896,6 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   const [purchaseOrder,setPurchaseOrder]=useState<RowData|null>(null);
   const [viewOrder,setViewOrder]=useState<RowData|null>(null);
   const [bulkTracking,setBulkTracking]=useState(false);
-  const [manifestScan,setManifestScan]=useState(false);
   const [bulkReplacement,setBulkReplacement]=useState(false);
   const [importKind,setImportKind]=useState<ImportKind|null>(null);
   const [orderFilters,setOrderFilters]=useState({status:"",service:"",salesUserId:"",reconcile:""});
@@ -920,7 +919,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   },[role,onLogout]);
 
   const loadUsers=useCallback(async()=>{
-    if(role==="CLIENT"){setUsers([]);return;}
+    if(role==="CLIENT"||role==="WAREHOUSE"){setUsers([]);return;}
     const res=await fetch("/api/users");
     if(res.status===401){onLogout();return;}
     if(res.ok)setUsers(await res.json());
@@ -980,7 +979,8 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   },[loadSummary,loadUsers,loadEnums,loadRecent,loadSection,section,page,debouncedSearch]);
 
   function navigate(next:AppSection){
-    if(role!=="ADMIN"&&!(["orders","ledger"] as AppSection[]).includes(next))return;
+    if(role==="WAREHOUSE"&&next!=="manifest")return;
+    if((role==="SALES"||role==="CLIENT")&&!(["orders","ledger"] as AppSection[]).includes(next))return;
     setSection(next);setSearch("");setPage(1);
   }
   function openEntry(kind:ManualKind,row?:RowData){
@@ -996,19 +996,20 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
     ?["workflow_status","created_at","system_order_code","order_id","sales","customer","item","service","sub_service","chargeable_weight","tracking","true_net_cost","sales_price","extra_surcharge","extra_import_tax","total_due","reconciliation_status"]
     :["workflow_status","created_at","system_order_code","order_id","customer","item","service","sub_service","chargeable_weight","tracking","sales_price","total_due"];
 
-  const nav:Array<{key:AppSection;label:string;icon:string;adminOnly?:boolean}>=[
-    {key:"dashboard",label:"Tổng quan",icon:"⌂",adminOnly:true},
-    {key:"orders",label:"Orders",icon:"▤"},
-    {key:"shipping",label:"Theo dõi vận chuyển",icon:"⌁",adminOnly:true},
-    {key:"ledger",label:"Balance Ledger",icon:"≋"},
-    {key:"costs",label:"Supplier Costs",icon:"$ ",adminOnly:true},
-    {key:"recon",label:"Reconciliation",icon:"✓",adminOnly:true},
-    {key:"masterdata",label:"Dịch vụ",icon:"☷",adminOnly:true},
-    {key:"accounts",label:"Tài khoản",icon:"♙",adminOnly:true},
+  const nav:Array<{key:AppSection;label:string;icon:string;roles:Role[]}>=[
+    {key:"dashboard",label:"Tổng quan",icon:"⌂",roles:["ADMIN"]},
+    {key:"orders",label:"Orders",icon:"▤",roles:["ADMIN","SALES","CLIENT"]},
+    {key:"manifest",label:"Manifest kho",icon:"▣",roles:["ADMIN","WAREHOUSE"]},
+    {key:"shipping",label:"Theo dõi vận chuyển",icon:"⌁",roles:["ADMIN"]},
+    {key:"ledger",label:"Balance Ledger",icon:"≋",roles:["ADMIN","SALES","CLIENT"]},
+    {key:"costs",label:"Supplier Costs",icon:"$ ",roles:["ADMIN"]},
+    {key:"recon",label:"Reconciliation",icon:"✓",roles:["ADMIN"]},
+    {key:"masterdata",label:"Dịch vụ",icon:"☷",roles:["ADMIN"]},
+    {key:"accounts",label:"Tài khoản",icon:"♙",roles:["ADMIN"]},
   ];
 
   const titleMap:Record<AppSection,string>={
-    dashboard:"Tổng quan",orders:"Orders",shipping:"Theo dõi vận chuyển",costs:"Supplier Costs",
+    dashboard:"Tổng quan",orders:"Orders",manifest:"Manifest kho",shipping:"Theo dõi vận chuyển",costs:"Supplier Costs",
     recon:"Reconciliation",ledger:"Balance Ledger",masterdata:"Dịch vụ",accounts:"Tài khoản",
   };
 
@@ -1016,7 +1017,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
     <aside className="sidebar">
       <div className="brand"><div className="brandMark">D</div><div><b>DMD Finance</b><span>Operations</span></div></div>
       <nav className="sideNav">
-        {nav.filter(n=>!n.adminOnly||role==="ADMIN").map(n=><button key={n.key} className={section===n.key?"active":""} onClick={()=>navigate(n.key)}>
+        {nav.filter(n=>n.roles.includes(role)).map(n=><button key={n.key} className={section===n.key?"active":""} onClick={()=>navigate(n.key)}>
           <i>{n.icon}</i><span>{n.label}</span>
           {n.key==="recon"&&Number(summary?.review||0)>0&&<em>{summary?.review}</em>}
         </button>)}
@@ -1030,7 +1031,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
 
     <div className="appMain">
       <div className="topbar">
-        <button className="mobileBrand" onClick={()=>navigate(role==="ADMIN"?"dashboard":"orders")}>DMD</button>
+        <button className="mobileBrand" onClick={()=>navigate(role==="ADMIN"?"dashboard":role==="WAREHOUSE"?"manifest":"orders")}>DMD</button>
         <div className="crumb"><span>Finance Ops</span><i>/</i><b>{titleMap[section]}</b></div>
         <div className="topUser">
           <span className="topRole">{role}</span>
@@ -1067,7 +1068,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
 
         {section==="orders"&&<>
           <PageHeader eyebrow="OPERATIONS" title="Orders" description={role==="ADMIN"?"Quản lý toàn bộ đơn hàng và trạng thái xử lý.":role==="SALES"?"Quản lý Orders của các Client được phân công.":"Theo dõi Orders của tài khoản Client này."}
-            actions={role!=="CLIENT"?<><button className="secondaryBtn" onClick={()=>setImportKind(role==="ADMIN"?"orders":"sales_orders")}>⇩ Import</button>{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkTracking(true)}>▦ Mua đơn hàng loạt</button>}{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setManifestScan(true)}>Manifest / Xuất hàng</button>}{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkReplacement(true)}>⇄ Đổi Tracking</button>}<button className="primaryBtn" onClick={()=>openEntry("order")}>＋ Tạo Order</button></>:undefined}/>
+            actions={role!=="CLIENT"?<><button className="secondaryBtn" onClick={()=>setImportKind(role==="ADMIN"?"orders":"sales_orders")}>⇩ Import</button>{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkTracking(true)}>▦ Mua đơn hàng loạt</button>}{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkReplacement(true)}>⇄ Đổi Tracking</button>}<button className="primaryBtn" onClick={()=>openEntry("order")}>＋ Tạo Order</button></>:undefined}/>
           <div className="panel dataPanel">
             <div className="dataToolbar orderToolbar">
               <OrderSearchBar value={search} onChange={setSearch}/>
@@ -1083,6 +1084,11 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
             {loading?<div className="loadingState">Đang tải dữ liệu…</div>:<Table rows={data.items} cols={orderCols} onView={setViewOrder} onPurchase={role==="ADMIN"?row=>setPurchaseOrder(row):undefined}/>}
             <Pager data={data} onPage={setPage}/>
           </div>
+        </>}
+
+        {(role==="ADMIN"||role==="WAREHOUSE")&&section==="manifest"&&<>
+          <PageHeader eyebrow="WAREHOUSE OPERATIONS" title="Manifest kho" description="Nhập đơn vào thùng xuất, chốt khi đầy và xuất file Manifest theo từng thùng."/>
+          <ManifestScanPanel/>
         </>}
 
         {role==="ADMIN"&&section==="shipping"&&<>
@@ -1126,7 +1132,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
         </>}
 
         {role==="ADMIN"&&section==="accounts"&&<>
-          <PageHeader eyebrow="ACCESS CONTROL" title="Tài khoản" description="Tạo và quản lý quyền truy cập cho Admin / Sales / Client."/>
+          <PageHeader eyebrow="ACCESS CONTROL" title="Tài khoản" description="Tạo và quản lý quyền truy cập cho Admin / Sales / Client / Nhân viên kho."/>
           <div className="panel"><UserManager users={users} enums={enums} onDone={refresh} currentUser={user}/></div>
         </>}
       </div>
@@ -1134,12 +1140,11 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
 
     {viewOrder&&<Modal size="wide" title="Chi tiết Order" onClose={()=>setViewOrder(null)}><OrderDetailPanel orderId={Number(viewOrder.id)} role={role} onDone={refresh} onEdit={row=>{setViewOrder(null);openEntry("order",row as RowData)}} onPurchase={role==="ADMIN"?row=>{setViewOrder(null);setPurchaseOrder(row as RowData)}:undefined}/></Modal>}
 
-    {role==="ADMIN"&&manifestScan&&<Modal size="fullscreen" title="Manifest / Xuất hàng" onClose={()=>setManifestScan(false)}><ManifestScanPanel/></Modal>}
     {role==="ADMIN"&&bulkTracking&&<Modal size="fullscreen" title="Mua đơn hàng loạt" onClose={()=>setBulkTracking(false)}><BulkTrackingSheet enums={enums} onDone={refresh}/></Modal>}
 
     {role==="ADMIN"&&bulkReplacement&&<Modal size="fullscreen" title="Đổi Tracking & Label hàng loạt" onClose={()=>setBulkReplacement(false)}><TrackingReplacementSheet onDone={refresh}/></Modal>}
 
-    {role!=="CLIENT"&&importKind&&<Modal size="compact" title={importKind==="costs"?"Import Supplier Costs":importKind==="tracking_updates"?"Import đổi Tracking & Label":importKind==="balance"?"Import Balance":role==="ADMIN"?"Import Orders Admin":"Import Orders Sales"} onClose={()=>setImportKind(null)}>
+    {(role==="ADMIN"||role==="SALES")&&importKind&&<Modal size="compact" title={importKind==="costs"?"Import Supplier Costs":importKind==="tracking_updates"?"Import đổi Tracking & Label":importKind==="balance"?"Import Balance":role==="ADMIN"?"Import Orders Admin":"Import Orders Sales"} onClose={()=>setImportKind(null)}>
       <div className="importModalContent">
         {importKind==="orders"&&<ImportCard kind="orders" title="Orders Admin" detail="Import nhiều Order với đầy đủ field vận hành và finance." templateHref="/templates/dmd-admin-orders.xlsx" onDone={()=>{setImportKind(null);void refresh()}}/>}
         {importKind==="sales_orders"&&<ImportCard kind="sales_orders" title="Orders Sales" detail="Import nhiều Order của account đang đăng nhập; không nhận field finance Admin." templateHref="/templates/dmd-sales-orders.xlsx" onDone={()=>{setImportKind(null);void refresh()}}/>}
@@ -1171,7 +1176,7 @@ function AuthScreen({setup,onSuccess}:{setup:boolean;onSuccess:()=>void}){
     }catch(error){setMsg(error instanceof Error?error.message:"Không đăng nhập được")}
     finally{setBusy(false)}
   }
-  return <main className="authPage"><form className="authCard" onSubmit={submit}><span className="eyebrow">DMD · FINANCE OPS</span><h1>{setup?"Tạo Admin đầu tiên":"Đăng nhập"}</h1><p>{setup?"Khởi tạo tài khoản quản trị. Sau đó Admin sẽ tạo tài khoản cho Sales và Client.":"Dùng tài khoản Admin, Sales hoặc Client được cấp."}</p>
+  return <main className="authPage"><form className="authCard" onSubmit={submit}><span className="eyebrow">DMD · FINANCE OPS</span><h1>{setup?"Tạo Admin đầu tiên":"Đăng nhập"}</h1><p>{setup?"Khởi tạo tài khoản quản trị. Sau đó Admin sẽ tạo các tài khoản vận hành.":"Dùng tài khoản Admin, Sales, Client hoặc Nhân viên kho được cấp."}</p>
     {setup&&<Field label="Tên hiển thị" name="display_name" value={form.display_name} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} required/>}
     <Field label="Username" name="username" value={form.username} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} required/>
     <Field label="Password" name="password" type="password" value={form.password} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} required/>

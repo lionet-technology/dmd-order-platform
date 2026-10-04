@@ -30,7 +30,7 @@ export async function PATCH(req:NextRequest,{params}:{params:Promise<{id:string}
   }
   if(b.role!==undefined){
     const nextRole=String(b.role).toUpperCase();
-    if(nextRole!=="ADMIN"&&nextRole!=="SALES"&&nextRole!=="CLIENT") return NextResponse.json({error:"Role phải là ADMIN, SALES hoặc CLIENT."},{status:400});
+    if(!["ADMIN","SALES","CLIENT","WAREHOUSE"].includes(nextRole)) return NextResponse.json({error:"Role phải là ADMIN, SALES, CLIENT hoặc WAREHOUSE."},{status:400});
     const nextSalesUserId=nextRole==="CLIENT"?Number(b.sales_user_id??existing.sales_user_id??0):null;
     if(nextRole==="CLIENT"){
       const sales=nextSalesUserId?db.prepare("SELECT id FROM users WHERE id=? AND role='SALES' AND active=1").get(nextSalesUserId):undefined;

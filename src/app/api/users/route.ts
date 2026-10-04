@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createUser, requireUser } from "@/lib/auth";
+import { createUser, requireUser, type UserRole } from "@/lib/auth";
 import { queryAll } from "@/lib/db";
 export const runtime="nodejs";
 export async function GET(req:NextRequest){
@@ -18,10 +18,10 @@ export async function POST(req:NextRequest){
   try{
     const b=await req.json();
     const role=String(b.role||"").toUpperCase();
-    if(role!=="ADMIN"&&role!=="SALES"&&role!=="CLIENT") return NextResponse.json({error:"Role phải là ADMIN, SALES hoặc CLIENT."},{status:400});
+    if(!["ADMIN","SALES","CLIENT","WAREHOUSE"].includes(role)) return NextResponse.json({error:"Role phải là ADMIN, SALES, CLIENT hoặc WAREHOUSE."},{status:400});
     return NextResponse.json(createUser({
       username:b.username,display_name:b.display_name,password:b.password,
-      role,sales_user_id:b.sales_user_id,created_by_user_id:auth.user.id
+      role:role as UserRole,sales_user_id:b.sales_user_id,created_by_user_id:auth.user.id
     }),{status:201});
   } catch(error){
     const msg=error instanceof Error?error.message:"Không tạo được tài khoản";

@@ -1,24 +1,51 @@
 "use client";
-import { useRef,useState } from "react";
-type Row={tracking_id:number;tracking:string;carton_id:number;system_order_code:string;order_id:string;customer:string;recipient_name:string;service:string;sub_service:string;supplier:string};
+
+import {FormEvent,useCallback,useEffect,useRef,useState} from "react";
+
+type ManifestCarton={id:number;carton_code:string;service:string;manifest_date:string;daily_sequence:number;status:"OPEN"|"CLOSED";item_count:number;order_count:number;created_at:string;closed_at?:string|null;exported_at?:string|null;created_by_name?:string|null;closed_by_name?:string|null};
+type ManifestItem={item_id:number;order_id:number;order_carton_id:number;tracking_id:number;tracking:string;tracking_status:string;carton_number:number;system_order_code:string;client_order_id:string;customer:string;recipient_name:string;service:string;sub_service:string;supplier:string;added_by_name?:string};
+type Detail={carton:ManifestCarton;items:ManifestItem[];added_count?:number};
+
+async function responseJson(response:Response){const body=await response.json();if(!response.ok)throw new Error(body.error||"Không thể xử lý");return body}
+function displayDate(value:string){const match=value?.match(/^(\d{4})-(\d{2})-(\d{2})/);return match?`${match[3]}/${match[2]}/${match[1]}`:value}
+
 export function ManifestScanPanel(){
-  const input=useRef<HTMLInputElement>(null);const current=useRef<Row[]>([]);const locked=useRef(false);const pending=useRef<string[]>([]);
-  const [exporting,setExporting]=useState(false);
-  const [rows,setRows]=useState<Row[]>([]);const [value,setValue]=useState("");const [paste,setPaste]=useState("");const [busy,setBusy]=useState(false);const [messages,setMessages]=useState<string[]>([]);
-  async function scan(raw:string){
-    pending.current.push(raw);setValue("");if(locked.current)return;locked.current=true;setBusy(true);const notices:string[]=[];
-    try{while(pending.current.length){for(const tracking of pending.current.shift()!.split(/[\s,;]+/).filter(Boolean)){
-      try{const response=await fetch("/api/manifest-scan",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({tracking})});const body=await response.json();if(!response.ok)throw new Error(body.error);
-        const row=body.item as Row;if(current.current.some(r=>r.tracking_id===row.tracking_id||r.carton_id===row.carton_id)){notices.push("Trùng tracking/carton: "+tracking);continue}
-        current.current=[...current.current,row];setRows(current.current);notices.push("Đã scan: "+row.tracking);
-      }catch(error){notices.push("Lỗi: "+(error as Error).message)}
-    }}}finally{setMessages(notices);locked.current=false;setBusy(false);input.current?.focus()}
+  const input=useRef<HTMLInputElement>(null);
+  const activeId=useRef<number|undefined>(undefined);
+  const [cartons,setCartons]=useState<ManifestCarton[]>([]);const [active,setActive]=useState<Detail|null>(null);
+  const [value,setValue]=useState("");const [paste,setPaste]=useState("");const [busy,setBusy]=useState(false);const [notice,setNotice]=useState("");
+
+  const load=useCallback(async(preferredId?:number)=>{
+    const list=await responseJson(await fetch("/api/manifest-cartons?limit=40")) as {cartons:ManifestCarton[]};setCartons(list.cartons);
+    const id=preferredId||activeId.current||list.cartons.find(row=>row.status==="OPEN")?.id||list.cartons[0]?.id;
+    if(!id){activeId.current=undefined;setActive(null);return}
+    const detail=await responseJson(await fetch("/api/manifest-cartons/"+id)) as Detail;activeId.current=id;setActive(detail);
+  },[]);
+  useEffect(()=>{void load()},[load]);
+
+  async function addIdentifiers(raw:string){
+    const identifiers=raw.split(/[\n,;]+/).map(item=>item.trim()).filter(Boolean);if(!identifiers.length)return;
+    setBusy(true);setNotice("");let currentId=active?.carton.status==="OPEN"?active.carton.id:undefined;let added=0;const errors:string[]=[];
+    try{for(const identifier of identifiers){try{const detail=await responseJson(await fetch("/api/manifest-cartons",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({identifier,manifest_carton_id:currentId})})) as Detail;currentId=detail.carton.id;activeId.current=currentId;added+=Number(detail.added_count||0);setActive(detail)}catch(error){errors.push(`${identifier}: ${(error as Error).message}`)}}
+      setValue("");setPaste("");await load(currentId);setNotice([added?`Đã thêm ${added} kiện vào thùng.`:"",...errors.map(error=>"Lỗi · "+error)].filter(Boolean).join("\n"));
+    }finally{setBusy(false);input.current?.focus()}
   }
-  async function exportFiles(){
-    if(locked.current)return;locked.current=true;setBusy(true);setExporting(true);
-    try{const response=await fetch("/api/manifest-export",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({trackings:current.current.map(r=>r.tracking)})});if(!response.ok){const body=await response.json();throw new Error(body.error)}
-      const url=URL.createObjectURL(await response.blob());const link=document.createElement("a");link.href=url;link.download=response.headers.get("content-disposition")?.match(/filename="([^"]+)"/)?.[1]||"Manifest.xlsx";link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);setMessages(["Đã xuất Manifest cho "+current.current.length+" tracking. Danh sách được giữ để kiểm tra."]);
-    }catch(error){setMessages(["Lỗi: "+(error as Error).message])}finally{locked.current=false;setBusy(false);setExporting(false);input.current?.focus()}
-  }
-  return <div className="bulkSheet"><p>Scan tracking của kiện thực tế xuất hàng. Chỉ carton vừa scan được đưa vào Manifest.</p><form onSubmit={e=>{e.preventDefault();void scan(value)}}><input ref={input} autoFocus readOnly={exporting} aria-label="Scan Tracking" placeholder="Scan barcode Tracking + Enter" value={value} onChange={e=>setValue(e.target.value)} onPaste={e=>{const raw=e.clipboardData.getData("text");if(/[\n\t]/.test(raw)){e.preventDefault();void scan(raw)}}}/><button className="primaryBtn" disabled={busy||!value.trim()}>Thêm Tracking</button></form><details><summary>Paste nhiều Tracking</summary><textarea aria-label="Paste nhiều Tracking" value={paste} onChange={e=>setPaste(e.target.value)}/><button disabled={busy||!paste.trim()} onClick={()=>void scan(paste)}>Thêm danh sách</button></details><div role="status" aria-live="polite">{messages.map((m,i)=><p key={i}>{m}</p>)}</div><b>Đã scan {rows.length} kiện</b><div className="tableWrap"><table><thead><tr><th>Tracking</th><th>DMD ID</th><th>Client Order ID</th><th>Client / Người nhận</th><th>Service / Sub-Service / Supplier</th><th></th></tr></thead><tbody>{rows.map(row=><tr key={row.tracking_id}><td>{row.tracking}</td><td>{row.system_order_code}</td><td>{row.order_id}</td><td>{row.customer}<small>{row.recipient_name}</small></td><td>{[row.service,row.sub_service,row.supplier].filter(Boolean).join(" / ")}</td><td><button disabled={busy} onClick={()=>{current.current=current.current.filter(r=>r.tracking_id!==row.tracking_id);setRows(current.current);input.current?.focus()}}>Xóa dòng</button></td></tr>)}</tbody></table></div><button className="primaryBtn" disabled={busy||!rows.length} onClick={()=>void exportFiles()}>Xuất Manifest ({rows.length})</button></div>;
+
+  async function removeItem(itemId:number){if(!active)return;setBusy(true);setNotice("");try{const detail=await responseJson(await fetch(`/api/manifest-cartons/${active.carton.id}`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"remove",item_id:itemId})})) as Detail;setActive(detail);await load(detail.carton.id);setNotice("Đã bỏ kiện khỏi thùng.")}catch(error){setNotice("Lỗi · "+(error as Error).message)}finally{setBusy(false);input.current?.focus()}}
+  async function closeCarton(){if(!active||!window.confirm(`Đóng đầy thùng ${active.carton.carton_code}? Sau bước này không thể thêm hoặc bỏ Order.`))return;setBusy(true);setNotice("");try{const result=await responseJson(await fetch(`/api/manifest-cartons/${active.carton.id}`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"close"})})) as {closed:Detail;next:Detail};activeId.current=result.next.carton.id;setActive(result.next);await load(result.next.carton.id);setNotice(`Đã đóng ${result.closed.carton.carton_code}. Đang chuyển sang ${result.next.carton.carton_code}.`)}catch(error){setNotice("Lỗi · "+(error as Error).message)}finally{setBusy(false);input.current?.focus()}}
+  async function exportCarton(carton:ManifestCarton){setBusy(true);setNotice("");try{const response=await fetch("/api/manifest-export",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({manifest_carton_id:carton.id})});if(!response.ok){const body=await response.json();throw new Error(body.error)}const disposition=response.headers.get("content-disposition")||"";const filename=disposition.match(/filename="([^"]+)"/)?.[1]||carton.carton_code+".xlsx";const url=URL.createObjectURL(await response.blob());const link=document.createElement("a");link.href=url;link.download=filename;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);await load(carton.id);setNotice("Đã xuất Manifest · "+filename)}catch(error){setNotice("Lỗi · "+(error as Error).message)}finally{setBusy(false)}}
+  async function chooseCarton(id:number){setBusy(true);setNotice("");try{activeId.current=id;await load(id)}catch(error){setNotice("Lỗi · "+(error as Error).message)}finally{setBusy(false)}}
+
+  const carton=active?.carton;const items=active?.items||[];const isOpen=carton?.status==="OPEN";
+  return <div className="manifestWorkspace">
+    <section className="manifestHero"><div><span className="eyebrow">WAREHOUSE MANIFEST</span><h2>{carton?.carton_code||"Thùng mới sẽ được tạo khi nhập đơn"}</h2><p>Mỗi thùng chỉ chứa một dịch vụ. Mã thùng gồm Dịch vụ · Ngày · Số thứ tự xuất hàng trong ngày.</p></div><div className="manifestHeroStats"><div><span>Trạng thái</span><b className={isOpen?"open":"closed"}>{isOpen?"Đang đóng hàng":carton?"Đã đóng thùng":"Chưa mở"}</b></div><div><span>Dịch vụ</span><b>{carton?.service||"—"}</b></div><div><span>Orders</span><b>{Number(carton?.order_count||0)}</b></div><div><span>Kiện</span><b>{Number(carton?.item_count||0)}</b></div></div></section>
+    <div className="manifestMainGrid"><section className="manifestPackingCard">
+      <div className="manifestSteps"><div className="done"><i>1</i><span>Nhập đơn</span></div><div className={items.length?"done":""}><i>2</i><span>Kiểm tra kiện</span></div><div className={!isOpen&&carton?"done":""}><i>3</i><span>Đóng đầy thùng</span></div></div>
+      <form className="manifestScanForm" onSubmit={(event:FormEvent)=>{event.preventDefault();void addIdentifiers(value)}}><label><span>Nhập DMD ID, Client Order ID hoặc Tracking</span><div><input ref={input} autoFocus value={value} disabled={busy||Boolean(carton&&!isOpen)} onChange={event=>setValue(event.target.value)} placeholder="Ví dụ DMD-20261004-000123 hoặc scan Tracking"/><button className="primaryBtn" disabled={busy||!value.trim()||Boolean(carton&&!isOpen)}>Thêm vào thùng</button></div></label></form>
+      <details className="manifestPaste"><summary>Nhập nhiều đơn cùng lúc</summary><textarea value={paste} disabled={busy||Boolean(carton&&!isOpen)} onChange={event=>setPaste(event.target.value)} placeholder="Mỗi DMD ID / Client Order ID / Tracking một dòng"/><button className="secondaryBtn" disabled={busy||!paste.trim()} onClick={()=>void addIdentifiers(paste)}>Thêm danh sách</button></details>
+      {notice&&<div className={notice.startsWith("Lỗi")?"manifestNotice error":"manifestNotice"} role="status">{notice.split("\n").map((line,index)=><p key={index}>{line}</p>)}</div>}
+      <div className="manifestItemHead"><div><b>Kiện trong thùng</b><span>{items.length?`${items.length} kiện đã xác nhận`:"Chưa có kiện nào"}</span></div>{isOpen&&items.length>0&&<button className="closeCartonBtn" disabled={busy} onClick={()=>void closeCarton()}>✓ Đã đóng đầy thùng</button>}{carton&&!isOpen&&<button className="primaryBtn" disabled={busy} onClick={()=>void exportCarton(carton)}>⇩ Xuất Manifest</button>}</div>
+      <div className="manifestItems">{items.length?<table><thead><tr><th>STT</th><th>Order</th><th>Tracking</th><th>Khách / Người nhận</th><th>Carton</th><th></th></tr></thead><tbody>{items.map((item,index)=><tr key={item.item_id}><td><span className="manifestIndex">{index+1}</span></td><td><b>{item.system_order_code}</b><small>{item.client_order_id||"—"}</small></td><td><code>{item.tracking}</code><small>{[item.sub_service,item.supplier].filter(Boolean).join(" · ")}</small></td><td>{item.customer}<small>{item.recipient_name||"—"}</small></td><td>#{item.carton_number}</td><td>{isOpen&&<button className="removeManifestItem" disabled={busy} onClick={()=>void removeItem(item.item_id)}>Bỏ</button>}</td></tr>)}</tbody></table>:<div className="manifestEmpty"><div>▤</div><b>Quét đơn đầu tiên để mở thùng</b><span>Hệ thống kiểm tra Tracking, dịch vụ và tự cấp mã thùng.</span></div>}</div>
+    </section><aside className="manifestHistoryCard"><div className="manifestHistoryHead"><div><b>Các thùng gần đây</b><span>Chọn để xem hoặc xuất lại</span></div><button onClick={()=>void load()} disabled={busy}>↻</button></div><div className="manifestHistoryList">{cartons.length?cartons.map(row=><button key={row.id} className={row.id===carton?.id?"active":""} onClick={()=>void chooseCarton(row.id)}><div><b>{row.carton_code}</b><span>{row.service} · {displayDate(row.manifest_date)}</span></div><div><em className={row.status.toLowerCase()}>{row.status==="OPEN"?"Đang mở":"Đã đóng"}</em><small>{row.item_count} kiện</small></div></button>):<div className="manifestHistoryEmpty">Chưa có thùng Manifest.</div>}</div></aside></div>
+  </div>;
 }
