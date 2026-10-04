@@ -1,3 +1,4 @@
+import { normalizeCountry } from "./epacket-pricing";
 import { db } from "./db";
 
 const text = (value: unknown) => String(value ?? "").trim();
@@ -32,7 +33,7 @@ export function enumRows(activeOnly=false) {
 }
 
 export function findEnum(type: EnumType, valueRaw: unknown, parentRaw: unknown = "", activeOnly=true) {
-  const value=text(valueRaw);
+  const value=type==="COUNTRY"?normalizeCountry(valueRaw):text(valueRaw);
   const parent=text(parentRaw);
   if(!value)return undefined;
   return db.prepare(
@@ -45,7 +46,7 @@ export function findEnum(type: EnumType, valueRaw: unknown, parentRaw: unknown =
 }
 
 export function canonicalEnumValue(type: EnumType, valueRaw: unknown, parentRaw: unknown = "", options?:{allowInactive?:boolean}) {
-  const value=text(valueRaw);
+  const value=type==="COUNTRY"?normalizeCountry(valueRaw):text(valueRaw);
   if(!value)return "";
   const row=findEnum(type,value,parentRaw,!options?.allowInactive);
   if(!row){

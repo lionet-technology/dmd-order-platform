@@ -1,4 +1,6 @@
 "use client";
+import { normalizeCountry } from "@/lib/epacket-pricing";
+import { ClientPurchasePanel } from "./client-purchase-panel";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { BulkTrackingSheet,OrderDetailPanel,ShipmentStatusPanel,TrackingReplacementSheet } from "./order-workspaces";
@@ -33,6 +35,7 @@ function enumOptions(rows:EnumRow[],type:EnumType,parent=""){
 
 function enumIsValid(rows:EnumRow[],type:EnumType,value:string,parent=""){
   if(!value.trim())return true;
+  if(type==="COUNTRY")value=normalizeCountry(value);
   return rows.some(row=>
     row.enum_type===type&&row.active!==0&&row.value.toLowerCase()===value.trim().toLowerCase()&&
     (type!=="SUB_SERVICE"||row.parent_value.toLowerCase()===parent.trim().toLowerCase())
@@ -893,6 +896,8 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   const [loading,setLoading]=useState(false);
   const [entry,setEntry]=useState<ManualKind|null>(null);
   const [editOrder,setEditOrder]=useState<RowData|null>(null);
+  const [clientPurchase,setClientPurchase]=useState(false);
+  const [clientDraft,setClientDraft]=useState<RowData|null>(null);
   const [purchaseOrder,setPurchaseOrder]=useState<RowData|null>(null);
   const [viewOrder,setViewOrder]=useState<RowData|null>(null);
   const [bulkTracking,setBulkTracking]=useState(false);
@@ -994,7 +999,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
 
   const orderCols=role==="ADMIN"
     ?["workflow_status","created_at","system_order_code","order_id","sales","customer","item","service","sub_service","chargeable_weight","tracking","true_net_cost","sales_price","extra_surcharge","extra_import_tax","total_due","reconciliation_status"]
-    :["workflow_status","created_at","system_order_code","order_id","customer","item","service","sub_service","chargeable_weight","tracking","sales_price","total_due"];
+    :["workflow_status","created_at","system_order_code","order_id","customer","item","service","sub_service","chargeable_weight","tracking","sales_price","surcharge","total_due"];
 
   const nav:Array<{key:AppSection;label:string;icon:string;roles:Role[]}>=[
     {key:"dashboard",label:"Tổng quan",icon:"⌂",roles:["ADMIN"]},
@@ -1068,7 +1073,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
 
         {section==="orders"&&<>
           <PageHeader eyebrow="OPERATIONS" title="Orders" description={role==="ADMIN"?"Quản lý toàn bộ đơn hàng và trạng thái xử lý.":role==="SALES"?"Quản lý Orders của các Client được phân công.":"Theo dõi Orders của tài khoản Client này."}
-            actions={role!=="CLIENT"?<><button className="secondaryBtn" onClick={()=>setImportKind(role==="ADMIN"?"orders":"sales_orders")}>⇩ Import</button>{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkTracking(true)}>▦ Mua đơn hàng loạt</button>}{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkReplacement(true)}>⇄ Đổi Tracking</button>}<button className="primaryBtn" onClick={()=>openEntry("order")}>＋ Tạo Order</button></>:undefined}/>
+            actions={role==="CLIENT"?<button className="primaryBtn" onClick={()=>{setClientDraft(null);setClientPurchase(true)}}>＋ Tạo / Import & Đặt mua dịch vụ</button>:<><button className="secondaryBtn" onClick={()=>setImportKind(role==="ADMIN"?"orders":"sales_orders")}>⇩ Import</button>{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkTracking(true)}>▦ Mua đơn hàng loạt</button>}{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkReplacement(true)}>⇄ Đổi Tracking</button>}<button className="primaryBtn" onClick={()=>openEntry("order")}>＋ Tạo Order</button></>}/>
           <div className="panel dataPanel">
             <div className="dataToolbar orderToolbar">
               <OrderSearchBar value={search} onChange={setSearch}/>
@@ -1081,7 +1086,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
               </div>
               <span>{data.total} records</span>
             </div>
-            {loading?<div className="loadingState">Đang tải dữ liệu…</div>:<Table rows={data.items} cols={orderCols} onView={setViewOrder} onPurchase={role==="ADMIN"?row=>setPurchaseOrder(row):undefined}/>}
+            {loading?<div className="loadingState">Đang tải dữ liệu…</div>:<Table rows={data.items} cols={orderCols} onView={setViewOrder} onEdit={role==="CLIENT"?row=>{setClientDraft(row);setClientPurchase(true)}:undefined} onPurchase={role==="ADMIN"?row=>setPurchaseOrder(row):undefined}/>}
             <Pager data={data} onPage={setPage}/>
           </div>
         </>}
@@ -1138,6 +1143,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
       </div>
     </div>
 
+    {role==="CLIENT"&&clientPurchase&&<Modal size="wide" title="Client · Đặt mua dịch vụ" onClose={()=>setClientPurchase(false)}><ClientPurchasePanel initial={clientDraft} onDone={()=>void refresh()}/></Modal>}
     {viewOrder&&<Modal size="wide" title="Chi tiết Order" onClose={()=>setViewOrder(null)}><OrderDetailPanel orderId={Number(viewOrder.id)} role={role} onDone={refresh} onEdit={row=>{setViewOrder(null);openEntry("order",row as RowData)}} onPurchase={role==="ADMIN"?row=>{setViewOrder(null);setPurchaseOrder(row as RowData)}:undefined}/></Modal>}
 
     {role==="ADMIN"&&bulkTracking&&<Modal size="fullscreen" title="Mua đơn hàng loạt" onClose={()=>setBulkTracking(false)}><BulkTrackingSheet enums={enums} onDone={refresh}/></Modal>}
@@ -1218,6 +1224,10 @@ function Table({rows,cols,onView,onEdit,onPurchase,compact=false}:{rows:RowData[
     :rows.map((r,i)=><tr key={String(r.id||r.tracking||r.order_id||i)}>
       {hasActions&&<td className="actionCell"><div className="rowActions">{onView&&<button className="rowAction" onClick={()=>onView(r)}>View</button>}{onEdit&&r.workflow_status!=="CANCELLED"&&<button className="rowAction" onClick={()=>onEdit(r)}>Sửa</button>}{onPurchase&&r.workflow_status!=="CANCELLED"&&<button className="rowAction primaryRowAction" onClick={()=>onPurchase(r)}>{Number(r.tracking_count||0)>0?"Tracking":"Mua đơn"}</button>}</div></td>}
       {cols.map(c=>{
+        if(c==="workflow_status"&&r.pricing_eligibility_json&&!r.service_purchased_at){
+          let eligibility:{eligible?:boolean;reasons?:string[]}={};try{eligibility=JSON.parse(String(r.pricing_eligibility_json))}catch{}
+          if(eligibility.eligible===false)return <td key={c}><span className="status badStatus" title={eligibility.reasons?.join(" ")}>Không đủ điều kiện mua dịch vụ</span></td>;
+        }
         const v=r[c];
         const isMoney=["amount","est_net_cost","true_net_cost","base_cost","retail","sales_price","surcharge","import_tax","extra_surcharge","extra_import_tax","total_due","reconciliation_delta","total_net_cost"].includes(c);
         const isStatus=["workflow_status","margin_status","reconciliation_status","direction","matched"].includes(c);

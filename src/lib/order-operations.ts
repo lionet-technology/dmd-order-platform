@@ -1,3 +1,4 @@
+import { assertConfiguredPurchase,orderQuote,purchaseService } from "./route-pricing";
 import { db } from "./db";
 import { trackingReplacementReason } from "./order-rules";
 import { logAdminEvent,publishPublicNote } from "./order-audit";
@@ -53,7 +54,7 @@ function syncLegacyPrimary(orderId:number){
   db.prepare("UPDATE orders SET tracking=?,label=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(primary?.tracking||null,primary?.label_url||null,orderId);
 }
 
-export function addOrderTracking(input:{orderId:number;tracking:unknown;labelUrl?:unknown;lotNumber?:unknown;cartonId?:number|null;actorId?:number|null;isPrimary?:boolean;costMatchType?:CostMatchType;costParentTrackingId?:number|null}){
+function addOrderTrackingRaw(input:{orderId:number;tracking:unknown;labelUrl?:unknown;lotNumber?:unknown;cartonId?:number|null;actorId?:number|null;isPrimary?:boolean;costMatchType?:CostMatchType;costParentTrackingId?:number|null}){
   assertOrderOpen(input.orderId);
   const tracking=text(input.tracking); const normalized=normalizeTracking(tracking);
   if(!normalized)throw new Error("Tracking là bắt buộc.");
@@ -62,12 +63,19 @@ export function addOrderTracking(input:{orderId:number;tracking:unknown;labelUrl
   const carton=input.cartonId?db.prepare("SELECT c.id,l.lot_number FROM order_cartons c LEFT JOIN order_lots l ON l.id=c.order_lot_id WHERE c.id=? AND c.order_id=?").get(input.cartonId,input.orderId) as {id:number;lot_number:number|null}|undefined:undefined;
   if(input.cartonId&&!carton)throw new Error("Carton không thuộc Order này.");
   const lot=Math.max(1,Math.trunc(Number(carton?.lot_number||input.lotNumber||1))||1);
+  const order=db.prepare("SELECT * FROM orders WHERE id=?").get(input.orderId) as Record<string,unknown>;
+  assertConfiguredPurchase(order);
+  if(!order.pricing_snapshot_json&&orderQuote(order))purchaseService(input.orderId,{id:input.actorId||0,role:"ADMIN"},false);
   const hasPrimary=(db.prepare("SELECT COUNT(*) c FROM order_trackings WHERE order_id=? AND status='ACTIVE' AND is_primary=1").get(input.orderId) as {c:number}).c>0;
   const result=db.prepare(`INSERT INTO order_trackings(order_id,lot_number,carton_id,tracking,normalized_tracking,label_url,is_primary,cost_match_type,cost_parent_tracking_id,created_by_user_id)
     VALUES (?,?,?,?,?,?,?,?,?,?)`).run(input.orderId,lot,carton?.id||null,tracking,normalized,text(input.labelUrl)||null,input.isPrimary||!hasPrimary?1:0,input.costMatchType||"UNKNOWN",input.costParentTrackingId||null,input.actorId||null);
   syncLegacyPrimary(input.orderId);
   matchSupplierCostsForOrder(input.orderId);
   return db.prepare("SELECT * FROM order_trackings WHERE id=?").get(result.lastInsertRowid) as OrderTracking;
+}
+
+export function addOrderTracking(input:Parameters<typeof addOrderTrackingRaw>[0]){
+  return db.transaction(()=>addOrderTrackingRaw(input)).immediate();
 }
 
 export function updateOrderTracking(input:{orderId:number;id:number;labelUrl?:unknown;lotNumber?:unknown;cartonId?:number|null;costMatchType?:CostMatchType;costParentTrackingId?:number|null;isPrimary?:boolean}){
@@ -141,6 +149,8 @@ export function findTrackingOwner(tracking:unknown){
 export function recomputeOrderFinancials(orderId:number){
   const order=db.prepare("SELECT * FROM orders WHERE id=?").get(orderId) as Record<string,unknown>|undefined;
   if(!order)return null;
+  // Reconciliation for versioned purchases is deferred; keep their snapshot/charge intact.
+  if(order.pricing_snapshot_json || (order.pricing_eligibility_json && !order.service_purchased_at))return order;
   const totals=db.prepare(`SELECT COUNT(*) rows_count,COALESCE(SUM(total_net_cost),0) true_net_cost,COALESCE(SUM(extra_surcharge),0) extra_surcharge,COALESCE(SUM(import_tax),0) import_tax
     FROM supplier_costs WHERE matched_order_id=?`).get(orderId) as {rows_count:number;true_net_cost:number;extra_surcharge:number;import_tax:number};
   const salesPrice=Number(order.sales_price||0); const baseSurcharge=Number(order.surcharge||0); const baseTax=Number(order.import_tax||0);

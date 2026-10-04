@@ -1,3 +1,4 @@
+import { orderQuote,clientDraftAwaitingPurchase } from "./route-pricing";
 import { db } from "./db";
 
 const text=(value:unknown)=>String(value??"").trim();
@@ -79,8 +80,9 @@ function cartonComplete(carton:ShipmentCartonInput){
 }
 
 export function saveOrderShipmentStructure(orderId:number,input:{lot_count?:number;cartons:ShipmentCartonInput[]}){
-  const order=db.prepare("SELECT id,workflow_status FROM orders WHERE id=?").get(orderId) as {id:number;workflow_status:string}|undefined;
+  const order=db.prepare("SELECT id,workflow_status,pricing_snapshot_json FROM orders WHERE id=?").get(orderId) as {id:number;workflow_status:string;pricing_snapshot_json?:string}|undefined;
   if(!order)throw new Error("Order không tồn tại.");
+  if(order.pricing_snapshot_json)throw new Error("Dữ liệu kiện đã khóa khi đặt mua dịch vụ.");
   if(order.workflow_status==="CANCELLED")throw new Error("Đơn đã huỷ; không thể sửa khai báo kiện hàng.");
   const cartons=Array.isArray(input.cartons)?input.cartons:[];
   if(!cartons.length)throw new Error("Order phải có ít nhất một carton.");
@@ -143,6 +145,10 @@ export function saveOrderShipmentStructure(orderId:number,input:{lot_count?:numb
 export function validatePurchaseReadiness(orderId:number){
   const structure=getOrderShipmentStructure(orderId);
   const issues:Array<{code:string;carton_number?:number;message:string}>=[];
+  const pricedOrder=db.prepare("SELECT * FROM orders WHERE id=?").get(orderId) as Record<string,unknown>;
+  const q=orderQuote(pricedOrder);
+  if(q&&!q.eligible)issues.push(...q.reasons.map(message=>({code:"INELIGIBLE_SERVICE",message})));
+  if(clientDraftAwaitingPurchase(pricedOrder))issues.push({code:"UNPURCHASED_CLIENT_DRAFT",message:"Client chưa đặt mua dịch vụ."});
   const cartons=structure.cartons;
   for(const carton of cartons){
     const number=Number(carton.carton_number);

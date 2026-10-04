@@ -160,7 +160,14 @@ async function main(){
   }
   for(const kind of ["purchase","manifest"]){
     const result=await (kind==="purchase"?generatePurchaseFiles:generateManifestFiles)([order.id]);
+
+    const xmlFile=path.join(os.tmpdir(),"dmd-xml-"+process.pid+"-"+kind+".xlsx");
+    fs.writeFileSync(xmlFile,result.files[0].buffer);
+    try{require("node:child_process").execFileSync("python3",[path.join(root,"scripts/verify-xlsx-xml.py"),xmlFile],{stdio:"pipe"});assert(true,"real "+kind+" ZIP/XML consistency")}
+    finally{fs.rmSync(xmlFile,{force:true})}
     const book=new ExcelJS.Workbook();await book.xlsx.load(result.files[0].buffer);
+    if(kind==="manifest")assert(!JSON.stringify(book.getWorksheet("Sheet1").dataValidations.model).includes('"AC"'),"remove dangling AC validation dropped by ExcelJS");
+
     const rows=book.getWorksheet("Sheet1").getSheetValues();
     assert(!JSON.stringify(rows).includes("{{"),"real "+kind+" output must resolve every placeholder");
     if(kind==="purchase"){

@@ -1,3 +1,4 @@
+import { refreshDraft,activePricing,routeFor } from "./route-pricing";
 import { db } from "./db";
 import { validateOrderEnums, validateSupplierCostEnums } from "./enums";
 import { addOrderTracking, findTrackingOwner, matchSupplierCostsForOrder, normalizeTracking } from "./order-operations";
@@ -256,6 +257,7 @@ export function upsertOrder(input: OrderInput) {
     input.recipient_name,
   ]);
   const existing = findOrder(input, initialTracking, initialOrderId, preliminaryKey);
+  if(existing?.pricing_snapshot_json)throw new Error("Đơn đã đặt mua; giá và dữ liệu kiện đã khóa.");
   if(existing?.workflow_status==="CANCELLED")throw new Error("Đơn đã huỷ; không thể sửa hoặc tạo lại trên cùng record.");
   const clientUserId = input.client_user_id !== undefined && input.client_user_id !== null && input.client_user_id !== ""
     ? Number(input.client_user_id)
@@ -428,6 +430,14 @@ export function upsertOrder(input: OrderInput) {
     id = Number(result.lastInsertRowid);
   }
 
+
+  const pricedRoute=routeFor(payload);
+  if(pricedRoute&&activePricing(Number(pricedRoute.id))&&Number(cartonCount)===1){
+    if(db.prepare("SELECT id FROM order_trackings WHERE order_id=? LIMIT 1").get(id)&&db.prepare("SELECT id FROM order_cartons WHERE order_id=? AND carton_number>1").get(id))throw new Error("Carton đã có Tracking; cần Ops kiểm tra trước khi giảm carton.");
+    db.prepare("DELETE FROM order_cartons WHERE order_id=? AND carton_number>1").run(id);
+    db.prepare("UPDATE order_cartons SET weight=?,length=?,width=?,height=?,volume=?,chargeable_weight=? WHERE order_id=? AND carton_number=1").run(weight,length,width,height,volume,Math.max(weight,volume/5000),id);
+    db.prepare("UPDATE order_items SET description=?,material=?,unit_manufacturing_value=? WHERE order_id=? AND sku=''").run(item,payload.material,payload.declared_value,id);
+  }
   ensureOrderShipmentStructure(id);
   if(tracking&&!findTrackingOwner(tracking)){
     const carton=db.prepare("SELECT id FROM order_cartons WHERE order_id=? AND carton_number=1").get(id) as {id:number}|undefined;
@@ -438,7 +448,9 @@ export function upsertOrder(input: OrderInput) {
     SET system_order_code=COALESCE(NULLIF(system_order_code,''),'DMD-'||strftime('%Y%m%d',COALESCE(created_at,CURRENT_TIMESTAMP))||'-'||printf('%06d',id))
     WHERE id=?
   `).run(id);
-  matchSupplierCostsForOrder(id);
+  const route=routeFor(payload);
+  if(route&&activePricing(Number(route.id)))refreshDraft(id);
+  else matchSupplierCostsForOrder(id);
   return db.prepare("SELECT * FROM orders WHERE id=?").get(id);
 }
 

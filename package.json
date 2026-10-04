@@ -12,7 +12,9 @@
     "verify:cancellation": "node scripts/verify-order-cancellation.cjs",
     "verify:purchase": "node scripts/verify-purchase-engine.cjs",
     "verify:segmentation": "node scripts/verify-route-segmentation.cjs",
-    "verify:manifest": "node scripts/verify-manifest-cartons.cjs"
+    "verify:manifest": "node scripts/verify-manifest-cartons.cjs",
+    "verify:epacket": "node scripts/verify-epacket.cjs",
+    "seed:epacket": "node scripts/seed-epacket.cjs"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",

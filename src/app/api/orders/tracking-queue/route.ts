@@ -1,3 +1,4 @@
+import { assertConfiguredPurchase,clientDraftAwaitingPurchase,purchaseService,orderQuote } from "@/lib/route-pricing";
 import { NextRequest,NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -33,6 +34,7 @@ function baseOrders(service="",subService="",supplier=""){
 function queueRows(service="",subService="",supplier="",mode:"PURCHASE"|"MANIFEST"="PURCHASE"){
   const rows:QueueRow[]=[];
   for(const order of baseOrders(service,subService,supplier)){
+    if(mode==="PURCHASE"&&clientDraftAwaitingPurchase(order))continue;
     const trackings=db.prepare("SELECT * FROM order_trackings WHERE order_id=? AND status='ACTIVE' ORDER BY id").all(order.id) as Array<Record<string,unknown>>;
     const cartonCount=Math.max(1,Number(order.carton_count||1));
     const trackingComplete=trackings.length>=cartonCount;
@@ -142,12 +144,16 @@ export async function POST(req:NextRequest){
         const first=group[0];
         const supplier=text(first.supplier)?canonicalEnumValue("SUPPLIER",first.supplier):String(order.supplier||"");
         const subService=text(first.sub_service)?canonicalEnumValue("SUB_SERVICE",first.sub_service,String(order.service||"")):"";
+        if(order.pricing_snapshot_json&&(supplier!==order.supplier||subService!==order.sub_service))throw new Error("Route đã khóa khi đặt mua.");
         const expectedLots=Math.max(1,Math.trunc(Number(first.expected_lot_count||order.expected_lot_count||1)));
         db.prepare("UPDATE orders SET sub_service=?,supplier=?,expected_lot_count=?,updated_by_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
           .run(subService||null,supplier||null,expectedLots,auth.user.id,orderId);
         if(text(order.supplier)!==supplier||text(order.sub_service)!==subService){
           logAdminEvent({orderId,eventType:"PURCHASE_ROUTE_OVERRIDDEN",summary:"Admin điều chỉnh route mua đơn.",actorId:auth.user.id,source:"BULK",before:{sub_service:order.sub_service,supplier:order.supplier},after:{sub_service:subService,supplier}});
         }
+        const current:Record<string,unknown>={...order,sub_service:subService,supplier};
+        assertConfiguredPurchase(current);
+        if(!current.pricing_snapshot_json&&orderQuote(current))purchaseService(orderId,auth.user,false);
         ensureOrderShipmentStructure(orderId);
         for(const raw of group){
           const tracking=text(raw.tracking);const label=text(raw.label_url);

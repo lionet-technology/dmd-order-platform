@@ -1,5 +1,6 @@
 "use client";
 
+import { RoutePricingPanel } from "./route-pricing-panel";
 import { useCallback,useEffect,useState } from "react";
 
 type SegmentRule={rule_type:string;segments:string[];priority:number;active:boolean;config:Record<string,unknown>};
@@ -152,6 +153,7 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
       </tbody></table></div>
     </section>
 
+    {selected&&<RoutePricingPanel key={selected.id} routeId={selected.id}/>}
     {selected&&<section className="templateConfigCard">
       <div className="configHead"><div><b>Cấu hình file · {selected.service} / {selected.sub_service||"—"} / {selected.supplier}</b><span>Purchase = file mua label/đơn. Manifest = file khai báo sau khi đã có Tracking.</span></div><button className="iconBtn" onClick={()=>setSelected(null)}>×</button></div>
       <div className="routeVariablesEditor segmentationEditor">
@@ -188,7 +190,8 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
       </div>
       <div className="templateGrid">
         <label><span>Tên Template</span><input value={template.name} onChange={e=>setTemplate({...template,name:e.target.value})}/></label>
-        <label><span>Cách chia file</span><select value={template.output_mode} onChange={e=>setTemplate({...template,output_mode:e.target.value})}><option value="MULTI_ORDER">Gộp nhiều Order</option><option value="PER_ORDER">Tách theo Order</option><option value="PER_LOT">Tách theo Lot</option></select></label>
+        <label><span>Cách chia file</span><select value={template.output_mode} onChange={e=>setTemplate({...template,output_mode:e.target.value})}><option value="MULTI_ORDER">Multiple Orders · 1 Carton / Order</option>{template.output_mode==="PER_ORDER"&&<option value="PER_ORDER" disabled>Per Order (legacy)</option>}<option value="PER_LOT">Per Lot · Multi-Carton Order</option></select></label>
+        <small>{template.output_mode==="MULTI_ORDER"?"1 Record = 1 Order = 1 Carton":"1 Order = x Inv-PKL = x Lot"}</small>
         <label className="file"><input type="file" accept=".xlsx" onChange={e=>setFile(e.target.files?.[0]||null)}/><span>{file?.name||"Chọn workbook .xlsx"}</span></label>
       </div>
       <div className="repeatEditor"><div><b>Dòng lặp</b><span>Mỗi dòng mẫu trong file tương ứng với dữ liệu nào. Bỏ trống Sheet nếu template chỉ thay các ô cố định.</span></div>

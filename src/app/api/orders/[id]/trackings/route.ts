@@ -1,3 +1,4 @@
+import { orderQuote,purchaseService } from "@/lib/route-pricing";
 import { NextRequest, NextResponse } from "next/server";
 import { canAccessClient, getClientAccount, requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -33,6 +34,12 @@ export async function POST(req:NextRequest,{params}:{params:Promise<{id:string}>
     const body=await req.json();const action=String(body.action||"save");
     const apply=db.transaction(()=>{
     assertOrderOpen(id);
+    const current=db.prepare("SELECT * FROM orders WHERE id=?").get(id) as Record<string,unknown>;
+    const candidate={...current,supplier:body.supplier||current.supplier};
+    const quote=orderQuote(candidate);
+    if(quote&&!quote.eligible)throw new Error(quote.reasons.join(" "));
+    if(current.pricing_snapshot_json&&body.supplier&&body.supplier!==current.supplier)throw new Error("Route đã khóa khi đặt mua.");
+    if(quote&&!current.pricing_snapshot_json){purchaseService(id,auth.user,false)}
     if(action==="replace"){
       const old=db.prepare("SELECT tracking,label_url FROM order_trackings WHERE id=? AND order_id=?").get(Number(body.old_tracking_id),id) as {tracking:string;label_url:string|null}|undefined;
       const replacement=replaceOrderTracking({orderId:id,oldTrackingId:Number(body.old_tracking_id),newTracking:body.new_tracking,newLabelUrl:body.new_label_url,reason:body.reason,actorId:auth.user.id});

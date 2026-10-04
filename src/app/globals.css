@@ -651,3 +651,5 @@ tbody tr:hover td{background:#f8faff}.status{padding:4px 8px;font-size:9px;font-
 .segmentationEditor textarea{width:100%;box-sizing:border-box;resize:vertical;border:1px solid #d0d5dd;border-radius:8px;padding:8px;font-size:11px}
 .segmentationEditor fieldset>.editBtn{margin-top:8px}
 @media(max-width:600px){.segmentationEditor .templateGrid{grid-template-columns:1fr}}
+
+.pricingPreview{padding:16px;border:1px solid #dce4ed;border-radius:12px;margin:12px 0;background:#f7fafc}.pricingPreview dl{display:grid;grid-template-columns:1fr 1fr;gap:8px}.pricingPreview dd{text-align:right;margin:0}.clientPurchase>label,.clientPurchase>div>label{display:block;margin:10px 0}.clientPurchase details{padding:12px;border-bottom:1px solid #dce4ed}.clientPurchase textarea{width:100%}.routeVariablesEditor label{display:block;margin:8px 0}

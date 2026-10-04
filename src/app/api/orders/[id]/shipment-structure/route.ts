@@ -22,6 +22,10 @@ export async function GET(req:NextRequest,{params}:{params:Promise<{id:string}>}
   const access=accessible(auth.user,id);if(access.error)return access.error;
   const structure=getOrderShipmentStructure(id);
   const readiness=auth.user.role==="ADMIN"?validatePurchaseReadiness(id):undefined;
+  if(auth.user.role!=="ADMIN"){
+    for(const lot of structure.lots)delete lot.net_cost;
+    for(const tracking of structure.trackings)for(const k of ["cost_match_type","cost_parent_tracking_id","normalized_tracking","replaced_by_tracking_id"])delete tracking[k];
+  }
   return NextResponse.json({...structure,readiness});
 }
 

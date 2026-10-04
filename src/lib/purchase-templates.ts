@@ -1,3 +1,4 @@
+import { orderQuote,assertConfiguredPurchase } from "./route-pricing";
 import ExcelJS from "exceljs";
 import { db } from "./db";
 import { validatePurchaseReadiness } from "./order-shipments";
@@ -177,6 +178,19 @@ function fillCell(cell:ExcelJS.Cell,context:ExportContext,routeVariables:RouteVa
 async function renderWorkbook(input:{storedPath:string;repeatSections:RepeatSection[];orderIds:number[];lotId?:number;cartonIds?:number[];routeVariables?:RouteVariables}){
   const workbook=new ExcelJS.Workbook();
   await workbook.xlsx.readFile(input.storedPath);
+  // ExcelJS drops defined names whose range is #REF!, but retains validations
+  // pointing to those names. That creates dangling formula1 references in Excel.
+  const names=new Set(workbook.definedNames.model.filter(n=>n.ranges.length&&n.ranges.every(r=>!r.includes("#REF!"))).map(n=>n.name));
+  workbook.eachSheet(sheet=>{
+    const validations=(sheet as unknown as {dataValidations:{model:Record<string,{formulae?:unknown[]}>}}).dataValidations.model;
+    for(const [range,rule] of Object.entries(validations)){
+      if(rule.formulae?.some(raw=>{
+        const formula=String(raw).replace(/^=/,"").trim();
+        return /^[A-Za-z_][A-Za-z0-9_.]*$/.test(formula)&&!/^\$?[A-Za-z]{1,3}\$?[1-9][0-9]*$/.test(formula)&&!names.has(formula);
+      }))delete validations[range];
+    }
+  });
+
   const occupied=new Map<string,Array<[number,number]>>();
   const sections=[...input.repeatSections].sort((a,b)=>a.sheet.localeCompare(b.sheet)||b.row-a.row);
   for(const section of sections){
@@ -244,6 +258,8 @@ async function generateRouteFiles(orderIds:number[],kind:"PURCHASE"|"MANIFEST"){
   for(const orderId of [...new Set(orderIds)]){
     const order=db.prepare("SELECT * FROM orders WHERE id=?").get(orderId) as DataRow|undefined;
     if(!order){missing.push({order_id:orderId,dmd_id:String(orderId),reason:"Order không tồn tại"});continue}
+    const price=orderQuote(order);
+    if(kind==="PURCHASE"&&price&&!price.eligible){missing.push({order_id:orderId,dmd_id:text(order.system_order_code),reason:price.reasons.join(" ")});continue}
     const readiness=kind==="MANIFEST"?validateManifestReadiness(orderId):validatePurchaseReadiness(orderId);
     if(!readiness.ready){missing.push({order_id:orderId,dmd_id:text(order.system_order_code),reason:readiness.issues.map(row=>row.message).join(" ")});continue}
     const template=resolveRouteTemplate(order,kind);
@@ -281,6 +297,7 @@ export function genericPurchaseRows(orderIds:number[]){
   const rows:Array<Record<string,unknown>>=[];
   for(const orderId of [...new Set(orderIds)]){
     const data=exportData(orderId);
+    assertConfiguredPurchase(data.order);
     for(const carton of data.cartons){
       const cartonItems=data.items.filter(item=>Number(item.carton_id)===Number(carton.id));
       if(!cartonItems.length)cartonItems.push({description:data.order.item,material:data.order.material,quantity:1,unit_manufacturing_value:data.order.declared_value,total_manufacturing_value:data.order.declared_value});

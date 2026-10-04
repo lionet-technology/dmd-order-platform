@@ -1,5 +1,6 @@
 "use client";
 
+import { PricingPreview,type Preview } from "./pricing-preview";
 import { useCallback,useEffect,useState } from "react";
 import { TRACKING_REPLACEMENT_REASONS } from "@/lib/order-rules";
 
@@ -138,6 +139,7 @@ export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderI
       {[["overview","Tổng quan"],["cartons","Carton & SKU"],["tracking","Tracking & Label"],["finance","Giá & Đối soát"],["history","Lịch sử"]].filter(item=>role==="ADMIN"||item[0]!=="finance").map(item=><button key={item[0]} className={tab===item[0]?"active":""} onClick={()=>setTab(item[0])}>{item[1]}</button>)}
     </div>
     {tab==="overview"&&<div className="detailBody">
+      {Boolean(data.pricing)&&<PricingPreview pricing={data.pricing as Preview}/>}
       <section className="detailGrid">
         <article className="detailCard"><h3>Người nhận</h3><b>{String(data.recipient_name||"—")}</b><p>{String(data.address1||"")}{data.address2?<><br/>{String(data.address2)}</>:null}</p><p>{[data.city,data.state,data.zip].filter(Boolean).join(", ")}</p><p>{String(data.country||"")} · {String(data.phone||"")}</p>{data.recipient_email?<p>{String(data.recipient_email)}</p>:null}</article>
         <article className="detailCard"><h3>Hàng hóa</h3><dl><dt>Sản phẩm</dt><dd>{String(data.item||"—")}</dd><dt>Chất liệu</dt><dd>{String(data.material||"—")}</dd><dt>Số lượng Carton</dt><dd>{String(data.carton_count||0)}</dd><dt>Khối lượng</dt><dd>{String(data.weight||0)} kg</dd><dt>Kích thước</dt><dd>{data.length&&data.width&&data.height?String(data.length)+" × "+String(data.width)+" × "+String(data.height)+" cm":"Nhập thể tích tổng"}</dd><dt>Thể tích</dt><dd>{Number(data.volume||0).toLocaleString("en-US")} cm³</dd><dt>Hạng cân</dt><dd><b>{String(data.chargeable_weight||0)} kg</b></dd></dl></article>
@@ -159,7 +161,7 @@ export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderI
       </article>)}</div>
     </div>}
     {tab==="finance"&&role==="ADMIN"&&<div className="detailBody"><section className="financeCards">
-      {[["Net Cost Est",data.est_net_cost],["Net Cost True",data.true_net_cost],["Base Cost",data.base_cost],["Retail Price",data.retail],["Discount",String(data.discount||0)+"%"],["Giá bán",data.sales_price],["Phụ phí PS",data.extra_surcharge],["Thuế NK PS",data.extra_import_tax],["Giá tổng",data.total_due]].map(([label,value])=><article key={String(label)}><span>{String(label)}</span><b>{String(label)==="Discount"?String(value):money(value)}</b></article>)}
+      {[["Net Cost Est",data.est_net_cost],["Net Cost True",data.true_net_cost],["Base Cost",data.base_cost],["Retail Price",data.retail],["Discount",String(data.discount||0)+"%"],["Giá bán",data.sales_price],["Phụ phí PS",data.extra_surcharge],["Thuế NK PS",data.extra_import_tax],["Giá tổng",data.total_due],["GP Base",data.gross_profit_base],["Commission",data.commission_amount]].map(([label,value])=><article key={String(label)}><span>{String(label)}</span><b>{String(label)==="Discount"?String(value):money(value)}</b></article>)}
     </section><div className="reconcileStrip"><span>Đối soát</span><b>{String(data.reconciliation_status||"PENDING")}</b><span>Chi phí có thể về sau và không chặn hoàn tất Order.</span></div></div>}
     {tab==="history"&&<div className="detailBody">
       {role==="ADMIN"&&<div className="historyFilters">{[["all","Tất cả"],["public","Khách hàng thấy"],["internal","Nội bộ"]].map(([key,label])=><button key={key} className={historyScope===key?"active":""} onClick={()=>setHistoryScope(key as "all"|"public"|"internal")}>{label}</button>)}</div>}

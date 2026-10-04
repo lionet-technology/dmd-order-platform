@@ -736,3 +736,44 @@ export function queryAll<T = Record<string, unknown>>(sql: string, params: unkno
 export function queryOne<T = Record<string, unknown>>(sql: string, params: unknown[] = []): T | undefined {
   return db.prepare(sql).get(...params) as T | undefined;
 }
+
+// Additive pricing migration: legacy routes stay manual until explicitly configured.
+ensureColumn("service_route_configs","client_self_purchase","client_self_purchase INTEGER NOT NULL DEFAULT 0");
+ensureColumn("orders","pricing_snapshot_json","pricing_snapshot_json TEXT");
+ensureColumn("orders","pricing_version_id","pricing_version_id INTEGER");
+ensureColumn("orders","pricing_config_version_id","pricing_config_version_id INTEGER");
+ensureColumn("orders","service_purchased_at","service_purchased_at TEXT");
+ensureColumn("orders","pricing_eligibility_json","pricing_eligibility_json TEXT");
+ensureColumn("orders","commission_amount","commission_amount REAL NOT NULL DEFAULT 0");
+db.exec(`
+CREATE TABLE IF NOT EXISTS route_price_versions(
+ id INTEGER PRIMARY KEY,route_id INTEGER NOT NULL REFERENCES service_route_configs(id),
+ version_number INTEGER NOT NULL,tiers_json TEXT NOT NULL,created_by_user_id INTEGER,
+ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(route_id,version_number));
+CREATE TABLE IF NOT EXISTS route_pricing_configs(
+ id INTEGER PRIMARY KEY,route_id INTEGER NOT NULL REFERENCES service_route_configs(id),
+ base_markup REAL NOT NULL,retail_markup REAL NOT NULL,currency TEXT NOT NULL CHECK(currency='USD'),
+ surcharges_json TEXT NOT NULL,created_by_user_id INTEGER,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS route_pricing_activations(
+ id INTEGER PRIMARY KEY,route_id INTEGER NOT NULL REFERENCES service_route_configs(id),
+ price_version_id INTEGER NOT NULL REFERENCES route_price_versions(id),
+ config_version_id INTEGER NOT NULL REFERENCES route_pricing_configs(id),
+ effective_at TEXT NOT NULL,actor_user_id INTEGER,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE INDEX IF NOT EXISTS idx_route_price_active ON route_pricing_activations(route_id,effective_at DESC,id DESC);
+CREATE TRIGGER IF NOT EXISTS immutable_price_update BEFORE UPDATE ON route_price_versions BEGIN SELECT RAISE(ABORT,'Immutable price version'); END;
+CREATE TRIGGER IF NOT EXISTS immutable_price_delete BEFORE DELETE ON route_price_versions BEGIN SELECT RAISE(ABORT,'Immutable price version'); END;
+CREATE TRIGGER IF NOT EXISTS immutable_config_update BEFORE UPDATE ON route_pricing_configs BEGIN SELECT RAISE(ABORT,'Immutable pricing config'); END;
+CREATE TRIGGER IF NOT EXISTS immutable_config_delete BEFORE DELETE ON route_pricing_configs BEGIN SELECT RAISE(ABORT,'Immutable pricing config'); END;
+CREATE TRIGGER IF NOT EXISTS immutable_activation_update BEFORE UPDATE ON route_pricing_activations BEGIN SELECT RAISE(ABORT,'Immutable activation'); END;
+CREATE TRIGGER IF NOT EXISTS immutable_activation_delete BEFORE DELETE ON route_pricing_activations BEGIN SELECT RAISE(ABORT,'Immutable activation'); END;
+CREATE TRIGGER IF NOT EXISTS immutable_order_price BEFORE UPDATE OF pricing_snapshot_json,pricing_version_id,pricing_config_version_id,service_purchased_at ON orders
+ WHEN OLD.pricing_snapshot_json IS NOT NULL AND (
+ NEW.pricing_snapshot_json IS NOT OLD.pricing_snapshot_json OR NEW.pricing_version_id IS NOT OLD.pricing_version_id
+ OR NEW.pricing_config_version_id IS NOT OLD.pricing_config_version_id OR NEW.service_purchased_at IS NOT OLD.service_purchased_at)
+ BEGIN SELECT RAISE(ABORT,'Purchased pricing is immutable'); END;
+`);
+
+db.exec(`CREATE TABLE IF NOT EXISTS route_pricing_audit(
+ id INTEGER PRIMARY KEY,route_id INTEGER NOT NULL REFERENCES service_route_configs(id),
+ action TEXT NOT NULL,actor_user_id INTEGER,before_json TEXT,after_json TEXT,
+ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);`);
