@@ -1,5 +1,5 @@
 import {db} from "./db";
-import {resolveManifestTemplate} from "./purchase-templates";
+import {enforceWarehouseGuard,WarehouseBlock} from "./warehouse-guard";
 
 type DataRow=Record<string,unknown>;
 
@@ -19,47 +19,20 @@ function cartonCode(service:string,date:string,sequence:number){
 
 function routeValue(value:unknown){return String(value||"").trim()}
 function routeKey(row:DataRow){return [row.service,row.sub_service,row.supplier].map(value=>routeValue(value).toLowerCase()).join("\u0000")}
-function routeLabel(row:DataRow){return [row.service,row.sub_service,row.supplier].map(routeValue).filter(Boolean).join(" / ")||"route chưa xác định"}
 
-function availableManifestRoutes(service:unknown){
-  return db.prepare(`
-    SELECT rc.service,rc.sub_service,rc.supplier
-    FROM service_route_configs rc
-    JOIN purchase_templates pt ON pt.route_config_id=rc.id AND pt.active=1 AND pt.template_kind='MANIFEST'
-    JOIN purchase_template_versions pv ON pv.template_id=pt.id AND pv.status='ACTIVE'
-    WHERE rc.active=1 AND lower(rc.service)=lower(?)
-    ORDER BY rc.sub_service,rc.supplier
-  `).all(routeValue(service)) as DataRow[];
-}
-
-function requireManifestTemplate(row:DataRow){
-  const template=resolveManifestTemplate(row);
-  if(template)return template;
-  const available=availableManifestRoutes(row.service);
-  const suffix=available.length?` Template đang có: ${available.map(routeLabel).join(", ")}.`:"";
-  throw new Error(`Route ${routeLabel(row)} chưa có Manifest Template.${suffix}`);
-}
-
-function packedRoutes(cartonId:number){
-  return db.prepare(`
-    SELECT DISTINCT o.service,o.sub_service,o.supplier
-    FROM manifest_carton_items mci JOIN orders o ON o.id=mci.order_id
-    WHERE mci.manifest_carton_id=?
-  `).all(cartonId) as DataRow[];
-}
-
-function createNextCarton(service:string,userId:number,date=localDate()){
+function createNextCarton(service:string,userId:number,date=localDate(),routeId?:number,segmentKey?:string){
   const sequence=Number((db.prepare("SELECT COALESCE(MAX(daily_sequence),0)+1 sequence FROM manifest_cartons WHERE service=? COLLATE NOCASE AND manifest_date=?").get(service,date) as {sequence:number}).sequence);
-  const result=db.prepare("INSERT INTO manifest_cartons(carton_code,service,manifest_date,daily_sequence,created_by_user_id) VALUES (?,?,?,?,?)")
-    .run(cartonCode(service,date,sequence),service,date,sequence,userId);
-  return Number(result.lastInsertRowid);
+  const result=db.prepare("INSERT INTO manifest_cartons(carton_code,service,manifest_date,daily_sequence,created_by_user_id,route_config_id,segment_key) VALUES (?,?,?,?,?,?,?)")
+    .run(cartonCode(service,date,sequence),service,date,sequence,userId,routeId??null,segmentKey??null);
+  const id=Number(result.lastInsertRowid);audit(id,"CREATE",userId,{route_config_id:routeId,segment_key:segmentKey});return id;
 }
 
 function summary(id:number){
   return db.prepare(`
-    SELECT mc.*,COUNT(mci.id) item_count,COUNT(DISTINCT mci.order_id) order_count,
+    SELECT mc.*,rc.sub_service,rc.supplier,COUNT(mci.id) item_count,COUNT(DISTINCT mci.order_id) order_count,
       creator.display_name created_by_name,closer.display_name closed_by_name
     FROM manifest_cartons mc
+    LEFT JOIN service_route_configs rc ON rc.id=mc.route_config_id
     LEFT JOIN manifest_carton_items mci ON mci.manifest_carton_id=mc.id
     LEFT JOIN users creator ON creator.id=mc.created_by_user_id
     LEFT JOIN users closer ON closer.id=mc.closed_by_user_id
@@ -82,14 +55,16 @@ export function manifestCartonDetail(id:number){
     LEFT JOIN users u ON u.id=mci.added_by_user_id
     WHERE mci.manifest_carton_id=? ORDER BY mci.id
   `).all(id);
-  return {carton,items};
+  const history=db.prepare("SELECT e.*,u.display_name actor_name FROM manifest_carton_events e LEFT JOIN users u ON u.id=e.actor_user_id WHERE manifest_carton_id=? ORDER BY e.id DESC").all(id);
+  return {carton,items,history};
 }
 
 export function listManifestCartons(limit=30){
   return db.prepare(`
-    SELECT mc.*,COUNT(mci.id) item_count,COUNT(DISTINCT mci.order_id) order_count,
+    SELECT mc.*,rc.sub_service,rc.supplier,COUNT(mci.id) item_count,COUNT(DISTINCT mci.order_id) order_count,
       creator.display_name created_by_name,closer.display_name closed_by_name
     FROM manifest_cartons mc
+    LEFT JOIN service_route_configs rc ON rc.id=mc.route_config_id
     LEFT JOIN manifest_carton_items mci ON mci.manifest_carton_id=mc.id
     LEFT JOIN users creator ON creator.id=mc.created_by_user_id
     LEFT JOIN users closer ON closer.id=mc.closed_by_user_id
@@ -105,17 +80,16 @@ function resolveIdentifier(raw:string){
     SELECT ot.id tracking_id,ot.tracking,ot.carton_id order_carton_id,oc.carton_number,
       o.id order_id,o.system_order_code,o.order_id client_order_id,o.customer,o.recipient_name,o.service,o.sub_service,o.supplier,o.workflow_status
     FROM order_trackings ot JOIN orders o ON o.id=ot.order_id JOIN order_cartons oc ON oc.id=ot.carton_id
-    WHERE ot.normalized_tracking=? AND ot.status='ACTIVE'
+    WHERE ot.normalized_tracking=? AND ot.status IN ('ACTIVE','CANCELLED') ORDER BY ot.id DESC LIMIT 1
   `).get(normalized) as DataRow|undefined;
   if(tracking){
-    if(tracking.workflow_status==="CANCELLED")throw new Error("Order đã hủy.");
     return [tracking];
   }
   const orders=db.prepare("SELECT id,system_order_code,order_id,workflow_status FROM orders WHERE system_order_code=? COLLATE NOCASE OR order_id=? COLLATE NOCASE ORDER BY id").all(identifier,identifier) as DataRow[];
   if(!orders.length)throw new Error("Không tìm thấy Order hoặc Tracking: "+identifier);
   if(orders.length>1)throw new Error("Client Order ID trùng nhiều khách. Hãy nhập DMD ID hoặc Tracking.");
   const order=orders[0];
-  if(order.workflow_status==="CANCELLED")throw new Error("Order đã hủy.");
+  if(order.workflow_status==="CANCELLED")throw new WarehouseBlock("ORDER_CANCELLED","Order đã hủy.");
   const cartons=Number((db.prepare("SELECT COUNT(*) count FROM order_cartons WHERE order_id=?").get(order.id) as {count:number}).count);
   const rows=db.prepare(`
     SELECT ot.id tracking_id,ot.tracking,ot.carton_id order_carton_id,oc.carton_number,
@@ -135,24 +109,29 @@ export function addManifestIdentifier(raw:string,requestedCartonId:number|undefi
   if(rows.some(row=>String(row.service||"").toLowerCase()!==service.toLowerCase()))throw new Error("Một lần nhập chỉ được có một Dịch vụ.");
   const incomingRoute=rows[0];
   if(rows.some(row=>routeKey(row)!==routeKey(incomingRoute)))throw new Error("Một Order đang có nhiều route, cần kiểm tra lại trước khi đóng thùng.");
-  requireManifestTemplate(incomingRoute);
   const tx=db.transaction(()=>{
-    let carton:DataRow|undefined;
-    if(requestedCartonId)carton=db.prepare("SELECT * FROM manifest_cartons WHERE id=?").get(requestedCartonId) as DataRow|undefined;
-    else carton=db.prepare("SELECT * FROM manifest_cartons WHERE service=? COLLATE NOCASE AND status='OPEN' ORDER BY id DESC LIMIT 1").get(service) as DataRow|undefined;
-    if(carton&&carton.status!=="OPEN")throw new Error("Thùng đã đóng, không thể thêm Order.");
-    if(carton&&String(carton.service).toLowerCase()!==service.toLowerCase())throw new Error(`Thùng ${carton.carton_code} chỉ nhận dịch vụ ${carton.service}.`);
-    if(carton){
-      const routes=packedRoutes(Number(carton.id));
-      if(routes.length>1)throw new Error(`Thùng ${carton.carton_code} đang trộn nhiều route. Hãy bỏ các Order sai trước khi đóng thùng.`);
-      if(routes[0]&&routeKey(routes[0])!==routeKey(incomingRoute))throw new Error(`Thùng ${carton.carton_code} chỉ nhận ${routeLabel(routes[0])}. Order này là ${routeLabel(incomingRoute)}; hãy dùng thùng khác.`);
+    const route=db.prepare("SELECT * FROM service_route_configs WHERE service=? COLLATE NOCASE AND sub_service=? COLLATE NOCASE AND supplier=? COLLATE NOCASE AND active=1").get(service,routeValue(incomingRoute.sub_service),routeValue(incomingRoute.supplier)) as DataRow|undefined;
+    let carton=requestedCartonId?db.prepare("SELECT * FROM manifest_cartons WHERE id=?").get(requestedCartonId) as DataRow|undefined:undefined;
+    if(requestedCartonId&&!carton)throw new Error("Không tìm thấy thùng.");
+    if(carton&&carton.status!=="OPEN")throw new Error("Hãy tiếp tục / mở lại thùng trước khi scan.");
+    if(!carton){
+      if(!route)throw new WarehouseBlock("ROUTE_MISMATCH","Route chưa được cấu hình.");
+      const cartonId=createNextCarton(service,userId,localDate(),Number(route.id));
+      carton=db.prepare("SELECT * FROM manifest_cartons WHERE id=?").get(cartonId) as DataRow;
     }
-    const cartonId=carton?Number(carton.id):createNextCarton(service,userId);
+    const cartonId=Number(carton.id);
+    // Legacy empty cartons bind once on first scan; populated cartons never rebind.
+    if(!carton.route_config_id&&route&&String(carton.service).toLowerCase()===service.toLowerCase()&&!db.prepare("SELECT id FROM manifest_carton_items WHERE manifest_carton_id=?").get(cartonId)){
+      db.prepare("UPDATE manifest_cartons SET route_config_id=? WHERE id=?").run(route.id,cartonId);
+      carton.route_config_id=route.id;audit(cartonId,"BIND_ROUTE",userId,{route_config_id:route.id});
+    }
+    for(const row of rows)enforceWarehouseGuard(row,carton);
     for(const row of rows){
       const existing=db.prepare("SELECT mc.carton_code FROM manifest_carton_items mci JOIN manifest_cartons mc ON mc.id=mci.manifest_carton_id WHERE mci.order_carton_id=?").get(row.order_carton_id) as {carton_code:string}|undefined;
       if(existing)throw new Error(`Carton đã nằm trong thùng ${existing.carton_code}.`);
       db.prepare("INSERT INTO manifest_carton_items(manifest_carton_id,order_id,order_carton_id,tracking_id,added_by_user_id) VALUES (?,?,?,?,?)")
         .run(cartonId,row.order_id,row.order_carton_id,row.tracking_id,userId);
+      audit(cartonId,"ADD",userId,row);
     }
     return cartonId;
   });
@@ -160,33 +139,64 @@ export function addManifestIdentifier(raw:string,requestedCartonId:number|undefi
   return {...manifestCartonDetail(id),added_count:rows.length};
 }
 
-export function removeManifestItem(cartonId:number,itemId:number){
-  const carton=summary(cartonId);if(!carton)throw new Error("Không tìm thấy thùng Manifest.");
-  if(carton.status!=="OPEN")throw new Error("Thùng đã đóng, không thể bỏ Order.");
-  const result=db.prepare("DELETE FROM manifest_carton_items WHERE id=? AND manifest_carton_id=?").run(itemId,cartonId);
-  if(!result.changes)throw new Error("Không tìm thấy dòng cần bỏ.");
-  return manifestCartonDetail(cartonId);
+function audit(id:number,action:string,userId:number,details:DataRow){
+ db.prepare("INSERT INTO manifest_carton_events(manifest_carton_id,action,actor_user_id,details_json) VALUES (?,?,?,?)").run(id,action,userId,JSON.stringify(details));
 }
-
+export function removeManifestItem(cartonId:number,itemId:number,userId:number){
+ return db.transaction(()=>{
+ const carton=summary(cartonId);if(!carton||carton.status!=="OPEN")throw new Error("Hãy mở lại / tiếp tục thùng trước khi bốc hàng.");
+ const item=db.prepare("SELECT * FROM manifest_carton_items WHERE id=? AND manifest_carton_id=?").get(itemId,cartonId) as DataRow|undefined;
+ if(!item)throw new Error("Kiện không nằm trong thùng này.");
+ db.prepare("DELETE FROM manifest_carton_items WHERE id=?").run(itemId);audit(cartonId,"REMOVE",userId,item);
+ return manifestCartonDetail(cartonId);
+ }).immediate();
+}
+export function removeManifestIdentifier(raw:string,cartonId:number,userId:number){
+ return db.transaction(()=>{
+ const normalized=raw.trim().replace(/[\s-]+/g,"").toUpperCase();
+ const items=db.prepare(`SELECT i.id FROM manifest_carton_items i JOIN orders o ON o.id=i.order_id
+ JOIN order_trackings t ON t.id=i.tracking_id WHERE i.manifest_carton_id=? AND
+ (t.normalized_tracking=? OR o.system_order_code=? COLLATE NOCASE OR o.order_id=? COLLATE NOCASE)`).all(cartonId,normalized,raw.trim(),raw.trim()) as {id:number}[];
+ if(!items.length)throw new Error("Kiện không nằm trong thùng này.");
+ for(const item of items)removeManifestItem(cartonId,item.id,userId);
+ return {...manifestCartonDetail(cartonId),removed_count:items.length};
+ }).immediate();
+}
+export function changeManifestStatus(id:number,action:"pause"|"resume"|"reopen",userId:number){
+ return db.transaction(()=>{
+ const carton=summary(id);if(!carton)throw new Error("Không tìm thấy thùng.");
+ const expected={pause:"OPEN",resume:"PAUSED",reopen:"CLOSED"}[action];
+ if(carton.status!==expected)throw new Error("Trạng thái thùng không phù hợp.");
+ const status=action==="pause"?"PAUSED":"OPEN";
+ db.prepare("UPDATE manifest_cartons SET status=?,closed_at=NULL,closed_by_user_id=NULL,exported_at=NULL WHERE id=?").run(status,id);
+ audit(id,action.toUpperCase(),userId,{from:carton.status,to:status});return manifestCartonDetail(id);
+ }).immediate();
+}
 export function closeManifestCarton(cartonId:number,userId:number){
-  const tx=db.transaction(()=>{
-    const carton=summary(cartonId);if(!carton)throw new Error("Không tìm thấy thùng Manifest.");
-    if(carton.status!=="OPEN")throw new Error("Thùng đã được đóng trước đó.");
-    if(!Number(carton.item_count||0))throw new Error("Thùng đang trống.");
-    const routes=packedRoutes(cartonId);
-    if(routes.length!==1)throw new Error("Thùng đang trộn nhiều route. Hãy bỏ các Order sai trước khi đóng thùng.");
-    requireManifestTemplate(routes[0]);
-    db.prepare("UPDATE manifest_cartons SET status='CLOSED',closed_by_user_id=?,closed_at=CURRENT_TIMESTAMP WHERE id=?").run(userId,cartonId);
-    return createNextCarton(String(carton.service),userId);
-  });
-  const nextId=tx.immediate();
-  return {closed:manifestCartonDetail(cartonId),next:manifestCartonDetail(nextId)};
+ const nextId=db.transaction(()=>{
+ const carton=summary(cartonId);if(!carton||carton.status!=="OPEN")throw new Error("Chỉ chốt thùng đang mở.");
+ if(!Number(carton.item_count))throw new Error("Thùng đang trống.");
+ const rows=db.prepare("SELECT o.*,o.id order_id FROM manifest_carton_items i JOIN orders o ON o.id=i.order_id WHERE i.manifest_carton_id=?").all(cartonId) as DataRow[];
+ for(const row of rows)enforceWarehouseGuard(row,carton);
+ db.prepare("UPDATE manifest_cartons SET status='CLOSED',closed_by_user_id=?,closed_at=CURRENT_TIMESTAMP WHERE id=?").run(userId,cartonId);
+ audit(cartonId,"CLOSE",userId,{from:"OPEN",to:"CLOSED"});
+ return createNextCarton(String(carton.service),userId,localDate(),Number(carton.route_config_id),carton.segment_key?String(carton.segment_key):undefined);
+ }).immediate();
+ return {closed:manifestCartonDetail(cartonId),next:manifestCartonDetail(nextId)};
+}
+export function createManifestCarton(routeId:number,segmentKey:string|undefined,userId:number){
+ return db.transaction(()=>{
+ const route=db.prepare("SELECT * FROM service_route_configs WHERE id=? AND active=1").get(routeId) as DataRow|undefined;
+ if(!route)throw new Error("Route không hợp lệ.");
+ return manifestCartonDetail(createNextCarton(String(route.service),userId,localDate(),routeId,segmentKey));
+ }).immediate();
 }
 
 export function manifestCartonTrackings(cartonId:number){
   const detail=manifestCartonDetail(cartonId);
   if(detail.carton.status!=="CLOSED")throw new Error("Chỉ xuất file sau khi đã đóng đầy thùng.");
   if(!detail.items.length)throw new Error("Thùng không có Order.");
+  for(const item of detail.items)enforceWarehouseGuard(item as DataRow,detail.carton);
   return {detail,trackings:detail.items.map(row=>String((row as DataRow).tracking))};
 }
 

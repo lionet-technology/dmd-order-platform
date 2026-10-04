@@ -254,7 +254,7 @@ CREATE TABLE IF NOT EXISTS manifest_cartons (
   exported_at TEXT,
   UNIQUE(service,manifest_date,daily_sequence)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_manifest_cartons_one_open_service ON manifest_cartons(service) WHERE status='OPEN';
+
 CREATE INDEX IF NOT EXISTS idx_manifest_cartons_recent ON manifest_cartons(manifest_date DESC,daily_sequence DESC);
 
 CREATE TABLE IF NOT EXISTS manifest_carton_items (
@@ -592,6 +592,50 @@ db.transaction(()=>{
       .run(orderId,current?"Loại bỏ công nợ tự động trùng khi chuyển tham chiếu Tracking sang Order.":"Chuyển tham chiếu công nợ tự động từ Tracking sang Order, giữ nguyên số tiền.",JSON.stringify(charge),JSON.stringify({reference_type:"ORDER",reference_id:ref,duplicate_removed:Boolean(current)}));
   }
 })();
+// Warehouse schema upgrade: rebuild only the parent table while preserving IDs/items.
+db.pragma("foreign_keys = OFF");
+if (!(db.prepare("SELECT sql FROM sqlite_master WHERE name='manifest_cartons'").get() as {sql:string}).sql.includes("'PAUSED'")) {
+  db.transaction(()=>db.exec(`
+    CREATE TABLE manifest_cartons_upgrade (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, carton_code TEXT NOT NULL UNIQUE,
+      service TEXT NOT NULL COLLATE NOCASE, manifest_date TEXT NOT NULL, daily_sequence INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'OPEN' CHECK(status IN ('OPEN','PAUSED','CLOSED')),
+      created_by_user_id INTEGER, closed_by_user_id INTEGER, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      closed_at TEXT, exported_at TEXT, UNIQUE(service,manifest_date,daily_sequence));
+    INSERT INTO manifest_cartons_upgrade SELECT * FROM manifest_cartons;
+    DROP TABLE manifest_cartons;
+    ALTER TABLE manifest_cartons_upgrade RENAME TO manifest_cartons;
+  `))();
+}
+db.exec("DROP INDEX IF EXISTS idx_manifest_cartons_one_open_service");
+ensureColumn("manifest_cartons","route_config_id","route_config_id INTEGER REFERENCES service_route_configs(id)");
+ensureColumn("manifest_cartons","segment_key","segment_key TEXT");
+ensureColumn("service_route_configs","warehouse_hold","warehouse_hold INTEGER NOT NULL DEFAULT 0");
+db.exec(`
+ CREATE TABLE IF NOT EXISTS warehouse_order_holds (
+ id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id),
+ source TEXT NOT NULL CHECK(source IN ('CLIENT','SALES','ADMIN')), reason TEXT NOT NULL,
+ created_by_user_id INTEGER NOT NULL REFERENCES users(id), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ released_at TEXT, released_by_user_id INTEGER REFERENCES users(id));
+ CREATE TABLE IF NOT EXISTS warehouse_routing_rules (
+ id INTEGER PRIMARY KEY, route_config_id INTEGER NOT NULL REFERENCES service_route_configs(id),
+ evaluator_key TEXT NOT NULL, config_json TEXT NOT NULL DEFAULT '{}', active INTEGER NOT NULL DEFAULT 1);
+ CREATE TABLE IF NOT EXISTS manifest_carton_events (
+ id INTEGER PRIMARY KEY, manifest_carton_id INTEGER NOT NULL REFERENCES manifest_cartons(id),
+ action TEXT NOT NULL, actor_user_id INTEGER NOT NULL REFERENCES users(id),
+ details_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+ CREATE INDEX IF NOT EXISTS idx_manifest_cartons_recent ON manifest_cartons(manifest_date DESC,daily_sequence DESC);
+ CREATE INDEX IF NOT EXISTS idx_warehouse_holds_order ON warehouse_order_holds(order_id,released_at);
+ CREATE INDEX IF NOT EXISTS idx_manifest_events_carton ON manifest_carton_events(manifest_carton_id,id);
+ INSERT OR IGNORE INTO service_route_configs(service,sub_service,supplier)
+ SELECT DISTINCT COALESCE(o.service,''),COALESCE(o.sub_service,''),COALESCE(o.supplier,'')
+ FROM manifest_carton_items i JOIN orders o ON o.id=i.order_id;
+ UPDATE manifest_cartons SET route_config_id=(
+ SELECT rc.id FROM manifest_carton_items i JOIN orders o ON o.id=i.order_id
+ JOIN service_route_configs rc ON rc.service=COALESCE(o.service,'') COLLATE NOCASE
+ AND rc.sub_service=COALESCE(o.sub_service,'') COLLATE NOCASE AND rc.supplier=COALESCE(o.supplier,'') COLLATE NOCASE
+ WHERE i.manifest_carton_id=manifest_cartons.id LIMIT 1) WHERE route_config_id IS NULL;
+`);
 db.pragma("foreign_keys = ON");
 const rootAdminCount = (db.prepare("SELECT COUNT(*) c FROM users WHERE is_root_admin=1").get() as {c:number}).c;
 if(rootAdminCount===0){

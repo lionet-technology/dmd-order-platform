@@ -56,6 +56,8 @@ export async function POST(req:NextRequest){
     let id:number;
     if(existing){
       id=existing.id;
+      const previous=db.prepare("SELECT * FROM service_route_configs WHERE id=?").get(id) as Record<string,unknown>;
+      if([service,subService,supplier].some((value,index)=>value.toLowerCase()!==String(previous[["service","sub_service","supplier"][index]]).toLowerCase())&&db.prepare("SELECT id FROM manifest_cartons WHERE route_config_id=? LIMIT 1").get(id))throw new Error("Route đã gắn với thùng kho. Hãy tạo route mới để giữ lịch sử thùng.");
       if(variables){
         db.prepare("UPDATE service_route_configs SET service=?,sub_service=?,supplier=?,route_variables_json=?,active=?,updated_by_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
           .run(service,subService,supplier,JSON.stringify(variables),active,auth.user.id,id);
