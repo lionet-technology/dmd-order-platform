@@ -5,7 +5,7 @@ const resolve=Module._resolveFilename;
 Module._resolveFilename=function(request,parent,isMain,options){if(request.startsWith("@/"))request=path.join(root,"src",request.slice(2))+".ts";return resolve.call(this,request,parent,isMain,options)};
 require.extensions[".ts"]=(module,filename)=>module._compile(ts.transpileModule(fs.readFileSync(filename,"utf8"),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true}}).outputText,filename);
 const {db}=require("../src/lib/db.ts"),{createUser,createSession}=require("../src/lib/auth.ts"),{NextRequest}=require("next/server");
-const {GET}=require("../src/app/api/purchase-template-versions/[id]/download/route.ts");
+const {GET}=require("../src/app/api/purchase-template-versions/[id]/download/route.ts"),{POST:uploadTemplate}=require("../src/app/api/purchase-templates/route.ts"),{File}=require("node:buffer");
 let checks=0;const check=(ok,message)=>{checks++;if(!ok)throw Error(message)};
 async function main(){
  const tokens={};let salesId;for(const role of ["ADMIN","SALES","CLIENT"]){const user=createUser({username:"download."+role,display_name:role,password:"TestPass123!",role,sales_user_id:role==="CLIENT"?salesId:undefined});if(role==="SALES")salesId=user.id;tokens[role]=createSession(user.id).token}
@@ -27,6 +27,14 @@ async function main(){
  }
  check((await request(99999,"ADMIN")).status===404,"unknown version must not download");
  check((await request("invalid","ADMIN")).status===400,"invalid version must be rejected");
+ const isolatedRoute=Number(db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier,route_variables_json) VALUES ('Isolated','Standard','DMD',?)").run(JSON.stringify({purchase_service_code:"EPK",internal_service:"Standard"})).lastInsertRowid);
+ const form=new FormData();
+ for(const [key,value] of Object.entries({route_config_id:isolatedRoute,template_kind:"PURCHASE",name:"Isolation check",output_mode:"MULTI_ORDER",repeat_sections:JSON.stringify([{sheet:"Sheet1",row:2,scope:"CARTON"}])}))form.set(key,String(value));
+ const uploadBytes=fs.readFileSync(path.join(root,"config/templates/epacket-standard-dmd/purchase.xlsx"));
+ form.set("file",new File([uploadBytes],"purchase.xlsx",{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
+ const uploadResponse=await uploadTemplate(new NextRequest("http://localhost/api/purchase-templates",{method:"POST",headers:{cookie:"dmd_session="+tokens.ADMIN},body:form}));
+ const uploadBody=await uploadResponse.json();check(uploadResponse.status===201&&!uploadBody.errors.length,"isolated template upload must validate");
+ const storedPath=String(uploadBody.version.stored_path);check(storedPath.startsWith(temporary+path.sep),"template storage must follow the configured database directory");check(fs.existsSync(storedPath),"isolated uploaded workbook must be stored beside its test database");
  console.log("TEMPLATE DOWNLOAD PASS ("+checks+" assertions)");
 }
 main().catch(e=>{console.error(e);process.exitCode=1}).finally(()=>{db.close();fs.rmSync(temporary,{recursive:true,force:true})});

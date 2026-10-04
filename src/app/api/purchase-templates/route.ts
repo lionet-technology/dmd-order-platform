@@ -73,7 +73,8 @@ export async function POST(req:NextRequest){
         }
       }
       const version=(db.prepare("SELECT COALESCE(MAX(version_number),0)+1 version FROM purchase_template_versions WHERE template_id=?").get(templateId) as {version:number}).version;
-      const directory=path.join(process.cwd(),"data","purchase-templates",String(templateId));
+      const dataDirectory=process.env.DMD_DB_PATH?path.dirname(path.resolve(process.env.DMD_DB_PATH)):path.join(process.cwd(),"data");
+      const directory=path.join(dataDirectory,"purchase-templates",String(templateId));
       fs.mkdirSync(directory,{recursive:true});
       const storedPath=path.join(directory,"v"+version+".xlsx");
       fs.writeFileSync(storedPath,buffer);
