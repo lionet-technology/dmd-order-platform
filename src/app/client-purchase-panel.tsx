@@ -9,12 +9,13 @@ const labels=["Client Order ID","Cân nặng (kg)","Dài (cm)","Rộng (cm)","Ca
 const blank=()=>({country:"US",carton_count:1,item:"T-shirt",material:"Cotton"} as Row);
 export function ClientPurchasePanel({onDone,initial}:{onDone:()=>void;initial?:Row|null}){
  const [routes,setRoutes]=useState<Route[]>([]),[balance,setBalance]=useState(0),[routeId,setRouteId]=useState(""),[rows,setRows]=useState<Row[]>([initial||blank()]),[checked,setChecked]=useState<Validated[]>([]),[file,setFile]=useState<File|null>(null),[mode,setMode]=useState("manual"),[busy,setBusy]=useState(false),[msg,setMsg]=useState(""),[saved,setSaved]=useState<Array<{id:number;order_id:string;pricing:Preview}>>([]),[selection,setSelection]=useState<number[]>([]);
+ const locked=!!initial?.service_purchased_at||!!initial?.purchase_completed_at||["PURCHASED","RECONCILED"].includes(String(initial?.workflow_status));
  useEffect(()=>{void fetch("/api/client-orders").then(r=>r.json()).then(d=>{setRoutes(d.routes||[]);setBalance(d.balance||0);setRouteId(String((d.routes||[]).find((r:Route)=>initial?r.service===initial.service&&r.sub_service===initial.sub_service:true)?.id||""))})},[initial]);
  useEffect(()=>{
- if(!routeId)return;
+ if(!routeId||locked)return;
  const controller=new AbortController(),timer=setTimeout(()=>{void fetch("/api/client-orders",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"preview",route_id:Number(routeId),rows}),signal:controller.signal}).then(async r=>{const d=await r.json();if(!r.ok)throw Error(d.error);setChecked(d.rows)}).catch(e=>{if(e.name!=="AbortError")setMsg(e.message)})},300);
  return ()=>{clearTimeout(timer);controller.abort()};
- },[rows,routeId,mode]);
+ },[rows,routeId,mode,locked]);
  async function act(action:string){
  setBusy(true);setMsg("");
  try{
@@ -24,11 +25,10 @@ export function ClientPurchasePanel({onDone,initial}:{onDone:()=>void;initial?:R
  if(!r.ok)throw Error(d.error);
  if(action==="upload"){setChecked(d.rows);setRows(d.rows.map((r:Validated)=>r.input));setMsg("Đã đọc file; kiểm tra từng dòng trước khi lưu.")}
  else if(action==="save"){setRows(prev=>prev.map((row,i)=>({...row,id:d.orders[i].id})));setSaved(d.orders);setSelection(d.orders.filter((o:{pricing:Preview})=>o.pricing?.eligible).map((o:{id:number})=>o.id));setMsg("Đã lưu Draft. Chọn đơn rồi Đặt mua dịch vụ.");onDone()}
- else{setMsg("Đã đặt mua dịch vụ. Ops đang xử lý label; Tracking/Label sẽ trả về trên Order.");setSaved([]);setSelection([]);setRows([blank()]);void fetch("/api/client-orders").then(r=>r.json()).then(d=>setBalance(d.balance||0));onDone()}
+ else{setMsg("Đã đặt mua dịch vụ. Ops đang xử lý label; Tracking/Label sẽ trả về trên Order.");setSaved([]);setSelection([]);setRows([blank()]);setChecked([]);void fetch("/api/client-orders").then(r=>r.json()).then(d=>setBalance(d.balance||0));onDone()}
  }catch(e){setMsg((e as Error).message)}finally{setBusy(false)}
  }
  function template(){const blob=new Blob([fields.join(",")+"\r\n"],{type:"text/csv"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="Client_Orders.csv";a.click();URL.revokeObjectURL(url)}
- const locked=!!initial?.service_purchased_at||!!initial?.purchase_completed_at||["PURCHASED","RECONCILED"].includes(String(initial?.workflow_status));
  return <div className="clientPurchase"><p>Balance: <b>{balance.toFixed(2)} USD</b> · Draft → xem giá → Đặt mua dịch vụ → Ops mua label → Tracking/Label.</p>
  <label>Dịch vụ<select value={routeId} disabled={locked} onChange={e=>{setRouteId(e.target.value);setChecked([]);setSaved([])}}><option value="">Chọn dịch vụ được cấp</option>{routes.map(r=><option key={r.id} value={r.id}>{r.service} / {r.sub_service} · Discount {r.discount_percent.toFixed(4)}% từ Retail</option>)}</select></label>
  {!locked&&<><div className="templateKindTabs"><button onClick={()=>setMode("manual")}>Nhập tay / Paste</button><button onClick={()=>setMode("upload")}>Upload CSV / XLSX</button></div>
