@@ -26,6 +26,14 @@ function download(response:Response,blob:Blob){
   const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download=filename;document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
+function ActiveTemplateDownload({versionId,kind}:{versionId?:number;kind:"Purchase"|"Manifest"}){
+  if(!versionId)return null;
+  const label="Tải "+kind+" Template đang dùng (giữ placeholder)";
+  return <a className="templateDownload" href={"/api/purchase-template-versions/"+versionId+"/download"} title={label} aria-label={label}>
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M5 16v4h14v-4"/></svg>
+  </a>;
+}
+
 export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
   const [routes,setRoutes]=useState<RouteRow[]>([]);
   const [selected,setSelected]=useState<RouteRow|null>(null);
@@ -123,7 +131,7 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
         <button className="primaryBtn" disabled={busy||!form.service||!form.supplier} onClick={()=>void createRoute()}>＋ Thêm cấu hình</button>
       </div>
       <div className="tableWrap routeTable"><table><thead><tr><th>Service</th><th>Sub-Service</th><th>Supplier</th><th>Purchase Template</th><th>Manifest Template</th><th>Status</th><th></th></tr></thead><tbody>
-        {routes.length?routes.map(row=><tr key={row.id} className={selected?.id===row.id?"selectedRoute":""}><td><b>{row.service}</b></td><td>{row.sub_service||"—"}</td><td>{row.supplier}</td><td>{row.purchase_template_name||row.template_name||"Chưa có"}{row.purchase_version_number||row.version_number?<small>Active v{row.purchase_version_number||row.version_number}</small>:null}</td><td>{row.manifest_template_name||"Chưa có"}{row.manifest_version_number?<small>Active v{row.manifest_version_number}</small>:null}</td><td><span className={row.active?"status goodStatus":"status neutralStatus"}>{row.active?"Active":"Inactive"}</span></td><td><button className="editBtn" onClick={()=>{setSelected(row);chooseTemplateKind("PURCHASE",row);let vars:Record<string,string>={};try{vars=JSON.parse(row.route_variables_json||"{}")}catch{}setRouteVariables(Object.entries(vars).map(([key,value])=>({key,value:String(value)})))}}>Cấu hình</button></td></tr>):<tr><td colSpan={7} className="empty">Chưa có Service Route.</td></tr>}
+        {routes.length?routes.map(row=><tr key={row.id} className={selected?.id===row.id?"selectedRoute":""}><td><b>{row.service}</b></td><td>{row.sub_service||"—"}</td><td>{row.supplier}</td><td>{row.purchase_template_name||row.template_name||"Chưa có"}{row.purchase_version_number||row.version_number?<small>Active v{row.purchase_version_number||row.version_number}<ActiveTemplateDownload versionId={row.purchase_active_version_id||row.active_version_id} kind="Purchase"/></small>:null}</td><td>{row.manifest_template_name||"Chưa có"}{row.manifest_version_number?<small>Active v{row.manifest_version_number}<ActiveTemplateDownload versionId={row.manifest_active_version_id} kind="Manifest"/></small>:null}</td><td><span className={row.active?"status goodStatus":"status neutralStatus"}>{row.active?"Active":"Inactive"}</span></td><td><button className="editBtn" onClick={()=>{setSelected(row);chooseTemplateKind("PURCHASE",row);let vars:Record<string,string>={};try{vars=JSON.parse(row.route_variables_json||"{}")}catch{}setRouteVariables(Object.entries(vars).map(([key,value])=>({key,value:String(value)})))}}>Cấu hình</button></td></tr>):<tr><td colSpan={7} className="empty">Chưa có Service Route.</td></tr>}
       </tbody></table></div>
     </section>
 
