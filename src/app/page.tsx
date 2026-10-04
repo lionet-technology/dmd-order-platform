@@ -1041,6 +1041,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
         <div className="topUser">
           <span className="topRole">{role}</span>
           <b>{user.display_name}</b>
+          <button className="topLogoutBtn" onClick={()=>void logout()} aria-label="Đăng xuất" title="Đăng xuất">↪</button>
         </div>
       </div>
 
