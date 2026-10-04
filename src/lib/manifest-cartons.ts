@@ -1,4 +1,5 @@
 import {db} from "./db";
+import {resolveManifestTemplate} from "./purchase-templates";
 
 type DataRow=Record<string,unknown>;
 
@@ -14,6 +15,37 @@ function serviceCode(service:string){
 
 function cartonCode(service:string,date:string,sequence:number){
   return `${serviceCode(service)}-${date.replaceAll("-","")}-${String(sequence).padStart(3,"0")}`;
+}
+
+function routeValue(value:unknown){return String(value||"").trim()}
+function routeKey(row:DataRow){return [row.service,row.sub_service,row.supplier].map(value=>routeValue(value).toLowerCase()).join("\u0000")}
+function routeLabel(row:DataRow){return [row.service,row.sub_service,row.supplier].map(routeValue).filter(Boolean).join(" / ")||"route chưa xác định"}
+
+function availableManifestRoutes(service:unknown){
+  return db.prepare(`
+    SELECT rc.service,rc.sub_service,rc.supplier
+    FROM service_route_configs rc
+    JOIN purchase_templates pt ON pt.route_config_id=rc.id AND pt.active=1 AND pt.template_kind='MANIFEST'
+    JOIN purchase_template_versions pv ON pv.template_id=pt.id AND pv.status='ACTIVE'
+    WHERE rc.active=1 AND lower(rc.service)=lower(?)
+    ORDER BY rc.sub_service,rc.supplier
+  `).all(routeValue(service)) as DataRow[];
+}
+
+function requireManifestTemplate(row:DataRow){
+  const template=resolveManifestTemplate(row);
+  if(template)return template;
+  const available=availableManifestRoutes(row.service);
+  const suffix=available.length?` Template đang có: ${available.map(routeLabel).join(", ")}.`:"";
+  throw new Error(`Route ${routeLabel(row)} chưa có Manifest Template.${suffix}`);
+}
+
+function packedRoutes(cartonId:number){
+  return db.prepare(`
+    SELECT DISTINCT o.service,o.sub_service,o.supplier
+    FROM manifest_carton_items mci JOIN orders o ON o.id=mci.order_id
+    WHERE mci.manifest_carton_id=?
+  `).all(cartonId) as DataRow[];
 }
 
 function createNextCarton(service:string,userId:number,date=localDate()){
@@ -101,12 +133,20 @@ export function addManifestIdentifier(raw:string,requestedCartonId:number|undefi
   const service=String(rows[0].service||"").trim();
   if(!service)throw new Error("Order chưa có Dịch vụ.");
   if(rows.some(row=>String(row.service||"").toLowerCase()!==service.toLowerCase()))throw new Error("Một lần nhập chỉ được có một Dịch vụ.");
+  const incomingRoute=rows[0];
+  if(rows.some(row=>routeKey(row)!==routeKey(incomingRoute)))throw new Error("Một Order đang có nhiều route, cần kiểm tra lại trước khi đóng thùng.");
+  requireManifestTemplate(incomingRoute);
   const tx=db.transaction(()=>{
     let carton:DataRow|undefined;
     if(requestedCartonId)carton=db.prepare("SELECT * FROM manifest_cartons WHERE id=?").get(requestedCartonId) as DataRow|undefined;
     else carton=db.prepare("SELECT * FROM manifest_cartons WHERE service=? COLLATE NOCASE AND status='OPEN' ORDER BY id DESC LIMIT 1").get(service) as DataRow|undefined;
     if(carton&&carton.status!=="OPEN")throw new Error("Thùng đã đóng, không thể thêm Order.");
     if(carton&&String(carton.service).toLowerCase()!==service.toLowerCase())throw new Error(`Thùng ${carton.carton_code} chỉ nhận dịch vụ ${carton.service}.`);
+    if(carton){
+      const routes=packedRoutes(Number(carton.id));
+      if(routes.length>1)throw new Error(`Thùng ${carton.carton_code} đang trộn nhiều route. Hãy bỏ các Order sai trước khi đóng thùng.`);
+      if(routes[0]&&routeKey(routes[0])!==routeKey(incomingRoute))throw new Error(`Thùng ${carton.carton_code} chỉ nhận ${routeLabel(routes[0])}. Order này là ${routeLabel(incomingRoute)}; hãy dùng thùng khác.`);
+    }
     const cartonId=carton?Number(carton.id):createNextCarton(service,userId);
     for(const row of rows){
       const existing=db.prepare("SELECT mc.carton_code FROM manifest_carton_items mci JOIN manifest_cartons mc ON mc.id=mci.manifest_carton_id WHERE mci.order_carton_id=?").get(row.order_carton_id) as {carton_code:string}|undefined;
@@ -133,6 +173,9 @@ export function closeManifestCarton(cartonId:number,userId:number){
     const carton=summary(cartonId);if(!carton)throw new Error("Không tìm thấy thùng Manifest.");
     if(carton.status!=="OPEN")throw new Error("Thùng đã được đóng trước đó.");
     if(!Number(carton.item_count||0))throw new Error("Thùng đang trống.");
+    const routes=packedRoutes(cartonId);
+    if(routes.length!==1)throw new Error("Thùng đang trộn nhiều route. Hãy bỏ các Order sai trước khi đóng thùng.");
+    requireManifestTemplate(routes[0]);
     db.prepare("UPDATE manifest_cartons SET status='CLOSED',closed_by_user_id=?,closed_at=CURRENT_TIMESTAMP WHERE id=?").run(userId,cartonId);
     return createNextCarton(String(carton.service),userId);
   });

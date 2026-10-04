@@ -165,7 +165,7 @@ async function main(){
     assert(!JSON.stringify(rows).includes("{{"),"real "+kind+" output must resolve every placeholder");
     if(kind==="purchase"){
       assert(rows[2][2]==="PURCHASE-001"&&rows[2][15]===6&&rows[3][15]===10,"real Purchase must map Client Order ID and carton declared totals");
-      assert(rows[2][14]===2000&&rows[2][17]==="EPK"&&rows[2][18]==="Standard"&&!rows[2][19],"real Purchase must render grams and service codes without Tracking");
+      assert(rows[2][14]===2000&&rows[2][17]==="EPK"&&rows[2][18]==="T11"&&!rows[2][19],"real Purchase must render grams and service codes without Tracking");
     }else{
       assert(rows[2][6]==="LOT-1-TRACK"&&rows[3][6]==="LOT-2-TRACK"&&rows[2][5]==="Epacket Zero","real Manifest must use per-carton Tracking and its own service code");
       assert(rows[2][25]===2&&rows[2][26]===3&&rows[2][8]===6&&rows[3][27]==="Shoes","real Manifest must preserve representative item and carton value meanings");
