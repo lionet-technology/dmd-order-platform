@@ -11,6 +11,7 @@ async function main(){
  check([adminLogin,salesLogin,clientLogin].every(x=>x.status===200),"fixture logins");
  const admin=adminLogin.cookie,client=clientLogin.cookie;
  const users=await call("/api/users",{cookie:admin});const clientId=users.data.find(x=>x.username==="e2e.client").id;
+ await call("/api/financials",{method:"POST",cookie:admin,body:{client_id:clientId,action:"configure",credit_limit:10000,credit_term_days:365}});
  async function create(price=100){const result=await call("/api/orders",{method:"POST",cookie:admin,body:{order_id:"HTTP-CANCEL-"+(++seq),client_user_id:clientId,service:"ePacket",sub_service:"T11",item:"Fixture shirts",material:"Cotton",carton_count:1,weight:1,manual_volume:5000,sales_price:price}});check(result.status===201,"create cancel fixture");return result.data}
  async function issue(order){const result=await call("/api/orders/"+order.id+"/trackings",{method:"POST",cookie:admin,body:{complete:true,trackings:[{tracking:"HTTP-CANCEL-TRACK-"+order.id,label_url:"https://labels.test/"+order.id+".pdf"}]}});check(result.status===200,"issue tracking and label");return result.data.trackings[0]}
  for(const actor of [adminLogin,salesLogin,clientLogin])for(const issued of [false,true]){

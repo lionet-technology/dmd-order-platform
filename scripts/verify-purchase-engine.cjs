@@ -50,6 +50,7 @@ async function main(){
   const admin=createUser({display_name:"Admin",username:"purchase.admin",password:"TestPass123!",role:"ADMIN",is_root_admin:true});
   const sales=createUser({display_name:"Sales",username:"purchase.sales",password:"TestPass123!",role:"SALES",created_by_user_id:admin.id});
   const client=createUser({display_name:"Client",username:"purchase.client",password:"TestPass123!",role:"CLIENT",sales_user_id:sales.id,created_by_user_id:admin.id});
+  db.prepare("UPDATE users SET credit_limit_cents=1000000,credit_term_days=365 WHERE id=?").run(client.id); // Explicit purchasing room for legacy fixtures.
   db.prepare("INSERT INTO client_service_settings(client_user_id,service,sub_service,is_enabled,discount_percent,default_sub_service,default_supplier) VALUES (?,?,?,?,?,?,?)")
     .run(client.id,"ePacket","",1,0,"T11","KILOSHIP");
 

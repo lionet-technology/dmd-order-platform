@@ -11,6 +11,7 @@ const {upsertOrder,addLedgerEntry}=require("../src/lib/finance.ts");
 const admin=createUser({username:"cancel.admin",display_name:"Cancel Admin",password:"TestPass123!",role:"ADMIN"});
 const sales=createUser({username:"cancel.sales",display_name:"Cancel Sales",password:"TestPass123!",role:"SALES"});
 const client=createUser({username:"cancel.client",display_name:"Cancel Client",password:"TestPass123!",role:"CLIENT",sales_user_id:sales.id});
+  db.prepare("UPDATE users SET credit_limit_cents=1000000,credit_term_days=365 WHERE id=?").run(client.id); // Explicit purchasing room for legacy fixtures.
 const stranger=createUser({username:"cancel.other",display_name:"Other Client",password:"TestPass123!",role:"CLIENT",sales_user_id:sales.id});
 const otherSales=createUser({username:"cancel.sales2",display_name:"Other Sales",password:"TestPass123!",role:"SALES"});
 let checks=0,seq=0;function check(value,label){checks++;if(!value)throw new Error(label)}

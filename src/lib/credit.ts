@@ -73,6 +73,7 @@ export function reservePurchase(orderId:number,clientId:number,amount:number,act
 export function completeReserve(orderId:number,actorId:number){
  const r=db.prepare("SELECT * FROM purchase_reserves WHERE order_id=? AND status='RESERVED'").get(orderId) as Row|undefined;if(!r)return;
  const o=db.prepare("SELECT * FROM orders WHERE id=?").get(orderId) as Row;
+ const previous=db.prepare("SELECT amount,client_user_id FROM ledger_entries WHERE entry_type='ORDER_CHARGE' AND reference_type='ORDER' AND reference_id=?").get(String(orderId)) as Row|undefined;if(previous&&(cents(previous.amount)!==Number(r.amount_cents)||Number(previous.client_user_id)!==Number(r.client_id)))throw Error("Charge hiện tại khác reserve; cần đối soát trước khi hoàn tất.");
  db.prepare("INSERT OR IGNORE INTO ledger_entries(occurred_at,entry_type,direction,amount,customer,client_user_id,reference_type,reference_id,note,created_by_user_id) VALUES (?,'ORDER_CHARGE','DEBIT',?,?,?,'ORDER',?,'Purchase completed',?)").run(localDay(),Number(r.amount_cents)/100,o.customer,o.client_user_id,String(orderId),actorId||null);
  db.prepare("UPDATE purchase_reserves SET status='CHARGED',updated_at=CURRENT_TIMESTAMP WHERE order_id=?").run(orderId);audit(Number(o.client_user_id),actorId,"PURCHASE_CHARGED",{orderId});
 }

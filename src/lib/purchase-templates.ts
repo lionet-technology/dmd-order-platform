@@ -258,6 +258,7 @@ async function generateRouteFiles(orderIds:number[],kind:"PURCHASE"|"MANIFEST"){
   for(const orderId of [...new Set(orderIds)]){
     const order=db.prepare("SELECT * FROM orders WHERE id=?").get(orderId) as DataRow|undefined;
     if(!order){missing.push({order_id:orderId,dmd_id:String(orderId),reason:"Order không tồn tại"});continue}
+    if(kind==="PURCHASE"){try{assertConfiguredPurchase(order)}catch(e){missing.push({order_id:orderId,dmd_id:text(order.system_order_code),reason:(e as Error).message});continue;}}
     const price=orderQuote(order);
     if(kind==="PURCHASE"&&price&&!price.eligible){missing.push({order_id:orderId,dmd_id:text(order.system_order_code),reason:price.reasons.join(" ")});continue}
     const readiness=kind==="MANIFEST"?validateManifestReadiness(orderId):validatePurchaseReadiness(orderId);
