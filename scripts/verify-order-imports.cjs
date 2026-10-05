@@ -6,6 +6,7 @@ async function main(){
  const admin=(await call("/api/auth/login",{username:"e2e.admin",password:"TestPass123!"})).cookie;
  const user=async(role,suffix,sales)=>{const r=await call("/api/users",{username:prefix+"."+suffix,display_name:prefix+" "+suffix,role,password:"TestPass123!",sales_user_id:sales},admin);if(r.status!==201)throw Error(JSON.stringify(r));return r.data};
  const sales=await user("SALES","sales"),client=await user("CLIENT","client",sales.id);
+ await call("/api/financials",{client_id:client.id,action:"configure",credit_limit:10000,credit_term_days:365},admin);
  await call("/api/client-services",{client_user_id:client.id,service:"ePacket",sub_service:"",is_enabled:true,discount_percent:0},admin);
  const sc=(await call("/api/auth/login",{username:sales.username,password:"TestPass123!"})).cookie,cc=(await call("/api/auth/login",{username:client.username,password:"TestPass123!"})).cookie;
  const write=(await import("write-excel-file/node")).default;

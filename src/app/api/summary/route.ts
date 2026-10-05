@@ -4,6 +4,7 @@ import { queryOne } from "@/lib/db";
 export const runtime = "nodejs";
 export async function GET(req:NextRequest) {
   const auth=requireUser(req); if(auth.error)return auth.error;
+  if(auth.user.role==="WAREHOUSE")return NextResponse.json({orders:0,review:0,unmatched:0,ledger:0,receivable:0});
   if(auth.user.role==="SALES"){
     const scope="client_user_id IN (SELECT id FROM users WHERE role='CLIENT' AND sales_user_id=?)";
     const orders=queryOne<{c:number}>("SELECT COUNT(*) c FROM orders WHERE "+scope,[auth.user.id])?.c||0;

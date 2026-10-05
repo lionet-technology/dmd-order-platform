@@ -9,6 +9,8 @@ const before=r.data.balance_cents;
 r=await call('/api/financials',client,{client_id:clientId,action:'configure',credit_limit:1000,credit_term_days:14});check(r.status===400,'Client cannot change credit');
 r=await call('/api/ledger',sales,{client_user_id:clientId,entry_type:'REFUND',amount:5});check(r.status===400,'Sales cannot issue refund');
 r=await call('/api/financials?client_id='+clientId,warehouse);check(r.status===400,'Warehouse cannot view client financials');
+check((await call('/api/ledger',warehouse)).status===403,'Warehouse ledger read denied');
+check((await call('/api/ledger',warehouse,{client_user_id:clientId,entry_type:'REFUND',amount:5})).status===403,'Warehouse ledger write denied');
 const orders=(await call('/api/orders?pageSize=100',client)).data.items,order=orders.find(o=>o.workflow_status!=='CANCELLED');check(!!order,'Claim fixture order');
 r=await call('/api/cases',client,{action:'create',kind:'CLAIM',visibility:'PUBLIC',order_ids:[order.id],summary:'HTTP public claim',due_date:'2026-10-05'});check(r.status===200,'Client opens claim');const caseId=r.data.id;
 check((await call('/api/financials?client_id='+clientId,client)).data.balance_cents===before,'Open claim never releases balance');

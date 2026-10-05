@@ -25,7 +25,7 @@ async function main(){
  for(const zip of ["00601","00701","00801","00901","96799","96801","96910","99501","99901","09012-1234"])check(p.remoteArea({zip}),"USPS prefix "+zip);
  for(const zip of ["01001","08901","09901","33901","34101","96101","97001","99401"])check(!p.remoteArea({zip}),"continental negative "+zip);
  throws(()=>p.validateTiers([{weight:.1,net:1},{weight:.1,net:2},{weight:10,net:3}]));
- throws(()=>p.validateTiers([{weight:10,net:-1}]));throws(()=>p.validateRules({...p.DEFAULT_SURCHARGES,remote_zips:["900"]}));
+ throws(()=>p.validateTiers([{weight:10,net:-1}]));check(p.validateRules({...p.DEFAULT_SURCHARGES,remote_zips:["900"]}).remote_zips.length===0,"obsolete custom ZIP config ignored");
  const invalid=db.prepare("SELECT * FROM orders WHERE order_id LIKE 'EPK-INVALID-%'").all();for(const o of invalid){check(!JSON.parse(o.pricing_eligibility_json).eligible,"invalid draft saved");throws(()=>r.purchaseService(o.id,{id:o.client_user_id,role:"CLIENT"}));check(!db.prepare("SELECT id FROM ledger_entries WHERE reference_type='ORDER' AND reference_id=?").get(String(o.id)),"invalid draft not charged")}
  const client=clients[1];let response=await api.GET(req("GET",null,client));let body=await response.json();check(body.routes.length===2,"client offered two routes");check(!JSON.stringify(body).includes("supplier"),"client no supplier/template");
  const manual={...input,order_id:"CLIENT-MANUAL",recipient_name:"Anna Nguyen",address1:"100 Market St",city:"Los Angeles",state:"CA",zip:"90012",phone:"2025550100",item:"T-shirt",material:"Cotton"};

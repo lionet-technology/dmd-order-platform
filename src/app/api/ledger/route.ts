@@ -8,6 +8,7 @@ export const runtime = "nodejs";
 
 export async function GET(req:NextRequest) {
   const auth=requireUser(req); if(auth.error)return auth.error;
+  if(auth.user.role==="WAREHOUSE")return NextResponse.json({error:"Kho không có quyền xem tài chính."},{status:403});
   const {page,pageSize,q,offset}=pageParams(req);
   const where:string[]=[];
   const params:unknown[]=[];
@@ -34,7 +35,7 @@ export async function GET(req:NextRequest) {
 
 export async function POST(req: NextRequest) {
   const auth=requireUser(req); if(auth.error)return auth.error;
-  if(auth.user.role==="CLIENT")return NextResponse.json({error:"Client chỉ có quyền xem Balance Ledger."},{status:403});
+  if(!["ADMIN","SALES"].includes(auth.user.role))return NextResponse.json({error:"Chỉ Admin/Sales được ghi Balance Ledger."},{status:403});
   try {
     const body = await req.json();
     if(auth.user.role==="SALES" && !["PAYMENT","ADDITIONAL_FEE"].includes(String(body.entry_type).toUpperCase()))throw Error("Sales chỉ được nhập Payment hoặc Additional Fee; hoàn tiền cần Admin.");
