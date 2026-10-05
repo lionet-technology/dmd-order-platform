@@ -1,7 +1,7 @@
 "use client";
 
 import { RoutePricingPanel } from "./route-pricing-panel";
-import { useCallback,useEffect,useState } from "react";
+import { useCallback,useEffect,useRef,useState } from "react";
 
 type SegmentRule={rule_type:string;segments:string[];priority:number;active:boolean;config:Record<string,unknown>};
 type Segmentation={enabled:boolean;rules:SegmentRule[]};
@@ -38,6 +38,9 @@ function ActiveTemplateDownload({versionId,kind}:{versionId?:number;kind:"Purcha
 }
 
 export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
+  const [routeSearch,setRouteSearch]=useState("");
+  const [routeTab,setRouteTab]=useState("pricing");
+  const editorRef=useRef<HTMLDivElement>(null);
   const [routes,setRoutes]=useState<RouteRow[]>([]);
   const [selected,setSelected]=useState<RouteRow|null>(null);
   const [form,setForm]=useState({service:"",sub_service:"",supplier:""});
@@ -136,32 +139,39 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
     finally{setBusy(false)}
   }
 
+  const selectedRouteId=selected?.id;
+  useEffect(()=>{if(selectedRouteId)editorRef.current?.scrollIntoView({block:"start"})},[selectedRouteId]);
+  const filteredRoutes=routes.filter(row=>[row.service,row.sub_service,row.supplier].join(" ").toLowerCase().includes(routeSearch.trim().toLowerCase()));
   const services=options(enums,"SERVICE");
   const subServices=form.service?options(enums,"SUB_SERVICE",form.service):[];
   const suppliers=options(enums,"SUPPLIER");
   return <div className="serviceConfigWorkspace">
     <section className="routeConfigCard">
-      <div className="configHead"><div><b>Service Route Configuration</b><span>Mỗi cấu hình Service + optional Sub-Service + Supplier có thể có Purchase Template và Manifest Template riêng.</span></div></div>
-      <div className="routeCreate">
+      <div className="configHead"><div><b>Cấu hình dịch vụ</b><span>Quản lý giá, phụ phí và file xuất theo Service / Sub-Service / Supplier.</span></div></div>
+      <details className="routeCreateDisclosure settingsDisclosure"><summary>＋ Thêm cấu hình dịch vụ</summary><div className="routeCreate">
         <label><span>Service</span><select value={form.service} onChange={e=>setForm({...form,service:e.target.value,sub_service:""})}><option value="">Chọn Service</option>{services.map(row=><option key={row.id}>{row.value}</option>)}</select></label>
         <label><span>Sub-Service</span><select value={form.sub_service} disabled={!form.service} onChange={e=>setForm({...form,sub_service:e.target.value})}><option value="">{form.service?"Không có":"Chọn Service trước"}</option>{subServices.map(row=><option key={row.id}>{row.value}</option>)}</select></label>
         <label><span>Supplier</span><select value={form.supplier} onChange={e=>setForm({...form,supplier:e.target.value})}><option value="">Chọn Supplier</option>{suppliers.map(row=><option key={row.id}>{row.value}</option>)}</select></label>
         <button className="primaryBtn" disabled={busy||!form.service||!form.supplier} onClick={()=>void createRoute()}>＋ Thêm cấu hình</button>
       </div>
-      <div className="tableWrap routeTable"><table><thead><tr><th>Service</th><th>Sub-Service</th><th>Supplier</th><th>Purchase Template</th><th>Manifest Template</th><th>Status</th><th></th></tr></thead><tbody>
-        {routes.length?routes.map(row=><tr key={row.id} className={selected?.id===row.id?"selectedRoute":""}><td><b>{row.service}</b></td><td>{row.sub_service||"—"}</td><td>{row.supplier}</td><td>{row.purchase_template_name||row.template_name||"Chưa có"}{row.purchase_version_number||row.version_number?<small>Active v{row.purchase_version_number||row.version_number}<ActiveTemplateDownload versionId={row.purchase_active_version_id||row.active_version_id} kind="Purchase"/></small>:null}</td><td>{row.manifest_template_name||"Chưa có"}{row.manifest_version_number?<small>Active v{row.manifest_version_number}<ActiveTemplateDownload versionId={row.manifest_active_version_id} kind="Manifest"/></small>:null}</td><td><span className={row.active?"status goodStatus":"status neutralStatus"}>{row.active?"Active":"Inactive"}</span></td><td><button className="editBtn" onClick={()=>{setSelected(row);setSegmentation(row.segmentation||{enabled:false,rules:[]});setSegmentDrafts((row.segmentation?.rules||[]).map(rule=>rule.segments.join(", ")));setConfigDrafts((row.segmentation?.rules||[]).map(rule=>JSON.stringify(rule.config,null,2)));chooseTemplateKind("PURCHASE",row);let vars:Record<string,string>={};try{vars=JSON.parse(row.route_variables_json||"{}")}catch{}setRouteVariables(Object.entries(vars).map(([key,value])=>({key,value:String(value)})))}}>Cấu hình</button></td></tr>):<tr><td colSpan={7} className="empty">Chưa có Service Route.</td></tr>}
+      </details>
+      <div className="routeListToolbar"><label className="searchBox"><span aria-hidden="true">⌕</span><input aria-label="Tìm cấu hình dịch vụ" placeholder="Tìm Service, Sub-Service, Supplier…" value={routeSearch} onChange={e=>setRouteSearch(e.target.value)}/></label><span>{filteredRoutes.length} / {routes.length} cấu hình · {routes.filter(row=>row.active).length} đang hoạt động</span></div>
+      <div className="tableWrap routeTable"><table><thead><tr><th>Service</th><th>Sub-Service</th><th>Supplier</th><th>Purchase Template</th><th>Manifest Template</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
+        {filteredRoutes.length?filteredRoutes.map(row=><tr key={row.id} className={selected?.id===row.id?"selectedRoute":""}><td data-label="Service"><b>{row.service}</b></td><td data-label="Sub-Service">{row.sub_service||"—"}</td><td data-label="Supplier">{row.supplier}</td><td data-label="Purchase Template">{row.purchase_template_name||row.template_name||"Chưa có"}{row.purchase_version_number||row.version_number?<small>Active v{row.purchase_version_number||row.version_number}<ActiveTemplateDownload versionId={row.purchase_active_version_id||row.active_version_id} kind="Purchase"/></small>:null}</td><td data-label="Manifest Template">{row.manifest_template_name||"Chưa có"}{row.manifest_version_number?<small>Active v{row.manifest_version_number}<ActiveTemplateDownload versionId={row.manifest_active_version_id} kind="Manifest"/></small>:null}</td><td data-label="Trạng thái"><span className={row.active?"status goodStatus":"status neutralStatus"}>{row.active?"Active":"Inactive"}</span></td><td data-label="Thao tác"><button className="editBtn" onClick={()=>{setRouteTab("pricing");setSelected(row);setSegmentation(row.segmentation||{enabled:false,rules:[]});setSegmentDrafts((row.segmentation?.rules||[]).map(rule=>rule.segments.join(", ")));setConfigDrafts((row.segmentation?.rules||[]).map(rule=>JSON.stringify(rule.config,null,2)));chooseTemplateKind("PURCHASE",row);let vars:Record<string,string>={};try{vars=JSON.parse(row.route_variables_json||"{}")}catch{}setRouteVariables(Object.entries(vars).map(([key,value])=>({key,value:String(value)})))}}>Cấu hình</button></td></tr>):<tr><td colSpan={7} className="empty">{routes.length?"Không có cấu hình phù hợp với tìm kiếm.":"Chưa có cấu hình. Thêm dịch vụ để bắt đầu."}</td></tr>}
       </tbody></table></div>
     </section>
 
-    {selected&&<RoutePricingPanel key={selected.id} routeId={selected.id}/>}
-    {selected&&<section className="templateConfigCard">
-      <div className="configHead"><div><b>Cấu hình file · {selected.service} / {selected.sub_service||"—"} / {selected.supplier}</b><span>Purchase = file mua label/đơn. Manifest = file khai báo sau khi đã có Tracking.</span></div><button className="iconBtn" onClick={()=>setSelected(null)}>×</button></div>
+    {selected&&<>
+      <div className="routeEditorHeader" ref={editorRef}><div><span className="eyebrow">ĐANG CẤU HÌNH</span><h2>{selected.service}{selected.sub_service?" / "+selected.sub_service:""}</h2><p>Supplier: {selected.supplier} · {selected.active?"Đang hoạt động":"Không hoạt động"}</p></div><button className="secondaryBtn" onClick={()=>setSelected(null)}>Đóng cấu hình</button></div>
+      <div className="routeEditorTabs" role="group" aria-label="Các mục cấu hình dịch vụ">{[["pricing","Giá & phụ phí"],["templates","Template xuất file"],["segmentation","Phân vùng nâng cao"]].map(([key,label])=><button key={key} className={routeTab===key?"active":""} aria-pressed={routeTab===key} onClick={()=>setRouteTab(key)}>{label}</button>)}</div>
+      <div hidden={routeTab!=="pricing"}><RoutePricingPanel key={selected.id} routeId={selected.id}/></div>
+      <section hidden={routeTab!=="segmentation"} className="templateConfigCard">
       <div className="routeVariablesEditor segmentationEditor">
         <div className="routeVariablesHead"><div><b>Phân loại xuất hàng nâng cao</b><span>Route chính vẫn là Service + optional Sub-Service + Supplier.</span></div><button className="secondaryBtn" disabled={busy} onClick={()=>void saveRouteSegmentation()}>Lưu phân vùng</button></div>
         <label className="segmentationToggle"><input type="checkbox" role="switch" checked={segmentation.enabled} disabled={busy} onChange={e=>setSegmentation({...segmentation,enabled:e.target.checked})}/> Bật phân vùng cho route này</label>
         {!segmentation.enabled?<p>Đang tắt — không áp dụng segment rule.</p>:<>
           <p role="status">{segmentation.rules.some(rule=>rule.active&&rule.segments.length)?"Đang hoạt động":"Chưa cấu hình rule"}</p>
-          <p>Trạng thái phản ánh cấu hình rule. Chỉ kiểm tra phân vùng khi evaluator trả về segment cụ thể. ZIP_US / US_ZIP_REGION East/West chưa có ZIP matching.</p>
+          <p>Trạng thái phản ánh cấu hình rule. Chỉ kiểm tra phân vùng khi evaluator trả về segment cụ thể. Các rule ZIP_US / US_ZIP_REGION chưa hỗ trợ tự xác định vùng East/West theo ZIP.</p>
           {segmentation.rules.map((rule,index)=><fieldset key={index} disabled={busy}>
             <legend>Rule {index+1}</legend>
             <div className="templateGrid">
@@ -171,38 +181,42 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
               <label><span>Trạng thái rule</span><select value={rule.active?"active":"inactive"} onChange={e=>updateSegmentRule(index,{active:e.target.value==="active"})}><option value="active">Active</option><option value="inactive">Inactive</option></select></label>
             </div>
             <label><span>Cấu hình mở rộng (JSON object)</span><textarea aria-label={"Cấu hình mở rộng rule "+(index+1)} rows={3} value={configDrafts[index]||"{}"} onChange={e=>setConfigDrafts(prev=>prev.map((value,i)=>i===index?e.target.value:value))}/></label>
-            <button className="editBtn" onClick={()=>{setSegmentation({...segmentation,rules:segmentation.rules.filter((_,i)=>i!==index)});setConfigDrafts(prev=>prev.filter((_,i)=>i!==index));setSegmentDrafts(prev=>prev.filter((_,i)=>i!==index))}}>Bỏ rule</button>
+            <button className="rowAction dangerBtn" onClick={()=>{setSegmentation({...segmentation,rules:segmentation.rules.filter((_,i)=>i!==index)});setConfigDrafts(prev=>prev.filter((_,i)=>i!==index));setSegmentDrafts(prev=>prev.filter((_,i)=>i!==index))}}>Bỏ rule</button>
           </fieldset>)}
           <datalist id="segmentRuleTypes"><option value="US_ZIP_REGION"/><option value="ZIP_US"/></datalist>
           <button className="textBtn" disabled={busy} onClick={()=>{setSegmentation({...segmentation,rules:[...segmentation.rules,{rule_type:"US_ZIP_REGION",segments:["EAST","WEST"],priority:0,active:false,config:{}}]});setConfigDrafts(prev=>[...prev,"{}"]);setSegmentDrafts(prev=>[...prev,"EAST, WEST"])}}>＋ Thêm rule</button>
         </>}
       </div>
-      <div className="templateKindTabs"><button className={templateKind==="PURCHASE"?"active":""} onClick={()=>chooseTemplateKind("PURCHASE")}>Purchase Template</button><button className={templateKind==="MANIFEST"?"active":""} onClick={()=>chooseTemplateKind("MANIFEST")}>Manifest Template</button></div>
-      <div className="routeVariablesEditor">
-        <div className="routeVariablesHead"><div><b>Biến cố định cho template</b><span>Dữ liệu cố định của cấu hình này. Dùng trong Excel bằng <code>{"{{route.service_code}}"}</code>, <code>{"{{route.sender_address}}"}</code>…</span></div><button className="secondaryBtn" disabled={busy} onClick={()=>void saveRouteVariables()}>Lưu biến cố định</button></div>
+      </section>
+    </>}
+    {selected&&<section hidden={routeTab!=="templates"} className="templateConfigCard">
+      <div className="configHead"><div><b>Template xuất file</b><span>Purchase = file mua label/đơn. Manifest = file khai báo sau khi đã có Tracking.</span></div></div>
+      <div className="templateKindTabs"><button className={templateKind==="PURCHASE"?"active":""} aria-pressed={templateKind==="PURCHASE"} onClick={()=>chooseTemplateKind("PURCHASE")}>Purchase Template</button><button className={templateKind==="MANIFEST"?"active":""} aria-pressed={templateKind==="MANIFEST"} onClick={()=>chooseTemplateKind("MANIFEST")}>Manifest Template</button></div>
+      <details className="routeVariablesEditor settingsDisclosure"><summary>Biến cố định cho template</summary>
+        <div className="routeVariablesHead"><div><b>Giá trị dùng chung</b><span>Dữ liệu cố định của cấu hình này. Dùng trong Excel bằng <code>{"{{route.service_code}}"}</code>, <code>{"{{route.sender_address}}"}</code>…</span></div><button className="secondaryBtn" disabled={busy} onClick={()=>void saveRouteVariables()}>Lưu biến cố định</button></div>
         {routeVariables.map((row,index)=><div className="routeVariableRow" key={index}>
-          <input placeholder="Key, ví dụ service_code" value={row.key} onChange={e=>setRouteVariables(prev=>prev.map((item,i)=>i===index?{...item,key:e.target.value}:item))}/>
-          <input placeholder="Giá trị cố định" value={row.value} onChange={e=>setRouteVariables(prev=>prev.map((item,i)=>i===index?{...item,value:e.target.value}:item))}/>
+          <input aria-label={"Tên biến "+(index+1)} placeholder="Key, ví dụ service_code" value={row.key} onChange={e=>setRouteVariables(prev=>prev.map((item,i)=>i===index?{...item,key:e.target.value}:item))}/>
+          <input aria-label={"Giá trị biến "+(index+1)} placeholder="Giá trị cố định" value={row.value} onChange={e=>setRouteVariables(prev=>prev.map((item,i)=>i===index?{...item,value:e.target.value}:item))}/>
           <code>{row.key.trim()?"{{route."+row.key.trim().toLowerCase()+"}}":"{{route.key}}"}</code>
-          <button className="editBtn" onClick={()=>setRouteVariables(prev=>prev.filter((_,i)=>i!==index))}>Bỏ</button>
+          <button className="rowAction dangerBtn" onClick={()=>setRouteVariables(prev=>prev.filter((_,i)=>i!==index))}>Bỏ</button>
         </div>)}
         <button className="textBtn" onClick={()=>setRouteVariables(prev=>[...prev,{key:"",value:""}])}>＋ Thêm biến cố định</button>
-      </div>
-      <div className="templateGrid">
+      </details>
+      <div className="templateGrid templateFileGrid">
         <label><span>Tên Template</span><input value={template.name} onChange={e=>setTemplate({...template,name:e.target.value})}/></label>
         <label><span>Cách chia file</span><select value={template.output_mode} onChange={e=>setTemplate({...template,output_mode:e.target.value})}><option value="MULTI_ORDER">Multiple Orders · 1 Carton / Order</option>{template.output_mode==="PER_ORDER"&&<option value="PER_ORDER" disabled>Per Order (legacy)</option>}<option value="PER_LOT">Per Lot · Multi-Carton Order</option></select></label>
         <small>{template.output_mode==="MULTI_ORDER"?"1 Record = 1 Order = 1 Carton":"1 Order = x Inv-PKL = x Lot"}</small>
         <label className="file"><input type="file" accept=".xlsx" onChange={e=>setFile(e.target.files?.[0]||null)}/><span>{file?.name||"Chọn workbook .xlsx"}</span></label>
       </div>
-      <div className="repeatEditor"><div><b>Dòng lặp</b><span>Mỗi dòng mẫu trong file tương ứng với dữ liệu nào. Bỏ trống Sheet nếu template chỉ thay các ô cố định.</span></div>
+      <details className="repeatEditor settingsDisclosure" open><summary>Dòng lặp trong template</summary><div><b>Ánh xạ dữ liệu</b><span>Mỗi dòng mẫu trong file tương ứng với dữ liệu nào. Bỏ trống Sheet nếu template chỉ thay các ô cố định.</span></div>
         {sections.map((row,index)=><div className="repeatRow" key={index}>
-          <input placeholder="Tên Sheet chính xác" value={row.sheet} onChange={e=>setSections(prev=>prev.map((item,i)=>i===index?{...item,sheet:e.target.value}:item))}/>
-          <input type="number" min="1" placeholder="Dòng" value={row.row} onChange={e=>setSections(prev=>prev.map((item,i)=>i===index?{...item,row:e.target.value}:item))}/>
-          <select value={row.scope} onChange={e=>setSections(prev=>prev.map((item,i)=>i===index?{...item,scope:e.target.value as RepeatDraft["scope"]}:item))}><option value="ORDER">Một Order</option><option value="LOT">Một Lot</option><option value="CARTON">Một Carton</option><option value="CARTON_ITEM">Một sản phẩm trong Carton</option></select>
-          <button className="editBtn" onClick={()=>setSections(prev=>prev.filter((_,i)=>i!==index))}>Bỏ</button>
+          <input aria-label={"Sheet dòng lặp "+(index+1)} placeholder="Tên Sheet chính xác" value={row.sheet} onChange={e=>setSections(prev=>prev.map((item,i)=>i===index?{...item,sheet:e.target.value}:item))}/>
+          <input aria-label={"Số dòng lặp "+(index+1)} type="number" min="1" placeholder="Dòng" value={row.row} onChange={e=>setSections(prev=>prev.map((item,i)=>i===index?{...item,row:e.target.value}:item))}/>
+          <select aria-label={"Dữ liệu dòng lặp "+(index+1)} value={row.scope} onChange={e=>setSections(prev=>prev.map((item,i)=>i===index?{...item,scope:e.target.value as RepeatDraft["scope"]}:item))}><option value="ORDER">Một Order</option><option value="LOT">Một Lot</option><option value="CARTON">Một Carton</option><option value="CARTON_ITEM">Một sản phẩm trong Carton</option></select>
+          <button className="rowAction dangerBtn" onClick={()=>setSections(prev=>prev.filter((_,i)=>i!==index))}>Bỏ</button>
         </div>)}
         <button className="textBtn" onClick={()=>setSections(prev=>[...prev,{sheet:"",row:"2",scope:"CARTON_ITEM"}])}>＋ Thêm dòng lặp</button>
-      </div>
+      </details>
       <div className="templateActions"><button className="primaryBtn" disabled={busy||!file||!template.name} onClick={()=>void upload()}>Upload & Validate {templateKind==="MANIFEST"?"Manifest":"Purchase"}</button>
         {result&&<><select value={sampleOrderId} onChange={e=>setSampleOrderId(e.target.value)}><option value="">Chọn Order mẫu</option>{samples.map(order=><option key={order.id} value={order.id}>{order.system_order_code} · {order.customer}</option>)}</select><button className="secondaryBtn" disabled={busy||!sampleOrderId} onClick={()=>void preview()}>Tạo file preview</button><button className="secondaryBtn" disabled={busy||Boolean(result.errors.length)} onClick={()=>void activate()}>Activate version</button></>}
       </div>
@@ -213,6 +227,6 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
         <div>{result.placeholders.map((row,index)=><code key={index}>{row.sheet}!{row.cell} → {row.token}</code>)}</div>
       </div>}
     </section>}
-    {message&&<div className={message.startsWith("Lỗi")?"enumMessage error":"enumMessage"}>{message}</div>}
+    {message&&<div role="status" className={message.startsWith("Lỗi")?"enumMessage error":"enumMessage"}>{message}</div>}
   </div>;
 }

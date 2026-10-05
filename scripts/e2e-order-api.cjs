@@ -4,6 +4,7 @@ async function call(path,{method="GET",body,cookie}={}){const headers={};if(body
 async function main(){
   const password="TestPass123!";
   const setup=await call("/api/auth/setup",{method:"POST",body:{display_name:"E2E Admin",username:"e2e.admin",password}});assert(setup.status===201,"setup admin");const admin=setup.cookie;
+  await call("/api/enums",{method:"POST",cookie:admin,body:{enum_type:"SUB_SERVICE",value:"T11",parent_value:"ePacket",sort_order:10}});
   const sales=await call("/api/users",{method:"POST",cookie:admin,body:{display_name:"E2E Sales",username:"e2e.sales",password,role:"SALES"}});assert(sales.status===201,"create Sales");
   const client=await call("/api/users",{method:"POST",cookie:admin,body:{display_name:"E2E Client",username:"e2e.client",password,role:"CLIENT",sales_user_id:sales.data.id}});assert(client.status===201,"create Client");
   const serviceSetting=await call("/api/client-services",{method:"POST",cookie:admin,body:{client_user_id:client.data.id,service:"ePacket",is_enabled:true,discount_percent:5}});assert(serviceSetting.status===200,"configure Client service");

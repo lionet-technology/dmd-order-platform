@@ -28,6 +28,7 @@ require.extensions[".ts"]=function(module,filename){
 };
 
 const {db}=require(path.join(root,"src/lib/db.ts"));
+db.prepare("INSERT OR IGNORE INTO enum_values(enum_type,value,parent_value,sort_order) VALUES ('SUB_SERVICE','T11','ePacket',10)").run(); // Explicit legacy fixture; T11 is no longer a default route.
 const {createUser}=require(path.join(root,"src/lib/auth.ts"));
 const {upsertOrder,addSupplierCost}=require(path.join(root,"src/lib/finance.ts"));
 const {saveOrderShipmentStructure,validatePurchaseReadiness}=require(path.join(root,"src/lib/order-shipments.ts"));

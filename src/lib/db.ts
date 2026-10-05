@@ -658,7 +658,6 @@ const enumSeeds: Array<[string,string,string,number]> = [
   ["SERVICE","Kho VN","",100],
   ["SERVICE","Kho TQ","",110],
 
-  ["SUB_SERVICE","T11","ePacket",10],
   ["SUB_SERVICE","Standard","ePacket",20],
   ["SUB_SERVICE","Eco","ePacket",30],
   ["SUB_SERVICE","Saver","UPS",10],

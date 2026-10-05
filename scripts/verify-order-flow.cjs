@@ -10,6 +10,7 @@ const originalResolve=Module._resolveFilename;
 Module._resolveFilename=function(request,parent,isMain,options){if(request.startsWith("@/")){const target=path.join(root,"src",request.slice(2));for(const candidate of [target,`${target}.ts`,`${target}.tsx`,path.join(target,"index.ts")])if(fs.existsSync(candidate))return candidate;}return originalResolve.call(this,request,parent,isMain,options)};
 require.extensions[".ts"]=function(module,filename){const source=fs.readFileSync(filename,"utf8");const result=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true},fileName:filename});module._compile(result.outputText,filename)};
 const {db}=require(path.join(root,"src/lib/db.ts"));
+db.prepare("INSERT OR IGNORE INTO enum_values(enum_type,value,parent_value,sort_order) VALUES ('SUB_SERVICE','T11','ePacket',10)").run(); // Explicit legacy fixture; T11 is no longer a default route.
 const {createUser}=require(path.join(root,"src/lib/auth.ts"));
 const {upsertOrder,addSupplierCost}=require(path.join(root,"src/lib/finance.ts"));
 const {addOrderTracking,updateOrderTracking,replaceOrderTracking,listOrderTrackings}=require(path.join(root,"src/lib/order-operations.ts"));

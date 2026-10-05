@@ -46,6 +46,7 @@ const clientServicesRoute = require(path.join(root, "src/app/api/client-services
 const ledgerRoute = require(path.join(root, "src/app/api/ledger/route.ts"));
 const summaryRoute = require(path.join(root, "src/app/api/summary/route.ts"));
 const { db } = require(path.join(root, "src/lib/db.ts"));
+db.prepare("INSERT OR IGNORE INTO enum_values(enum_type,value,parent_value,sort_order) VALUES ('SUB_SERVICE','T11','ePacket',10)").run(); // Explicit legacy fixture; T11 is no longer a default route.
 
 let checks = 0;
 function assert(condition, message) {

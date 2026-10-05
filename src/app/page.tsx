@@ -531,16 +531,26 @@ function ClientServiceSettingsEditor({client,enums,onClose}:{client:User;enums:E
   const suppliers=enumOptions(enums,"SUPPLIER");
   const [settings,setSettings]=useState<Record<string,SettingDraft>>({});
   const [balance,setBalance]=useState(0);
+  const [loading,setLoading]=useState(true);
   const [busy,setBusy]=useState(false);const [msg,setMsg]=useState("");
   const key=(service:string,sub="")=>service+"::"+sub;
-  useEffect(()=>{void(async()=>{
-    const res=await fetch("/api/client-services?view=setup&clientUserId="+client.id);if(!res.ok)return;
-    const body=await res.json();const next:Record<string,SettingDraft>={};
-    for(const row of body.settings||[])next[key(row.service,row.sub_service)]={is_enabled:Boolean(row.is_enabled),discount_percent:String(row.discount_percent||0),default_sub_service:String(row.default_sub_service||""),default_supplier:String(row.default_supplier||"")};
-    setSettings(next);setBalance(Number(body.balance||0));
-  })()},[client.id]);
+  useEffect(()=>{
+    let cancelled=false;
+    void(async()=>{
+      setLoading(true);
+      try{
+        const res=await fetch("/api/client-services?view=setup&clientUserId="+client.id);
+        if(!res.ok)throw new Error("Không thể tải cấu hình dịch vụ.");
+        const body=await res.json();const next:Record<string,SettingDraft>={};
+        for(const row of body.settings||[])next[key(row.service,row.sub_service)]={is_enabled:Boolean(row.is_enabled),discount_percent:String(row.discount_percent||0),default_sub_service:String(row.default_sub_service||""),default_supplier:String(row.default_supplier||"")};
+        if(!cancelled){setSettings(next);setBalance(Number(body.balance||0))}
+      }catch(error){if(!cancelled)setMsg("Lỗi: "+(error instanceof Error?error.message:"Không thể tải cấu hình dịch vụ."))}
+      finally{if(!cancelled)setLoading(false)}
+    })();
+    return ()=>{cancelled=true};
+  },[client.id]);
   function value(service:string,sub=""){
-    return settings[key(service,sub)]||{is_enabled:sub?true:false,discount_percent:"0",default_sub_service:"",default_supplier:""};
+    return settings[key(service,sub)]||{is_enabled:sub?Boolean(settings[key(service)]?.is_enabled):false,discount_percent:"0",default_sub_service:"",default_supplier:""};
   }
   function update(service:string,sub:string,patch:Partial<SettingDraft>){setSettings(prev=>({...prev,[key(service,sub)]:{...value(service,sub),...patch}}))}
   async function save(service:string,sub=""){
@@ -552,16 +562,18 @@ function ClientServiceSettingsEditor({client,enums,onClose}:{client:User;enums:E
     }catch(error){setMsg("Lỗi: "+(error instanceof Error?error.message:"Không thể lưu"))}
     finally{setBusy(false)}
   }
+  if(loading)return <div className="loadingState">Đang tải dịch vụ Client…</div>;
   return <div className="clientServiceEditor">
     <div className="clientServiceSummary"><div><span>Client</span><b>{client.display_name}</b></div><div><span>Balance hiện tại</span><b>{money(balance)}</b></div></div>
-    <p className="formHint">Chỉ các Service được bật mới dùng được khi tạo Order. Default Sub-Service/Supplier tự điền nhưng Admin vẫn có thể override khi mua đơn.</p>
+    <p className="formHint">Bật dịch vụ mặc định hoặc cấu hình riêng từng Sub-Service. Default Sub-Service/Supplier được dùng khi xử lý mua đơn.</p>
     <div className="serviceSettingList">{services.map(option=>{
       const row=value(option.value);
       const subOptions=enumOptions(enums,"SUB_SERVICE",option.value);
+      const enabledSubs=subOptions.filter(sub=>value(option.value,sub.value).is_enabled).length;
       return <section className="serviceSettingBlock" key={option.value}>
         <div className="serviceSettingRow">
-          <b>{option.label}</b>
-          <label className="serviceToggle"><input type="checkbox" checked={row.is_enabled} onChange={e=>update(option.value,"",{is_enabled:e.target.checked})}/><span>{row.is_enabled?"Được sử dụng":"Đang bị chặn"}</span></label>
+          <b>{option.label}{enabledSubs>0&&<small>{enabledSubs} Sub-Service đang bật</small>}</b>
+          <label className="serviceToggle"><input type="checkbox" checked={row.is_enabled} onChange={e=>update(option.value,"",{is_enabled:e.target.checked})}/><span>{row.is_enabled?"Dịch vụ mặc định đang bật":"Dịch vụ mặc định đang tắt"}</span></label>
           <label><span>Discount mặc định</span><div><input type="number" min="0" max="100" step="0.01" value={row.discount_percent} onChange={e=>update(option.value,"",{discount_percent:e.target.value})}/><em>%</em></div></label>
           <button className="secondaryBtn" disabled={busy} onClick={()=>void save(option.value)}>Lưu</button>
         </div>
@@ -569,7 +581,7 @@ function ClientServiceSettingsEditor({client,enums,onClose}:{client:User;enums:E
           <label><span>Default Sub-Service</span><select value={row.default_sub_service} onChange={e=>update(option.value,"",{default_sub_service:e.target.value})}><option value="">Không có</option>{subOptions.map(sub=><option key={sub.value}>{sub.value}</option>)}</select></label>
           <label><span>Default Supplier</span><select value={row.default_supplier} onChange={e=>update(option.value,"",{default_supplier:e.target.value})}><option value="">Chưa đặt</option>{suppliers.map(supplier=><option key={supplier.value}>{supplier.value}</option>)}</select></label>
         </div>}
-        {row.is_enabled&&subOptions.length>0&&<details className="subDiscounts"><summary>Discount theo Sub-Service</summary>{subOptions.map(sub=>{const child=value(option.value,sub.value);return <div key={sub.value}><label><input type="checkbox" checked={child.is_enabled} onChange={e=>update(option.value,sub.value,{is_enabled:e.target.checked})}/>{sub.value}</label><label><input type="number" min="0" max="100" step="0.01" value={child.discount_percent} onChange={e=>update(option.value,sub.value,{discount_percent:e.target.value})}/><em>%</em></label><button className="editBtn" disabled={busy} onClick={()=>void save(option.value,sub.value)}>Lưu</button></div>})}</details>}
+        {subOptions.length>0&&<details className="subDiscounts"><summary>Dịch vụ & discount theo Sub-Service</summary>{subOptions.map(sub=>{const child=value(option.value,sub.value);return <div key={sub.value}><label><input type="checkbox" checked={child.is_enabled} onChange={e=>update(option.value,sub.value,{is_enabled:e.target.checked})}/>{sub.value}</label><label><input aria-label={"Discount "+option.value+" / "+sub.value+" (%)"} type="number" min="0" max="100" step="0.01" value={child.discount_percent} onChange={e=>update(option.value,sub.value,{discount_percent:e.target.value})}/><em>%</em></label><button className="editBtn" disabled={busy} onClick={()=>void save(option.value,sub.value)}>Lưu</button></div>})}</details>}
       </section>;
     })}</div>
     <div className="formFooter"><span className={msg.startsWith("Lỗi")?"inlineMsg error":"inlineMsg"}>{msg}</span><button className="secondaryBtn" onClick={onClose}>Đóng</button></div>
@@ -613,7 +625,7 @@ function UserManager({users,enums,onDone,currentUser}:{users:User[];enums:EnumRo
   }
 
   return <div className="accountPanel">
-    <form className="formCard" onSubmit={create}>
+    <details className="accountCreateDisclosure settingsDisclosure"><summary>＋ Tạo tài khoản</summary><form className="formCard" onSubmit={create}>
       <div className="formHead"><div><span className="eyebrow">ACCOUNT MANAGEMENT</span><h3>Tạo tài khoản Admin / Sales / Client / Nhân viên kho</h3></div></div>
       <p className="formHint">Nhân viên kho chỉ sử dụng khu vực Manifest. Client được gán bắt buộc cho một Sales và chỉ xem dữ liệu của chính mình.</p>
       <div className="formGrid">
@@ -624,10 +636,10 @@ function UserManager({users,enums,onDone,currentUser}:{users:User[];enums:EnumRo
         {form.role==="CLIENT"&&<SelectField label="Sales phụ trách" name="sales_user_id" value={form.sales_user_id} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} allowCustom={false} requireOption options={salesUsers.map(user=>({value:String(user.id),label:user.display_name+" (@"+user.username+")"}))}/>}
       </div>
       <div className="formFooter"><span className={msg.startsWith("Lỗi")?"inlineMsg error":"inlineMsg"}>{msg}</span><button className="primaryBtn" disabled={busy}>{busy?"Đang tạo…":"Tạo tài khoản"}</button></div>
-    </form>
+    </form></details>
     <div className="dataToolbar accountsToolbar"><SearchBar value={accountSearch} onChange={setAccountSearch} placeholder="Tìm tên, username, role..."/><span>{filteredUsers.length} accounts</span></div>
     <div className="tableWrap accountTable"><table><thead><tr><th>Tên</th><th>Username</th><th>Role</th><th>Sales phụ trách</th><th>Status</th><th>Action</th></tr></thead><tbody>
-      {visibleUsers.map(u=><tr key={u.id}><td>{u.display_name}{u.is_root_admin?<span className="rootBadge">ROOT</span>:null}</td><td>@{u.username}</td><td>{u.role}</td><td>{u.role==="CLIENT"?<SmartSelect compact value={String(u.sales_user_id||"")} onChange={value=>{if(value)void patchUser(u.id,{sales_user_id:Number(value)})}} allowCustom={false} options={salesUsers.map(user=>({value:String(user.id),label:user.display_name}))}/>:"—"}</td><td><span className={u.active?"status goodStatus":"status badStatus"}>{u.active?"Active":"Locked"}</span></td><td>
+      {visibleUsers.map(u=><tr key={u.id}><td data-label="Tài khoản">{u.display_name}{u.is_root_admin?<span className="rootBadge">ROOT</span>:null}</td><td data-label="Username">@{u.username}</td><td data-label="Role">{u.role}</td><td data-label="Sales phụ trách">{u.role==="CLIENT"?<SmartSelect compact value={String(u.sales_user_id||"")} onChange={value=>{if(value)void patchUser(u.id,{sales_user_id:Number(value)})}} allowCustom={false} options={salesUsers.map(user=>({value:String(user.id),label:user.display_name}))}/>:"—"}</td><td data-label="Trạng thái"><span className={u.active?"status goodStatus":"status badStatus"}>{u.active?"Active":"Locked"}</span></td><td data-label="Thao tác">
         <button className="editBtn" disabled={Boolean(u.is_root_admin)||u.id===currentUser.id} onClick={()=>void patchUser(u.id,{active:!u.active})}>{u.is_root_admin?"Protected":u.active?"Khóa":"Mở"}</button>
         <button className="editBtn" disabled={Boolean(u.is_root_admin)&&u.id!==currentUser.id} onClick={()=>{const pw=window.prompt("Mật khẩu mới (ít nhất 8 ký tự)");if(pw)void patchUser(u.id,{password:pw})}}>Reset PW</button>
         {u.role==="CLIENT"&&<button className="editBtn" onClick={()=>setServiceClient(u)}>Dịch vụ</button>}
@@ -983,6 +995,8 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
     if(["orders","shipping","costs","recon","ledger"].includes(section))await loadSection(section,page,debouncedSearch);
   },[loadSummary,loadUsers,loadEnums,loadRecent,loadSection,section,page,debouncedSearch]);
 
+  useEffect(()=>{window.scrollTo(0,0)},[section]);
+
   function navigate(next:AppSection){
     if(role==="WAREHOUSE"&&next!=="manifest")return;
     if((role==="SALES"||role==="CLIENT")&&!(["orders","ledger"] as AppSection[]).includes(next))return;
@@ -1022,7 +1036,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
     <aside className="sidebar">
       <div className="brand"><div className="brandMark">D</div><div><b>DMD Finance</b><span>Operations</span></div></div>
       <nav className="sideNav">
-        {nav.filter(n=>n.roles.includes(role)).map(n=><button key={n.key} className={section===n.key?"active":""} onClick={()=>navigate(n.key)}>
+        {nav.filter(n=>n.roles.includes(role)).map(n=><button key={n.key} aria-label={n.label} title={n.label} className={section===n.key?"active":""} onClick={()=>navigate(n.key)}>
           <i>{n.icon}</i><span>{n.label}</span>
           {n.key==="recon"&&Number(summary?.review||0)>0&&<em>{summary?.review}</em>}
         </button>)}
@@ -1132,7 +1146,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
         </>}
 
         {role==="ADMIN"&&section==="masterdata"&&<>
-          <PageHeader eyebrow="SERVICE CONFIGURATION" title="Dịch vụ" description="Cấu hình route Service / Sub-Service / Supplier và Purchase Template tương ứng."/>
+          <PageHeader eyebrow="SERVICE CONFIGURATION" title="Dịch vụ" description="Quản lý dịch vụ, bảng giá, phụ phí và Template xuất file theo từng Supplier."/>
           <ServiceConfigurationPanel enums={allEnums}/>
           <details className="panel masterDataDetails"><summary>Master data: Service, Sub-Service, Supplier và Nước</summary><EnumManager rows={allEnums} onDone={refresh}/></details>
         </>}
@@ -1220,7 +1234,7 @@ function Table({rows,cols,onView,onEdit,onPurchase,compact=false}:{rows:RowData[
   };
 
   const hasActions=Boolean(onView||onEdit||onPurchase);
-  return <div className={compact?"tableWrap compactTable":"tableWrap"}><table><thead><tr>{hasActions&&<th>Thao tác</th>}{cols.map(c=><th key={c}>{label(c)}</th>)}</tr></thead><tbody>
+  return <div className={compact?"tableWrap compactTable":"tableWrap"}><table><thead><tr>{hasActions&&<th>Thao tác</th>}{cols.map(c=><th key={c} className={["amount","est_net_cost","true_net_cost","base_cost","retail","sales_price","surcharge","import_tax","extra_surcharge","extra_import_tax","total_due","reconciliation_delta","total_net_cost","gross_margin_pct","chargeable_weight"].includes(c)?"numericCell":undefined}>{label(c)}</th>)}</tr></thead><tbody>
     {rows.length===0?<tr><td colSpan={cols.length+(hasActions?1:0)} className="empty">Chưa có dữ liệu.</td></tr>
     :rows.map((r,i)=><tr key={String(r.id||r.tracking||r.order_id||i)}>
       {hasActions&&<td className="actionCell"><div className="rowActions">{onView&&<button className="rowAction" onClick={()=>onView(r)}>View</button>}{onEdit&&r.workflow_status!=="CANCELLED"&&<button className="rowAction" onClick={()=>onEdit(r)}>Sửa</button>}{onPurchase&&r.workflow_status!=="CANCELLED"&&<button className="rowAction primaryRowAction" onClick={()=>onPurchase(r)}>{Number(r.tracking_count||0)>0?"Tracking":"Mua đơn"}</button>}</div></td>}
@@ -1240,7 +1254,7 @@ function Table({rows,cols,onView,onEdit,onPurchase,compact=false}:{rows:RowData[
           if(!active.length)return <td key={c}>—</td>;
           return <td key={c}><details className="trackingCell"><summary>{active[0].tracking}{active.length>1?` +${active.length-1}`:""}</summary><div>{active.map(row=><span key={row.id||row.tracking}><b>Lô {row.lot_number||1}</b>{row.tracking}{row.label_url&&<a href={row.label_url} target="_blank" rel="noreferrer">Label ↗</a>}</span>)}</div></details></td>;
         }
-        return <td key={c}>{isStatus?<span className={statusClass(display)}>{display}</span>:display}</td>;
+        return <td key={c} className={isMoney||["gross_margin_pct","chargeable_weight"].includes(c)?"numericCell":undefined}>{isStatus?<span className={statusClass(display)}>{display}</span>:display}</td>;
       })}
     </tr>)}
   </tbody></table></div>;
