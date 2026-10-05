@@ -1,6 +1,6 @@
 import {db} from "./db";
 import type {AuthUser} from "./auth";
-import {orderAccess} from "./cases";
+import {orderAccess,caseAction} from "./cases";
 import {cents,localDay,audit} from "./credit";
 import {quote} from "./epacket-pricing";
 import {publishPublicNote} from "./order-audit";
@@ -12,7 +12,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS inbound_parcels(id INTEGER PRIMARY KEY,scan_
 export function inboundFor(user:AuthUser){
  if(user.role==='CLIENT')throw Error("Client không xem kho nội bộ.");
  const parcels=db.prepare("SELECT * FROM inbound_parcels ORDER BY id DESC LIMIT 1000").all() as Row[];
- return {parcels:parcels.filter(p=>{if(!p.order_id)return ['ADMIN','WAREHOUSE'].includes(user.role);try{orderAccess(user,Number(p.order_id));return true}catch{return false}}),adjustments:(db.prepare("SELECT * FROM weight_adjustments ORDER BY id DESC LIMIT 1000").all() as Row[]).filter(a=>{try{orderAccess(user,Number(a.order_id));return true}catch{return false}})};
+ const measurements=(db.prepare("SELECT m.*,p.order_id FROM inbound_measurements m JOIN inbound_parcels p ON p.id=m.parcel_id ORDER BY m.id DESC LIMIT 1000").all() as Row[]).filter(m=>{try{orderAccess(user,Number(m.order_id));return true}catch{return false}});
+ return {measurements,parcels:parcels.filter(p=>{if(!p.order_id)return ['ADMIN','WAREHOUSE'].includes(user.role);try{orderAccess(user,Number(p.order_id));return true}catch{return false}}),adjustments:(db.prepare("SELECT * FROM weight_adjustments ORDER BY id DESC LIMIT 1000").all() as Row[]).filter(a=>{try{orderAccess(user,Number(a.order_id));return true}catch{return false}})};
 }
 export function inboundAction(user:AuthUser,b:Row){return db.transaction(()=>{
  const action=String(b.action);if(user.role==='CLIENT')throw Error("Client không thao tác kho.");
@@ -41,8 +42,15 @@ export function inboundAction(user:AuthUser,b:Row){return db.transaction(()=>{
  if(!q.eligible)throw Error("Thông số thực tế cần xử lý ngoại lệ: "+q.reasons.join('; '));
  const already=Number((db.prepare("SELECT COALESCE(SUM(amount_cents),0) n FROM weight_adjustments WHERE order_id=? AND status='CHARGED'").get(o.id) as {n:number}).n),amount=cents(q.total_charge)-cents(frozen.total_charge)-already;
  if(Number(q.tier)>Number(frozen.tier)&&amount>0){db.prepare("INSERT INTO weight_adjustments(measurement_id,order_id,amount_cents,actual_total_cents,declared_tier,actual_tier) VALUES (?,?,?,?,?,?)").run(measurement,o.id,amount,cents(q.total_charge),frozen.tier,q.tier);publishPublicNote({orderId:Number(o.id),eventType:'SURCHARGE_NOTICE',summary:'Cân đo thực tế: phụ thu '+(amount/100).toFixed(2)+' USD đang chờ Sales/Admin duyệt.',actorId:user.id,publicData:{amount:amount/100,currency:'USD'}});}
- }else if(chargeable>Number(carton.chargeable_weight||o.chargeable_weight||0)){audit(Number(o.client_user_id),user.id,'MEASUREMENT_REQUIRES_MANUAL_PRICING',{order_id:o.id,measurement});}
+ }else if(chargeable>Number(carton.chargeable_weight||o.chargeable_weight||0)){audit(Number(o.client_user_id),user.id,'MEASUREMENT_REQUIRES_MANUAL_PRICING',{order_id:o.id,measurement});caseAction(user,{action:'create',kind:'EXCEPTION',visibility:'INTERNAL',severity:'MEDIUM',order_ids:[Number(o.id)],summary:'Cân đo vượt khai báo; cần báo giá phụ thu',next_action:'Sales/Admin nhập phụ thu từ bảng giá route',due_date:localDay()});}
  return {measurement_id:measurement};
+ }
+ if(action==='quote_adjustment'){
+ if(!['ADMIN','SALES'].includes(user.role))throw Error("Sales/Admin báo giá phụ thu.");if(o.pricing_snapshot_json)throw Error("Route có giá version tự tính phụ thu.");
+ const m=db.prepare("SELECT m.*,c.chargeable_weight declared_weight FROM inbound_measurements m JOIN order_cartons c ON c.id=m.carton_id WHERE m.id=? AND m.parcel_id=?").get(Number(b.measurement_id),p.id) as Row|undefined;
+ if(!m||Number(m.chargeable_weight)<=Number(m.declared_weight||o.chargeable_weight||0))throw Error("Measurement không có trội cân.");if(db.prepare("SELECT id FROM weight_adjustments WHERE measurement_id=?").get(m.id))throw Error("Measurement đã có báo giá.");const amount=cents(b.amount);if(!amount)throw Error("Phụ thu phải lớn hơn 0.");
+ const id=Number(db.prepare("INSERT INTO weight_adjustments(measurement_id,order_id,amount_cents,actual_total_cents,declared_tier,actual_tier) VALUES (?,?,?,?,?,?)").run(m.id,o.id,amount,cents(o.total_due)+amount,m.declared_weight||o.chargeable_weight,m.chargeable_weight).lastInsertRowid);
+ publishPublicNote({orderId:Number(o.id),eventType:'SURCHARGE_NOTICE',summary:'Cân đo thực tế: phụ thu '+(amount/100).toFixed(2)+' USD đang chờ Sales/Admin duyệt.',actorId:user.id});audit(Number(o.client_user_id),user.id,'MANUAL_WEIGHT_QUOTED',{adjustment_id:id,amount});return {id};
  }
  if(action==='approve_adjustment'||action==='reject_adjustment'){
  if(!['ADMIN','SALES'].includes(user.role))throw Error("Sales/Admin duyệt phụ thu.");const a=db.prepare("SELECT * FROM weight_adjustments WHERE id=? AND order_id=?").get(Number(b.adjustment_id),o.id) as Row|undefined;if(!a)throw Error("Adjustment không tồn tại.");if(a.status!=='PENDING_APPROVAL')return a;

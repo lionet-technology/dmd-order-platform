@@ -27,7 +27,7 @@ export function caseAction(user:AuthUser,b:Row){return db.transaction(()=>{
  if(action==='comment'){const message=String(b.message||'').trim();if(!message||message.length>5000)throw Error("Nhập phản hồi tối đa 5000 ký tự.");caseEvent(id,user,'COMMENT',{message},user.role==='CLIENT'?'PUBLIC':b.visibility==='PUBLIC'&&c.visibility==='PUBLIC'?'PUBLIC':'INTERNAL');return {id};}
  if(user.role==='CLIENT')throw Error("Client không sửa trạng thái / quyết định case.");
  if(action==='update'){
- const status=String(b.status||c.status);if(!['OPEN','INVESTIGATING','WAITING_CLIENT','WAITING_SUPPLIER','DECISION_PENDING','RESOLVED','CLOSED'].includes(status))throw Error("Trạng thái không hợp lệ.");
+ const status=String(b.status||c.status);if(c.kind==='CLAIM'&&['RESOLVED','CLOSED'].includes(String(c.status))&&status!==c.status&&!(c.status==='RESOLVED'&&status==='CLOSED'&&user.role==='ADMIN'))throw Error('Claim đã finalize; không được mở lại để chi tiền lần hai.');if(!['OPEN','INVESTIGATING','WAITING_CLIENT','WAITING_SUPPLIER','DECISION_PENDING','RESOLVED','CLOSED'].includes(status))throw Error("Trạng thái không hợp lệ.");
  if(c.kind==='CLAIM'&&['RESOLVED','CLOSED'].includes(status)&&!(status==='CLOSED'&&c.status==='RESOLVED'&&user.role==='ADMIN'))throw Error("Claim phải finalize qua quyết định tài chính.");
  if(c.kind==='HOLD'&&['RESOLVED','CLOSED'].includes(status)){requireAdmin(user);}
  const assigned=b.assigned_to===undefined?c.assigned_to:b.assigned_to?Number(b.assigned_to):null;
