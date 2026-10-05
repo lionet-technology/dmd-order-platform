@@ -6,10 +6,10 @@ export const usd=(n:number)=>Math.round((n+Number.EPSILON)*100)/100;
 const key=(v:unknown)=>String(v??"").toUpperCase().replace(/[^A-Z0-9]/g,"");
 export function normalizeCountry(v:unknown){return ["US","USA","UNITEDSTATES","UNITEDSTATESOFAMERICA"].includes(key(v))?"US":String(v??"").trim()}
 export function isEPacket(v:Record<string,unknown>){return key(v.service)==="EPACKET"&&["STANDARD","ECO"].includes(key(v.sub_service))&&key(v.supplier)==="DMD"}
-export function remoteArea(o:Record<string,unknown>,zips:string[]=[]){
+export function remoteArea(o:Record<string,unknown>,_zips:string[]=[]){
  const state=key(o.state),city=key(o.city),zip=String(o.zip??"").trim().slice(0,5);
- return ["AK","ALASKA","HI","HAWAII","PR","PUERTORICO","GU","GUAM","VI","USVIRGINISLANDS","VIRGINISLANDS","AS","AMERICANSAMOA","MP","NORTHERNMARIANAISLANDS","UM","UNITEDSTATESMINOROUTLYINGISLANDS","AA","AE","AP"].includes(state)
- ||["APO","FPO","DPO"].includes(city)||/^(340|09[0-8]|96[2-6])\d{2}$/.test(zip)||zips.includes(zip);
+ return ["AK","ALASKA","HI","HAWAII","PR","PUERTORICO","GU","GUAM","VI","USVIRGINISLANDS","VIRGINISLANDS","AS","AMERICANSAMOA","MP","NORTHERNMARIANAISLANDS","FM","FEDERATEDSTATESOFMICRONESIA","MH","MARSHALLISLANDS","PW","PALAU","UM","UNITEDSTATESMINOROUTLYINGISLANDS","AA","AE","AP"].includes(state)
+ ||["APO","FPO","DPO"].includes(city)||/^(340|09[0-8]|96[2-6])\d{2}$/.test(zip)||/^(00[6-9]|96[7-9]|99[5-9])\d{2}$/.test(zip);
 }
 export type SurchargeRules={oversize_enabled:boolean;length_55:number;length_75:number;amount_55:number;amount_75:number;remote_enabled:boolean;remote_amount:number;remote_zips:string[]};
 export const DEFAULT_SURCHARGES:SurchargeRules={oversize_enabled:true,length_55:55,length_75:75,amount_55:5,amount_75:10.5,remote_enabled:true,remote_amount:15,remote_zips:[]};
@@ -18,8 +18,7 @@ export function validateRules(value:unknown):SurchargeRules{
  if(!o||typeof o.oversize_enabled!=="boolean"||typeof o.remote_enabled!=="boolean")throw Error("Bật/tắt phụ phí không hợp lệ.");
  for(const k of ["length_55","length_75","amount_55","amount_75","remote_amount"] as const)if(typeof o[k]!=="number"||!Number.isFinite(o[k])||o[k]<0)throw Error("Ngưỡng/phụ phí không hợp lệ.");
  if(o.length_55>=o.length_75)throw Error("Ngưỡng dài thứ hai phải lớn hơn ngưỡng thứ nhất.");
- if(!Array.isArray(o.remote_zips)||o.remote_zips.length>10000||o.remote_zips.some(z=>typeof z!=="string"||!/^\d{5}$/.test(z)))throw Error("Remote ZIP phải là mã 5 chữ số; chưa có danh sách supplier thì để trống.");
- return {...o,remote_zips:[...new Set(o.remote_zips)]};
+ return {...o,remote_zips:[]};
 }
 export function validateTiers(value:unknown):Tier[]{
  if(!Array.isArray(value)||!value.length||value.length>1000)throw Error("Bảng giá phải có các bậc cân.");

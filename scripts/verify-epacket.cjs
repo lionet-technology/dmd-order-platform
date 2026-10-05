@@ -21,7 +21,9 @@ async function main(){
  for(const [length,amount] of [[55,0],[55.001,5],[75,5],[75.001,10.5]])near(p.quote({...input,length},p.STANDARD).surcharge,amount);
  const stacked=p.quote({...input,length:80,state:"HI"},p.STANDARD);near(stacked.surcharge,25.5);near(stacked.commission,p.quote({...input,length:80},p.STANDARD).commission);near(stacked.gross_profit_base,p.quote({...input,length:80},p.STANDARD).gross_profit_base);
  for(const area of [{state:"AK"},{state:"Hawaii"},{state:"PR"},{state:"Guam"},{state:"VI"},{state:"AS"},{state:"MP"},{state:"AA"},{city:"APO"},{city:"FPO"},{city:"DPO"},{zip:"09012"},{zip:"09801"},{zip:"34002"},{zip:"96201"},{zip:"96699"}])check(p.remoteArea(area),"remote "+JSON.stringify(area));
- check(!p.remoteArea({state:"CA",zip:"90012"}),"no invented continental remote");check(p.remoteArea({zip:"90012"},["90012"]),"configured ZIP");
+ check(!p.remoteArea({state:"CA",zip:"90012"}),"no invented continental remote");check(!p.remoteArea({zip:"90012"},["90012"]),"custom ZIP ignored");
+ for(const zip of ["00601","00701","00801","00901","96799","96801","96910","99501","99901","09012-1234"])check(p.remoteArea({zip}),"USPS prefix "+zip);
+ for(const zip of ["01001","08901","09901","33901","34101","96101","97001","99401"])check(!p.remoteArea({zip}),"continental negative "+zip);
  throws(()=>p.validateTiers([{weight:.1,net:1},{weight:.1,net:2},{weight:10,net:3}]));
  throws(()=>p.validateTiers([{weight:10,net:-1}]));throws(()=>p.validateRules({...p.DEFAULT_SURCHARGES,remote_zips:["900"]}));
  const invalid=db.prepare("SELECT * FROM orders WHERE order_id LIKE 'EPK-INVALID-%'").all();for(const o of invalid){check(!JSON.parse(o.pricing_eligibility_json).eligible,"invalid draft saved");throws(()=>r.purchaseService(o.id,{id:o.client_user_id,role:"CLIENT"}));check(!db.prepare("SELECT id FROM ledger_entries WHERE reference_type='ORDER' AND reference_id=?").get(String(o.id)),"invalid draft not charged")}
@@ -68,6 +70,9 @@ async function main(){
  response=await post("purchase",[],{order_ids:[apiId]});check(response.status===200,"Client purchase API");
  response=await post("purchase",[],{order_ids:[apiId]});check(response.status===200,"Client API retry idempotent");
  check(db.prepare("SELECT COUNT(*) n FROM ledger_entries WHERE reference_type='ORDER' AND reference_id=?").get(String(apiId)).n===0,"API purchase reserves before completion");
+ const jobsApi=require('../src/app/api/purchase-jobs/route.ts');
+ response=await jobsApi.POST(req('POST',{action:'purchase',order_id:apiId},sales,'http://local/api/purchase-jobs'));body=await response.json();check(response.status===200&&!JSON.stringify(body).includes('"net"')&&!JSON.stringify(body).includes('"pricing_snapshot_json"'),'Sales purchase response hides Net');
+ response=await jobsApi.POST(req('POST',{action:'purchase',order_id:apiId},clients[0],'http://local/api/purchase-jobs'));check(response.status===400,'Purchase jobs cannot bypass client scope');
  const invalidDraft=invalid[0];
  response=await post("save",[{...manual,id:invalidDraft.id,order_id:invalidDraft.order_id,weight:.5}]);check(response.status===400,"Client cannot edit another Client draft");
  response=await post("save",[{...manual,id:apiId,order_id:"EDIT-PAID"}]);check(response.status===400,"paid Client draft edit forbidden");
