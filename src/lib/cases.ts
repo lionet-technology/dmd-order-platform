@@ -16,6 +16,7 @@ export function caseAction(user:AuthUser,b:Row){return db.transaction(()=>{
  if(!Array.isArray(b.order_ids)||!b.order_ids.length||b.order_ids.length>200)throw Error("Chọn từ 1 đến 200 Order.");const ids=[...new Set(b.order_ids.map(Number))];for(const id of ids)orderAccess(user,id);
  const kind=String(b.kind||'EXCEPTION'),visibility=String(b.visibility||'INTERNAL'),severity=String(b.severity||'MEDIUM');
  if(!['EXCEPTION','HOLD','CLAIM'].includes(kind)||!['PUBLIC','INTERNAL'].includes(visibility)||!['LOW','MEDIUM','HIGH','CRITICAL'].includes(severity))throw Error("Case không hợp lệ.");
+ if(kind==='CLAIM'&&new Set(ids.map(id=>Number((db.prepare('SELECT client_user_id FROM orders WHERE id=?').get(id) as Row).client_user_id))).size!==1)throw Error('Một Claim chỉ gồm Orders của cùng Client.');
  if(user.role==='CLIENT'&&(kind!=='CLAIM'||visibility!=='PUBLIC'))throw Error("Client chỉ được mở claim công khai.");
  if(user.role==='WAREHOUSE'&&kind==='CLAIM')throw Error("Kho không mở claim.");
  const summary=String(b.summary||'').trim();if(!summary||summary.length>2000)throw Error("Nhập mô tả case tối đa 2000 ký tự.");

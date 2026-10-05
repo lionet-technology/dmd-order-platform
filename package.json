@@ -14,7 +14,10 @@
     "verify:segmentation": "node scripts/verify-route-segmentation.cjs",
     "verify:manifest": "node scripts/verify-manifest-cartons.cjs",
     "verify:epacket": "node scripts/verify-epacket.cjs",
-    "seed:epacket": "node scripts/seed-epacket.cjs"
+    "seed:epacket": "node scripts/seed-epacket.cjs",
+    "verify:credit": "node scripts/verify-credit.cjs",
+    "verify:operations": "node scripts/verify-operations.cjs",
+    "e2e:operations": "node scripts/e2e-operations.cjs"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",

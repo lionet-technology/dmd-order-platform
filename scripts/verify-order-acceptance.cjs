@@ -22,6 +22,7 @@ async function main() {
   const createUser=async(role,suffix,salesId)=>{
     const r=await call("/api/users",{username:prefix+"."+suffix,display_name:prefix+" "+suffix,role,password:"TestPass123!",sales_user_id:salesId},admin);
     if(r.status!==201)throw new Error("Fixture account failed "+JSON.stringify(r.data));
+    if(role==="CLIENT")await call("/api/financials",{client_id:r.data.id,action:"configure",credit_limit:10000,credit_term_days:365},admin);
     return r.data;
   };
   const sa=await createUser("SALES","salesa"), sb=await createUser("SALES","salesb");

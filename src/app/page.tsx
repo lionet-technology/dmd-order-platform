@@ -1,5 +1,6 @@
 "use client";
 import { normalizeCountry } from "@/lib/epacket-pricing";
+import { OperationsWorkspace } from "./operations-workspace";
 import { FinancialWorkspace } from "./financial-workspace";
 import { ClientPurchasePanel } from "./client-purchase-panel";
 
@@ -13,7 +14,7 @@ type Role = "ADMIN" | "SALES" | "CLIENT" | "WAREHOUSE";
 type User = { id:number; username:string; display_name:string; role:Role; sales_user_id?:number|null; sales_display_name?:string|null; active?:number; is_root_admin?:number };
 type RowData = Record<string, string | number | null>;
 type PagedRows = { items:RowData[]; total:number; page:number; pageSize:number; totalPages:number };
-type AppSection = "dashboard"|"orders"|"manifest"|"shipping"|"costs"|"recon"|"ledger"|"accounts"|"masterdata";
+type AppSection = "dashboard"|"orders"|"manifest"|"shipping"|"costs"|"recon"|"ledger"|"accounts"|"masterdata"|"operations";
 type Summary = { orders:number; review:number; unmatched:number; ledger:number; receivable:number };
 type ManualKind = "order" | "cost" | "balance";
 type ImportKind = "orders"|"sales_orders"|"costs"|"tracking_updates"|"balance";
@@ -485,14 +486,14 @@ function CostSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>void}){
 }
 
 const BALANCE_TYPES=[
-  {value:"PAYMENT",label:"Payment (+)"},{value:"REFUND",label:"Refund (+)"},{value:"SERVICE_COST",label:"Service Cost (-)"},
+  {value:"ADDITIONAL_FEE",label:"Additional fee (-)"},{value:"PAYMENT",label:"Payment (+)"},{value:"REFUND",label:"Refund (+)"},{value:"SERVICE_COST",label:"Service Cost (-)"},
   {value:"ERROR_PROCESSING",label:"Processing (+)"},{value:"ERROR_REFUND",label:"Error Refund (+)"},{value:"ERROR_CHARGEABLE",label:"Chargeable (-)"},
   {value:"ADJUSTMENT_CREDIT",label:"Adjustment Credit (+)"},{value:"ADJUSTMENT_DEBIT",label:"Adjustment Debit (-)"},
 ];
-function BalanceSheet({clients,onDone}:{clients:User[];onDone:()=>void}){
+function BalanceSheet({clients,onDone,role}:{clients:User[];onDone:()=>void;role:string}){
   const clientOptions=clients.filter(client=>client.active!==0).map(client=>({value:String(client.id),label:client.display_name+" (@"+client.username+")"}));
   const columns:SheetColumn[]=[
-    {key:"occurred_at",label:"Ngày",width:115,type:"dateText"},{key:"entry_type",label:"Hạng mục *",width:165,type:"combo",options:BALANCE_TYPES},
+    {key:"occurred_at",label:"Ngày",width:115,type:"dateText"},{key:"entry_type",label:"Hạng mục *",width:165,type:"combo",options:role==="SALES"?BALANCE_TYPES.filter(t=>["PAYMENT","ADDITIONAL_FEE"].includes(t.value)):BALANCE_TYPES},
     {key:"amount",label:"Số tiền *",width:100,type:"number"},{key:"client_user_id",label:"Client *",width:185,type:"combo",options:clientOptions},
     {key:"reference_type",label:"Reference type",width:125},{key:"reference_id",label:"Reference ID",width:145},
     {key:"bill_url",label:"Bill URL",width:200},{key:"note",label:"Note",width:200},
@@ -999,8 +1000,8 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   useEffect(()=>{window.scrollTo(0,0)},[section]);
 
   function navigate(next:AppSection){
-    if(role==="WAREHOUSE"&&next!=="manifest")return;
-    if((role==="SALES"||role==="CLIENT")&&!(["orders","ledger"] as AppSection[]).includes(next))return;
+    if(role==="WAREHOUSE"&&!["manifest","operations"].includes(next))return;
+    if((role==="SALES"||role==="CLIENT")&&!(["orders","ledger","operations"] as AppSection[]).includes(next))return;
     setSection(next);setSearch("");setPage(1);
   }
   function openEntry(kind:ManualKind,row?:RowData){
@@ -1021,6 +1022,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
     {key:"orders",label:"Orders",icon:"▤",roles:["ADMIN","SALES","CLIENT"]},
     {key:"manifest",label:"Manifest kho",icon:"▣",roles:["ADMIN","WAREHOUSE"]},
     {key:"shipping",label:"Theo dõi vận chuyển",icon:"⌁",roles:["ADMIN"]},
+    {key:"operations",label:"Control Tower",icon:"◎",roles:["ADMIN","SALES","CLIENT","WAREHOUSE"]},
     {key:"ledger",label:"Balance Ledger",icon:"≋",roles:["ADMIN","SALES","CLIENT"]},
     {key:"costs",label:"Supplier Costs",icon:"$ ",roles:["ADMIN"]},
     {key:"recon",label:"Reconciliation",icon:"✓",roles:["ADMIN"]},
@@ -1030,7 +1032,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
 
   const titleMap:Record<AppSection,string>={
     dashboard:"Tổng quan",orders:"Orders",manifest:"Manifest kho",shipping:"Theo dõi vận chuyển",costs:"Supplier Costs",
-    recon:"Reconciliation",ledger:"Balance Ledger",masterdata:"Dịch vụ",accounts:"Tài khoản",
+    operations:"Control Tower",recon:"Reconciliation",ledger:"Balance Ledger",masterdata:"Dịch vụ",accounts:"Tài khoản",
   };
 
   return <div className="appShell">
@@ -1136,6 +1138,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
           </div>
         </>}
 
+        {section==="operations"&&<OperationsWorkspace role={role}/>}
         {section==="ledger"&&<>
           <FinancialWorkspace role={role} clients={clients}/>
           <PageHeader eyebrow="FINANCE" title="Balance Ledger" description={role==="ADMIN"?"Dòng tiền Credit / Debit và các order charge tự động.":role==="SALES"?"Balance Ledger của các Client được phân công.":"Balance Ledger của tài khoản Client này."}
@@ -1182,7 +1185,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
     {role!=="CLIENT"&&entry&&<Modal size="fullscreen" title={editOrder?"Chỉnh sửa Order":entry==="order"?"Tạo Orders":entry==="cost"?"Nhập Supplier Cost":"Ghi Balance"} onClose={closeEntry}>
       {entry==="order"&&<QuickOrderSheet role={role} clients={clients} enums={enums} onDone={entryDone} edit={editOrder}/>}
       {entry==="cost"&&role==="ADMIN"&&<CostSheet enums={enums} onDone={entryDone}/>}
-      {entry==="balance"&&(role==="ADMIN"||role==="SALES")&&<BalanceSheet clients={clients} onDone={entryDone}/>}
+      {entry==="balance"&&(role==="ADMIN"||role==="SALES")&&<BalanceSheet clients={clients} role={role} onDone={entryDone}/>}
     </Modal>}
   </div>;
 }
