@@ -1,5 +1,6 @@
 "use client";
 import { normalizeCountry } from "@/lib/epacket-pricing";
+import { FinancialWorkspace } from "./financial-workspace";
 import { ClientPurchasePanel } from "./client-purchase-panel";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
@@ -1136,6 +1137,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
         </>}
 
         {section==="ledger"&&<>
+          <FinancialWorkspace role={role} clients={clients}/>
           <PageHeader eyebrow="FINANCE" title="Balance Ledger" description={role==="ADMIN"?"Dòng tiền Credit / Debit và các order charge tự động.":role==="SALES"?"Balance Ledger của các Client được phân công.":"Balance Ledger của tài khoản Client này."}
             actions={role==="ADMIN"?<><button className="secondaryBtn" onClick={()=>setImportKind("balance")}>⇩ Import</button><button className="primaryBtn" onClick={()=>openEntry("balance")}>＋ Ghi Balance</button></>:role==="SALES"?<button className="primaryBtn" onClick={()=>openEntry("balance")}>＋ Ghi Balance</button>:undefined}/>
           <div className="panel dataPanel">

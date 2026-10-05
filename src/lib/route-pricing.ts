@@ -1,3 +1,4 @@
+import { assertPurchasing, reservePurchase, accountFinancials } from "./credit";
 import { db } from "./db";
 import { DEFAULT_SURCHARGES,isEPacket,quote,usd,validateRules,validateTiers } from "./epacket-pricing";
 import { logOrderEvent,publishPublicNote } from "./order-audit";
@@ -63,8 +64,8 @@ export function refreshDraft(id:number){
 export function purchaseService(id:number,actor:{id:number;role:string},requireBalance=true){
  return db.transaction(()=>{
  const o=refreshDraft(id);
- if(actor.role==="CLIENT"&&Number(o.client_user_id)!==actor.id)throw Error("Không có quyền mua Order này.");
- if(!["CLIENT","ADMIN"].includes(actor.role))throw Error("Không có quyền mua dịch vụ.");
+ if((actor.role==="CLIENT"&&Number(o.client_user_id)!==actor.id)||(actor.role==="SALES"&&!db.prepare("SELECT id FROM users WHERE id=? AND sales_user_id=?").get(Number(o.client_user_id),actor.id)))throw Error("Không có quyền mua Order này.");
+ if(!["CLIENT","ADMIN","SALES"].includes(actor.role))throw Error("Không có quyền mua dịch vụ.");
  if(o.workflow_status==="CANCELLED")throw Error("Đơn đã huỷ.");
  if(o.pricing_snapshot_json)return o; // Idempotent retries do not debit twice.
  if(o.workflow_status==="CANCELLED"||o.purchase_completed_at||["PURCHASED","RECONCILED"].includes(String(o.workflow_status)))throw Error("Đơn đã hoàn tất hoặc đã huỷ.");
@@ -73,13 +74,11 @@ export function purchaseService(id:number,actor:{id:number;role:string},requireB
  if(actor.role==="CLIENT"&&!route?.client_self_purchase)throw Error("Route chưa cho phép Client tự đặt mua.");
  if(!q.eligible)throw Error("Không đủ điều kiện mua dịch vụ: "+q.reasons.join(" "));
  for(const k of ["order_id","recipient_name","address1","city","state","zip","phone","item","material"])if(!String(o[k]||"").trim())throw Error("Thiếu thông tin bắt buộc: "+k);
- if(requireBalance){
- const balance=(db.prepare("SELECT COALESCE(SUM(CASE WHEN direction='CREDIT' THEN amount ELSE -amount END),0) n FROM ledger_entries WHERE client_user_id=?").get(Number(o.client_user_id)) as {n:number}).n;
- if(usd(balance)<q.total_charge)throw Error("Balance không đủ để mua dịch vụ.");
- }
+ if(requireBalance)assertPurchasing(Number(o.client_user_id),q.total_charge);
+ reservePurchase(id,Number(o.client_user_id),q.total_charge,actor.id);
  const stamp=new Date().toISOString();
  db.prepare("UPDATE orders SET pricing_snapshot_json=?,pricing_version_id=?,pricing_config_version_id=?,service_purchased_at=?,workflow_status='PENDING_PURCHASE',updated_at=CURRENT_TIMESTAMP WHERE id=?").run(JSON.stringify(q),q.pricing_version_id,q.pricing_config_version_id,stamp,id);
- if(q.total_charge>0)db.prepare("INSERT INTO ledger_entries(occurred_at,entry_type,direction,amount,customer,client_user_id,reference_type,reference_id,note) VALUES (?,'ORDER_CHARGE','DEBIT',?,?,?,'ORDER',?,'USD service purchase')").run(stamp,q.total_charge,o.customer,o.client_user_id,String(id));
+
  logOrderEvent({orderId:id,eventType:"SERVICE_PURCHASED",summary:"Đặt mua dịch vụ; giá USD đã được khóa.",actorId:actor.id,after:q});
  for(const s of q.surcharge_breakdown)publishPublicNote({orderId:id,eventType:"SURCHARGE_NOTICE",summary:s.note,actorId:actor.id,publicData:{amount:s.amount,currency:"USD",surcharge_type:s.code}});
  return db.prepare("SELECT * FROM orders WHERE id=?").get(id) as Row;
@@ -93,8 +92,9 @@ export function safePricing(o:Row,role:string){
  if(role==="CLIENT"&&!o.pricing_snapshot_json){
    const route=routeFor(o);
    if(!route?.client_self_purchase)q.reasons.push("Route chưa cho phép Client tự đặt mua.");
-   const balance=(db.prepare("SELECT COALESCE(SUM(CASE WHEN direction='CREDIT' THEN amount ELSE -amount END),0) n FROM ledger_entries WHERE client_user_id=?").get(Number(o.client_user_id||0)) as {n:number}).n;
-   if(usd(balance)<q.total_charge)q.reasons.push("Balance không đủ.");
+   const financial=accountFinancials(Number(o.client_user_id));
+   if(financial.purchase_blocked)q.reasons.push(...financial.reasons);
+   if(financial.available_to_buy_cents<Math.round(q.total_charge*100))q.reasons.push("Balance / credit không đủ.");
    q.eligible=!q.reasons.length;
  }
  return {eligible:q.eligible,reasons:q.reasons,currency:q.currency,volumetric_weight:q.volumetric_weight,chargeable_weight:q.chargeable_weight,tier:q.tier,discount_percent:q.discount_percent,service_price:usd(q.sale_price),surcharge_breakdown:q.surcharge_breakdown,surcharge:usd(q.surcharge),total_charge:q.total_charge,...(role==="SALES"?{guidance:q.guidance}:{})};

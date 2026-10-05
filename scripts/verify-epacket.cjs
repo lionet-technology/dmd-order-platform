@@ -33,7 +33,8 @@ async function main(){
  check(!db.prepare("SELECT id FROM ledger_entries WHERE reference_type='ORDER' AND reference_id=?").get(String(id)),"no draft charge");
  const purchased=r.purchaseService(id,{id:client.id,role:"CLIENT"}),snapshot=purchased.pricing_snapshot_json,charged=purchased.total_due;
  check(purchased.service_purchased_at&&purchased.workflow_status==="PENDING_PURCHASE","client purchase queue");
- r.purchaseService(id,{id:client.id,role:"CLIENT"});check(db.prepare("SELECT COUNT(*) n FROM ledger_entries WHERE reference_type='ORDER' AND reference_id=?").get(String(id)).n===1,"idempotent charge");
+ r.purchaseService(id,{id:client.id,role:"CLIENT"});check(db.prepare("SELECT COUNT(*) n FROM ledger_entries WHERE reference_type='ORDER' AND reference_id=?").get(String(id)).n===0,"reserve does not charge before completion");
+ check(db.prepare("SELECT COUNT(*) n FROM purchase_reserves WHERE order_id=? AND status='RESERVED'").get(id).n===1,"idempotent reserve");
  throws(()=>upsertOrder({...manual,id,weight:2,client_user_id:client.id}));
  throws(()=>r.purchaseService(id,{id:clients[0].id,role:"CLIENT"}));
  const draft=db.prepare("SELECT * FROM orders WHERE order_id NOT LIKE '%INVALID%' AND service_purchased_at IS NULL LIMIT 1").get(),before=r.refreshDraft(draft.id).sales_price;
@@ -59,14 +60,14 @@ async function main(){
  check(frozenQuote.pricing_version_id===JSON.parse(snapshot).pricing_version_id,"Ops quote uses purchased version after activation");
  response=await post("save",[{...manual,order_id:"INVALID-MISSING-ADDRESS",address1:""}]);body=await response.json();
  check(response.status===422&&!JSON.stringify(body).includes('"supplier"')&&!JSON.stringify(body).includes('"client_user_id"'),"validation error uses client-safe fields");
- const noBalance=clients[2];db.prepare("DELETE FROM ledger_entries WHERE client_user_id=?").run(noBalance.id);const balanceDraft=db.prepare("SELECT * FROM orders WHERE client_user_id=? AND service_purchased_at IS NULL AND order_id NOT LIKE '%INVALID%' LIMIT 1").get(noBalance.id);throws(()=>r.purchaseService(balanceDraft.id,{id:noBalance.id,role:"CLIENT"}),/Balance/);
+ const noBalance=clients[2];db.prepare("INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount) VALUES (?,'ADJUSTMENT_DEBIT','DEBIT',100000)").run(noBalance.id);const balanceDraft=db.prepare("SELECT * FROM orders WHERE client_user_id=? AND service_purchased_at IS NULL AND order_id NOT LIKE '%INVALID%' LIMIT 1").get(noBalance.id);throws(()=>r.purchaseService(balanceDraft.id,{id:noBalance.id,role:"CLIENT"}),/Balance/);
 
  const legacyId=Number(db.prepare("INSERT INTO orders(order_id,service,sub_service,supplier,workflow_status,sales_price,total_due,weight,carton_count,country) VALUES ('LEGACY-PAID','ePacket','Standard','DMD','PURCHASED',12.34,12.34,1,1,'US')").run().lastInsertRowid);
  check(r.refreshDraft(legacyId).sales_price===12.34&&r.safePricing(r.refreshDraft(legacyId),"CLIENT")===null,"legacy purchased order not repriced");
  response=await post("save",[{...manual,order_id:"API-PURCHASE"}]);body=await response.json();const apiId=body.orders[0].id;
  response=await post("purchase",[],{order_ids:[apiId]});check(response.status===200,"Client purchase API");
  response=await post("purchase",[],{order_ids:[apiId]});check(response.status===200,"Client API retry idempotent");
- check(db.prepare("SELECT COUNT(*) n FROM ledger_entries WHERE reference_type='ORDER' AND reference_id=?").get(String(apiId)).n===1,"API charge unique");
+ check(db.prepare("SELECT COUNT(*) n FROM ledger_entries WHERE reference_type='ORDER' AND reference_id=?").get(String(apiId)).n===0,"API purchase reserves before completion");
  const invalidDraft=invalid[0];
  response=await post("save",[{...manual,id:invalidDraft.id,order_id:invalidDraft.order_id,weight:.5}]);check(response.status===400,"Client cannot edit another Client draft");
  response=await post("save",[{...manual,id:apiId,order_id:"EDIT-PAID"}]);check(response.status===400,"paid Client draft edit forbidden");

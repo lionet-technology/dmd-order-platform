@@ -1,3 +1,4 @@
+import {accountFinancials} from "@/lib/credit";
 import { NextRequest,NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -14,7 +15,7 @@ export async function GET(req:NextRequest){
  const setting=db.prepare("SELECT * FROM client_service_settings WHERE client_user_id=? AND lower(service)=lower(?) AND (lower(sub_service)=lower(?) OR sub_service='') ORDER BY CASE WHEN lower(sub_service)=lower(?) THEN 0 ELSE 1 END LIMIT 1").get(auth.user.id,String(r.service),String(r.sub_service),String(r.sub_service)) as Row|undefined;
  return setting?.is_enabled?{id:r.id,service:r.service,sub_service:r.sub_service,discount_percent:setting.discount_percent,currency:"USD"}:null}).filter(Boolean);
  const balance=(db.prepare("SELECT COALESCE(SUM(CASE WHEN direction='CREDIT' THEN amount ELSE -amount END),0) balance FROM ledger_entries WHERE client_user_id=?").get(auth.user.id) as {balance:number}).balance;
- return NextResponse.json({routes,balance});
+ return NextResponse.json({routes,balance,financials:accountFinancials(auth.user.id)});
 }
 export async function POST(req:NextRequest){
  const auth=requireUser(req,"CLIENT");if(auth.error)return auth.error;
@@ -54,9 +55,8 @@ export async function POST(req:NextRequest){
  if(count!==0&&count!==3)errors.push("Nhập đủ Dài/Rộng/Cao.");
  if(count===0&&!(Number(data.manual_volume)>0))errors.push("Thiếu kích thước/thể tích.");
  const q=orderQuote(data);if(!q)errors.push("Chưa có giá active.");
- const balance=(db.prepare("SELECT COALESCE(SUM(CASE WHEN direction='CREDIT' THEN amount ELSE -amount END),0) n FROM ledger_entries WHERE client_user_id=?").get(auth.user.id) as {n:number}).n;
  const pricing=safePricing(data,"CLIENT");
- const reasons=[...errors,...(q?.reasons||[]),...(q&&balance<q.total_charge?["Balance không đủ."]:[])];
+ const reasons=[...errors,...(q?.reasons||[]),...(pricing?.reasons||[])];
  return {row_number:Number(row.row_number||index+1),data,errors,pricing:pricing?{...pricing,eligible:!reasons.length,reasons}:null};
  });
  if(action==="preview")return NextResponse.json({rows:prepared.map(({data,...r})=>({...r,input:{...(data.id?{id:data.id}:{}),...Object.fromEntries(CLIENT_FIELDS.map(k=>[k,data[k]]))}}))});

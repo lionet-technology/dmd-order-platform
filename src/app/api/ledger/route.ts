@@ -37,6 +37,8 @@ export async function POST(req: NextRequest) {
   if(auth.user.role==="CLIENT")return NextResponse.json({error:"Client chỉ có quyền xem Balance Ledger."},{status:403});
   try {
     const body = await req.json();
+    if(auth.user.role==="SALES" && !["PAYMENT","ADDITIONAL_FEE"].includes(String(body.entry_type).toUpperCase()))throw Error("Sales chỉ được nhập Payment hoặc Additional Fee; hoàn tiền cần Admin.");
+    if(auth.user.role==="SALES")body.direction=String(body.entry_type).toUpperCase()==="PAYMENT"?"CREDIT":"DEBIT";
     const clientRaw=body.client_user_id;
     const client=clientRaw?getClientAccount(clientRaw,true):undefined;
     if(auth.user.role==="SALES"){

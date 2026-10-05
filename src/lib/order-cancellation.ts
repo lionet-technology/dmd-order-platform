@@ -1,3 +1,4 @@
+import "./credit";
 import { db } from "./db";
 import { canAccessClient,getClientAccount,type AuthUser } from "./auth";
 import { recomputeOrderFinancials } from "./order-operations";
@@ -40,6 +41,7 @@ export function cancelOrder(orderId:number,user:AuthUser){
     const at=new Date().toISOString();
     db.prepare("UPDATE orders SET workflow_status='CANCELLED',cancelled_at=?,cancelled_by_user_id=?,cancellation_reason=?,cancellation_refund_percent=?,cancellation_refund_amount=?,cancelled_original_due=?,total_due=?,updated_by_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
       .run(at,user.id,null,policy.refund_percent,policy.refund_amount,charged,retained,user.id,orderId);
+    db.prepare("UPDATE purchase_reserves SET status='CANCELLED',updated_at=CURRENT_TIMESTAMP WHERE order_id=? AND status='RESERVED'").run(orderId);
     // Cancel only in-app tracking availability. Carrier labels need separate supplier processing.
     db.prepare("UPDATE order_trackings SET status='CANCELLED',is_primary=0,updated_at=CURRENT_TIMESTAMP WHERE order_id=? AND status='ACTIVE'").run(orderId);
     if(policy.refund_amount>0)db.prepare("INSERT INTO ledger_entries(occurred_at,entry_type,direction,amount,customer,client_user_id,reference_type,reference_id,note,created_by_user_id) VALUES (?,'REFUND','CREDIT',?,?,?,'ORDER_CANCELLATION',?,?,?)")

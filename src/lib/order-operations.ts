@@ -1,3 +1,4 @@
+import { completeReserve } from "./credit";
 import { assertConfiguredPurchase,orderQuote,purchaseService } from "./route-pricing";
 import { db } from "./db";
 import { trackingReplacementReason } from "./order-rules";
@@ -56,6 +57,7 @@ function syncLegacyPrimary(orderId:number){
 
 function addOrderTrackingRaw(input:{orderId:number;tracking:unknown;labelUrl?:unknown;lotNumber?:unknown;cartonId?:number|null;actorId?:number|null;isPrimary?:boolean;costMatchType?:CostMatchType;costParentTrackingId?:number|null}){
   assertOrderOpen(input.orderId);
+  if(db.prepare("SELECT order_id FROM purchase_reserves WHERE order_id=? AND status='FAILED'").get(input.orderId))throw Error("Purchase thất bại; retry trước khi cấp tracking.");
   const tracking=text(input.tracking); const normalized=normalizeTracking(tracking);
   if(!normalized)throw new Error("Tracking là bắt buộc.");
   const duplicate=db.prepare("SELECT order_id FROM order_trackings WHERE normalized_tracking=?").get(normalized) as {order_id:number}|undefined;
@@ -69,6 +71,7 @@ function addOrderTrackingRaw(input:{orderId:number;tracking:unknown;labelUrl?:un
   const hasPrimary=(db.prepare("SELECT COUNT(*) c FROM order_trackings WHERE order_id=? AND status='ACTIVE' AND is_primary=1").get(input.orderId) as {c:number}).c>0;
   const result=db.prepare(`INSERT INTO order_trackings(order_id,lot_number,carton_id,tracking,normalized_tracking,label_url,is_primary,cost_match_type,cost_parent_tracking_id,created_by_user_id)
     VALUES (?,?,?,?,?,?,?,?,?,?)`).run(input.orderId,lot,carton?.id||null,tracking,normalized,text(input.labelUrl)||null,input.isPrimary||!hasPrimary?1:0,input.costMatchType||"UNKNOWN",input.costParentTrackingId||null,input.actorId||null);
+  if(text(input.labelUrl))completeReserve(input.orderId,input.actorId||0);
   syncLegacyPrimary(input.orderId);
   matchSupplierCostsForOrder(input.orderId);
   return db.prepare("SELECT * FROM order_trackings WHERE id=?").get(result.lastInsertRowid) as OrderTracking;
@@ -96,6 +99,7 @@ export function updateOrderTracking(input:{orderId:number;id:number;labelUrl?:un
   if(input.isPrimary)db.prepare("UPDATE order_trackings SET is_primary=0 WHERE order_id=?").run(input.orderId);
   db.prepare("UPDATE order_trackings SET lot_number=?,carton_id=?,label_url=?,cost_match_type=?,cost_parent_tracking_id=?,is_primary=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
     .run(lot,input.cartonId===undefined?row.carton_id:carton?.id||null,input.labelUrl===undefined?row.label_url:text(input.labelUrl)||null,match,parent,input.isPrimary?1:row.is_primary,row.id);
+  if(text(input.labelUrl))completeReserve(input.orderId,0);
   syncLegacyPrimary(input.orderId);
   recomputeOrderFinancials(input.orderId);
 }
