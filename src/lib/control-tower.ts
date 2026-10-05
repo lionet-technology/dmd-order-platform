@@ -1,4 +1,5 @@
 import "./order-cancellation";
+import {deadline,slaState} from "./sla";
 import {db} from "./db";
 import type {AuthUser} from "./auth";
 import {casesFor} from "./cases";
@@ -12,9 +13,9 @@ export function controlTower(user:AuthUser){
  const accounts=clientIds.map(id=>({client_id:id,...accountFinancials(id)}));
  const inbound=user.role==='CLIENT'?{parcels:[],adjustments:[]}:inboundFor(user);
  const recoveries=user.role==='ADMIN'?recoveriesFor(user) as Row[]:[];
- const failed=db.prepare("SELECT r.order_id,r.updated_at FROM purchase_reserves r JOIN orders o ON o.id=r.order_id WHERE r.status='FAILED' AND (?='ADMIN' OR o.client_user_id=? OR (?='SALES' AND o.client_user_id IN (SELECT id FROM users WHERE sales_user_id=?)))").all(user.role,user.id,user.role,user.id);
+ const failed=db.prepare("SELECT r.order_id,r.updated_at FROM purchase_reserves r JOIN orders o ON o.id=r.order_id WHERE r.status='FAILED' AND (?='ADMIN' OR o.client_user_id=? OR (?='SALES' AND o.client_user_id IN (SELECT id FROM users WHERE sales_user_id=?)))").all(user.role,user.id,user.role,user.id).map(row=>{const r=row as Row;const due=deadline('PURCHASE_FAILED',r.updated_at);return {...r,due_date:due,sla_status:slaState(due)};});
  const cancellation=user.role==='ADMIN'?db.prepare("SELECT order_id,created_at FROM cancellation_requests WHERE status='PENDING'").all():[];
- const queues={cancellation_approval:cancellation,purchase_failed:failed,holds:open.filter(c=>c.kind==='HOLD'),cases_due:open.filter(c=>c.due_date&&String(c.due_date)<=today),claims_overdue:open.filter(c=>c.kind==='CLAIM'&&c.due_date&&String(c.due_date)<today),weight_adjustments:inbound.adjustments.filter(a=>a.status==='PENDING_APPROVAL'),unidentified:inbound.parcels.filter(p=>p.status==='UNIDENTIFIED'),accounts_overdue:accounts.filter(a=>a.reasons.includes('Công nợ quá hạn')).map(a=>({client_id:a.client_id})),supplier_waiting:recoveries.filter(r=>['OPEN','SUBMITTED','WAITING_SUPPLIER','PARTIALLY_RECOVERED'].includes(String(r.status)))};
+ const queues={cancellation_approval:cancellation,purchase_failed:failed,holds:open.filter(c=>c.kind==='HOLD'),cases_due:open.filter(c=>['NEAR_DUE','OVERDUE'].includes(String(c.sla_status))),claims_overdue:open.filter(c=>c.kind==='CLAIM'&&c.sla_status==='OVERDUE'),weight_adjustments:inbound.adjustments.filter(a=>a.status==='PENDING_APPROVAL'),unidentified:inbound.parcels.filter(p=>p.status==='UNIDENTIFIED'),accounts_overdue:accounts.filter(a=>a.reasons.includes('Công nợ quá hạn')).map(a=>({client_id:a.client_id})),supplier_waiting:recoveries.filter(r=>['OPEN','SUBMITTED','WAITING_SUPPLIER','PARTIALLY_RECOVERED'].includes(String(r.status)))};
  const money={balance_cents:accounts.reduce((s,a)=>s+a.balance_cents,0),reserved_cents:accounts.reduce((s,a)=>s+a.reserved_cents,0),receivable_cents:accounts.reduce((s,a)=>s+[...a.debts,...a.statements].reduce((n,r)=>n+r.outstanding_cents,0),0)};
  let adminMetrics:Row={};if(user.role==='ADMIN'){
  const paid=Number((db.prepare("SELECT COALESCE(SUM(refund_cents+compensation_cents),0) n FROM claim_decisions").get() as {n:number}).n),recovered=recoveries.reduce((s,r)=>s+Number(r.recovered_cents),0);

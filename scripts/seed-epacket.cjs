@@ -3,8 +3,8 @@ const root=path.resolve(__dirname,"..");
 const resolve=Module._resolveFilename;Module._resolveFilename=function(r,p,m,o){if(r.startsWith("@/"))return resolve.call(this,path.join(root,"src",r.slice(2)),p,m,o);return resolve.call(this,r,p,m,o)};
 require.extensions[".ts"]=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,"utf8"),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,f);
 process.env.DMD_DB_PATH=process.env.DMD_DB_PATH||path.join(root,"data/dmd-finance-ops.db");
-const {db}=require("../src/lib/db.ts"),{createUser}=require("../src/lib/auth.ts"),{STANDARD,ECO,DEFAULT_SURCHARGES}=require("../src/lib/epacket-pricing.ts"),{createPriceVersion,activatePricing,purchaseService}=require("../src/lib/route-pricing.ts"),{upsertOrder}=require("../src/lib/finance.ts"),{addOrderTracking}=require("../src/lib/order-operations.ts");
-function seed(reset=false){
+const {db}=require("../src/lib/db.ts"),{createUser}=require("../src/lib/auth.ts"),{STANDARD,ECO,DEFAULT_SURCHARGES}=require("../src/lib/epacket-pricing.ts"),{createPriceVersion,activatePricing,purchaseService,activePricing}=require("../src/lib/route-pricing.ts"),{upsertOrder}=require("../src/lib/finance.ts"),{addOrderTracking}=require("../src/lib/order-operations.ts");
+function seed(reset=false,preserveConfig=false){
  if(reset){fs.mkdirSync(path.join(root,".smoke"),{recursive:true});db.exec("VACUUM INTO '"+path.join(root,".smoke/epacket-before-reset-"+Date.now()+".db").replace(/'/g,"''")+"'")}
  return db.transaction(()=>{
  if(reset){
@@ -23,8 +23,8 @@ function seed(reset=false){
  for(const [sub,tiers] of [["Standard",STANDARD],["Eco",ECO]]){
  db.prepare("INSERT OR IGNORE INTO service_route_configs(service,sub_service,supplier,route_variables_json) VALUES ('ePacket',?,'DMD',?)").run(sub,source?.route_variables_json||JSON.stringify(config.route_variables));
  const route=db.prepare("SELECT * FROM service_route_configs WHERE service='ePacket' AND sub_service=? AND supplier='DMD'").get(sub);
- db.prepare("UPDATE service_route_configs SET client_self_purchase=1,active=1,updated_by_user_id=? WHERE id=?").run(admin.id,route.id);
- const v=createPriceVersion(route.id,tiers,admin.id);activatePricing(route.id,{price_version_id:v.id,base_markup:6,retail_markup:16,surcharges:DEFAULT_SURCHARGES},admin.id);
+ if(!preserveConfig||!activePricing(route.id))db.prepare("UPDATE service_route_configs SET client_self_purchase=1,active=1,updated_by_user_id=? WHERE id=?").run(admin.id,route.id);
+ if(!preserveConfig||!activePricing(route.id)){const v=createPriceVersion(route.id,tiers,admin.id);activatePricing(route.id,{price_version_id:v.id,base_markup:6,retail_markup:16,surcharges:DEFAULT_SURCHARGES},admin.id);}
  for(const c of clients)db.prepare("INSERT INTO client_service_settings(client_user_id,service,sub_service,is_enabled,discount_percent,default_sub_service,default_supplier,updated_by_user_id) VALUES (?,'ePacket',?,1,?,?,'DMD',?) ON CONFLICT(client_user_id,service,sub_service) DO UPDATE SET is_enabled=1,discount_percent=excluded.discount_percent,default_sub_service=excluded.default_sub_service,default_supplier='DMD'").run(c.id,sub,(1-c.target/1.16)*100,sub,admin.id);
  for(const kind of ["PURCHASE","MANIFEST"]){
  if(db.prepare("SELECT id FROM purchase_templates WHERE route_config_id=? AND template_kind=? AND active=1").get(route.id,kind))continue;

@@ -17,7 +17,9 @@
     "seed:epacket": "node scripts/seed-epacket.cjs",
     "verify:credit": "node scripts/verify-credit.cjs",
     "verify:operations": "node scripts/verify-operations.cjs",
-    "e2e:operations": "node scripts/e2e-operations.cjs"
+    "e2e:operations": "node scripts/e2e-operations.cjs",
+    "seed:demo": "node scripts/seed-finance-demo.cjs --reset-demo",
+    "verify:sla-demo": "node scripts/verify-sla-demo.cjs"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",

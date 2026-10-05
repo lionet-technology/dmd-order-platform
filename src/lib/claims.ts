@@ -1,3 +1,4 @@
+import {deadline,slaState} from "./sla";
 import {db} from "./db";
 import {caseAccess,caseEvent} from "./cases";
 import {requireAdmin,cents,localDay,audit,validDay} from "./credit";
@@ -7,7 +8,7 @@ type Row=Record<string,unknown>;
 db.exec(`CREATE TABLE IF NOT EXISTS claim_decisions(id INTEGER PRIMARY KEY,case_id INTEGER NOT NULL UNIQUE REFERENCES operation_cases(id),refund_cents INTEGER NOT NULL,compensation_cents INTEGER NOT NULL,reason TEXT NOT NULL,decided_by INTEGER NOT NULL REFERENCES users(id),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
  CREATE TABLE IF NOT EXISTS supplier_recoveries(id INTEGER PRIMARY KEY,case_id INTEGER NOT NULL REFERENCES operation_cases(id),supplier TEXT NOT NULL,expected_cents INTEGER NOT NULL CHECK(expected_cents>=0),status TEXT NOT NULL DEFAULT 'OPEN' CHECK(status IN ('OPEN','SUBMITTED','WAITING_SUPPLIER','PARTIALLY_RECOVERED','RECOVERED','REJECTED','CLOSED')),due_date TEXT,note TEXT,created_by INTEGER NOT NULL REFERENCES users(id),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
  CREATE TABLE IF NOT EXISTS supplier_recovery_receipts(id INTEGER PRIMARY KEY,recovery_id INTEGER NOT NULL REFERENCES supplier_recoveries(id),amount_cents INTEGER NOT NULL CHECK(amount_cents>0),reference TEXT NOT NULL,occurred_at TEXT NOT NULL,created_by INTEGER NOT NULL REFERENCES users(id),UNIQUE(recovery_id,reference));`);
-export function recoveriesFor(user:AuthUser){requireAdmin(user);return db.prepare("SELECT r.*,COALESCE((SELECT SUM(amount_cents) FROM supplier_recovery_receipts WHERE recovery_id=r.id),0) recovered_cents FROM supplier_recoveries r ORDER BY id DESC").all();}
+export function recoveriesFor(user:AuthUser){requireAdmin(user);return db.prepare("SELECT r.*,COALESCE((SELECT SUM(amount_cents) FROM supplier_recovery_receipts WHERE recovery_id=r.id),0) recovered_cents FROM supplier_recoveries r ORDER BY id DESC").all().map(row=>{const r=row as Row;return {...r,sla_status:slaState(r.due_date,['RECOVERED','REJECTED','CLOSED'].includes(String(r.status)))};});}
 export function claimAction(user:AuthUser,b:Row){return db.transaction(()=>{
  requireAdmin(user);const action=String(b.action),id=Number(b.case_id),c=caseAccess(user,id);if(c.kind!=='CLAIM')throw Error("Chọn Client Claim.");
  if(action==='finalize'){
@@ -23,7 +24,7 @@ export function claimAction(user:AuthUser,b:Row){return db.transaction(()=>{
  for(const o of orders)publishPublicNote({orderId:Number(o.id),eventType:'REFUND',summary:'Claim #'+id+' đã xử lý: hoàn cước tổng '+(refund/100).toFixed(2)+' USD; bồi thường tổng '+(compensation/100).toFixed(2)+' USD. '+String(b.reason),actorId:user.id});audit(clients[0],user.id,'CLAIM_FINALIZED',{id,decision});return {id:decision};
  }
  if(action==='create_recovery'){
- const supplier=String(b.supplier||'').trim();if(!supplier)throw Error("Supplier bắt buộc.");const expected=cents(b.expected_amount);const recovery=Number(db.prepare("INSERT INTO supplier_recoveries(case_id,supplier,expected_cents,due_date,note,created_by) VALUES (?,?,?,?,?,?)").run(id,supplier,expected,b.due_date?validDay(b.due_date):null,String(b.note||''),user.id).lastInsertRowid);caseEvent(id,user,'SUPPLIER_RECOVERY_CREATED',{recovery_id:recovery});return {id:recovery};
+ const supplier=String(b.supplier||'').trim();if(!supplier)throw Error("Supplier bắt buộc.");const expected=cents(b.expected_amount);const recovery=Number(db.prepare("INSERT INTO supplier_recoveries(case_id,supplier,expected_cents,due_date,note,created_by) VALUES (?,?,?,?,?,?)").run(id,supplier,expected,deadline('SUPPLIER_RECOVERY',undefined,b.due_date?validDay(b.due_date):undefined),String(b.note||''),user.id).lastInsertRowid);caseEvent(id,user,'SUPPLIER_RECOVERY_CREATED',{recovery_id:recovery});return {id:recovery};
  }
  const r=db.prepare("SELECT * FROM supplier_recoveries WHERE id=? AND case_id=?").get(Number(b.recovery_id),id) as Row|undefined;if(!r)throw Error("Recovery không tồn tại.");
  if(action==='recovery_status'){const status=String(b.status);if(!['OPEN','SUBMITTED','WAITING_SUPPLIER','REJECTED','CLOSED'].includes(status))throw Error("Trạng thái recovery không hợp lệ.");db.prepare("UPDATE supplier_recoveries SET status=?,note=?,due_date=? WHERE id=?").run(status,String(b.note||''),b.due_date?validDay(b.due_date):r.due_date,r.id);caseEvent(id,user,'SUPPLIER_RECOVERY_UPDATED',{recovery_id:r.id,status});return {id:r.id};}
