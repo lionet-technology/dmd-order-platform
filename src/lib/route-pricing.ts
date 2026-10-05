@@ -1,3 +1,4 @@
+import {hasCaseHold} from "./cases";
 import { assertPurchasing, reservePurchase, accountFinancials } from "./credit";
 import { db } from "./db";
 import { DEFAULT_SURCHARGES,isEPacket,quote,usd,validateRules,validateTiers } from "./epacket-pricing";
@@ -46,7 +47,7 @@ export function orderQuote(o:Row){
  if(!route.active)result.reasons.push("Route đang ngừng hoạt động.");
  if(o.client_user_id&&(!setting||!setting.is_enabled))result.reasons.push("Client chưa được phép sử dụng dịch vụ.");
  if(o.workflow_status==="CANCELLED")result.reasons.push("Đơn đã huỷ.");
- if(o.workflow_status==="HOLD"||route.warehouse_hold||(o.id&&db.prepare("SELECT id FROM warehouse_order_holds WHERE order_id=? AND released_at IS NULL").get(Number(o.id))))result.reasons.push("Đơn hoặc route đang Hold.");
+ if((o.id&&hasCaseHold(Number(o.id)))||o.workflow_status==="HOLD"||route.warehouse_hold||(o.id&&db.prepare("SELECT id FROM warehouse_order_holds WHERE order_id=? AND released_at IS NULL").get(Number(o.id))))result.reasons.push("Đơn hoặc route đang Hold.");
  result.eligible=!result.reasons.length;
  return {...result,route_id:Number(route.id),pricing_version_id:Number(o.pricing_snapshot_json?o.pricing_version_id:active.price_version_id),pricing_config_version_id:Number(o.pricing_snapshot_json?o.pricing_config_version_id:active.config_version_id)};
 }
