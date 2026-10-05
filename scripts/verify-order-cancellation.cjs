@@ -26,15 +26,16 @@ let restartId;
 for(const actor of [admin,sales,client]){
  for(const issued of [false,true]){
   const id=order({price:99.99});if(issued)addOrderTracking({orderId:id,tracking:"CANCEL-TRACK-"+id,labelUrl:"https://labels.test/cancel.pdf"});
-  const result=cancelOrder(id,actor,"Customer changed mind");
+  if(actor.role!=="ADMIN"){const request=cancelOrder(id,actor);check(request.pending_approval&&ledger(id).length===0,"Refund requires Admin approval");}
+  const result=cancelOrder(id,admin,"Customer changed mind");
   check(result.refund_percent===(issued?90:100),"role "+actor.role+" refund rule");
   check(result.refund_amount===(issued?89.99:99.99),"refund rounded to cents");
   check(get(id).total_due===(issued?10:0),"retained fee in payable total");
   check(get(id).gross_profit_net===(issued?10:0),"profit reflects refund immediately");
   check(Math.abs(balance(id)+(issued?10:0))<1e-8,"ledger net matches retained fee");
-  check(ledger(id).length===1&&ledger(id)[0].client_user_id===client.id&&ledger(id)[0].created_by_user_id===actor.id,"refund client and actor attribution");
+  check(ledger(id).length===1&&ledger(id)[0].client_user_id===client.id&&ledger(id)[0].created_by_user_id===admin.id,"refund client and actor attribution");
   const event=db.prepare("SELECT * FROM order_events WHERE order_id=? AND event_type='ORDER_CANCELLED'").get(id);
-  check(event.actor_username===actor.username&&event.actor_role===actor.role&&event.actor_user_id===actor.id,"audit account and role");
+  check(event.actor_username===admin.username&&event.actor_role===admin.role&&event.actor_user_id===admin.id,"audit account and role");
   const before=JSON.stringify(ledger(id));const repeat=cancelOrder(id,actor,"repeat");
   check(repeat.already_cancelled&&JSON.stringify(ledger(id))===before,"retry does not duplicate refund");
   check(db.prepare("SELECT COUNT(*) c FROM order_events WHERE order_id=? AND event_type='ORDER_CANCELLED'").get(id).c===1,"retry does not duplicate audit");
@@ -62,12 +63,12 @@ rejects(()=>cancelOrder(historical,admin,""),"existing status history blocks can
 const cargo=order({service:"Cargo Custom"});rejects(()=>cancelOrder(cargo,admin,""),"Cargo excluded");check(!cancellationPolicy(get(cargo)).allowed,"Cargo preview blocked");
 const empty=order({price:0,charged:false});check(cancelOrder(empty,client,"").refund_amount===0&&ledger(empty).length===0,"uncharged order no phantom credit");
 const legacy=order({label:"https://labels.test/legacy.pdf"});check(cancelOrder(legacy,admin,"").refund_percent===90,"legacy label uses ninety percent");
-const partial=order(),partialTracking=addOrderTracking({orderId:partial,tracking:"PARTIAL-"+partial});check(cancelOrder(partial,sales,"").refund_percent===90,"tracking without label uses ninety percent");
+const partial=order(),partialTracking=addOrderTracking({orderId:partial,tracking:"PARTIAL-"+partial});check(cancelOrder(partial,admin,"").refund_percent===90,"tracking without label uses ninety percent");
 rejects(()=>updateOrderTracking({orderId:partial,id:partialTracking.id,labelUrl:"x"}),"cannot update cancelled tracking");
 rejects(()=>replaceOrderTracking({orderId:partial,oldTrackingId:partialTracking.id,newTracking:"X",reason:"X"}),"cannot replace cancelled tracking");
 rejects(()=>addLedgerEntry({entry_type:"REFUND",reference_type:"ORDER_CANCELLATION",reference_id:"1",amount:1}),"manual refund cannot forge automatic reference");
 const rollback=order();db.exec("CREATE TRIGGER reject_cancel_audit BEFORE INSERT ON order_events WHEN NEW.event_type='ORDER_CANCELLED' AND NEW.order_id="+rollback+" BEGIN SELECT RAISE(ABORT,'fixture audit failure'); END");
-rejects(()=>cancelOrder(rollback,client,""),"audit error aborts cancellation");check(get(rollback).workflow_status!=="CANCELLED"&&ledger(rollback).length===0&&balance(rollback)===-100,"audit failure rolls back refund and status");db.exec("DROP TRIGGER reject_cancel_audit");
+rejects(()=>cancelOrder(rollback,admin,""),"audit error aborts cancellation");check(get(rollback).workflow_status!=="CANCELLED"&&ledger(rollback).length===0&&balance(rollback)===-100,"audit failure rolls back refund and status");db.exec("DROP TRIGGER reject_cancel_audit");
 check(db.pragma("quick_check")[0].quick_check==="ok"&&db.pragma("foreign_key_check").length===0,"database integrity");
 db.close();delete require.cache[require.resolve("../src/lib/db.ts")];db=require("../src/lib/db.ts").db;
 check(db.prepare("SELECT COUNT(*) c FROM order_trackings WHERE order_id=? AND status='ACTIVE'").get(restartId).c===0,"restart never reactivates cancelled tracking");

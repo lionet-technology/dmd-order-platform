@@ -16,7 +16,8 @@ async function main(){
  for(const actor of [adminLogin,salesLogin,clientLogin])for(const issued of [false,true]){
   const order=await create();if(issued)await issue(order);
   const quote=await call("/api/orders/"+order.id,{cookie:actor.cookie});check(quote.data.cancellation.allowed&&quote.data.cancellation.refund_percent===(issued?90:100)&&quote.data.cancellation.refund_amount===(issued?90:100),"server refund quote for "+actor.data?.user?.role);
-  const response=await call("/api/orders/"+order.id+"/cancel",{method:"POST",cookie:actor.cookie,body:{reason:"HTTP cancellation test",refund_percent:100,refund_amount:999999,actor_user_id:999}});
+  let response=await call("/api/orders/"+order.id+"/cancel",{method:"POST",cookie:actor.cookie,body:{reason:"HTTP cancellation test",refund_percent:100,refund_amount:999999,actor_user_id:999}});
+  if(actor.cookie!==admin){check(response.data.pending_approval,"Client/Sales refund waits for approval");response=await call("/api/orders/"+order.id+"/cancel",{method:"POST",cookie:admin,body:{}});}
   check(response.status===200&&response.data.refund_amount===(issued?90:100),"server ignores forged refund or actor");
   const detail=await call("/api/orders/"+order.id,{cookie:client});const event=detail.data.events.find(x=>x.event_type==="REFUND");
   check(detail.data.workflow_status==="CANCELLED"&&detail.data.total_due===(issued?10:0),"client sees retained fee");
@@ -32,7 +33,7 @@ async function main(){
  const blocked=await call("/api/orders/"+received.id+"/cancel",{method:"POST",cookie:admin,body:{}});check(blocked.status===409,"received order cannot cancel even admin");
  status=await call("/api/shipment-status",{method:"POST",cookie:admin,body:{tracking_id:tracking.id,etd_at:"02/10/2026",shipment_status:"WAITING_HANDOVER"}});check(status.status===200,"status reset fixture");
  const reset=await call("/api/orders/"+received.id+"/cancel",{method:"POST",cookie:client,body:{}});check(reset.status===409,"API status reset does not bypass handover boundary");
- const raced=await create();const replies=await Promise.all(Array.from({length:5},()=>call("/api/orders/"+raced.id+"/cancel",{method:"POST",cookie:client,body:{}})));check(replies.every(x=>x.status===200)&&replies.filter(x=>!x.data.already_cancelled).length===1,"concurrent cancellation only one effective operation");
+ const raced=await create();const replies=await Promise.all(Array.from({length:5},()=>call("/api/orders/"+raced.id+"/cancel",{method:"POST",cookie:admin,body:{}})));check(replies.every(x=>x.status===200)&&replies.filter(x=>!x.data.already_cancelled).length===1,"concurrent cancellation only one effective operation");
  const ledger=await call("/api/ledger?pageSize=100",{cookie:client});const refund=ledger.data.items.filter(x=>x.reference_type==="ORDER_CANCELLATION"&&x.reference_id===String(raced.id));check(refund.length===1&&refund[0].amount===100,"concurrent requests create one refund");
  const otherUser=await call("/api/users",{method:"POST",cookie:admin,body:{username:"cancel.foreign."+seq,display_name:"Foreign Client",role:"CLIENT",sales_user_id:users.data.find(x=>x.username==="e2e.sales").id,password}});check(otherUser.status===201,"foreign client created");
  const foreign=await call("/api/auth/login",{method:"POST",body:{username:otherUser.data.username,password}});

@@ -4,6 +4,8 @@ import { canAccessClient,getClientAccount,type AuthUser } from "./auth";
 import { recomputeOrderFinancials } from "./order-operations";
 import { logInternalEvent,publishPublicNote } from "./order-audit";
 
+db.exec("CREATE TABLE IF NOT EXISTS cancellation_requests(order_id INTEGER PRIMARY KEY REFERENCES orders(id),requested_by INTEGER NOT NULL REFERENCES users(id),status TEXT NOT NULL DEFAULT 'PENDING',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,approved_by INTEGER REFERENCES users(id))");
+
 type Order=Record<string,unknown>&{id:number};
 const money=(value:number)=>Math.round((value+Number.EPSILON)*100)/100;
 export class CancellationError extends Error {
@@ -36,12 +38,19 @@ export function cancelOrder(orderId:number,user:AuthUser){
     if(order.workflow_status==="CANCELLED")return {cancelled:true,already_cancelled:true,...cancellationPolicy(order)};
     const policy=cancellationPolicy(order);
     if(!policy.allowed)throw new CancellationError(policy.reason);
+    if(user.role!=="ADMIN"&&policy.refund_amount>0){
+      const existing=db.prepare("SELECT order_id FROM cancellation_requests WHERE order_id=? AND status='PENDING'").get(orderId);
+      db.prepare("INSERT OR IGNORE INTO cancellation_requests(order_id,requested_by) VALUES (?,?)").run(orderId,user.id);
+      if(!existing)logInternalEvent({orderId,eventType:"CANCELLATION_REQUESTED",summary:"Yêu cầu huỷ đơn; chờ Admin duyệt hoàn tiền.",actorId:user.id});
+      return {cancelled:false,already_cancelled:false,pending_approval:true,...policy};
+    }
     const charged=Number((db.prepare("SELECT COALESCE(SUM(amount),0) amount FROM ledger_entries WHERE entry_type='ORDER_CHARGE' AND direction='DEBIT' AND reference_type='ORDER' AND reference_id=?").get(String(orderId)) as {amount:number}).amount);
     const retained=money(charged-policy.refund_amount);
     const at=new Date().toISOString();
     db.prepare("UPDATE orders SET workflow_status='CANCELLED',cancelled_at=?,cancelled_by_user_id=?,cancellation_reason=?,cancellation_refund_percent=?,cancellation_refund_amount=?,cancelled_original_due=?,total_due=?,updated_by_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
       .run(at,user.id,null,policy.refund_percent,policy.refund_amount,charged,retained,user.id,orderId);
     db.prepare("UPDATE purchase_reserves SET status='CANCELLED',updated_at=CURRENT_TIMESTAMP WHERE order_id=? AND status='RESERVED'").run(orderId);
+    db.prepare("UPDATE cancellation_requests SET status='APPROVED',approved_by=? WHERE order_id=?").run(user.id,orderId);
     // Cancel only in-app tracking availability. Carrier labels need separate supplier processing.
     db.prepare("UPDATE order_trackings SET status='CANCELLED',is_primary=0,updated_at=CURRENT_TIMESTAMP WHERE order_id=? AND status='ACTIVE'").run(orderId);
     if(policy.refund_amount>0)db.prepare("INSERT INTO ledger_entries(occurred_at,entry_type,direction,amount,customer,client_user_id,reference_type,reference_id,note,created_by_user_id) VALUES (?,'REFUND','CREDIT',?,?,?,'ORDER_CANCELLATION',?,?,?)")
