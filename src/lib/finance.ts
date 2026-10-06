@@ -503,7 +503,7 @@ export function addLedgerEntry(input: LedgerInput) {
   const type = text(input.entry_type).toUpperCase();
   let direction = input.direction;
   if (!direction) {
-    if (["PAYMENT", "REFUND", "ERROR_REFUND", "ERROR_PROCESSING", "ADJUSTMENT_CREDIT"].includes(type)) direction = "CREDIT";
+    if (["PAYMENT", "REFUND", "ERROR_REFUND", "ERROR_PROCESSING", "ADJUSTMENT_CREDIT", "COMPENSATION", "MANUAL_CREDIT", "OFFSET", "SERVICE_SETTLEMENT"].includes(type)) direction = "CREDIT";
     else direction = "DEBIT";
   }
   const result = db.prepare(`

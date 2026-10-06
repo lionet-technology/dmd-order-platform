@@ -12,7 +12,7 @@ r=await call('/api/financials?client_id='+clientId,warehouse);check(r.status===4
 check((await call('/api/ledger',warehouse)).status===403,'Warehouse ledger read denied');
 check((await call('/api/ledger',warehouse,{client_user_id:clientId,entry_type:'REFUND',amount:5})).status===403,'Warehouse ledger write denied');
 const orders=(await call('/api/orders?pageSize=100',client)).data.items,order=orders.find(o=>o.workflow_status!=='CANCELLED');check(!!order,'Claim fixture order');
-r=await call('/api/cases',client,{action:'create',kind:'CLAIM',visibility:'PUBLIC',order_ids:[order.id],summary:'HTTP public claim',due_date:'2026-10-05'});check(r.status===200,'Client opens claim');const caseId=r.data.id;
+r=await call('/api/cases',client,{action:'create',kind:'CLAIM',visibility:'PUBLIC',order_ids:[order.id],summary:'HTTP public claim',hold_requested:true});check(r.status===200,'Client opens claim');const caseId=r.data.id;
 check((await call('/api/financials?client_id='+clientId,client)).data.balance_cents===before,'Open claim never releases balance');
 r=await call('/api/cases',client,{action:'comment',case_id:caseId,message:'Please investigate'});check(r.status===200,'Client public reply');
 r=await call('/api/claims',sales,{action:'finalize',case_id:caseId,refund_amount:1,reason:'x'});check(r.status===400,'Sales claim payout denied');
@@ -22,7 +22,7 @@ r=await call('/api/cases',admin,{action:'update',case_id:holdId,status:'RESOLVED
 r=await call('/api/inbound',warehouse,{action:'scan',scan_key:'HTTP-UNIDENTIFIED-'+Date.now()});check(r.status===200&&r.data.status==='UNIDENTIFIED','Warehouse unmatched inventory');
 check((await call('/api/inbound',client)).status===400,'Client internal warehouse denied');
 check((await call('/api/claims',client)).status===403,'Client supplier recoveries denied');
-r=await call('/api/control-tower',admin);check(r.status===200&&r.data.counts.unidentified>0&&r.data.counts.claims_overdue>0,'Tower actionable queues');
+r=await call('/api/control-tower',admin);check(r.status===200&&r.data.counts.unidentified>0&&r.data.counts.claim_follow_up>0,'Tower actionable queues');
 r=await call('/api/control-tower',client);check(r.status===200&&r.data.supplier_recovered_cents===undefined,'Client tower private fields hidden');
 console.log('OPERATIONS HTTP PASS ('+checks+' assertions)');
 })().catch(e=>{console.error(e);process.exit(1)});

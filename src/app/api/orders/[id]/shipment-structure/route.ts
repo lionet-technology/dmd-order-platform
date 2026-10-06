@@ -6,10 +6,10 @@ import { logInternalEvent } from "@/lib/order-audit";
 
 export const runtime="nodejs";
 
-function accessible(user:AuthUser,orderId:number){
+function accessible(user:AuthUser,orderId:number,warehouseRead=false){
   const order=db.prepare("SELECT id,client_user_id,workflow_status FROM orders WHERE id=?").get(orderId) as {id:number;client_user_id:number|null;workflow_status:string}|undefined;
   if(!order)return {error:NextResponse.json({error:"Order không tồn tại."},{status:404})};
-  if(user.role!=="ADMIN"){
+  if(user.role!=="ADMIN"&&!(warehouseRead&&user.role==="WAREHOUSE")){
     const client=order.client_user_id?getClientAccount(order.client_user_id):undefined;
     if(!client||!canAccessClient(user,client))return {error:NextResponse.json({error:"Không có quyền truy cập Order này."},{status:403})};
   }
@@ -19,7 +19,7 @@ function accessible(user:AuthUser,orderId:number){
 export async function GET(req:NextRequest,{params}:{params:Promise<{id:string}>}){
   const auth=requireUser(req);if(auth.error)return auth.error;
   const id=Number((await params).id);
-  const access=accessible(auth.user,id);if(access.error)return access.error;
+  const access=accessible(auth.user,id,true);if(access.error)return access.error;
   const structure=getOrderShipmentStructure(id);
   const readiness=auth.user.role==="ADMIN"?validatePurchaseReadiness(id):undefined;
   if(auth.user.role!=="ADMIN"){

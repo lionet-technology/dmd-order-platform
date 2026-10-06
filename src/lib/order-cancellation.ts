@@ -1,4 +1,5 @@
-import "./credit";
+import {shippingChargeCents} from "./credit";
+import "./cases";
 import { db } from "./db";
 import { canAccessClient,getClientAccount,type AuthUser } from "./auth";
 import { recomputeOrderFinancials } from "./order-operations";
@@ -23,9 +24,10 @@ export function cancellationPolicy(order:Order){
   if(moved)return {allowed:false,reason:"Đơn đã được tiếp nhận hoặc bắt đầu vận chuyển; không thể huỷ và không hoàn tiền.",refund_percent:0,refund_amount:0};
   const issued=trackings.length>0||Boolean(String(order.tracking||"").trim())||Boolean(String(order.label||"").trim())||Boolean(order.purchase_completed_at)||order.workflow_status==="PURCHASED";
   const percent=issued?90:100;
-  const charged=Number((db.prepare("SELECT COALESCE(SUM(amount),0) amount FROM ledger_entries WHERE entry_type='ORDER_CHARGE' AND direction='DEBIT' AND reference_type='ORDER' AND reference_id=?").get(String(order.id)) as {amount:number}).amount);
+  const charged=shippingChargeCents([order.id])/100;
   if(!Number.isFinite(charged)||charged<0)return {allowed:false,reason:"Công nợ của đơn không hợp lệ; cần kiểm tra trước khi huỷ.",refund_percent:0,refund_amount:0};
-  return {allowed:true,reason:"",refund_percent:percent,refund_amount:money(charged*percent/100)};
+  const claimRefund=Number((db.prepare("SELECT COALESCE(SUM(e.amount),0) amount FROM ledger_entries e WHERE e.direction='CREDIT' AND e.entry_type='REFUND' AND e.reference_type='CLAIM' AND EXISTS(SELECT 1 FROM operation_case_orders co WHERE CAST(co.case_id AS TEXT)=e.reference_id AND co.order_id=?)").get(order.id) as {amount:number}).amount);
+  return {allowed:true,reason:"",refund_percent:percent,refund_amount:Math.max(0,money(charged*percent/100-claimRefund))};
 }
 export function cancelOrder(orderId:number,user:AuthUser){
   return db.transaction(()=>{
@@ -44,7 +46,7 @@ export function cancelOrder(orderId:number,user:AuthUser){
       if(!existing)logInternalEvent({orderId,eventType:"CANCELLATION_REQUESTED",summary:"Yêu cầu huỷ đơn; chờ Admin duyệt hoàn tiền.",actorId:user.id});
       return {cancelled:false,already_cancelled:false,pending_approval:true,...policy};
     }
-    const charged=Number((db.prepare("SELECT COALESCE(SUM(amount),0) amount FROM ledger_entries WHERE entry_type='ORDER_CHARGE' AND direction='DEBIT' AND reference_type='ORDER' AND reference_id=?").get(String(orderId)) as {amount:number}).amount);
+    const charged=shippingChargeCents([orderId])/100;
     const retained=money(charged-policy.refund_amount);
     const at=new Date().toISOString();
     db.prepare("UPDATE orders SET workflow_status='CANCELLED',cancelled_at=?,cancelled_by_user_id=?,cancellation_reason=?,cancellation_refund_percent=?,cancellation_refund_amount=?,cancelled_original_due=?,total_due=?,updated_by_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")

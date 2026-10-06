@@ -7,11 +7,12 @@ const {db}=require('../src/lib/db.ts'),{createUser}=require('../src/lib/auth.ts'
 const credit=require('../src/lib/credit.ts'),cases=require('../src/lib/cases.ts'),inbound=require('../src/lib/inbound.ts'),claims=require('../src/lib/claims.ts');
 const {purchaseService}=require('../src/lib/route-pricing.ts');
 require('../src/lib/order-cancellation.ts');
-const tables=['supplier_recovery_receipts','supplier_recoveries','claim_decisions','operation_case_events','operation_case_orders','operation_cases','weight_adjustments','inbound_measurements','inbound_parcels','cancellation_requests','credit_allocations','credit_items','credit_debts','credit_statements','rejected_payments','purchase_reserves','financial_audit','manifest_carton_items','manifest_carton_events','manifest_cartons','warehouse_order_holds','order_events','supplier_costs','carton_items','order_trackings','order_cartons','order_items','order_lots','ledger_entries','orders','service_costs','import_batches'];
+const tables=['supplier_recovery_receipts','supplier_recoveries','claim_decisions','operation_case_events','operation_case_orders','operation_cases','weight_adjustments','inbound_measurements','inbound_parcels','cancellation_requests','credit_statement_notes','credit_manual_allocations','credit_allocations','credit_items','credit_debts','credit_statements','rejected_payments','purchase_reserves','financial_audit','manifest_carton_items','manifest_carton_events','manifest_cartons','warehouse_order_holds','order_events','supplier_costs','carton_items','order_trackings','order_cartons','order_items','order_lots','ledger_entries','orders','service_costs','import_batches'];
 const backup=path.join(path.dirname(process.env.DMD_DB_PATH), 'demo-backup-'+Date.now()+'.db');
 db.exec("VACUUM INTO '"+backup.replace(/'/g,"''")+"'");
 try{
 const result=db.transaction(()=>{
+ for(const t of db.prepare("SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'immutable_%'").all())db.exec('DROP TRIGGER '+t.name);
  for(const t of tables){db.prepare('DELETE FROM "'+t+'"').run();db.prepare('DELETE FROM sqlite_sequence WHERE name=?').run(t);}
  db.prepare("UPDATE users SET purchase_locked=0,purchase_lock_reason=NULL WHERE username IN ('epacket.client.a','epacket.client.b','epacket.client.c') AND role='CLIENT'").run();
  const summary=seed(false,true);
@@ -23,7 +24,7 @@ const result=db.transaction(()=>{
  const today=credit.localDay(),day=n=>credit.shiftDay(today,n),orders=c=>db.prepare('SELECT * FROM orders WHERE client_user_id=? ORDER BY id').all(c.id);
  for(const [i,c] of clients.entries())credit.financialAction(admin,c.id,{action:'configure',credit_limit:[0,1500,500][i],credit_term_days:14,purchase_locked:false});
  // Deposits are retained only for prepaid. Credit clients exhibit actual receivables.
- for(const c of clients.slice(1)){db.prepare('DELETE FROM credit_allocations WHERE ledger_id IN (SELECT id FROM ledger_entries WHERE client_user_id=?)').run(c.id);db.prepare("DELETE FROM ledger_entries WHERE client_user_id=? AND entry_type='DEPOSIT'").run(c.id);}
+ for(const c of clients.slice(1)){db.prepare('DELETE FROM credit_allocations WHERE ledger_id IN (SELECT id FROM ledger_entries WHERE client_user_id=?)').run(c.id);db.prepare("DELETE FROM ledger_entries WHERE client_user_id=? AND entry_type='PAYMENT'").run(c.id);}
  for(const [i,c] of clients.entries()){
  const os=orders(c);let n=0;
  for(const o of os.filter(o=>o.workflow_status==='PURCHASED')){
@@ -37,7 +38,7 @@ const result=db.transaction(()=>{
  credit.allocateFIFO(c.id);
  const statements=credit.receivables(c.id).statements;
  // Explicit Admin override, audited through production action.
- credit.financialAction(admin,c.id,{action:'allocate',ledger_id:pay,allocations:[{statement_id:statements[0].id,amount:first.amount_cents/100},{statement_id:statements[1].id,amount:1}]});
+ credit.financialAction(admin,c.id,{action:'allocate',ledger_id:pay,reason:'Demo explicit payment allocation',allocations:[{statement_id:statements[0].id,amount:first.amount_cents/100},{statement_id:statements[1].id,amount:1}]});
  }
  if(i===2){const first=credit.receivables(c.id).statements[0];credit.financialAction(admin,c.id,{action:'debt',statement_id:first.id,amount:Math.min(5,first.outstanding_cents/100),deadline:day(-2),reason:'Demo overdue debt installment'});credit.financialAction(admin,c.id,{action:'configure',credit_limit:500,credit_term_days:14,purchase_locked:true,reason:'Demo manual lock: review overdue account'});}
  }
@@ -53,12 +54,16 @@ const result=db.transaction(()=>{
  const purchased=os.filter(o=>o.workflow_status==='PURCHASED');
  const hold=cases.caseAction(sales,{action:'create',kind:'HOLD',visibility:'INTERNAL',order_ids:[purchased[0].id],summary:'Demo warehouse hold: damaged packaging',assigned_to:warehouse.id,due_date:day(-1),next_action:'Repack and seek Admin release'});
  const claim=cases.caseAction(prepaid,{action:'create',kind:'CLAIM',visibility:'PUBLIC',order_ids:[purchased[1].id],summary:'Demo client claim: delivery delay',assigned_to:sales.id});
- db.prepare('UPDATE operation_cases SET due_date=? WHERE id=?').run(new Date(Date.now()+2*3600000).toISOString(),claim.id);
- const resolved=cases.caseAction(prepaid,{action:'create',kind:'CLAIM',visibility:'PUBLIC',order_ids:[purchased[2].id],summary:'Demo damaged product / resolved claim'});
+ db.prepare('UPDATE operation_cases SET created_at=? WHERE id=?').run(new Date(Date.now()-46*3600000).toISOString(),claim.id);
+ const resolved=cases.caseAction(prepaid,{action:'create',kind:'CLAIM',visibility:'PUBLIC',order_ids:[purchased[2].id,purchased[3].id],summary:'Demo damaged products / resolved multi-order claim'});
  claims.claimAction(admin,{action:'finalize',case_id:resolved.id,refund_amount:1,compensation_amount:2,reason:'Demo approved damage claim'});
  const recovery=claims.claimAction(admin,{action:'create_recovery',case_id:resolved.id,supplier:'DMD',expected_amount:2,note:'Demo supplier recovery: remaining loss visible'});
  claims.claimAction(admin,{action:'receive_recovery',case_id:resolved.id,recovery_id:recovery.id,amount:1,reference:'DEMO-SUPPLIER-RECEIPT'});
- cases.caseAction(clients[2],{action:'create',kind:'CLAIM',visibility:'PUBLIC',order_ids:[orders(clients[2])[0].id],summary:'Demo overdue first response claim',due_date:day(-1)});
+ const overdueClaim=cases.caseAction(clients[2],{action:'create',kind:'CLAIM',visibility:'PUBLIC',order_ids:[orders(clients[2])[0].id],summary:'Demo overdue first response claim',hold_requested:true});db.prepare('UPDATE operation_cases SET created_at=? WHERE id=?').run(new Date(Date.now()-49*3600000).toISOString(),overdueClaim.id);
+ const followup=cases.caseAction(prepaid,{action:'create',kind:'CLAIM',visibility:'PUBLIC',order_ids:[purchased[5].id],summary:'Demo responded claim: supplier follow-up due'});
+ cases.caseAction(sales,{action:'comment',case_id:followup.id,message:'We are checking with the carrier.',visibility:'PUBLIC'});
+ cases.caseAction(sales,{action:'update',case_id:followup.id,next_action:'Follow up with carrier and update Client',next_action_due_at:day(-1),assigned_to:sales.id});
+ credit.financialAction(sales,clients[1].id,{action:'additional_fee',occurred_at:day(-70),quantity:1,unit_price:3,note:'Demo late packing fee: current-period adjustment to issued statement'});
  const unknown=inbound.inboundAction(warehouse,{action:'scan',scan_key:'DEMO-UNKNOWN-BOX',note:'No readable client reference'});
  db.prepare('UPDATE inbound_parcels SET received_at=? WHERE id=?').run(new Date(Date.now()-25*3600000).toISOString(),unknown.id);
  for(const [i,o] of purchased.slice(3,5).entries()){
@@ -71,8 +76,9 @@ const result=db.transaction(()=>{
  }
  inbound.inboundAction(warehouse,{action:'scan',scan_key:purchased[5].order_id});
  db.prepare("UPDATE order_trackings SET shipment_status=CASE WHEN order_id%3=0 THEN 'DELIVERED' WHEN order_id%3=1 THEN 'IN_TRANSIT' ELSE 'ALERT' END,etd_at=?,delivered_at=CASE WHEN order_id%3=0 THEN ? ELSE NULL END").run(day(-7),day(-1));
- db.prepare("UPDATE ledger_entries SET occurred_at=? WHERE entry_type='DEPOSIT'").run(today);
+ db.prepare("UPDATE ledger_entries SET occurred_at=? WHERE entry_type='PAYMENT'").run(today);
  for(const c of clients)credit.accountFinancials(c.id);
+ credit.statementSchema();
  if(db.prepare('PRAGMA foreign_key_check').all().length)throw Error('Demo foreign key check failed');
  return {...summary,backup,hold:hold.id,claim:claim.id,resolved_claim:resolved.id,warehouse:warehouse.username};
 }).immediate();

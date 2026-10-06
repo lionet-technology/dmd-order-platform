@@ -1,4 +1,4 @@
-import { completeReserve } from "./credit";
+import { completeReserve, localDay, audit, syncStatements } from "./credit";
 import { assertConfiguredPurchase,orderQuote,purchaseService } from "./route-pricing";
 import { db } from "./db";
 import { trackingReplacementReason } from "./order-rules";
@@ -155,6 +155,7 @@ export function recomputeOrderFinancials(orderId:number){
   if(!order)return null;
   // Reconciliation for versioned purchases is deferred; keep their snapshot/charge intact.
   if(order.pricing_snapshot_json || (order.pricing_eligibility_json && !order.service_purchased_at))return order;
+  if(order.client_user_id)syncStatements(Number(order.client_user_id));
   const totals=db.prepare(`SELECT COUNT(*) rows_count,COALESCE(SUM(total_net_cost),0) true_net_cost,COALESCE(SUM(extra_surcharge),0) extra_surcharge,COALESCE(SUM(import_tax),0) import_tax
     FROM supplier_costs WHERE matched_order_id=?`).get(orderId) as {rows_count:number;true_net_cost:number;extra_surcharge:number;import_tax:number};
   const salesPrice=Number(order.sales_price||0); const baseSurcharge=Number(order.surcharge||0); const baseTax=Number(order.import_tax||0);
@@ -166,7 +167,13 @@ export function recomputeOrderFinancials(orderId:number){
   db.prepare(`UPDATE orders SET true_net_cost=?,extra_surcharge=?,extra_import_tax=?,total_due=?,gross_profit_net=?,gross_margin_pct=?,margin_status=?,reconciliation_delta=?,reconciliation_status=?,charge_status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`)
     .run(totals.rows_count?trueNet:null,money(totals.extra_surcharge),money(totals.import_tax),totalDue,gross,margin,salesPrice>0&&margin<15?"LOW_MARGIN":"OK",totals.rows_count?delta:null,totals.rows_count?(trueNet<=est?"PASS":"REVIEW"):"PENDING",totals.rows_count?"IMPORTED":"PENDING",orderId);
   const ref=String(orderId);
-  if(!cancelled&&totalDue>0)db.prepare(`INSERT INTO ledger_entries(occurred_at,entry_type,direction,amount,customer,client_user_id,reference_type,reference_id,note)
+  const existing=db.prepare("SELECT e.*,s.lifecycle,i.statement_id FROM ledger_entries e LEFT JOIN credit_items i ON i.ledger_id=e.id LEFT JOIN credit_statements s ON s.id=i.statement_id WHERE e.entry_type='ORDER_CHARGE' AND e.reference_type='ORDER' AND e.reference_id=?").get(ref) as Record<string,unknown>|undefined;
+  if(!cancelled&&existing?.lifecycle==='ISSUED'){
+    const posted=Number((db.prepare("SELECT COALESCE(SUM(amount),0) n FROM ledger_entries WHERE entry_type='PRIOR_PERIOD_ADJUSTMENT' AND direction='DEBIT' AND reference_type='ORDER_RECONCILIATION' AND reference_id=?").get(ref) as {n:number}).n);
+    const delta=money(totalDue-Number(existing.amount)-posted);
+    if(delta>0){const result=db.prepare("INSERT INTO ledger_entries(client_user_id,occurred_at,entry_type,direction,amount,customer,reference_type,reference_id,note) VALUES (?,?,'PRIOR_PERIOD_ADJUSTMENT','DEBIT',?,?,'ORDER_RECONCILIATION',?,?)").run(order.client_user_id,existing.occurred_at,delta,order.customer,ref,'Late fee/tax for issued Statement #'+existing.statement_id+'; Order #'+ref);audit(Number(order.client_user_id),0,'LATE_ORDER_CHARGE',{order_id:orderId,ledger_id:result.lastInsertRowid,original_statement_id:existing.statement_id,original_occurred_at:existing.occurred_at,posted_at:localDay(),delta});}
+    else if(delta<0){logAdminEvent({orderId,eventType:'CLAIM_REQUIRED',summary:'Issued charge differs from current data; open Claim for correction/refund.',after:{statement_id:existing.statement_id,delta}});}
+  }else if(!cancelled&&totalDue>0)db.prepare(`INSERT INTO ledger_entries(occurred_at,entry_type,direction,amount,customer,client_user_id,reference_type,reference_id,note)
     VALUES (?,'ORDER_CHARGE','DEBIT',?,?,?,'ORDER',?,'Auto from Order total')
     ON CONFLICT(entry_type,reference_type,reference_id) WHERE reference_id IS NOT NULL AND entry_type='ORDER_CHARGE'
     DO UPDATE SET occurred_at=excluded.occurred_at,amount=excluded.amount,customer=excluded.customer,client_user_id=excluded.client_user_id`).run(order.created_at||null,totalDue,order.customer||null,order.client_user_id||null,ref);

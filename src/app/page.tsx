@@ -898,6 +898,7 @@ function PurchaseOrderPanel({order,enums,onClose,onDone}:{order:RowData;enums:En
 function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   const role=user.role;
   const [summary,setSummary]=useState<Summary|null>(null);
+  const [claimAttention,setClaimAttention]=useState(0);
   const [users,setUsers]=useState<User[]>([]);
   const [enums,setEnums]=useState<EnumRow[]>([]);
   const [allEnums,setAllEnums]=useState<EnumRow[]>([]);
@@ -919,6 +920,14 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   const [importKind,setImportKind]=useState<ImportKind|null>(null);
   const [orderFilters,setOrderFilters]=useState({status:"",service:"",salesUserId:"",reconcile:""});
 
+  useEffect(()=>{
+    if(!['ADMIN','SALES'].includes(role))return;
+    let live=true;
+    const refresh=async()=>{try{const res=await fetch('/api/control-tower');if(!res.ok)return;const t=await res.json();if(live)setClaimAttention(Number(t.counts?.claim_follow_up||0));}catch{}};
+    void refresh();const timer=setInterval(()=>void refresh(),30000);
+    const focus=()=>void refresh();window.addEventListener('focus',focus);
+    return()=>{live=false;clearInterval(timer);window.removeEventListener('focus',focus)};
+  },[role]);
   const salesUsers=users.filter(u=>u.role==="SALES"&&u.active!==0);
   const clients=users.filter(u=>u.role==="CLIENT");
 
@@ -1041,6 +1050,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
       <nav className="sideNav">
         {nav.filter(n=>n.roles.includes(role)).map(n=><button key={n.key} aria-label={n.label} title={n.label} className={section===n.key?"active":""} onClick={()=>navigate(n.key)}>
           <i>{n.icon}</i><span>{n.label}</span>
+          {n.key==="operations"&&claimAttention>0&&<em aria-label="Claims cần lưu tâm">{claimAttention}</em>}
           {n.key==="recon"&&Number(summary?.review||0)>0&&<em>{summary?.review}</em>}
         </button>)}
       </nav>

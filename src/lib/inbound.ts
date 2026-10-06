@@ -2,7 +2,7 @@ import {deadline,slaState} from "./sla";
 import {db} from "./db";
 import type {AuthUser} from "./auth";
 import {orderAccess,caseAction} from "./cases";
-import {cents,localDay,audit} from "./credit";
+import {cents,localDay,audit,accountFinancials} from "./credit";
 import {quote} from "./epacket-pricing";
 import {publishPublicNote} from "./order-audit";
 type Row=Record<string,unknown>;
@@ -22,14 +22,14 @@ export function inboundAction(user:AuthUser,b:Row){return db.transaction(()=>{
  if(!['ADMIN','WAREHOUSE'].includes(user.role))throw Error("Chỉ Kho/Admin nhận hàng.");
  const key=String(b.scan_key||'').trim();if(!key||key.length>200)throw Error("Mã scan không hợp lệ.");
  const found=db.prepare(`SELECT DISTINCT o.* FROM orders o LEFT JOIN order_trackings t ON t.order_id=o.id AND t.status='ACTIVE' WHERE o.order_id=? OR o.system_order_code=? OR UPPER(REPLACE(REPLACE(t.tracking,'-',''),' ',''))=?`).all(key,key,key.toUpperCase().replace(/[ -]/g,'')) as Row[];
- const o=found.length===1?found[0]:undefined;if(o?.workflow_status==='CANCELLED')throw Error("Đơn đã hủy.");
+ const o=found.length===1?found[0]:undefined;if(o&&['CANCELLED','DELIVERED','CLOSED','PENDING_PURCHASE','SALES_DRAFT'].includes(String(o.workflow_status)))throw Error("Trạng thái đơn không cho phép nhận hàng.");
  if(o){const existing=db.prepare("SELECT * FROM inbound_parcels WHERE order_id=?").get(o.id);if(existing)return existing;}
  const id=Number(db.prepare("INSERT INTO inbound_parcels(scan_key,order_id,status,received_by,note) VALUES (?,?,?,?,?)").run(key,o?.id||null,o?'RECEIVED':'UNIDENTIFIED',user.id,String(b.note||'')).lastInsertRowid);
  if(o)db.prepare("UPDATE orders SET fulfillment_started_at=COALESCE(fulfillment_started_at,CURRENT_TIMESTAMP) WHERE id=?").run(o.id);return {id,status:o?'RECEIVED':'UNIDENTIFIED',ambiguous:found.length>1};
  }
  const p=db.prepare("SELECT * FROM inbound_parcels WHERE id=?").get(Number(b.parcel_id)) as Row|undefined;if(!p)throw Error("Kiện inbound không tồn tại.");
  if(action==='match'){
- if(!['ADMIN','SALES'].includes(user.role))throw Error("Ops/Sales match thủ công.");if(p.order_id)throw Error("Kiện đã match.");const o=orderAccess(user,Number(b.order_id));if(o.workflow_status==='CANCELLED')throw Error("Đơn đã hủy.");db.prepare("UPDATE inbound_parcels SET order_id=?,status='RECEIVED',matched_by=?,matched_at=CURRENT_TIMESTAMP WHERE id=?").run(o.id,user.id,p.id);db.prepare("UPDATE orders SET fulfillment_started_at=COALESCE(fulfillment_started_at,CURRENT_TIMESTAMP) WHERE id=?").run(o.id);return {id:p.id};
+ if(!['ADMIN','SALES'].includes(user.role))throw Error("Ops/Sales match thủ công.");if(p.order_id)throw Error("Kiện đã match.");const o=orderAccess(user,Number(b.order_id));if(['CANCELLED','DELIVERED','CLOSED','PENDING_PURCHASE','SALES_DRAFT'].includes(String(o.workflow_status)))throw Error("Trạng thái đơn không cho phép match hàng.");db.prepare("UPDATE inbound_parcels SET order_id=?,status='RECEIVED',matched_by=?,matched_at=CURRENT_TIMESTAMP WHERE id=?").run(o.id,user.id,p.id);db.prepare("UPDATE orders SET fulfillment_started_at=COALESCE(fulfillment_started_at,CURRENT_TIMESTAMP) WHERE id=?").run(o.id);return {id:p.id};
  }
  if(!p.order_id)throw Error("Match Order trước khi đo.");const o=orderAccess(user,Number(p.order_id));
  if(action==='measure'){
@@ -56,6 +56,6 @@ export function inboundAction(user:AuthUser,b:Row){return db.transaction(()=>{
  if(action==='approve_adjustment'||action==='reject_adjustment'){
  if(!['ADMIN','SALES'].includes(user.role))throw Error("Sales/Admin duyệt phụ thu.");const a=db.prepare("SELECT * FROM weight_adjustments WHERE id=? AND order_id=?").get(Number(b.adjustment_id),o.id) as Row|undefined;if(!a)throw Error("Adjustment không tồn tại.");if(a.status!=='PENDING_APPROVAL')return a;
  let ledger:number|null=null;if(action==='approve_adjustment'){ledger=Number(db.prepare("INSERT INTO ledger_entries(client_user_id,occurred_at,entry_type,direction,amount,customer,reference_type,reference_id,note,created_by_user_id) VALUES (?,?,'WEIGHT_ADJUSTMENT','DEBIT',?,?,'WEIGHT_ADJUSTMENT',?,'Actual measurement surcharge',?)").run(o.client_user_id,localDay(),Number(a.amount_cents)/100,o.customer,String(a.id),user.id).lastInsertRowid);publishPublicNote({orderId:Number(o.id),eventType:'SURCHARGE_NOTICE',summary:'Đã duyệt và thu phụ phí cân đo '+(Number(a.amount_cents)/100).toFixed(2)+' USD.',actorId:user.id});}
- db.prepare("UPDATE weight_adjustments SET status=?,approved_by=?,ledger_id=? WHERE id=?").run(action==='approve_adjustment'?'CHARGED':'REJECTED',user.id,ledger,a.id);audit(Number(o.client_user_id),user.id,action,{adjustment_id:a.id});return {id:a.id};
+ db.prepare("UPDATE weight_adjustments SET status=?,approved_by=?,ledger_id=? WHERE id=?").run(action==='approve_adjustment'?'CHARGED':'REJECTED',user.id,ledger,a.id);audit(Number(o.client_user_id),user.id,action,{adjustment_id:a.id});const f=accountFinancials(Number(o.client_user_id));return {id:a.id,purchase_blocked:f.purchase_blocked,reasons:f.reasons};
  }throw Error("Action không hỗ trợ.");
  }).immediate();}

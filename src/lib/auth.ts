@@ -1,6 +1,7 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "./db";
+import {issueEndedStatements} from "./credit";
 
 export type UserRole = "ADMIN" | "SALES" | "CLIENT" | "WAREHOUSE";
 export type AuthUser = {
@@ -98,6 +99,7 @@ export function canAccessClient(user: AuthUser, client: ClientAccount) {
 }
 
 export function createSession(userId: number) {
+  issueEndedStatements();
   const token = randomBytes(32).toString("base64url");
   const expires = new Date(Date.now() + SESSION_DAYS * 86400_000);
   db.prepare("DELETE FROM sessions WHERE datetime(expires_at) <= CURRENT_TIMESTAMP").run();
@@ -126,6 +128,7 @@ export function currentUser(req: NextRequest): AuthUser | null {
   const user = db.prepare(
     "SELECT u.id,u.username,u.display_name,u.role,u.sales_user_id,u.active,u.is_root_admin FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND datetime(s.expires_at) > CURRENT_TIMESTAMP AND u.active=1"
   ).get(tokenHash(token)) as AuthUser | undefined;
+  if(user)issueEndedStatements();
   return user || null;
 }
 

@@ -69,7 +69,7 @@ export async function POST(req:NextRequest,{params}:{params:Promise<{id:string}>
       logOrderEvent({orderId:id,eventType:"TRACKINGS_UPDATED",summary:"Cập nhật Tracking/Label: "+active+" Tracking active.",actorId:auth.user.id,after:{supplier,active,complete}});
     }
     });
-    apply();
+    apply.immediate();
     return NextResponse.json({order:db.prepare("SELECT * FROM orders WHERE id=?").get(id),trackings:listOrderTrackings(id,true)});
   }catch(error){return NextResponse.json({error:error instanceof Error?error.message:"Không thể cập nhật Tracking"},{status:400})}
 }

@@ -34,7 +34,7 @@ function seed(reset=false,preserveConfig=false){
  }
  const locations=[["Los Angeles","CA","90012"],["New York","NY","10001"],["Houston","TX","77002"],["Honolulu","HI","96813"],["Anchorage","AK","99501"],["APO","AE","09012"]];
  for(const c of clients){
- db.prepare("INSERT INTO ledger_entries(entry_type,direction,amount,customer,client_user_id,note) VALUES ('DEPOSIT','CREDIT',5000,?,?,'USD ePacket test balance')").run(c.display_name,c.id);
+ db.prepare("INSERT INTO ledger_entries(entry_type,direction,amount,customer,client_user_id,note) VALUES ('PAYMENT','CREDIT',5000,?,?,'USD ePacket test balance')").run(c.display_name,c.id);
  for(const sub of ["Standard","Eco"]){
  for(let n=0;n<6;n++){
  const code="EPK-"+c.id+"-"+sub+"-"+n;if(db.prepare("SELECT id FROM orders WHERE order_id=?").get(code))continue;

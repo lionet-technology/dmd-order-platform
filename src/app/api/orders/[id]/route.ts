@@ -3,7 +3,8 @@ import { NextRequest,NextResponse } from "next/server";
 import { canAccessClient,getClientAccount,requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { listOrderTrackings,publicOrderTracking } from "@/lib/order-operations";
-import { listOrderEvents,publicNoteText,sanitizePrivateNoteForSales } from "@/lib/order-audit";
+import { publicNoteText,sanitizePrivateNoteForSales } from "@/lib/order-audit";
+import {orderTimeline} from "@/lib/order-timeline";
 import { cancellationPolicy } from "@/lib/order-cancellation";
 
 export const runtime="nodejs";
@@ -19,7 +20,7 @@ export async function GET(req:NextRequest,{params}:{params:Promise<{id:string}>}
     if(!client||!canAccessClient(auth.user,client))return NextResponse.json({error:"Không có quyền xem Order này."},{status:403});
   }
   const trackings=listOrderTrackings(id,auth.user.role==="ADMIN"||order.workflow_status==="CANCELLED");
-  const events=listOrderEvents(id,auth.user.role);
+  const events=orderTimeline(id,auth.user.role);
   const payload={...order,pricing:safePricing(order,auth.user.role),cancellation:cancellationPolicy(order as Record<string,unknown>&{id:number}),trackings:auth.user.role==="ADMIN"?trackings:trackings.filter(row=>row.status==="ACTIVE"||(order.workflow_status==="CANCELLED"&&row.status==="CANCELLED")).map(publicOrderTracking),events};
   if(auth.user.role==="ADMIN")return NextResponse.json(payload);
   const safe:Record<string,unknown>=stripPricingInternals({...payload});
