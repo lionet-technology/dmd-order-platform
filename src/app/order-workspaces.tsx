@@ -1,5 +1,6 @@
 "use client";
 
+import {instant} from "@/lib/sla";
 import { PricingPreview,type Preview } from "./pricing-preview";
 import { useCallback,useEffect,useState } from "react";
 import { TRACKING_REPLACEMENT_REASONS } from "@/lib/order-rules";
@@ -14,6 +15,7 @@ const statusLabels:Record<string,string>={
 };
 const statusOptions=Object.entries(statusLabels);
 
+function eventTime(value:unknown){return value?new Intl.DateTimeFormat("vi-VN",{timeZone:"Asia/Ho_Chi_Minh",dateStyle:"short",timeStyle:"short"}).format(new Date(instant(value))):"—"}
 function money(value:unknown){return new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:2}).format(Number(value||0))}
 function displayDate(value:unknown){const raw=String(value||"");const match=raw.match(/^(\d{4})-(\d{2})-(\d{2})/);return match?match[3]+"/"+match[2]+"/"+match[1]:raw||"—"}
 async function json(url:string,options?:RequestInit){const response=await fetch(url,options);const data=await response.json();if(!response.ok)throw new Error(data.error||"Không thể xử lý dữ liệu");return data}
@@ -167,7 +169,7 @@ export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderI
     {tab==="history"&&<div className="detailBody">
       {role==="ADMIN"&&<div className="historyFilters">{[["all","Tất cả"],["public","Khách hàng thấy"],["internal","Nội bộ"]].map(([key,label])=><button key={key} className={historyScope===key?"active":""} onClick={()=>setHistoryScope(key as "all"|"public"|"internal")}>{label}</button>)}</div>}
       <div className="historyTimeline">{visibleEvents.length?visibleEvents.map(event=><article key={String(event.id)} className={event.visibility!=="PUBLIC"?"internalEvent":"publicEvent"}>
-        <i></i><div><time>{displayDate(event.created_at)}{role==="ADMIN"?" · "+String(event.actor_display_name||event.actor_username||"Hệ thống"):""}{role==="ADMIN"&&event.actor_username?" · @"+String(event.actor_username):""}{role==="ADMIN"&&event.actor_role?" · "+String(event.actor_role):""}</time><b>{String(event.summary||event.event_type)}</b><span>{role==="ADMIN"&&<em className={event.visibility!=="PUBLIC"?"historyBadge internal":"historyBadge public"}>{event.visibility==="ADMIN"?"Admin Audit":event.visibility==="INTERNAL"?"Nội bộ":"Khách hàng thấy"}</em>}{String(event.source||"UI")}</span></div>
+        <i></i><div><time>{eventTime(event.created_at)}{role==="ADMIN"?" · "+String(event.actor_display_name||event.actor_username||"Hệ thống"):""}{role==="ADMIN"&&event.actor_username?" · @"+String(event.actor_username):""}{role==="ADMIN"&&event.actor_role?" · "+String(event.actor_role):""}</time><b>{String(event.summary||event.event_type)}</b><span>{role==="ADMIN"&&<em className={event.visibility!=="PUBLIC"?"historyBadge internal":"historyBadge public"}>{event.visibility==="ADMIN"?"Admin Audit":event.visibility==="INTERNAL"?"Nội bộ":"Khách hàng thấy"}</em>}{String(event.source||"UI")}</span></div>
       </article>):<p>Không có History log trong nhóm này.</p>}</div>
     </div>}
   </div>;
