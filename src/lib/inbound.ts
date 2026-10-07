@@ -1,5 +1,7 @@
 import {deadline,slaState} from "./sla";
 import {db} from "./db";
+import {canReceiveInbound,canMatchInbound,canMeasure} from "./order-transition-guards";
+import {moneyCommand} from "./money-command";
 import type {AuthUser} from "./auth";
 import {orderAccess,caseAction} from "./cases";
 import {cents,localDay,audit,accountFinancials} from "./credit";
@@ -16,23 +18,31 @@ export function inboundFor(user:AuthUser){
  const measurements=(db.prepare("SELECT m.*,p.order_id FROM inbound_measurements m JOIN inbound_parcels p ON p.id=m.parcel_id ORDER BY m.id DESC LIMIT 1000").all() as Row[]).filter(m=>{try{orderAccess(user,Number(m.order_id));return true}catch{return false}});
  return {measurements,parcels:parcels.filter(p=>{if(!p.order_id)return ['ADMIN','WAREHOUSE'].includes(user.role);try{orderAccess(user,Number(p.order_id));return true}catch{return false}}),adjustments:(db.prepare("SELECT * FROM weight_adjustments ORDER BY id DESC LIMIT 1000").all().map(row=>{const a=row as Row;const due=deadline('WEIGHT_ADJUSTMENT',a.created_at);return {...a,due_date:due,sla_status:slaState(due,a.status!=='PENDING_APPROVAL')};}) as Row[]).filter(a=>{try{orderAccess(user,Number(a.order_id));return true}catch{return false}})};
 }
-export function inboundAction(user:AuthUser,b:Row){return db.transaction(()=>{
+export function inboundAction(user:AuthUser,b:Row){
+ if(user.role==="CLIENT")throw Error("Client không thao tác kho.");
+ if(["scan","measure"].includes(String(b.action))&&!["ADMIN","WAREHOUSE"].includes(user.role))throw Error("Chỉ Kho/Admin nhận và cân đo hàng.");
+ if(["approve_adjustment","reject_adjustment","match","quote_adjustment"].includes(String(b.action))&&!["ADMIN","SALES"].includes(user.role))throw Error("Chỉ Sales/Admin xử lý adjustment hoặc match.");
+ if(b.parcel_id){const p=db.prepare("SELECT order_id FROM inbound_parcels WHERE id=?").get(Number(b.parcel_id)) as Row|undefined;if(p?.order_id)orderAccess(user,Number(p.order_id));}
+ return moneyCommand("inbound:"+user.id,b.request_key,b,()=>inboundActionOnce(user,b));
+}
+function inboundActionOnce(user:AuthUser,b:Row){return db.transaction(()=>{
  const action=String(b.action);if(user.role==='CLIENT')throw Error("Client không thao tác kho.");
  if(action==='scan'){
  if(!['ADMIN','WAREHOUSE'].includes(user.role))throw Error("Chỉ Kho/Admin nhận hàng.");
  const key=String(b.scan_key||'').trim();if(!key||key.length>200)throw Error("Mã scan không hợp lệ.");
  const found=db.prepare(`SELECT DISTINCT o.* FROM orders o LEFT JOIN order_trackings t ON t.order_id=o.id AND t.status='ACTIVE' WHERE o.order_id=? OR o.system_order_code=? OR UPPER(REPLACE(REPLACE(t.tracking,'-',''),' ',''))=?`).all(key,key,key.toUpperCase().replace(/[ -]/g,'')) as Row[];
- const o=found.length===1?found[0]:undefined;if(o&&['CANCELLED','DELIVERED','CLOSED','PENDING_PURCHASE','SALES_DRAFT'].includes(String(o.workflow_status)))throw Error("Trạng thái đơn không cho phép nhận hàng.");
+ const o=found.length===1?found[0]:undefined;if(o){const guard=canReceiveInbound(o);if(!guard.allowed)throw Error(guard.reason);}
  if(o){const existing=db.prepare("SELECT * FROM inbound_parcels WHERE order_id=?").get(o.id);if(existing)return existing;}
  const id=Number(db.prepare("INSERT INTO inbound_parcels(scan_key,order_id,status,received_by,note) VALUES (?,?,?,?,?)").run(key,o?.id||null,o?'RECEIVED':'UNIDENTIFIED',user.id,String(b.note||'')).lastInsertRowid);
  if(o)db.prepare("UPDATE orders SET fulfillment_started_at=COALESCE(fulfillment_started_at,CURRENT_TIMESTAMP) WHERE id=?").run(o.id);return {id,status:o?'RECEIVED':'UNIDENTIFIED',ambiguous:found.length>1};
  }
  const p=db.prepare("SELECT * FROM inbound_parcels WHERE id=?").get(Number(b.parcel_id)) as Row|undefined;if(!p)throw Error("Kiện inbound không tồn tại.");
  if(action==='match'){
- if(!['ADMIN','SALES'].includes(user.role))throw Error("Ops/Sales match thủ công.");if(p.order_id)throw Error("Kiện đã match.");const o=orderAccess(user,Number(b.order_id));if(['CANCELLED','DELIVERED','CLOSED','PENDING_PURCHASE','SALES_DRAFT'].includes(String(o.workflow_status)))throw Error("Trạng thái đơn không cho phép match hàng.");db.prepare("UPDATE inbound_parcels SET order_id=?,status='RECEIVED',matched_by=?,matched_at=CURRENT_TIMESTAMP WHERE id=?").run(o.id,user.id,p.id);db.prepare("UPDATE orders SET fulfillment_started_at=COALESCE(fulfillment_started_at,CURRENT_TIMESTAMP) WHERE id=?").run(o.id);return {id:p.id};
+ if(!['ADMIN','SALES'].includes(user.role))throw Error("Ops/Sales match thủ công.");if(p.order_id)throw Error("Kiện đã match.");const o=orderAccess(user,Number(b.order_id));const guard=canMatchInbound(o);if(!guard.allowed)throw Error(guard.reason);db.prepare("UPDATE inbound_parcels SET order_id=?,status='RECEIVED',matched_by=?,matched_at=CURRENT_TIMESTAMP WHERE id=?").run(o.id,user.id,p.id);db.prepare("UPDATE orders SET fulfillment_started_at=COALESCE(fulfillment_started_at,CURRENT_TIMESTAMP) WHERE id=?").run(o.id);return {id:p.id};
  }
  if(!p.order_id)throw Error("Match Order trước khi đo.");const o=orderAccess(user,Number(p.order_id));
  if(action==='measure'){
+ const guard=canMeasure(o);if(!guard.allowed)throw Error(guard.reason);
  if(!['ADMIN','WAREHOUSE'].includes(user.role))throw Error("Chỉ Kho/Admin cân đo.");const carton=db.prepare("SELECT * FROM order_cartons WHERE id=? AND order_id=?").get(Number(b.carton_id),o.id) as Row|undefined;if(!carton)throw Error("Carton không thuộc Order.");
  const values=['weight','length','width','height'].map(k=>Number(b[k]));if(values.some(v=>!Number.isFinite(v)||v<=0||v>10000))throw Error("Cân/kích thước phải lớn hơn 0 và không vượt 10000.");const [weight,length,width,height]=values,chargeable=Math.max(weight,length*width*height/Number(o.dimensional_divisor||5000));
  if(db.prepare("SELECT a.id FROM weight_adjustments a WHERE a.order_id=? AND a.status='PENDING_APPROVAL'").get(o.id))throw Error("Xử lý adjustment hiện tại trước khi cân lại.");

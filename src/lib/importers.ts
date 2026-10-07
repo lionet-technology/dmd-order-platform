@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readSheet, SheetNotFoundError } from "read-excel-file/node";
 import { db } from "./db";
+import {moneyCommand} from "./money-command";
 import { addLedgerEntry, addSupplierCost, norm, normalizeDateInput, num, text, upsertOrder } from "./finance";
 import { canonicalEnumValue } from "./enums";
 import { findTrackingOwner, replaceOrderTracking } from "./order-operations";
@@ -294,7 +295,7 @@ function importTrackingUpdates(rows:Row[][],actorId?:number){
   return {imported,warnings};
 }
 
-function importBalance(rows: Row[][], batchId: number) {
+function importBalance(rows: Row[][], batchId: number, actorId?:number) {
   const h = findHeader(rows, ["Ngày", "Hạng mục", "Số tiền", "Service", "Status"]);
   if (h < 0) throw new Error("Không tìm thấy header Template Balance.");
   let imported = 0;
@@ -314,7 +315,7 @@ function importBalance(rows: Row[][], batchId: number) {
         reference_type: "BALANCE_IMPORT",
         bill_url: text(row[3]),
         note: text(row[4]),
-        batch_id: batchId,
+        batch_id: batchId,created_by_user_id:actorId,
       });
       imported++;
     }
@@ -338,7 +339,7 @@ function importBalance(rows: Row[][], batchId: number) {
         reference_type: "SERVICE_COST",
         reference_id: service,
         note: text(row[12]),
-        batch_id: batchId,
+        batch_id: batchId,created_by_user_id:actorId,
       });
       imported++;
     }
@@ -354,7 +355,7 @@ function importBalance(rows: Row[][], batchId: number) {
         reference_type: text(row[15]) || "ERROR",
         reference_id: text(row[16]) || null,
         note: `${text(row[17])} ${text(row[19])}`.trim(),
-        batch_id: batchId,
+        batch_id: batchId,created_by_user_id:actorId,
       });
       imported++;
     }
@@ -368,10 +369,10 @@ export async function importWorkbook(
   kind: ImportKind,
   buffer: Buffer,
   filename: string,
-  options?: { salesActor?: SalesImportContext; actorId?:number },
+  options?: { salesActor?: SalesImportContext; actorId?:number; requestKey?:string },
 ) {
   const rows = await workbookRows(buffer);
-  return db.transaction(()=>{
+  const execute=()=>db.transaction(()=>{
   const batch = db.prepare("INSERT INTO import_batches(kind,filename) VALUES (?,?)").run(kind, filename);
   const batchId = Number(batch.lastInsertRowid);
   let result: { imported:number; warnings:string[] };
@@ -381,8 +382,10 @@ export async function importWorkbook(
     result = importSalesOrders(rows, options.salesActor);
   } else if (kind === "costs") result = importCosts(rows, batchId,options?.actorId);
   else if(kind==="tracking_updates")result=importTrackingUpdates(rows,options?.actorId);
-  else result = importBalance(rows, batchId);
+  else result = importBalance(rows, batchId,options?.actorId);
   db.prepare("UPDATE import_batches SET imported_rows=?, warnings=? WHERE id=?").run(result.imported, JSON.stringify(result.warnings), batchId);
   return { batchId, ...result };
   })();
+  if(kind==='balance'){const digest=createHash('sha256').update(buffer).digest('hex');return moneyCommand('balance-import:'+Number(options?.actorId||0),options?.requestKey||digest,{digest},()=>moneyCommand('balance-import-content:'+Number(options?.actorId||0),digest,{digest},execute));}
+  return execute();
 }

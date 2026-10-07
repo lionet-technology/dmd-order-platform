@@ -435,7 +435,7 @@ function EntrySheet({title,hint,columns,blank,storageKey,validate,save,onDone,op
   const active=rows.map((row,index)=>({row,index})).filter(x=>dirty(x.row));
   function update(row:number,key:string,value:string){setRows(prev=>prev.map((r,i)=>i===row?{...r,[key]:value}:r));setErrors(prev=>{const n={...prev};delete n[row];return n})}
   function add(count=5){setRows(prev=>[...prev,...Array.from({length:count},blank)])}
-  function clone(index:number){setRows(prev=>{const n=[...prev];n.splice(index+1,0,{...prev[index]});return n})}
+  function clone(index:number){setRows(prev=>{const n=[...prev];n.splice(index+1,0,{...prev[index],request_key:crypto.randomUUID()});return n})}
   function remove(index:number){setRows(prev=>prev.length<=1?[blank()]:prev.filter((_,i)=>i!==index))}
   function focus(row:number,col:number){requestAnimationFrame(()=>document.querySelector<HTMLElement>(`[data-entry-cell="${row}-${col}"]`)?.focus())}
   function key(e:React.KeyboardEvent<HTMLInputElement>,row:number,col:number){if(e.key==="Enter"){e.preventDefault();const next=e.shiftKey?Math.max(0,row-1):row+1;if(!e.shiftKey&&row===rows.length-1)add(1);focus(next,col)}}
@@ -450,7 +450,7 @@ function EntrySheet({title,hint,columns,blank,storageKey,validate,save,onDone,op
     const invalid:Record<number,string>={};active.forEach(({row,index})=>{const err=validate(row);if(err)invalid[index]=err});
     if(Object.keys(invalid).length){setErrors(invalid);setMsg("Có dòng dữ liệu chưa hợp lệ.");return}
     setBusy(true);setErrors({});setMsg("");
-    const results=await Promise.all(active.map(async({row,index})=>{try{await save(row);return{index,ok:true as const}}catch(error){return{index,ok:false as const,error:error instanceof Error?error.message:"Không thể lưu"}}}));
+    const results=await Promise.all(active.map(async({row,index})=>{try{if(!row.request_key)row.request_key=crypto.randomUUID();await save(row);return{index,ok:true as const}}catch(error){return{index,ok:false as const,error:error instanceof Error?error.message:"Không thể lưu"}}}));
     const failed=results.filter(x=>!x.ok);const succeeded=results.filter(x=>x.ok).map(x=>x.index);
     if(failed.length){const next:Record<number,string>={};failed.forEach(x=>{if(!x.ok)next[x.index]=x.error});setErrors(next);setRows(prev=>prev.map((r,i)=>succeeded.includes(i)?blank():r));setMsg(`Đã lưu ${succeeded.length} dòng, ${failed.length} dòng lỗi.`);setBusy(false);return}
     setBusy(false);onDone();

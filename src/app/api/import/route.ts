@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
       kind,
       Buffer.from(await file.arrayBuffer()),
       file.name,
-      auth.user.role==="SALES" ? { salesActor:{ userId:auth.user.id, displayName:auth.user.display_name },actorId:auth.user.id } : {actorId:auth.user.id},
+      auth.user.role==="SALES" ? { salesActor:{ userId:auth.user.id, displayName:auth.user.display_name },actorId:auth.user.id } : {actorId:auth.user.id,requestKey:String(form.get("request_key")||req.headers.get("Idempotency-Key")||"")||undefined},
     );
     db.prepare("UPDATE import_batches SET created_by_user_id=? WHERE id=?").run(auth.user.id,result.batchId);
     return NextResponse.json(result);

@@ -19,7 +19,10 @@
     "verify:operations": "node scripts/verify-operations.cjs",
     "e2e:operations": "node scripts/e2e-operations.cjs",
     "seed:demo": "node scripts/seed-finance-demo.cjs --reset-demo",
-    "verify:sla-demo": "node scripts/verify-sla-demo.cjs"
+    "verify:sla-demo": "node scripts/verify-sla-demo.cjs",
+    "verify:domain-finance": "node scripts/verify-domain-finance.cjs",
+    "e2e:finance": "node scripts/e2e-finance-domain.cjs",
+    "verify:balance-idempotency": "node scripts/verify-balance-idempotency.cjs"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",

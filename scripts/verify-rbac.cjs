@@ -181,7 +181,7 @@ async function main() {
   const payment = await post(ledgerRoute.POST, "http://local/api/ledger", {
     client_user_id: clientA.body.id,
     occurred_at: "30/09/2026",
-    entry_type: "PAYMENT",
+    entry_type: "PAYMENT", request_key: "fixture-payment-"+Date.now(),
     amount: 125,
     reference_type: "SMOKE",
     reference_id: "PAY-A-001",
@@ -192,7 +192,7 @@ async function main() {
   const crossLedger = await post(ledgerRoute.POST, "http://local/api/ledger", {
     client_user_id: clientA.body.id,
     occurred_at: "30/09/2026",
-    entry_type: "PAYMENT",
+    entry_type: "PAYMENT", request_key: "fixture-payment-"+Date.now(),
     amount: 20,
   }, salesBCookie);
   assert(crossLedger.status === 403, "Sales B must not write Client A Balance");
@@ -202,7 +202,7 @@ async function main() {
   assert(clientALedger.body.total === 1 && clientBLedger.body.total === 0, "Clients should only see their own Balance Ledger");
 
   const clientWriteLedger = await post(ledgerRoute.POST, "http://local/api/ledger", {
-    client_user_id: clientA.body.id, occurred_at: "30/09/2026", entry_type: "PAYMENT", amount: 1,
+    client_user_id: clientA.body.id, occurred_at: "30/09/2026", entry_type: "PAYMENT", request_key: "fixture-payment-"+Date.now(), amount: 1,
   }, clientACookie);
   assert(clientWriteLedger.status === 403, "Client must be read-only for Balance Ledger");
 

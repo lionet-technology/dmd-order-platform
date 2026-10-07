@@ -1,3 +1,4 @@
+import {canCancelOrder} from "./order-transition-guards";
 import {shippingChargeCents} from "./credit";
 import "./cases";
 import { db } from "./db";
@@ -14,6 +15,7 @@ export class CancellationError extends Error {
 }
 export function cancellationPolicy(order:Order){
   if(order.workflow_status==="CANCELLED")return {allowed:false,reason:"Đơn đã huỷ.",refund_percent:Number(order.cancellation_refund_percent||0),refund_amount:Number(order.cancellation_refund_amount||0)};
+  const guard=canCancelOrder(order);if(!guard.allowed)return {...guard,refund_percent:0,refund_amount:0};
   if(/cargo/i.test(String(order.service||"")+" "+String(order.sub_service||"")))return {allowed:false,reason:"Dịch vụ Cargo cần quy trình huỷ riêng; chưa hỗ trợ huỷ tự động.",refund_percent:0,refund_amount:0};
   const trackings=db.prepare("SELECT shipment_status,delivered_at FROM order_trackings WHERE order_id=?").all(order.id) as Array<{shipment_status:string;delivered_at:string|null}>;
   // Preserve the carrier handover boundary even if a tracking is replaced or its current status is reset.

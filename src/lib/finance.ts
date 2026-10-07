@@ -1,5 +1,7 @@
 import { refreshDraft,activePricing,routeFor } from "./route-pricing";
 import { db } from "./db";
+import {defaultDirection} from "./transaction-taxonomy";
+import {moneyCommand} from "./money-command";
 import { validateOrderEnums, validateSupplierCostEnums } from "./enums";
 import { addOrderTracking, findTrackingOwner, matchSupplierCostsForOrder, normalizeTracking } from "./order-operations";
 import { ensureOrderShipmentStructure } from "./order-shipments";
@@ -74,6 +76,8 @@ export type SupplierCostInput = {
 };
 
 export type LedgerInput = {
+  request_key?: string;
+  created_by_user_id?: number;
   client_user_id?: number | string | null;
   occurred_at?: string | null;
   entry_type: string;
@@ -496,24 +500,23 @@ export function addSupplierCost(input: SupplierCostInput) {
   };
 }
 
-export function addLedgerEntry(input: LedgerInput) {
+export function addLedgerEntry(input: LedgerInput): unknown {
+ return moneyCommand("ledger:"+Number(input.client_user_id||0)+":"+Number(input.created_by_user_id||0),input.request_key,input,()=>{
   if(text(input.reference_type).toUpperCase()==="ORDER_CANCELLATION")throw new Error("Khoản hoàn huỷ đơn chỉ được tạo qua chức năng Huỷ đơn.");
   const amount = money(num(input.amount));
   if (amount<=0) throw new Error("Số tiền phải lớn hơn 0.");
   const type = text(input.entry_type).toUpperCase();
-  let direction = input.direction;
-  if (!direction) {
-    if (["PAYMENT", "REFUND", "ERROR_REFUND", "ERROR_PROCESSING", "ADJUSTMENT_CREDIT", "COMPENSATION", "MANUAL_CREDIT", "OFFSET", "SERVICE_SETTLEMENT"].includes(type)) direction = "CREDIT";
-    else direction = "DEBIT";
-  }
+  const expectedDirection=defaultDirection(type);
+  const direction = input.direction || expectedDirection;
   const result = db.prepare(`
     INSERT INTO ledger_entries(
-      client_user_id,occurred_at,entry_type,direction,amount,customer,reference_type,reference_id,bill_url,note,batch_id
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+      client_user_id,occurred_at,entry_type,direction,amount,customer,reference_type,reference_id,bill_url,note,batch_id,created_by_user_id
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     Number(input.client_user_id || 0) || null, normalizeDateInput(input.occurred_at, "Ngày giao dịch"), type, direction, amount, text(input.customer) || null,
     text(input.reference_type) || null, text(input.reference_id) || null, text(input.bill_url) || null,
-    text(input.note) || null, input.batch_id || null
+    text(input.note) || null, input.batch_id || null, input.created_by_user_id||null
   );
   return db.prepare("SELECT * FROM ledger_entries WHERE id=?").get(result.lastInsertRowid);
+ });
 }

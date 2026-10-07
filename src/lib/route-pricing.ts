@@ -1,3 +1,4 @@
+import {canPurchase} from "./order-transition-guards";
 import {hasCaseHold} from "./cases";
 import { assertPurchasing, reservePurchase, accountFinancials } from "./credit";
 import { db } from "./db";
@@ -69,7 +70,7 @@ export function purchaseService(id:number,actor:{id:number;role:string},requireB
  if(!["CLIENT","ADMIN","SALES"].includes(actor.role))throw Error("Không có quyền mua dịch vụ.");
  if(o.workflow_status==="CANCELLED")throw Error("Đơn đã huỷ.");
  if(o.pricing_snapshot_json)return o; // Idempotent retries do not debit twice.
- if(o.workflow_status==="CANCELLED"||o.purchase_completed_at||["PURCHASED","RECONCILED"].includes(String(o.workflow_status)))throw Error("Đơn đã hoàn tất hoặc đã huỷ.");
+ const guard=canPurchase(o);if(!guard.allowed)throw Error(guard.reason);
  const q=orderQuote(o),route=routeFor(o);
  if(!q)throw Error("Route chưa có bảng giá active.");
  if(actor.role==="CLIENT"&&!route?.client_self_purchase)throw Error("Route chưa cho phép Client tự đặt mua.");

@@ -1057,3 +1057,12 @@ td{padding:12px;line-height:1.45}
 .opsToolbar,.opsTabs{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:12px 0}.opsToolbar h2{margin-right:auto}.opsTabs{overflow-x:auto;padding-bottom:8px}.opsTabs button{white-space:nowrap}.opsForm{border-top:1px solid var(--line);padding:16px 0;margin-top:12px}.opsForm h3{grid-column:1/-1;margin:0}.opsOrderPicker{max-height:240px;overflow:auto;display:grid;gap:8px;padding:12px;border:1px solid var(--line);border-radius:10px}.opsOrderPicker label{display:flex;align-items:center;gap:8px}.opsTimeline{border-left:3px solid var(--line);padding:0 14px;max-height:280px;overflow:auto}.opsWorkspace .metricCard{text-align:left;cursor:pointer}.opsWorkspace .metricCard[aria-pressed=true]{border-color:var(--brand);background:#f4f7ff}.opsWorkspace .emptyState{padding:30px;text-align:center;color:#667085}.opsWorkspace input,.opsWorkspace select{max-width:100%}@media(max-width:700px){.opsToolbar>*{max-width:100%}.opsTabs{flex-wrap:nowrap}.opsForm{grid-template-columns:1fr}.opsWorkspace .tableWrap{overflow:auto}.opsWorkspace .metricGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 .financialWorkspace{padding:20px}.financialWorkspace>.metricGrid{grid-template-columns:repeat(4,minmax(0,1fr));margin:16px 0}.opsWorkspace>.panel{padding:18px}.financialWorkspace .metricCard{text-align:left;cursor:pointer}@media(max-width:1000px){.financialWorkspace>.metricGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:700px){.financialWorkspace,.opsWorkspace>.panel{padding:12px}}
+
+.financialActivity td {white-space:normal;overflow:visible;text-overflow:clip;}
+@media (max-width:640px) {
+ .financialActivity table,.financialActivity tbody {display:block;width:100%;min-width:0;}
+ .financialActivity thead {display:none;}
+ .financialActivity tr {display:block;border:1px solid var(--border,#e5e7eb);border-radius:10px;padding:10px;margin-bottom:10px;}
+ .financialActivity td {display:grid;grid-template-columns:90px 1fr;gap:10px;max-width:none;width:auto;white-space:normal;padding:5px 0;border:0;overflow-wrap:anywhere;}
+ .financialActivity td::before {content:attr(data-label);font-weight:600;color:var(--muted,#64748b);}
+}
