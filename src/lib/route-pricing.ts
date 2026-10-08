@@ -66,10 +66,14 @@ export function refreshDraft(id:number){
 export function purchaseService(id:number,actor:{id:number;role:string},requireBalance=true){
  return db.transaction(()=>{
  const o=refreshDraft(id);
+ if(actor.role!=="CLIENT"&&(o.workflow_status==="SALES_DRAFT"||clientDraftAwaitingPurchase(o)))throw Error("Client phải xác nhận đặt đơn trước; Admin/Sales chỉ hỗ trợ Draft.");
  if((actor.role==="CLIENT"&&Number(o.client_user_id)!==actor.id)||(actor.role==="SALES"&&!db.prepare("SELECT id FROM users WHERE id=? AND sales_user_id=?").get(Number(o.client_user_id),actor.id)))throw Error("Không có quyền mua Order này.");
  if(!["CLIENT","ADMIN","SALES"].includes(actor.role))throw Error("Không có quyền mua dịch vụ.");
  if(o.workflow_status==="CANCELLED")throw Error("Đơn đã huỷ.");
  if(o.pricing_snapshot_json)return o; // Idempotent retries do not debit twice.
+ const duplicate=db.prepare("SELECT id,system_order_code,order_id,tracking FROM orders WHERE client_user_id=? AND trim(order_id)=trim(?) AND id<>? AND (service_purchased_at IS NOT NULL OR purchase_completed_at IS NOT NULL OR (workflow_status<>'SALES_DRAFT' AND (created_by_user_id IS NULL OR created_by_user_id NOT IN (SELECT id FROM users WHERE role='CLIENT')))) LIMIT 1").get(o.client_user_id,String(o.order_id||""),id) as Row|undefined;
+ if(duplicate)throw Error("Client Order ID bị trùng: Tracking "+String(duplicate.tracking||"—")+" · Client Order ID "+String(duplicate.order_id)+" · DMD ID "+String(duplicate.system_order_code||duplicate.id));
+ if(db.prepare("SELECT id FROM client_order_drafts WHERE legacy_order_id=? AND deleted_at IS NOT NULL AND submitted_order_id IS NULL").get(id))throw Error("Draft đã được xóa.");
  const guard=canPurchase(o);if(!guard.allowed)throw Error(guard.reason);
  const q=orderQuote(o),route=routeFor(o);
  if(!q)throw Error("Route chưa có bảng giá active.");

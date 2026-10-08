@@ -8,6 +8,7 @@ import { ensureOrderShipmentStructure } from "./order-shipments";
 
 export type OrderInput = {
   id?: number;
+  create_new?: boolean;
   client_user_id?: number | string | null;
   created_at?: string | null;
   sales?: string;
@@ -260,7 +261,7 @@ export function upsertOrder(input: OrderInput) {
     input.item,
     input.recipient_name,
   ]);
-  const existing = findOrder(input, initialTracking, initialOrderId, preliminaryKey);
+  const existing = input.create_new ? undefined : findOrder(input, initialTracking, initialOrderId, preliminaryKey);
   if(existing?.pricing_snapshot_json)throw new Error("Đơn đã đặt mua; giá và dữ liệu kiện đã khóa.");
   if(existing?.workflow_status==="CANCELLED")throw new Error("Đơn đã huỷ; không thể sửa hoặc tạo lại trên cùng record.");
   const clientUserId = input.client_user_id !== undefined && input.client_user_id !== null && input.client_user_id !== ""
@@ -273,6 +274,7 @@ export function upsertOrder(input: OrderInput) {
 
   const customer = stringValue(input, "customer", existing);
   const requestedService=String(input.service??existing?.service??"").trim();
+  if(existing&&requestedService.toLowerCase()!==String(existing.service||"").toLowerCase())throw new Error("Đổi service của đơn hiện có chưa được duyệt.");
   const primarySetting=clientUserId&&requestedService
     ? db.prepare("SELECT * FROM client_service_settings WHERE client_user_id=? AND lower(service)=lower(?) AND sub_service='' LIMIT 1").get(clientUserId,requestedService) as {is_enabled:number;discount_percent:number;default_sub_service:string;default_supplier:string}|undefined
     : undefined;
@@ -316,6 +318,7 @@ export function upsertOrder(input: OrderInput) {
   }
   const estNet=numericValue(input,"est_net_cost",existing);
   const supplier=enumValues.supplier;
+  if(!routeFor({service,sub_service:subService,supplier})&&db.prepare("SELECT id FROM service_route_configs WHERE lower(service)=lower(?) LIMIT 1").get(service))throw new Error("Chọn bundle Service/Subservice/Supplier đã được cấu hình.");
   const setting=clientUserId?db.prepare(`SELECT * FROM client_service_settings WHERE client_user_id=? AND lower(service)=lower(?) AND (lower(sub_service)=lower(?) OR sub_service='') ORDER BY CASE WHEN lower(sub_service)=lower(?) THEN 0 ELSE 1 END LIMIT 1`).get(clientUserId,service,subService,subService) as {is_enabled:number;discount_percent:number}|undefined:undefined;
   const serviceChanged=!existing||String(existing.service||"").toLowerCase()!==service.toLowerCase();
   if(clientUserId&&serviceChanged&&!setting)throw new Error("Client này chưa được cấp quyền sử dụng dịch vụ đã chọn.");
@@ -359,7 +362,7 @@ export function upsertOrder(input: OrderInput) {
     label: stringValue(input, "label", existing),
     tracking: tracking || null,
     order_id: orderId || null,
-    draft_key: draftKey([orderId, customer, service, subService, item, recipient]) || null,
+    draft_key: input.create_new ? null : draftKey([orderId, customer, service, subService, item, recipient]) || null,
     workflow_status: existing?String(existing.workflow_status||"PENDING_PURCHASE"):"PENDING_PURCHASE",
     est_net_cost: estNet,
     base_cost: calc.base,

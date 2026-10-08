@@ -184,7 +184,7 @@ type SheetColumn = { key:string; label:string; width?:number; type?:"text"|"numb
 
 function QuickOrderSheet({role,clients,enums,onDone,edit}:{role:Role;clients:User[];enums:EnumRow[];onDone:()=>void;edit?:RowData|null}) {
   const blankRow=():SheetRow=>({
-    client_user_id:"",customer:"",order_id:"",service:"",sub_service:"",item:"",material:"",
+    client_user_id:"",customer:"",order_id:"",route_id:"",supplier:"",service:"",sub_service:"",item:"",material:"",
     carton_count:"",weight:"",length:"",width:"",height:"",manual_volume:"",declared_value:"",recipient_name:"",address1:"",address2:"",phone:"",recipient_email:"",city:"",state:"",
     zip:"",country:"",note:"",internal_note:"",discount:"",discount_note:"",est_net_cost:"",base_cost:"",retail:"",sales_price:"",surcharge:"",import_tax:"", 
   });
@@ -206,6 +206,11 @@ function QuickOrderSheet({role,clients,enums,onDone,edit}:{role:Role;clients:Use
   const [busy,setBusy]=useState(false);
   const [msg,setMsg]=useState("");
   const [errors,setErrors]=useState<Record<number,string>>({});
+  const [clientRoutes,setClientRoutes]=useState<Record<string,string[]>>({});
+  const selectedClientKeys=rows.map(r=>r.client_user_id).join(",");
+  useEffect(()=>{const ids=[...new Set(selectedClientKeys.split(",").filter(Boolean))];for(const id of ids){void fetch(`/api/order-routes?clientId=${id}`).then(r=>r.json()).then(d=>{if(Array.isArray(d))setClientRoutes(prev=>({...prev,[id]:d.map(x=>String(x.id))}))})}},[selectedClientKeys]);
+  const [configuredRoutes,setConfiguredRoutes]=useState<RowData[]>([]);
+  useEffect(()=>{void fetch("/api/order-routes").then(r=>r.json()).then(d=>{if(Array.isArray(d))setConfiguredRoutes(d)})},[]);
   const [columnWidths,setColumnWidths]=useState<Record<string,number>>({});
   useEffect(()=>{
     try{
@@ -216,7 +221,7 @@ function QuickOrderSheet({role,clients,enums,onDone,edit}:{role:Role;clients:Use
   useEffect(()=>{
     try{window.localStorage.setItem("dmd.orderSheetWidths",JSON.stringify(columnWidths))}catch{}
   },[columnWidths]);
-  const serviceOptions=enumOptions(enums,"SERVICE");
+  const routeOptions=configuredRoutes.map(r=>({value:String(r.id),label:`${r.service} / ${r.sub_service}${role==="ADMIN"?` / ${r.supplier}`:""}`}));
   const countryOptions=enumOptions(enums,"COUNTRY");
   const clientOptions=clients
     .filter(client=>client.active!==0||String(edit?.client_user_id||"")===String(client.id))
@@ -224,8 +229,7 @@ function QuickOrderSheet({role,clients,enums,onDone,edit}:{role:Role;clients:Use
 
   const common:SheetColumn[]=[
     {key:"client_user_id",label:"Client *",width:185,type:"combo",options:clientOptions},
-    {key:"order_id",label:"Client Order ID *",width:145},{key:"service",label:"Dịch vụ *",width:140,type:"combo",options:serviceOptions},
-    {key:"sub_service",label:"Sub-Service",width:140,type:"combo"},{key:"item",label:"Tên sản phẩm *",width:145},{key:"material",label:"Chất liệu *",width:120},
+    {key:"order_id",label:"Client Order ID *",width:145},{key:"route_id",label:"Route được cấu hình *",width:220,type:"combo",options:routeOptions},{key:"item",label:"Tên sản phẩm *",width:145},{key:"material",label:"Chất liệu *",width:120},
     {key:"carton_count",label:"Số carton *",width:82,type:"number"},{key:"weight",label:"Tổng kg *",width:78,type:"number"},
     {key:"length",label:"Dài cm",width:76,type:"number"},{key:"width",label:"Rộng cm",width:76,type:"number"},
     {key:"height",label:"Cao cm",width:76,type:"number"},{key:"manual_volume",label:"Thể tích cm³",width:105,type:"number"},{key:"declared_value",label:"Giá trị SX USD",width:105,type:"number"},
@@ -246,7 +250,7 @@ function QuickOrderSheet({role,clients,enums,onDone,edit}:{role:Role;clients:Use
   const activeRows=rows.map((row,index)=>({row,index})).filter(x=>dirty(x.row));
 
   function updateCell(rowIndex:number,key:string,value:string){
-    setRows(prev=>prev.map((r,i)=>i===rowIndex?{...r,[key]:value}:r));
+    setRows(prev=>prev.map((r,i)=>{if(i!==rowIndex)return r;const route=key==="route_id"?configuredRoutes.find(x=>String(x.id)===value):undefined;return {...r,[key]:value,...(route?{service:String(route.service),sub_service:String(route.sub_service),supplier:String(route.supplier||"")}:{})}}));
     setErrors(prev=>{const next={...prev};delete next[rowIndex];return next});
   }
   function addRows(count=5){setRows(prev=>[...prev,...Array.from({length:count},blankRow)])}
@@ -374,7 +378,7 @@ function QuickOrderSheet({role,clients,enums,onDone,edit}:{role:Role;clients:Use
         <tbody>{rows.map((row,r)=><tr key={r} className={errors[r]?"sheetErrorRow":dirty(row)?"sheetDirtyRow":""}>
           <td className="sheetRowNumber"><span>{r+1}</span>{errors[r]&&<i title={errors[r]}>!</i>}</td>
           {columns.map((col,c)=>{
-            const options=col.key==="sub_service"?enumOptions(enums,"SUB_SERVICE",row.service):(col.options||[]);
+            const options=col.key==="route_id"?routeOptions.filter(r=>clientRoutes[row.client_user_id]?.includes(r.value)):(col.options||[]);
             const enumType:EnumType|undefined=col.key==="service"?"SERVICE":col.key==="sub_service"?"SUB_SERVICE":col.key==="supplier"?"SUPPLIER":col.key==="country"?"COUNTRY":undefined;
             const invalidEnum=Boolean(enumType&&row[col.key]&&!enumIsValid(enums,enumType,row[col.key],enumType==="SUB_SERVICE"?row.service:""));
             return <td key={col.key} className="sheetCell">
@@ -383,7 +387,8 @@ function QuickOrderSheet({role,clients,enums,onDone,edit}:{role:Role;clients:Use
                   value={row[col.key]||""}
                   onChange={v=>updateCell(r,col.key,v)}
                   options={options}
-                  placeholder="Nhập hoặc chọn"
+                  allowCustom={false}
+                  placeholder="Chọn từ cấu hình"
                   invalid={invalidEnum}
                   dataCell={`${r}-${c}`}
                   onKeyDown={e=>handleKey(e,r,c)}
@@ -839,8 +844,8 @@ function PurchaseOrderPanel({order,enums,onClose,onDone}:{order:RowData;enums:En
     const res=await fetch(`/api/orders/${orderId}/trackings`);const body=await res.json();
     if(!res.ok){setMsg("Lỗi: "+body.error);setBusy(false);return;}
     setSupplier(String(body.order?.supplier||""));setInternalNote(String(body.order?.internal_note||""));setExpectedLotCount(String(body.order?.expected_lot_count||1));
-    const rows=(body.trackings||[]).map((row:Record<string,unknown>)=>({
-      id:Number(row.id),tracking:String(row.tracking||""),label_url:String(row.label_url||""),lot_number:Number(row.lot_number||1),status:String(row.status||"ACTIVE"),is_primary:Number(row.is_primary||0),cost_match_type:String(row.cost_match_type||"UNKNOWN"),cost_parent_tracking_id:row.cost_parent_tracking_id?Number(row.cost_parent_tracking_id):null,replaced_by_tracking_id:row.replaced_by_tracking_id?Number(row.replaced_by_tracking_id):null,
+    const rows=(body.progress_trackings||body.trackings||[]).map((row:Record<string,unknown>)=>({
+      id:row.id?Number(row.id):undefined,tracking:String(row.tracking||""),label_url:String(row.label_url||""),lot_number:Number(row.lot_number||1),status:String(row.status||"ACTIVE"),is_primary:Number(row.is_primary||0),cost_match_type:String(row.cost_match_type||"UNKNOWN"),cost_parent_tracking_id:row.cost_parent_tracking_id?Number(row.cost_parent_tracking_id):null,replaced_by_tracking_id:row.replaced_by_tracking_id?Number(row.replaced_by_tracking_id):null,
     }));
     setTrackings(rows.length?rows:[{tracking:"",label_url:"",lot_number:1,cost_match_type:"UNKNOWN"}]);setBusy(false);
   },[orderId]);
@@ -918,6 +923,11 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   const [bulkTracking,setBulkTracking]=useState(false);
   const [bulkReplacement,setBulkReplacement]=useState(false);
   const [importKind,setImportKind]=useState<ImportKind|null>(null);
+  const [ordersTab,setOrdersTab]=useState("all");
+  const [draftFilter,setDraftFilter]=useState("");
+  const [draftClient,setDraftClient]=useState("");
+  const [draftSelection,setDraftSelection]=useState<number[]>([]);
+  const [draftMessage,setDraftMessage]=useState("");
   const [orderFilters,setOrderFilters]=useState({status:"",service:"",salesUserId:"",reconcile:""});
 
   useEffect(()=>{
@@ -974,12 +984,13 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   };
 
   const loadSection=useCallback(async(target:AppSection,currentPage=page,q=debouncedSearch)=>{
-    const endpoint=endpointFor(target);
+    const endpoint=target==="orders"&&ordersTab==="draft"?"/api/client-drafts":endpointFor(target);
     if(!endpoint)return;
     setLoading(true);
     try{
       const params=new URLSearchParams({page:String(currentPage),pageSize:"20",q});
       if(target==="orders"){
+        if(ordersTab==="draft"){params.set("view","draft");if(draftFilter)params.set("draftState",draftFilter);if(draftClient)params.set("clientId",draftClient);}
         if(orderFilters.status)params.set("status",orderFilters.status);
         if(orderFilters.service)params.set("service",orderFilters.service);
         if(orderFilters.salesUserId)params.set("salesUserId",orderFilters.salesUserId);
@@ -990,7 +1001,11 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
       if(!res.ok)return;
       setData(await res.json());
     } finally {setLoading(false)}
-  },[page,debouncedSearch,onLogout,orderFilters]);
+  },[page,debouncedSearch,onLogout,orderFilters,ordersTab,draftFilter,draftClient]);
+
+  async function deleteSelectedDrafts(all:boolean){
+    try{const result=await postJson('/api/client-drafts',{action:'delete',all,ids:draftSelection,client_id:Number(draftClient)});setDraftMessage(`Đã xóa ${result.deleted} Draft.`);setDraftSelection([]);await loadSection('orders');}catch(e){setDraftMessage((e as Error).message)}
+  }
 
   const loadRecent=useCallback(async()=>{
     if(role!=="ADMIN"){setRecent([]);return;}
@@ -1101,20 +1116,29 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
 
         {section==="orders"&&<>
           <PageHeader eyebrow="OPERATIONS" title="Orders" description={role==="ADMIN"?"Quản lý toàn bộ đơn hàng và trạng thái xử lý.":role==="SALES"?"Quản lý Orders của các Client được phân công.":"Theo dõi Orders của tài khoản Client này."}
-            actions={role==="CLIENT"?<button className="primaryBtn" onClick={()=>{setClientDraft(null);setClientPurchase(true)}}>＋ Tạo / Import & Đặt mua dịch vụ</button>:<><button className="secondaryBtn" onClick={()=>setImportKind(role==="ADMIN"?"orders":"sales_orders")}>⇩ Import</button>{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkTracking(true)}>▦ Mua đơn hàng loạt</button>}{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkReplacement(true)}>⇄ Đổi Tracking</button>}<button className="primaryBtn" onClick={()=>openEntry("order")}>＋ Tạo Order</button></>}/>
+            actions={role==="CLIENT"?<button className="primaryBtn" onClick={()=>{setClientDraft(null);setClientPurchase(true)}}>＋ Tạo / Import & Đặt mua dịch vụ</button>:<><button className="secondaryBtn" onClick={()=>setImportKind(role==="ADMIN"?"orders":"sales_orders")}>⇩ Import</button>{role==="ADMIN"&&ordersTab==="all"&&<button className="secondaryBtn" onClick={()=>setBulkTracking(true)}>▦ Mua đơn hàng loạt</button>}{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkReplacement(true)}>⇄ Đổi Tracking</button>}<button className="primaryBtn" onClick={()=>openEntry("order")}>＋ Tạo Order</button></>}/>
+          <div className="templateKindTabs"><button className={ordersTab==="all"?"active":""} onClick={()=>{setOrdersTab("all");setPage(1);setOrderFilters(x=>({...x,status:""}))}}>Mọi đơn hàng</button><button className={ordersTab==="draft"?"active":""} onClick={()=>{setOrdersTab("draft");setPage(1);setOrderFilters(x=>({...x,status:""}))}}>Draft</button></div>
+          {ordersTab==="draft"&&<div className="dataToolbar">
+            <select value={draftFilter} onChange={e=>{setDraftFilter(e.target.value);setPage(1)}}><option value="">Tất cả Draft</option><option value="incomplete">Chưa hoàn tất</option><option value="failed">Đặt thất bại</option><option value="eligible">Đủ điều kiện</option><option value="support">Cần hỗ trợ</option></select>
+            {role!=="CLIENT"&&<select value={draftClient} onChange={e=>{setDraftClient(e.target.value);setDraftSelection([]);setPage(1)}}><option value="">Mọi Client</option>{clients.map(c=><option key={c.id} value={c.id}>{c.display_name}</option>)}</select>}
+            <button disabled={role!=="CLIENT"&&!draftClient||!draftSelection.length} onClick={()=>void deleteSelectedDrafts(false)}>Xóa Draft đã chọn ({draftSelection.length})</button>
+            <button disabled={role!=="CLIENT"&&!draftClient} onClick={()=>{if(window.confirm("Xóa tất cả Draft của Client đang chọn?"))void deleteSelectedDrafts(true)}}>Xóa tất cả Draft</button>
+
+            {draftMessage&&<p role="status">{draftMessage}</p>}
+          </div>}
           <div className="panel dataPanel">
             <div className="dataToolbar orderToolbar">
               <OrderSearchBar value={search} onChange={setSearch}/>
-              <div className="orderFilters">
-                <SmartSelect compact allowCustom={false} value={orderFilters.status} onChange={v=>setOrderFilters(x=>({...x,status:v}))} options={[{value:"",label:"Mọi trạng thái"},{value:"PENDING_PURCHASE",label:"Chờ mua đơn"},{value:"PURCHASING",label:"Đang mua đơn"},{value:"PURCHASED",label:"Đã mua đơn"},{value:"RECONCILED",label:"Đã đối soát"},{value:"CANCELLED",label:"Đã huỷ"}]}/>
+              {ordersTab==="all"&&<div className="orderFilters">
+                <SmartSelect compact allowCustom={false} value={orderFilters.status} onChange={v=>setOrderFilters(x=>({...x,status:v}))} options={[{value:"",label:"Mọi trạng thái"},{value:"PENDING_PURCHASE",label:"Chờ mua đơn"},{value:"PURCHASED",label:"Đã mua đơn"},{value:"RECONCILED",label:"Đã đối soát"},{value:"CANCELLED",label:"Đã huỷ"},{value:"HOLD",label:"Tạm giữ"},{value:"DELIVERED",label:"Đã giao"},{value:"CLOSED",label:"Đã kết thúc"}]}/>
                 <SmartSelect compact value={orderFilters.service} onChange={v=>setOrderFilters(x=>({...x,service:v}))} allowCustom={false} options={[{value:"",label:"Mọi dịch vụ"},...enumOptions(enums,"SERVICE")]}/>
                 {role==="ADMIN"&&<SmartSelect compact allowCustom={false} value={orderFilters.salesUserId} onChange={v=>setOrderFilters(x=>({...x,salesUserId:v}))} options={[{value:"",label:"Mọi Sales"},...salesUsers.map(u=>({value:String(u.id),label:u.display_name}))]}/>}
                 {role==="ADMIN"&&<SmartSelect compact allowCustom={false} value={orderFilters.reconcile} onChange={v=>setOrderFilters(x=>({...x,reconcile:v}))} options={[{value:"",label:"Mọi reconcile"},{value:"PASS",label:"PASS"},{value:"REVIEW",label:"REVIEW"}]}/>}
                 {(orderFilters.status||orderFilters.service||orderFilters.salesUserId||orderFilters.reconcile)&&<button className="clearFilters" onClick={()=>setOrderFilters({status:"",service:"",salesUserId:"",reconcile:""})}>Xóa lọc</button>}
-              </div>
+              </div>}
               <span>{data.total} records</span>
             </div>
-            {loading?<div className="loadingState">Đang tải dữ liệu…</div>:<Table rows={data.items} cols={orderCols} onView={setViewOrder} onEdit={role==="CLIENT"?row=>{setClientDraft(row);setClientPurchase(true)}:undefined} onPurchase={role==="ADMIN"?row=>setPurchaseOrder(row):undefined}/>}
+            {loading?<div className="loadingState">Đang tải dữ liệu…</div>:<Table rows={data.items} cols={ordersTab==="draft"?["draft_state","created_at","order_id","customer","service","sub_service","failure_reason"]:orderCols} selectedIds={draftSelection} onSelect={ordersTab==="draft"?(id,checked)=>setDraftSelection(prev=>checked?[...prev,id]:prev.filter(x=>x!==id)):undefined} canEdit={row=>role==="CLIENT"||!!row.failure_reason} onView={ordersTab==="all"?setViewOrder:undefined} onEdit={ordersTab==="draft"?row=>{if(role==="CLIENT"||row.failure_reason){setClientDraft(row);setClientPurchase(true)}}:undefined} onPurchase={role==="ADMIN"&&ordersTab==="all"?row=>setPurchaseOrder(row):undefined}/>}
             <Pager data={data} onPage={setPage}/>
           </div>
         </>}
@@ -1173,7 +1197,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
       </div>
     </div>
 
-    {role==="CLIENT"&&clientPurchase&&<Modal size="wide" title="Client · Đặt mua dịch vụ" onClose={()=>setClientPurchase(false)}><ClientPurchasePanel initial={clientDraft} onDone={()=>void refresh()}/></Modal>}
+    {clientPurchase&&<Modal size="wide" title="Client · Đặt mua dịch vụ" onClose={()=>setClientPurchase(false)}><ClientPurchasePanel support={role!=="CLIENT"} initial={clientDraft} onDone={()=>void refresh()}/></Modal>}
     {viewOrder&&<Modal size="wide" title="Chi tiết Order" onClose={()=>setViewOrder(null)}><OrderDetailPanel orderId={Number(viewOrder.id)} role={role} onDone={refresh} onEdit={row=>{setViewOrder(null);openEntry("order",row as RowData)}} onPurchase={role==="ADMIN"?row=>{setViewOrder(null);setPurchaseOrder(row as RowData)}:undefined}/></Modal>}
 
     {role==="ADMIN"&&bulkTracking&&<Modal size="fullscreen" title="Mua đơn hàng loạt" onClose={()=>setBulkTracking(false)}><BulkTrackingSheet enums={enums} onDone={refresh}/></Modal>}
@@ -1230,9 +1254,9 @@ export default function Home(){
   return <Platform user={status.user} onLogout={clearUser}/>;
 }
 
-function Table({rows,cols,onView,onEdit,onPurchase,compact=false}:{rows:RowData[];cols:string[];onView?:(row:RowData)=>void;onEdit?:(row:RowData)=>void;onPurchase?:(row:RowData)=>void;compact?:boolean}){
+function Table({rows,cols,onView,onEdit,onPurchase,compact=false,selectedIds=[],onSelect,canEdit}:{rows:RowData[];cols:string[];onView?:(row:RowData)=>void;onEdit?:(row:RowData)=>void;onPurchase?:(row:RowData)=>void;compact?:boolean;selectedIds?:number[];onSelect?:(id:number,checked:boolean)=>void;canEdit?:(row:RowData)=>boolean}){
   const label=(c:string)=>({
-    workflow_status:"Trạng thái",created_at:"Ngày",system_order_code:"DMD ID",sales:"Sales",customer:"Khách",supplier:"Supplier",service:"Dịch vụ",item:"Sản phẩm",
+    draft_state:"Nhóm Draft",failure_reason:"Lý do đặt thất bại",workflow_status:"Trạng thái",created_at:"Ngày",system_order_code:"DMD ID",sales:"Sales",customer:"Khách",supplier:"Supplier",service:"Dịch vụ",item:"Sản phẩm",
     sub_service:"Sub-service",tracking:"Tracking / Label",order_id:"Client Order ID",chargeable_weight:"Hạng cân (kg)",est_net_cost:"Net Cost Est",true_net_cost:"Net Cost True",
     base_cost:"Base Cost",retail:"Retail Price",sales_price:"Giá bán",surcharge:"Phụ phí",import_tax:"Thuế NK",extra_surcharge:"Phụ phí PS",extra_import_tax:"Thuế NK PS",
     total_due:"Giá tổng",gross_margin_pct:"Margin %",margin_status:"Margin",reconciliation_status:"Reconcile",
@@ -1249,16 +1273,17 @@ function Table({rows,cols,onView,onEdit,onPurchase,compact=false}:{rows:RowData[
   };
 
   const hasActions=Boolean(onView||onEdit||onPurchase);
-  return <div className={compact?"tableWrap compactTable":"tableWrap"}><table><thead><tr>{hasActions&&<th>Thao tác</th>}{cols.map(c=><th key={c} className={["amount","est_net_cost","true_net_cost","base_cost","retail","sales_price","surcharge","import_tax","extra_surcharge","extra_import_tax","total_due","reconciliation_delta","total_net_cost","gross_margin_pct","chargeable_weight"].includes(c)?"numericCell":undefined}>{label(c)}</th>)}</tr></thead><tbody>
-    {rows.length===0?<tr><td colSpan={cols.length+(hasActions?1:0)} className="empty">Chưa có dữ liệu.</td></tr>
+  return <div className={compact?"tableWrap compactTable":"tableWrap"}><table><thead><tr>{onSelect&&<th>Chọn</th>}{hasActions&&<th>Thao tác</th>}{cols.map(c=><th key={c} className={["amount","est_net_cost","true_net_cost","base_cost","retail","sales_price","surcharge","import_tax","extra_surcharge","extra_import_tax","total_due","reconciliation_delta","total_net_cost","gross_margin_pct","chargeable_weight"].includes(c)?"numericCell":undefined}>{label(c)}</th>)}</tr></thead><tbody>
+    {rows.length===0?<tr><td colSpan={cols.length+(hasActions?1:0)+(onSelect?1:0)} className="empty">Chưa có dữ liệu.</td></tr>
     :rows.map((r,i)=><tr key={String(r.id||r.tracking||r.order_id||i)}>
-      {hasActions&&<td className="actionCell"><div className="rowActions">{onView&&<button className="rowAction" onClick={()=>onView(r)}>View</button>}{onEdit&&r.workflow_status!=="CANCELLED"&&<button className="rowAction" onClick={()=>onEdit(r)}>Sửa</button>}{onPurchase&&r.workflow_status!=="CANCELLED"&&<button className="rowAction primaryRowAction" onClick={()=>onPurchase(r)}>{Number(r.tracking_count||0)>0?"Tracking":"Mua đơn"}</button>}</div></td>}
+      {onSelect&&<td><input type="checkbox" aria-label={`Chọn Draft ${r.order_id||r.draft_id}`} checked={selectedIds.includes(Number(r.draft_id))} onChange={e=>onSelect(Number(r.draft_id),e.target.checked)}/></td>}
+      {hasActions&&<td className="actionCell"><div className="rowActions">{onView&&<button className="rowAction" onClick={()=>onView(r)}>View</button>}{onEdit&&(!canEdit||canEdit(r))&&r.workflow_status!=="CANCELLED"&&<button className="rowAction" onClick={()=>onEdit(r)}>Sửa</button>}{onPurchase&&r.workflow_status!=="CANCELLED"&&<button className="rowAction primaryRowAction" onClick={()=>onPurchase(r)}>{Number(r.tracking_count||0)>0?"Tracking":"Mua đơn"}</button>}</div></td>}
       {cols.map(c=>{
         if(c==="workflow_status"&&r.pricing_eligibility_json&&!r.service_purchased_at){
           let eligibility:{eligible?:boolean;reasons?:string[]}={};try{eligibility=JSON.parse(String(r.pricing_eligibility_json))}catch{}
           if(eligibility.eligible===false)return <td key={c}><span className="status badStatus" title={eligibility.reasons?.join(" ")}>Không đủ điều kiện mua dịch vụ</span></td>;
         }
-        const v=r[c];
+        const v=c==="draft_state"?({incomplete:"Chưa hoàn tất",failed:"Đặt thất bại",eligible:"Đủ điều kiện",support:"Cần hỗ trợ"} as Record<string,string>)[String(r[c])]:r[c];
         const isMoney=["amount","est_net_cost","true_net_cost","base_cost","retail","sales_price","surcharge","import_tax","extra_surcharge","extra_import_tax","total_due","reconciliation_delta","total_net_cost"].includes(c);
         const isStatus=["workflow_status","margin_status","reconciliation_status","direction","matched"].includes(c);
         const display=c==="matched"?(Number(v)?"Linked":"Waiting"):isMoney?money(v):["created_at","occurred_at"].includes(c)?(v?displayDate(v):"—"):String(v??"—");

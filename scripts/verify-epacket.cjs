@@ -31,7 +31,8 @@ async function main(){
  const manual={...input,order_id:"CLIENT-MANUAL",recipient_name:"Anna Nguyen",address1:"100 Market St",city:"Los Angeles",state:"CA",zip:"90012",phone:"2025550100",item:"T-shirt",material:"Cotton"};
  async function post(action,rows,extra={}){return api.POST(req("POST",{action,route_id:route.id,rows,...extra},client))}
  response=await post("preview",[manual]);body=await response.json();check(response.status===200&&body.rows[0].pricing.eligible,"manual preview");check(body.rows[0].input.country==="US","preview normalization");check(!JSON.stringify(body).includes('"net"')&&!JSON.stringify(body).includes('"base"'),"preview doesn't disclose internals");
- response=await post("save",[manual]);body=await response.json();check(response.status===201,"client save");const id=body.orders[0].id;
+ response=await post("save",[manual]);body=await response.json();check(response.status===201,"client save");const draftId=body.orders[0].id;
+ response=await post("purchase",[],{order_ids:[draftId]});body=await response.json();const id=body.orders[0].id;
  check(!db.prepare("SELECT id FROM ledger_entries WHERE reference_type='ORDER' AND reference_id=?").get(String(id)),"no draft charge");
  const purchased=r.purchaseService(id,{id:client.id,role:"CLIENT"}),snapshot=purchased.pricing_snapshot_json,charged=purchased.total_due;
  check(purchased.service_purchased_at&&purchased.workflow_status==="PENDING_PURCHASE","client purchase queue");
@@ -54,21 +55,21 @@ async function main(){
  const csvRows=await parseClientFile(Buffer.from(csv),"test.csv");check(csvRows.length===2&&csvRows[0].address1.includes(","),"CSV quoted fields");
  response=await post("preview",csvRows);body=await response.json();check(body.rows[0].pricing.eligible&&!body.rows[1].pricing.eligible,"import per-row eligibility");
  response=await post("save",csvRows);body=await response.json();check(response.status===201&&body.orders.length===2,"import invalid draft retained");
- response=await post("purchase",[],{order_ids:body.orders.map(o=>o.id)});check(response.status===400,"atomic import purchase rejects invalid");
+ response=await post("purchase",[],{order_ids:body.orders.map(o=>o.id)});check(response.status===200&&(await response.json()).failures.length===1,"sequential import keeps invalid draft");
  const book=new ExcelJS.Workbook(),sheet=book.addWorksheet("Orders");sheet.addRow(Object.keys(manual));sheet.addRow(Object.values(manual));const xrows=await parseClientFile(Buffer.from(await book.xlsx.writeBuffer()),"orders.xlsx");check(xrows[0].order_id==="CLIENT-MANUAL","XLSX import reader");
  throws(()=>r.activatePricing(route.id,{price_version_id:newVersion.id,base_markup:30,retail_markup:16},admin.id));
  const frozenQuote=r.orderQuote(r.refreshDraft(id));
  near(frozenQuote.sale_price,JSON.parse(snapshot).sale_price);
  check(frozenQuote.pricing_version_id===JSON.parse(snapshot).pricing_version_id,"Ops quote uses purchased version after activation");
  response=await post("save",[{...manual,order_id:"INVALID-MISSING-ADDRESS",address1:""}]);body=await response.json();
- check(response.status===422&&!JSON.stringify(body).includes('"supplier"')&&!JSON.stringify(body).includes('"client_user_id"'),"validation error uses client-safe fields");
+ check(response.status===201&&!JSON.stringify(body).includes('"supplier"')&&!JSON.stringify(body).includes('"net"'),"validation error uses client-safe fields");
  const noBalance=clients[2];db.prepare("INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount) VALUES (?,'ADJUSTMENT_DEBIT','DEBIT',100000)").run(noBalance.id);const balanceDraft=db.prepare("SELECT * FROM orders WHERE client_user_id=? AND service_purchased_at IS NULL AND order_id NOT LIKE '%INVALID%' LIMIT 1").get(noBalance.id);throws(()=>r.purchaseService(balanceDraft.id,{id:noBalance.id,role:"CLIENT"}),/Balance/);
 
  const legacyId=Number(db.prepare("INSERT INTO orders(order_id,service,sub_service,supplier,workflow_status,sales_price,total_due,weight,carton_count,country) VALUES ('LEGACY-PAID','ePacket','Standard','DMD','PURCHASED',12.34,12.34,1,1,'US')").run().lastInsertRowid);
  check(r.refreshDraft(legacyId).sales_price===12.34&&r.safePricing(r.refreshDraft(legacyId),"CLIENT")===null,"legacy purchased order not repriced");
- response=await post("save",[{...manual,order_id:"API-PURCHASE"}]);body=await response.json();const apiId=body.orders[0].id;
- response=await post("purchase",[],{order_ids:[apiId]});check(response.status===200,"Client purchase API");
- response=await post("purchase",[],{order_ids:[apiId]});check(response.status===200,"Client API retry idempotent");
+ response=await post("save",[{...manual,order_id:"API-PURCHASE"}]);body=await response.json();const apiDraftId=body.orders[0].id;
+ response=await post("purchase",[],{order_ids:[apiDraftId]});body=await response.json();const apiId=body.orders[0].id;check(response.status===200,"Client purchase API");
+ response=await post("purchase",[],{order_ids:[apiDraftId]});check(response.status===200,"Client API retry idempotent");
  check(db.prepare("SELECT COUNT(*) n FROM ledger_entries WHERE reference_type='ORDER' AND reference_id=?").get(String(apiId)).n===0,"API purchase reserves before completion");
  const jobsApi=require('../src/app/api/purchase-jobs/route.ts');
  response=await jobsApi.POST(req('POST',{action:'purchase',order_id:apiId},sales,'http://local/api/purchase-jobs'));body=await response.json();check(response.status===200&&!JSON.stringify(body).includes('"net"')&&!JSON.stringify(body).includes('"pricing_snapshot_json"'),'Sales purchase response hides Net');
@@ -86,7 +87,7 @@ async function main(){
  db.prepare("UPDATE service_route_configs SET warehouse_hold=0 WHERE id=?").run(route.id);
  check(r.pricingAdmin(route.id).activations.every(a=>a.actor_user_id===admin.id),"version audit actor");
 
- response=await post("save",[{...manual,order_id:"HOLD-DRAFT"}]);body=await response.json();const holdId=body.orders[0].id;
+ const holdId=upsertOrder({...manual,order_id:"HOLD-DRAFT",client_user_id:client.id}).id;
  db.prepare("UPDATE orders SET workflow_status='HOLD' WHERE id=?").run(holdId);
  response=await post("preview",[{...manual,id:holdId,order_id:"HOLD-DRAFT"}]);body=await response.json();check(!body.rows[0].pricing.eligible&&body.rows[0].pricing.reasons.some(r=>r.includes("Hold")),"held draft preview");
  response=await post("save",[{...manual,id:holdId,order_id:"HOLD-DRAFT"}]);check(response.status===201&&db.prepare("SELECT workflow_status FROM orders WHERE id=?").get(holdId).workflow_status==="HOLD","Client save preserves Hold");

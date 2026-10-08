@@ -22,7 +22,8 @@
     "verify:sla-demo": "node scripts/verify-sla-demo.cjs",
     "verify:domain-finance": "node scripts/verify-domain-finance.cjs",
     "e2e:finance": "node scripts/e2e-finance-domain.cjs",
-    "verify:balance-idempotency": "node scripts/verify-balance-idempotency.cjs"
+    "verify:balance-idempotency": "node scripts/verify-balance-idempotency.cjs",
+    "verify:drafts": "node scripts/verify-client-drafts.cjs"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",

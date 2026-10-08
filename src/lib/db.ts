@@ -776,3 +776,22 @@ db.exec(`CREATE TABLE IF NOT EXISTS route_pricing_audit(
  id INTEGER PRIMARY KEY,route_id INTEGER NOT NULL REFERENCES service_route_configs(id),
  action TEXT NOT NULL,actor_user_id INTEGER,before_json TEXT,after_json TEXT,
  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);`);
+
+// Raw drafts preserve incomplete input without creating financial/order records.
+db.exec(`CREATE TABLE IF NOT EXISTS client_order_drafts (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, client_id INTEGER NOT NULL REFERENCES users(id),
+ route_id INTEGER NOT NULL REFERENCES service_route_configs(id), input_json TEXT NOT NULL,
+ legacy_order_id INTEGER UNIQUE REFERENCES orders(id),
+ failure_reason TEXT, submitted_order_id INTEGER REFERENCES orders(id), deleted_at TEXT,
+ created_by INTEGER NOT NULL REFERENCES users(id), updated_by INTEGER NOT NULL REFERENCES users(id),
+ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS client_draft_audit (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, draft_id INTEGER NOT NULL REFERENCES client_order_drafts(id),
+ actor_id INTEGER NOT NULL REFERENCES users(id), action TEXT NOT NULL, detail_json TEXT NOT NULL,
+ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);`);
+db.exec(`CREATE TABLE IF NOT EXISTS manual_purchase_drafts (
+ order_id INTEGER PRIMARY KEY REFERENCES orders(id), payload_json TEXT NOT NULL,
+ updated_by INTEGER NOT NULL REFERENCES users(id), updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);`);

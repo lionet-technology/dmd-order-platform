@@ -1,8 +1,9 @@
-import { orderQuote,purchaseService } from "@/lib/route-pricing";
+import { completeReserve } from "@/lib/credit";
+import { orderQuote,purchaseService,clientDraftAwaitingPurchase,routeFor } from "@/lib/route-pricing";
 import { NextRequest, NextResponse } from "next/server";
 import { canAccessClient, getClientAccount, requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { addOrderTracking, assertOrderOpen, listOrderTrackings, replaceOrderTracking, updateOrderTracking } from "@/lib/order-operations";
+import { addOrderTracking, assertOrderOpen, listOrderTrackings, replaceOrderTracking, updateOrderTracking,normalizeTracking } from "@/lib/order-operations";
 import { canonicalEnumValue } from "@/lib/enums";
 import { logOrderEvent } from "@/lib/order-audit";
 import { ensureOrderShipmentStructure } from "@/lib/order-shipments";
@@ -24,7 +25,10 @@ export async function GET(req:NextRequest,{params}:{params:Promise<{id:string}>}
   const id=Number((await params).id);const access=accessible(auth.user,id);if(access.error)return access.error;
   const rows=listOrderTrackings(id,auth.user.role==="ADMIN");
   const publicOrder=auth.user.role==="ADMIN"?access.order:{id:access.order?.id,workflow_status:access.order?.workflow_status,purchase_completed_at:access.order?.purchase_completed_at};
-  return NextResponse.json({order:publicOrder,trackings:auth.user.role==="ADMIN"?rows:rows.filter(x=>x.status==="ACTIVE").map(({normalized_tracking,cost_match_type,cost_parent_tracking_id,replaced_by_tracking_id,...row})=>row)});
+  const progress=auth.user.role==="ADMIN"?db.prepare("SELECT payload_json FROM manual_purchase_drafts WHERE order_id=?").get(id) as {payload_json:string}|undefined:undefined;
+  const draft=progress?JSON.parse(progress.payload_json):null;
+  const progressRows=draft?.trackings?.map((row:Record<string,unknown>)=>({...row,...rows.find(r=>r.status==='ACTIVE'&&normalizeTracking(r.tracking)===normalizeTracking(row.tracking))}));
+  return NextResponse.json({order:publicOrder,progress_trackings:progressRows,trackings:auth.user.role==="ADMIN"?rows:rows.filter(x=>x.status==="ACTIVE").map(({normalized_tracking,cost_match_type,cost_parent_tracking_id,replaced_by_tracking_id,...row})=>row)});
 }
 
 export async function POST(req:NextRequest,{params}:{params:Promise<{id:string}>}){
@@ -35,10 +39,11 @@ export async function POST(req:NextRequest,{params}:{params:Promise<{id:string}>
     const apply=db.transaction(()=>{
     assertOrderOpen(id);
     const current=db.prepare("SELECT * FROM orders WHERE id=?").get(id) as Record<string,unknown>;
+    if(current.workflow_status==="SALES_DRAFT"||clientDraftAwaitingPurchase(current))throw new Error("Client phải xác nhận đặt đơn trước khi Admin mua vận đơn.");
     const candidate={...current,supplier:body.supplier||current.supplier};
     const quote=orderQuote(candidate);
     if(quote&&!quote.eligible)throw new Error(quote.reasons.join(" "));
-    if(current.pricing_snapshot_json&&body.supplier&&body.supplier!==current.supplier)throw new Error("Route đã khóa khi đặt mua.");
+    if((current.pricing_snapshot_json||routeFor(current))&&body.supplier&&body.supplier!==current.supplier)throw new Error("Route đã khóa khi đặt mua.");
     if(quote&&!current.pricing_snapshot_json){purchaseService(id,auth.user,false)}
     if(action==="replace"){
       const old=db.prepare("SELECT tracking,label_url FROM order_trackings WHERE id=? AND order_id=?").get(Number(body.old_tracking_id),id) as {tracking:string;label_url:string|null}|undefined;
@@ -56,16 +61,19 @@ export async function POST(req:NextRequest,{params}:{params:Promise<{id:string}>
         const raw=trackingRows[index];
         if(!String(raw.tracking||"").trim())continue;
         const cartonId=Number(raw.carton_id||cartons[index]?.id||0)||null;
-        if(raw.id)updateOrderTracking({orderId:id,id:Number(raw.id),labelUrl:raw.label_url,lotNumber:raw.lot_number,cartonId,costMatchType:raw.cost_match_type,costParentTrackingId:raw.cost_parent_tracking_id,isPrimary:Boolean(raw.is_primary)});
-        else addOrderTracking({orderId:id,tracking:raw.tracking,labelUrl:raw.label_url,lotNumber:raw.lot_number,cartonId,actorId:auth.user.id,costMatchType:raw.cost_match_type,costParentTrackingId:raw.cost_parent_tracking_id});
+        const existing=raw.id||listOrderTrackings(id,false).find(r=>normalizeTracking(r.tracking)===normalizeTracking(raw.tracking))?.id;
+        if(existing)updateOrderTracking({orderId:id,id:Number(existing),labelUrl:raw.label_url,lotNumber:raw.lot_number,cartonId,costMatchType:raw.cost_match_type,costParentTrackingId:raw.cost_parent_tracking_id,isPrimary:Boolean(raw.is_primary),deferCompletion:true});
+        else addOrderTracking({orderId:id,tracking:raw.tracking,labelUrl:raw.label_url,lotNumber:raw.lot_number,cartonId,actorId:auth.user.id,costMatchType:raw.cost_match_type,costParentTrackingId:raw.cost_parent_tracking_id,deferCompletion:true});
       }
       const active=(db.prepare("SELECT COUNT(*) c FROM order_trackings WHERE order_id=? AND status='ACTIVE'").get(id) as {c:number}).c;
       const complete=Boolean(body.complete);
-      const labelled=(db.prepare("SELECT COUNT(*) c FROM order_trackings WHERE order_id=? AND status='ACTIVE' AND TRIM(COALESCE(label_url,''))<>''").get(id) as {c:number}).c;
+      const labelled=(db.prepare("SELECT COUNT(DISTINCT carton_id) c FROM order_trackings WHERE order_id=? AND status='ACTIVE' AND TRIM(COALESCE(label_url,''))<>''").get(id) as {c:number}).c;
       const cartonCount=Math.max(1,Number(access.order?.carton_count||1));
       if(complete&&(active<cartonCount||labelled<cartonCount))throw new Error("Cần đủ Tracking và Label cho tất cả carton trước khi hoàn tất mua đơn.");
+      if(complete){completeReserve(id,auth.user.id);db.prepare("DELETE FROM manual_purchase_drafts WHERE order_id=?").run(id);}
+      else db.prepare("INSERT INTO manual_purchase_drafts(order_id,payload_json,updated_by) VALUES (?,?,?) ON CONFLICT(order_id) DO UPDATE SET payload_json=excluded.payload_json,updated_by=excluded.updated_by,updated_at=CURRENT_TIMESTAMP").run(id,JSON.stringify({trackings:trackingRows}),auth.user.id);
       db.prepare("UPDATE orders SET workflow_status=?,purchase_completed_at=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
-        .run(complete&&active?"PURCHASED":active?"PURCHASING":"PENDING_PURCHASE",complete&&active?new Date().toISOString():null,id);
+        .run(complete&&active?"PURCHASED":current.purchase_completed_at?String(current.workflow_status):"PENDING_PURCHASE",complete&&active?String(current.purchase_completed_at||new Date().toISOString()):current.purchase_completed_at||null,id);
       logOrderEvent({orderId:id,eventType:"TRACKINGS_UPDATED",summary:"Cập nhật Tracking/Label: "+active+" Tracking active.",actorId:auth.user.id,after:{supplier,active,complete}});
     }
     });

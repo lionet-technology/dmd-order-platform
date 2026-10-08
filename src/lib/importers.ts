@@ -1,3 +1,4 @@
+import ExcelJS from "exceljs";
 import { createHash } from "node:crypto";
 import { readSheet, SheetNotFoundError } from "read-excel-file/node";
 import { db } from "./db";
@@ -12,12 +13,18 @@ type ImportKind = "orders" | "sales_orders" | "costs" | "tracking_updates" | "ba
 type SalesImportContext = { userId:number; displayName:string };
 
 async function workbookRows(buffer: Buffer): Promise<Row[][]> {
-  try {
-    return (await readSheet(buffer, "Report")) as Row[][];
-  } catch (error) {
-    if (error instanceof SheetNotFoundError) return (await readSheet(buffer, 1)) as Row[][];
-    throw error;
-  }
+  // Retain the established cell/date parser and replace hyperlink captions with targets.
+  let rows:Row[][];
+  let sheetName="Report";
+  try {rows=await readSheet(buffer,sheetName) as Row[][];}
+  catch(error){if(!(error instanceof SheetNotFoundError))throw error;rows=await readSheet(buffer,1) as Row[][];sheetName="";}
+  const workbook=new ExcelJS.Workbook();await workbook.xlsx.load(buffer as unknown as ExcelJS.Buffer);
+  const sheet=sheetName?workbook.getWorksheet(sheetName):workbook.worksheets[0];
+  sheet?.eachRow((row,rowNumber)=>row.eachCell((cell,columnNumber)=>{
+    const value=cell.value;
+    if(value&&typeof value==='object'&&'hyperlink' in value&&rows[rowNumber-1])(rows as unknown[][])[rowNumber-1][columnNumber-1]=value.hyperlink;
+  }));
+  return rows;
 }
 
 function findHeader(rows: Row[][], mustContain: string[]): number {

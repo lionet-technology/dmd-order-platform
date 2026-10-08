@@ -1,0 +1,49 @@
+const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),assert=require('node:assert/strict');
+const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'dmd-drafts-test-'));process.env.DMD_DB_PATH=path.join(tmp,'test.db');process.env.NODE_ENV='test';
+const {seed}=require('./seed-epacket.cjs');seed();
+const {db}=require('../src/lib/db.ts'),{saveDrafts,submitDrafts,listDrafts,deleteDrafts}=require('../src/lib/client-drafts.ts'),{createSession}=require('../src/lib/auth.ts'),{NextRequest}=require('next/server');
+const trackApi=require('../src/app/api/orders/[id]/trackings/route.ts'),ordersApi=require('../src/app/api/orders/route.ts');
+const admin=db.prepare("SELECT * FROM users WHERE role='ADMIN'").get(),sales=db.prepare("SELECT * FROM users WHERE role='SALES'").get(),clients=db.prepare("SELECT * FROM users WHERE role='CLIENT' ORDER BY id").all(),client=clients[0];
+const route=db.prepare("SELECT * FROM service_route_configs WHERE sub_service='Standard' AND supplier='DMD'").get();
+const row={order_id:'DRAFT-TEST-1',country:'US',carton_count:1,weight:.05,length:10,width:5,height:3,recipient_name:'Ann',address1:'100 Main St',city:'Houston',state:'TX',zip:'77002',phone:'2025550100',item:'T-shirt',material:'Cotton'};
+let checks=0;function check(v,m){checks++;assert.ok(v,m)}
+function req(method,body,user,url='http://local/api/orders'){return new NextRequest(url,{method,headers:{cookie:'dmd_session='+createSession(user.id).token,...(body?{'content-type':'application/json'}:{})},body:body?JSON.stringify(body):undefined})}
+async function main(){
+ const before=db.prepare('SELECT count(*) n FROM orders').get().n;
+ const ds=saveDrafts(client,client.id,route.id,[row,{...row},{order_id:'INCOMPLETE'}]);check(ds.length===3,'incomplete and duplicates retained');check(db.prepare('SELECT count(*) n FROM orders').get().n===before,'save creates no orders');
+ let result=submitDrafts(client,ds.map(d=>d.draft_id));check(result.orders.length===0&&result.failures.length===3,'batch duplicates and incomplete fail independently');
+ const edited=saveDrafts(sales,client.id,route.id,[{...row,id:ds[1].id,order_id:'DRAFT-TEST-2'}]);check(edited.length===1,'assigned sales can support failed draft');
+ const good=saveDrafts(client,client.id,route.id,[{...row,order_id:'DRAFT-TEST-3'}])[0];
+ result=submitDrafts(client,[ds[0].draft_id,ds[2].draft_id,good.draft_id]);check(result.orders.length===2&&result.failures.length===1,'partial sequential success');
+ const id=result.orders[0].id;const retries=submitDrafts(client,[ds[0].draft_id]);check(retries.orders[0].id===id,'idempotent submit');check(db.prepare('SELECT count(*) n FROM orders').get().n===before+2,'no duplicate rows');
+ const duplicate=saveDrafts(client,client.id,route.id,[row])[0];const failed=submitDrafts(client,[duplicate.draft_id]);check(failed.failures[0].error.includes('Tracking')&&failed.failures[0].error.includes('DMD ID'),'duplicate identifiers returned');
+ const other=saveDrafts(clients[1],clients[1].id,route.id,[row])[0];check(submitDrafts(clients[1],[other.draft_id]).orders.length===1,'different Client may share ID');
+ check(submitDrafts(client,[other.draft_id]).failures.length===1,'cross-client forbidden');
+ const safe=listDrafts(client);check(!JSON.stringify(safe).includes('"net"')&&!JSON.stringify(safe).includes('"supplier"')&&!JSON.stringify(safe).includes('base_cost'),'client draft pricing safe');
+ assert.throws(()=>deleteDrafts(sales,clients[1].id+1000,null));checks++;
+ check(deleteDrafts(client,client.id,[ds[2].draft_id]).deleted===1,'selected delete');check(!listDrafts(client).some(d=>d.draft_id===ds[2].draft_id),'deleted hidden');
+ const payload={action:'save',supplier:'DMD',complete:false,trackings:[{tracking:'DRAFT-MANUAL-1',label_url:'https://drive.google.com/file/d/example/view'}]};
+ let response=await trackApi.POST(req('POST',payload,admin),{params:Promise.resolve({id:String(id)})});check(response.status===200,JSON.stringify(await response.clone().json()));
+ check(db.prepare('SELECT status FROM purchase_reserves WHERE order_id=?').get(id).status==='RESERVED','draft does not charge');check(db.prepare('SELECT workflow_status FROM orders WHERE id=?').get(id).workflow_status==='PENDING_PURCHASE','draft keeps pending');
+ response=await trackApi.POST(req('POST',payload,admin),{params:Promise.resolve({id:String(id)})});check(response.status===200,'repeat manual save idempotent');
+ response=await trackApi.POST(req('POST',{...payload,complete:true},admin),{params:Promise.resolve({id:String(id)})});check(response.status===200,JSON.stringify(await response.clone().json()));
+ check(db.prepare('SELECT status FROM purchase_reserves WHERE order_id=?').get(id).status==='CHARGED','completion charges');
+ response=await trackApi.POST(req('POST',{...payload,complete:true},admin),{params:Promise.resolve({id:String(id)})});check(response.status===200,'repeat completion safe');check(db.prepare("SELECT count(*) n FROM ledger_entries WHERE reference_type='ORDER' AND reference_id=? AND entry_type='ORDER_CHARGE'").get(String(id)).n===1,'single debit');
+ response=await ordersApi.GET(req('GET',null,client));const body=await response.json();check(body.items.every(o=>o.workflow_status!=='SALES_DRAFT'),'main tab excludes draft');
+ const {upsertOrder}=require('../src/lib/finance.ts');
+ const legacy=upsertOrder({...row,order_id:'LEGACY-DRAFT-MIGRATION',client_user_id:client.id,service:'ePacket',sub_service:'Standard',supplier:'DMD'});db.prepare("UPDATE orders SET workflow_status='SALES_DRAFT',created_by_user_id=? WHERE id=?").run(admin.id,legacy.id);
+ const migrated=listDrafts(client).find(d=>d.order_id==='LEGACY-DRAFT-MIGRATION');check(!!migrated,'legacy draft remains visible');check(listDrafts(client).filter(d=>d.order_id==='LEGACY-DRAFT-MIGRATION').length===1,'legacy copy idempotent');
+ response=await trackApi.POST(req('POST',payload,admin),{params:Promise.resolve({id:String(legacy.id)})});check(response.status===400,'Admin cannot buy legacy draft');
+ const blankId=result.orders[1].id;
+ response=await trackApi.POST(req('POST',{...payload,trackings:[{tracking:'',label_url:'https://drive.google.com/file/d/partial/view'}]},admin),{params:Promise.resolve({id:String(blankId)})});check(response.status===200,'label-only progress saves');
+ response=await trackApi.GET(req('GET',null,admin),{params:Promise.resolve({id:String(blankId)})});check((await response.json()).progress_trackings[0].label_url.includes('partial'),'label-only progress reloads');
+ response=await trackApi.POST(req('POST',{...payload,complete:true,trackings:[]},admin),{params:Promise.resolve({id:String(blankId)})});check(response.status===400,'incomplete completion rejected');check(db.prepare('SELECT status FROM purchase_reserves WHERE order_id=?').get(blankId).status==='RESERVED','failed completion preserves reserve');
+ const ExcelJS=require('exceljs'),{importWorkbook}=require('../src/lib/importers.ts');
+ const book=new ExcelJS.Workbook(),sheet=book.addWorksheet('Report');
+ sheet.addRow(['Sales','Khách','Client Order ID','Dịch vụ','Sub-Service','Supplier','Label','Khối lượng','Số lượng Carton','Dài','Rộng','Cao','Mặt hàng','Chất liệu','Người nhận','Địa chỉ 1','Thành phố','Bang','ZIP','Nước','Điện thoại']);
+ const drive='https://drive.google.com/file/d/example/view';sheet.addRow([sales.display_name,client.display_name,'IMPORT-PDF-LABEL','ePacket','Standard','DMD',{text:'Label PDF',hyperlink:drive},.05,1,10,5,3,'T-shirt','Cotton','Ann','100 Main St','Houston','TX','77002','US','2025550100']);
+ const imported=await importWorkbook('orders',Buffer.from(await book.xlsx.writeBuffer()),'review-label.xlsx',{actorId:admin.id});check(imported.imported===1,JSON.stringify(imported));check(db.prepare("SELECT label FROM orders WHERE order_id='IMPORT-PDF-LABEL'").get().label===drive,'Excel hyperlink target preserved');
+ const badBook=new ExcelJS.Workbook();badBook.addWorksheet('Report').addRow(['Label']);const badBuffer=Buffer.from(await badBook.xlsx.writeBuffer());await assert.rejects(()=>importWorkbook('orders',badBuffer,'bad.xlsx',{actorId:admin.id}));checks++;
+ console.log('CLIENT DRAFTS PASS ('+checks+' assertions)');
+}
+main().finally(()=>{db.close();fs.rmSync(tmp,{recursive:true,force:true})}).catch(e=>{console.error(e);process.exitCode=1});

@@ -172,7 +172,7 @@ export async function POST(req:NextRequest){
         const cartonCount=Math.max(1,Number(order.carton_count||1));
         const complete=progress.active_count>=cartonCount&&Number(progress.label_count||0)>=cartonCount;
         db.prepare("UPDATE orders SET workflow_status=?,purchase_completed_at=CASE WHEN ? THEN COALESCE(purchase_completed_at,CURRENT_TIMESTAMP) ELSE purchase_completed_at END,updated_at=CURRENT_TIMESTAMP WHERE id=?")
-          .run(complete?"PURCHASED":progress.active_count?"PURCHASING":"PENDING_PURCHASE",complete?1:0,orderId);
+          .run(complete?"PURCHASED":"PENDING_PURCHASE",complete?1:0,orderId);
         logOrderEvent({orderId,eventType:"TRACKINGS_UPDATED",summary:"Bulk Tracking/Label: "+progress.active_count+"/"+cartonCount+" Tracking, "+Number(progress.label_count||0)+"/"+cartonCount+" Label; Số lượng Lô "+expectedLots+".",actorId:auth.user.id,source:"BULK",after:{sub_service:subService,expected_lot_count:expectedLots,...progress}});
       }
     });

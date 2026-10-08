@@ -13,6 +13,10 @@ export async function GET(req: NextRequest) {
   const auth=requireUser(req); if(auth.error)return auth.error;
   const {page,pageSize,q,offset}=pageParams(req);
   const where:string[]=[];
+  const draftOnly=req.nextUrl.searchParams.get("view")==="draft";
+  const draftClause="(workflow_status='SALES_DRAFT' OR (service_purchased_at IS NULL AND purchase_completed_at IS NULL AND created_by_user_id IN (SELECT id FROM users WHERE role='CLIENT')))";
+  where.push(draftOnly?draftClause:"NOT "+draftClause);
+
   const params:unknown[]=[];
 
   if(auth.user.role==="SALES"){
@@ -85,6 +89,8 @@ export async function POST(req: NextRequest) {
 
   try {
     const body=await req.json();
+    if(body.route_id){const route=db.prepare("SELECT * FROM service_route_configs WHERE id=? AND active=1").get(Number(body.route_id)) as Record<string,unknown>|undefined;if(!route)throw Error("Route không hợp lệ.");body.service=route.service;body.sub_service=route.sub_service;body.supplier=route.supplier;}
+
     const before=body.id?db.prepare("SELECT * FROM orders WHERE id=?").get(Number(body.id)):undefined;
 
     if(auth.user.role==="SALES"){
@@ -110,7 +116,7 @@ export async function POST(req: NextRequest) {
         client_user_id:client.id,
         customer:client.display_name,
         sales:auth.user.display_name,
-        supplier:undefined,label:undefined,tracking:undefined,est_net_cost:undefined,base_cost:undefined,
+        supplier:body.route_id?body.supplier:undefined,label:undefined,tracking:undefined,est_net_cost:undefined,base_cost:undefined,
         retail:undefined,sales_price:undefined,surcharge:undefined,import_tax:undefined,total_due:undefined,
         auto_pricing:undefined,volume:undefined,chargeable_weight:undefined,
       };
