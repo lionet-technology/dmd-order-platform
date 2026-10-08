@@ -1,12 +1,18 @@
 // TEST/DEMO ONLY. Explicit --reset-demo is required. Never run against production.
-const path=require('node:path');
+const path=require('node:path'),fs=require('node:fs');
+// Validate before importing db.ts: importing it initializes/migrates the database.
+const requestedPath=process.env.DMD_DB_PATH;
+const demoPath=requestedPath&&(fs.existsSync(requestedPath)?fs.realpathSync(requestedPath):path.resolve(requestedPath));
+if(!demoPath||!/(?:^|[-_.])(demo|test|review|smoke)(?:[-_.]|$)/i.test(path.basename(demoPath))||/(?:production|live|prod)(?:[\/_.-]|$)/i.test(demoPath)||['production','prod','live'].includes(String(process.env.DMD_ENV||'').toLowerCase()))throw Error('Explicit demo/test/review DMD_DB_PATH required; live paths are forbidden.');
+process.env.DMD_DB_PATH=demoPath;
 if(!process.argv.includes('--reset-demo'))throw Error('TEST/DEMO ONLY: pass --reset-demo to rebuild transactional data.');
 if(process.env.NODE_ENV==='production')throw Error('Demo reset forbidden in production.');
 const {seed}=require('./seed-epacket.cjs');
 const {db}=require('../src/lib/db.ts'),{createUser}=require('../src/lib/auth.ts');
 const credit=require('../src/lib/credit.ts'),cases=require('../src/lib/cases.ts'),inbound=require('../src/lib/inbound.ts'),claims=require('../src/lib/claims.ts');
 const {purchaseService}=require('../src/lib/route-pricing.ts');
-require('../src/lib/order-cancellation.ts');
+const {cancelOrder}=require('../src/lib/order-cancellation.ts');
+const manifest=require('../src/lib/manifest-cartons.ts');
 const tables=['money_command_receipts','supplier_recovery_receipts','supplier_recoveries','claim_decisions','operation_case_events','operation_case_orders','operation_cases','weight_adjustments','inbound_measurements','inbound_parcels','cancellation_requests','credit_statement_notes','credit_manual_allocations','credit_allocations','credit_items','credit_debts','credit_statements','rejected_payments','purchase_reserves','financial_audit','manifest_carton_items','manifest_carton_events','manifest_cartons','warehouse_order_holds','order_events','supplier_costs','carton_items','order_trackings','order_cartons','order_items','order_lots','ledger_entries','orders','service_costs','import_batches'];
 const backup=path.join(path.dirname(process.env.DMD_DB_PATH), 'demo-backup-'+Date.now()+'.db');
 db.exec("VACUUM INTO '"+backup.replace(/'/g,"''")+"'");
@@ -83,9 +89,28 @@ const result=db.transaction(()=>{
  db.prepare("UPDATE order_trackings SET shipment_status=CASE WHEN order_id%3=0 THEN 'DELIVERED' WHEN order_id%3=1 THEN 'IN_TRANSIT' ELSE 'ALERT' END,etd_at=?,delivered_at=CASE WHEN order_id%3=0 THEN ? ELSE NULL END").run(day(-7),day(-1));
  db.prepare("UPDATE ledger_entries SET occurred_at=? WHERE entry_type='PAYMENT'").run(today);
  for(const c of clients)credit.accountFinancials(c.id);
+ // Use warehouse actions so route guards and history are identical to real scanning.
+ const manifestSummary=[];
+ for(const sub of ['Standard','Eco']){
+ const eligible=db.prepare("SELECT o.* FROM orders o WHERE o.workflow_status='PURCHASED' AND o.sub_service=? AND o.client_user_id=? ORDER BY o.id").all(sub,clients[1].id);
+ if(eligible.length<4)throw Error('Manifest needs four eligible single-carton orders per route');
+ const detail=manifest.addManifestIdentifier(eligible[0].order_id,undefined,warehouse.id);
+ const closedId=Number(detail.carton.id);
+ manifest.addManifestIdentifier(eligible[1].order_id,closedId,warehouse.id);
+ manifest.removeManifestIdentifier(eligible[1].order_id,closedId,warehouse.id);
+ manifest.addManifestIdentifier(eligible[1].order_id,closedId,warehouse.id);
+ const closed=manifest.closeManifestCarton(closedId,warehouse.id);
+ manifest.manifestCartonTrackings(closedId);
+ const nextId=Number(closed.next.carton.id);
+ for(const o of eligible.slice(2,4))manifest.addManifestIdentifier(o.order_id,nextId,warehouse.id);
+ if(sub==='Eco')manifest.changeManifestStatus(nextId,'pause',warehouse.id);
+ manifestSummary.push(...[closedId,nextId].map(id=>manifest.manifestCartonDetail(id).carton));
+ }
+ const cancelDraft=orders(clients[1]).find(o=>o.workflow_status==='SALES_DRAFT'&&!String(o.order_id).includes('INVALID'));
+ if(cancelDraft)cancelOrder(cancelDraft.id,admin);
  credit.statementSchema();
  if(db.prepare('PRAGMA foreign_key_check').all().length)throw Error('Demo foreign key check failed');
- return {...summary,backup,hold:hold.id,claim:claim.id,resolved_claim:resolved.id,warehouse:warehouse.username};
+ return {...summary,backup,manifest:manifestSummary,hold:hold.id,claim:claim.id,resolved_claim:resolved.id,warehouse:warehouse.username};
 }).immediate();
 console.log(JSON.stringify(result,null,2));
 }finally{db.close()}
