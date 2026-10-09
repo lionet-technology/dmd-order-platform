@@ -98,6 +98,16 @@ function ShipmentStructureEditor({orderId,role}:{orderId:number;role:Role}){
   </div>;
 }
 
+function RouteChangePanel({order,role,onDone}:{order:GenericRow;role:Role;onDone:()=>void}){
+ const [routes,setRoutes]=useState<GenericRow[]>([]),[pending,setPending]=useState<GenericRow[]>([]),[route,setRoute]=useState(""),[reason,setReason]=useState(""),[message,setMessage]=useState(""),[busy,setBusy]=useState(false),[review,setReview]=useState<GenericRow|null>(null);
+ const id=Number(order.id);
+ const load=useCallback(async()=>{try{setPending(await json(`/api/orders/${id}/route-change`));if(role!=="CLIENT")setRoutes(await json(`/api/order-routes?clientId=${order.client_user_id}`))}catch(e){setMessage((e as Error).message)}},[id,role,order.client_user_id]);
+ useEffect(()=>{void load()},[load]);
+ async function propose(){setBusy(true);try{const p=await post(`/api/orders/${id}/route-change`,{route_id:Number(route),reason});setReview(p);await load()}catch(e){setMessage((e as Error).message)}finally{setBusy(false)}}
+ async function confirm(){if(!review)return;setBusy(true);try{await post(`/api/orders/${id}/route-change`,{action:"confirm",proposal_id:review.id});setReview(null);setMessage("Đã xác nhận đổi dịch vụ.");await load();onDone()}catch(e){setMessage((e as Error).message)}finally{setBusy(false)}}
+ return <section className="detailCard"><h3>Đổi dịch vụ trước khi mua vận đơn</h3>{role!=="CLIENT"&&<div className="routeChangeControls"><label className="field"><span>Dịch vụ</span> <select value={route} onChange={e=>setRoute(e.target.value)}><option value="">Chọn dịch vụ</option>{routes.map(r=><option key={String(r.id)} value={String(r.id)}>{String(r.service)} - {String(r.sub_service)}</option>)}</select></label><label className="field"><span>Lý do</span><input value={reason} onChange={e=>setReason(e.target.value)}/></label><button disabled={busy||!route||!reason.trim()} className="secondaryBtn" onClick={()=>void propose()}>Tính lại giá</button></div>}{pending.map(p=><p key={String(p.id)}>{String(p.service_name)} · Chênh lệch {money(Number(p.delta_cents)/100)} <button className="secondaryBtn" onClick={()=>setReview(p)}>Xem và xác nhận</button></p>)}{review&&<div role="dialog" aria-modal="true" aria-label="Xác nhận đổi dịch vụ" className="routeChangeReview"><div className="cancellationConfirm routeChangeReviewBody"><h3>Xác nhận đổi sang {String(review.service_name)}</h3><p>{String(order.service)} - {String(order.sub_service)}: {money(Number(review.old_total_cents)/100)} → {String(review.service_name)}: {money(Number(review.new_total_cents)/100)}</p><p>Chênh lệch: {money(Number(review.delta_cents)/100)}. {Number(review.delta_cents)>0?"Xác nhận thu thêm cho Client và điều chỉnh khoản giữ tiền.":"Khoản giữ tiền được điều chỉnh theo giá mới."}</p><button className="secondaryBtn" disabled={busy} onClick={()=>setReview(null)}>Đóng</button><button className="primaryBtn" disabled={busy} onClick={()=>void confirm()}>Xác nhận đổi dịch vụ{Number(review.delta_cents)>0?" và thu thêm":""}</button></div></div>}{message&&<p role="status">{message}</p>}</section>;
+}
+
 export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderId:number;role:Role;onEdit:(row:GenericRow)=>void;onPurchase?:(row:GenericRow)=>void;onDone?:()=>void|Promise<void>}){
   const [data,setData]=useState<GenericRow|null>(null);
   const [tab,setTab]=useState("overview");
@@ -142,6 +152,7 @@ export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderI
       {[["overview","Tổng quan"],["cartons","Carton & SKU"],["tracking","Tracking & Label"],["finance","Giá & Đối soát"],["history","Lịch sử"]].filter(item=>role==="ADMIN"||item[0]!=="finance").map(item=><button key={item[0]} className={tab===item[0]?"active":""} onClick={()=>setTab(item[0])}>{item[1]}</button>)}
     </div>
     {tab==="overview"&&<div className="detailBody">
+      {!cancelled&&role!=="WAREHOUSE"&&!data.purchase_completed_at&&!data.tracking&&!data.label&&["SALES_DRAFT","PENDING_PURCHASE"].includes(String(data.workflow_status))&&<RouteChangePanel order={data} role={role} onDone={()=>{void json("/api/orders/"+orderId).then(setData);void onDone?.()}}/>}
       {Boolean(data.pricing)&&<PricingPreview pricing={data.pricing as Preview}/>}
       <section className="detailGrid">
         <article className="detailCard"><h3>Người nhận</h3><b>{String(data.recipient_name||"—")}</b><p>{String(data.address1||"")}{data.address2?<><br/>{String(data.address2)}</>:null}</p><p>{[data.city,data.state,data.zip].filter(Boolean).join(", ")}</p><p>{String(data.country||"")} · {String(data.phone||"")}</p>{data.recipient_email?<p>{String(data.recipient_email)}</p>:null}</article>

@@ -120,9 +120,11 @@ export function replaceOrderTracking(input:{orderId:number;oldTrackingId:number;
 
 export function matchSupplierCostsForOrder(orderId:number){
   db.prepare(`UPDATE supplier_costs SET
+    supplier=CASE WHEN trim(COALESCE(supplier,''))='' THEN (SELECT supplier FROM orders WHERE id=?) ELSE supplier END,
+    route_id=(SELECT route_id FROM orders WHERE id=?),
     matched_order_id=?,
     matched_order_tracking_id=(SELECT ot.id FROM order_trackings ot WHERE ot.order_id=? AND ot.normalized_tracking=supplier_costs.normalized_tracking LIMIT 1)
-    WHERE normalized_tracking IN (SELECT normalized_tracking FROM order_trackings WHERE order_id=?)`).run(orderId,orderId,orderId);
+    WHERE normalized_tracking IN (SELECT normalized_tracking FROM order_trackings WHERE order_id=?) AND (trim(COALESCE(supplier,''))='' OR lower(trim(supplier))=lower(trim((SELECT supplier FROM orders WHERE id=?))))`).run(orderId,orderId,orderId,orderId,orderId,orderId);
   const unaudited=db.prepare(`SELECT id,tracking,occurred_at,created_at,total_net_cost,extra_surcharge,import_tax,surcharge_type,note,supplier,service,sub_service
     FROM supplier_costs WHERE matched_order_id=? AND audit_recorded_at IS NULL ORDER BY id`).all(orderId) as Array<Record<string,unknown>>;
   for(const cost of unaudited){
@@ -154,7 +156,12 @@ export function recomputeOrderFinancials(orderId:number){
   const order=db.prepare("SELECT * FROM orders WHERE id=?").get(orderId) as Record<string,unknown>|undefined;
   if(!order)return null;
   // Reconciliation for versioned purchases is deferred; keep their snapshot/charge intact.
-  if(order.pricing_snapshot_json || (order.pricing_eligibility_json && !order.service_purchased_at))return order;
+  if(order.pricing_snapshot_json){
+    const costs=db.prepare("SELECT count(*) n,COALESCE(SUM(total_net_cost),0) total FROM supplier_costs WHERE matched_order_id=?").get(orderId) as {n:number;total:number};
+    if(costs.n)db.prepare("UPDATE orders SET true_net_cost=?,gross_profit_net=?,reconciliation_status='REVIEW',charge_status='IMPORTED',reconciliation_delta=? WHERE id=?").run(money(costs.total),money(Number(order.sales_price)-costs.total),money(costs.total-Number(order.est_net_cost)),orderId);
+    return db.prepare("SELECT * FROM orders WHERE id=?").get(orderId);
+  }
+  if(order.pricing_eligibility_json && !order.service_purchased_at)return order;
   if(order.client_user_id)syncStatements(Number(order.client_user_id));
   const totals=db.prepare(`SELECT COUNT(*) rows_count,COALESCE(SUM(total_net_cost),0) true_net_cost,COALESCE(SUM(extra_surcharge),0) extra_surcharge,COALESCE(SUM(import_tax),0) import_tax
     FROM supplier_costs WHERE matched_order_id=?`).get(orderId) as {rows_count:number;true_net_cost:number;extra_surcharge:number;import_tax:number};

@@ -1,3 +1,4 @@
+import {resolveRoute} from "./routes";
 import { refreshDraft,activePricing,routeFor } from "./route-pricing";
 import { db } from "./db";
 import {defaultDirection} from "./transaction-taxonomy";
@@ -8,6 +9,7 @@ import { ensureOrderShipmentStructure } from "./order-shipments";
 
 export type OrderInput = {
   id?: number;
+  route_id?: number | string;
   create_new?: boolean;
   client_user_id?: number | string | null;
   created_at?: string | null;
@@ -273,19 +275,13 @@ export function upsertOrder(input: OrderInput) {
   if (!orderId && !tracking) throw new Error("Cần Order ID hoặc Tracking.");
 
   const customer = stringValue(input, "customer", existing);
-  const requestedService=String(input.service??existing?.service??"").trim();
-  if(existing&&requestedService.toLowerCase()!==String(existing.service||"").toLowerCase())throw new Error("Đổi service của đơn hiện có chưa được duyệt.");
-  const primarySetting=clientUserId&&requestedService
-    ? db.prepare("SELECT * FROM client_service_settings WHERE client_user_id=? AND lower(service)=lower(?) AND sub_service='' LIMIT 1").get(clientUserId,requestedService) as {is_enabled:number;discount_percent:number;default_sub_service:string;default_supplier:string}|undefined
-    : undefined;
-  const effectiveSubService=!existing&&!String(input.sub_service??"").trim()&&primarySetting?.default_sub_service
-    ? primarySetting.default_sub_service
-    : input.sub_service;
-  const effectiveSupplier=!existing&&!String(input.supplier??"").trim()&&primarySetting?.default_supplier
-    ? primarySetting.default_supplier
-    : input.supplier;
+  const requestedRoute=resolveRoute(existing?.route_id?{route_id:existing.route_id}:{...input,service:input.service??existing?.service,sub_service:input.sub_service??existing?.sub_service},!existing);
+  if(existing&&input.route_id&&Number(input.route_id)!==Number(requestedRoute.id))throw Error("Đổi Route bằng quy trình xác nhận chênh lệch giá.");
+  if(existing&&["service","sub_service","supplier"].some(k=>input[k as keyof OrderInput]!==undefined&&String(input[k as keyof OrderInput]).toLowerCase()!==String(requestedRoute[k]).toLowerCase()))throw Error("Đổi Route bằng quy trình xác nhận chênh lệch giá.");
+  const effectiveSubService=requestedRoute.sub_service;
+  const effectiveSupplier=requestedRoute.supplier;
   const enumValues = validateOrderEnums({
-    service: input.service,
+    service: requestedRoute.service,
     sub_service: effectiveSubService,
     supplier: effectiveSupplier,
     country: input.country,
@@ -318,7 +314,7 @@ export function upsertOrder(input: OrderInput) {
   }
   const estNet=numericValue(input,"est_net_cost",existing);
   const supplier=enumValues.supplier;
-  if(!routeFor({service,sub_service:subService,supplier})&&db.prepare("SELECT id FROM service_route_configs WHERE lower(service)=lower(?) LIMIT 1").get(service))throw new Error("Chọn bundle Service/Subservice/Supplier đã được cấu hình.");
+  if(!routeFor({route_id:requestedRoute.id})&&db.prepare("SELECT id FROM service_route_configs WHERE lower(service)=lower(?) LIMIT 1").get(service))throw new Error("Chọn bundle Service/Subservice/Supplier đã được cấu hình.");
   const setting=clientUserId?db.prepare(`SELECT * FROM client_service_settings WHERE client_user_id=? AND lower(service)=lower(?) AND (lower(sub_service)=lower(?) OR sub_service='') ORDER BY CASE WHEN lower(sub_service)=lower(?) THEN 0 ELSE 1 END LIMIT 1`).get(clientUserId,service,subService,subService) as {is_enabled:number;discount_percent:number}|undefined:undefined;
   const serviceChanged=!existing||String(existing.service||"").toLowerCase()!==service.toLowerCase();
   if(clientUserId&&serviceChanged&&!setting)throw new Error("Client này chưa được cấp quyền sử dụng dịch vụ đã chọn.");
@@ -350,6 +346,7 @@ export function upsertOrder(input: OrderInput) {
   });
 
   const payload = {
+    route_id: Number(requestedRoute.id),
     client_user_id: clientUserId,
     created_at: existing
       ? (input.created_at ? normalizeDateInput(input.created_at, "Ngày tạo") : existing.created_at)
@@ -409,7 +406,7 @@ export function upsertOrder(input: OrderInput) {
   if (existing) {
     db.prepare(`
       UPDATE orders SET
-        client_user_id=@client_user_id,created_at=@created_at,sales=@sales,customer=@customer,supplier=@supplier,service=@service,sub_service=@sub_service,
+        route_id=@route_id,client_user_id=@client_user_id,created_at=@created_at,sales=@sales,customer=@customer,supplier=@supplier,service=@service,sub_service=@sub_service,
         label=@label,tracking=@tracking,order_id=@order_id,draft_key=@draft_key,workflow_status=@workflow_status,
         est_net_cost=@est_net_cost,base_cost=@base_cost,retail=@retail,discount=@discount,discount_note=@discount_note,discount_source=@discount_source,sales_price=@sales_price,auto_pricing=@auto_pricing,
         manual_surcharge=@manual_surcharge,surcharge=@surcharge,import_tax=@import_tax,total_due=@total_due,gross_profit_base=@gross_profit_base,
@@ -423,12 +420,12 @@ export function upsertOrder(input: OrderInput) {
   } else {
     const result = db.prepare(`
       INSERT INTO orders(
-        client_user_id,created_at,sales,customer,supplier,service,sub_service,label,tracking,order_id,draft_key,workflow_status,
+        route_id,client_user_id,created_at,sales,customer,supplier,service,sub_service,label,tracking,order_id,draft_key,workflow_status,
         est_net_cost,base_cost,retail,discount,discount_note,discount_source,sales_price,auto_pricing,manual_surcharge,surcharge,import_tax,total_due,gross_profit_base,gross_profit_net,gross_margin_pct,margin_status,
         note,internal_note,item,material,declared_value,carton_count,length,width,height,manual_volume,calculated_volume,volume,dimensional_divisor,measurement_mode,weight,chargeable_weight,recipient_name,
         address1,address2,city,state,zip,country,phone,recipient_email,updated_at
       ) VALUES (
-        @client_user_id,@created_at,@sales,@customer,@supplier,@service,@sub_service,@label,@tracking,@order_id,@draft_key,@workflow_status,
+        @route_id,@client_user_id,@created_at,@sales,@customer,@supplier,@service,@sub_service,@label,@tracking,@order_id,@draft_key,@workflow_status,
         @est_net_cost,@base_cost,@retail,@discount,@discount_note,@discount_source,@sales_price,@auto_pricing,@manual_surcharge,@surcharge,@import_tax,@total_due,@gross_profit_base,@gross_profit_net,@gross_margin_pct,@margin_status,
         @note,@internal_note,@item,@material,@declared_value,@carton_count,@length,@width,@height,@manual_volume,@calculated_volume,@volume,@dimensional_divisor,@measurement_mode,@weight,@chargeable_weight,@recipient_name,
         @address1,@address2,@city,@state,@zip,@country,@phone,@recipient_email,CURRENT_TIMESTAMP
@@ -469,7 +466,10 @@ export function addSupplierCost(input: SupplierCostInput) {
     const duplicate=db.prepare("SELECT id,matched_order_id,total_net_cost FROM supplier_costs WHERE source_key=?").get(input.source_key) as {id:number;matched_order_id:number|null;total_net_cost:number}|undefined;
     if(duplicate)return {id:duplicate.id,tracking,matched:Boolean(duplicate.matched_order_id),total_net_cost:duplicate.total_net_cost,duplicate:true,warning:"Dòng này đã được import trước đó nên không ghi nhận lại."};
   }
-  const enumValues = validateSupplierCostEnums(input);
+  const owner=findTrackingOwner(tracking);
+  const historical=owner?resolveRoute(db.prepare("SELECT * FROM orders WHERE id=?").get(owner.order_id) as Record<string,unknown>):undefined;
+  const enumValues = validateSupplierCostEnums({...input,supplier:input.supplier||historical?.supplier});
+  if(historical&&String(enumValues.supplier).toLowerCase()!==String(historical.supplier).toLowerCase())throw Error("Supplier Cost không khớp Supplier lịch sử của Tracking; cần kiểm tra trước khi đối soát.");
   const netPrice = num(input.net_price);
   const fee = num(input.fee);
   const exportCustoms = num(input.export_customs);
@@ -477,7 +477,6 @@ export function addSupplierCost(input: SupplierCostInput) {
   const totalNet = money(num(input.total_net_cost) || netPrice + fee + exportCustoms + importCustoms);
   if (!totalNet) throw new Error("Cần Total Net Cost hoặc các thành phần chi phí.");
 
-  const owner=findTrackingOwner(tracking);
   const extraSurcharge=money(num(input.extra_surcharge));const importTax=money(num(input.import_tax));
   const surchargeType=extraSurcharge?(text(input.surcharge_type)||"phụ phí bổ sung"):"";
   const result = db.prepare(`

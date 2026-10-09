@@ -28,7 +28,7 @@ export async function POST(req:NextRequest){
     const service=canonicalEnumValue("SERVICE",String(body.service||""));
     const sub=body.sub_service?canonicalEnumValue("SUB_SERVICE",String(body.sub_service),service):"";
     const defaultSub=body.default_sub_service?canonicalEnumValue("SUB_SERVICE",String(body.default_sub_service),service):"";
-    const defaultSupplier=body.default_supplier?canonicalEnumValue("SUPPLIER",String(body.default_supplier)):"";
+    const defaultSupplier=""; // Supplier belongs to the concrete Route, never Client preferences.
     const discount=Math.max(0,Math.min(100,Number(body.discount_percent||0)));
     db.prepare(`INSERT INTO client_service_settings(client_user_id,service,sub_service,is_enabled,discount_percent,default_sub_service,default_supplier,updated_by_user_id)
       VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(client_user_id,service,sub_service) DO UPDATE SET is_enabled=excluded.is_enabled,discount_percent=excluded.discount_percent,default_sub_service=excluded.default_sub_service,default_supplier=excluded.default_supplier,updated_by_user_id=excluded.updated_by_user_id,updated_at=CURRENT_TIMESTAMP`)

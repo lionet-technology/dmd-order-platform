@@ -18,6 +18,9 @@ let checks=0,seq=0;function check(value,label){checks++;if(!value)throw new Erro
 function rejects(fn,label){let rejected=false;try{fn()}catch{rejected=true}check(rejected,label)}
 function order({price=100,charged=true,service="ePacket",label=null,tracking=null}={}){
  const id=Number(db.prepare("INSERT INTO orders(order_id,client_user_id,sales_user_id,customer,service,sub_service,sales_price,total_due,carton_count,weight,workflow_status,label,tracking) VALUES (?,?,?,?,?,'T11',?,?,1,1,'PENDING_PURCHASE',?,?)").run("CANCEL-"+(++seq),client.id,sales.id,client.display_name,service,price,price,label,tracking).lastInsertRowid);
+ let configured=db.prepare("SELECT id FROM service_route_configs WHERE service=? AND sub_service='T11'").get(service);
+ if(!configured)configured={id:Number(db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier) VALUES (?,'T11','DMD')").run(service).lastInsertRowid)};
+ db.prepare("UPDATE orders SET route_id=?,supplier='DMD' WHERE id=?").run(configured.id,id);
  if(charged)recomputeOrderFinancials(id);return id;
 }
 const get=id=>db.prepare("SELECT * FROM orders WHERE id=?").get(id);

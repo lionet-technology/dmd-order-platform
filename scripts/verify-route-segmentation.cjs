@@ -12,7 +12,7 @@ async function main(){
  const wh=createUser({username:"seg.wh",display_name:"Kho",password:"TestPass123!",role:"WAREHOUSE"});
  const cookie="dmd_session="+createSession(admin.id).token,whCookie="dmd_session="+createSession(wh.id).token;
  db.prepare("INSERT OR IGNORE INTO enum_values(enum_type,value,parent_value,active,sort_order) VALUES ('SUPPLIER','DMD','',1,100)").run();
- const identity={service:"ePacket",sub_service:"Standard",supplier:"DMD"};
+ const identity={service:"ePacket",sub_service:"Standard",supplier:"DMD",route_variables:{sender_address:"Hanoi"}};
  async function save(segmentation,extra={}){return routes.POST(req("POST",{...identity,...extra,...(segmentation===undefined?{}:{segmentation})},cookie))}
  let response=await save();check(response.status===201,"create normal route: "+await response.clone().text());let row=await response.json();const id=row.id;
  check(row.segmentation.enabled===false&&row.segmentation.rules.length===0,"default OFF");

@@ -141,6 +141,7 @@ async function main() {
   assert(salesAClients.status === 200 && salesAClients.body.length === 1 && salesAClients.body[0].id === clientA.body.id,
     "Sales A should only list owned Clients");
 
+  db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier) VALUES ('ePacket','T11','KILOSHIP')").run();
   const orderA = await post(ordersRoute.POST, "http://local/api/orders", {
     client_user_id: clientA.body.id,
     created_at: "30/09/2026",

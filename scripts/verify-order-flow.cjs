@@ -25,6 +25,7 @@ async function main(){
   db.prepare("INSERT INTO client_service_settings(client_user_id,service,sub_service,is_enabled,discount_percent) VALUES (?,?,?,?,?)").run(client.id,"ePacket","",1,5);
   db.prepare("INSERT INTO client_service_settings(client_user_id,service,sub_service,is_enabled,discount_percent) VALUES (?,?,?,?,?)").run(client.id,"UPS","",0,0);
 
+  for(const [service,sub,supplier] of [['ePacket','T11','KILOSHIP'],['ePacket','','KILOSHIP'],['UPS','','KILOSHIP']])db.prepare('INSERT INTO service_route_configs(service,sub_service,supplier) VALUES (?,?,?)').run(service,sub,supplier);
   const first=upsertOrder({client_user_id:client.id,created_at:"30/09/2026",order_id:"FLOW-001",customer:"Client",sales:"Sales",service:"ePacket",sub_service:"T11",item:"T-shirt",material:"Cotton",carton_count:3,weight:12,length:50,width:40,height:30,declared_value:100,sales_price:100});
   assert(first.calculated_volume===60000&&first.volume===60000,"dimensions should calculate aggregate volume");
   assert(first.chargeable_weight===12,"chargeable weight should be max(12kg, 60000/5000)");

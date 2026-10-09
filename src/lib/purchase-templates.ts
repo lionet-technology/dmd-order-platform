@@ -1,3 +1,4 @@
+import {resolveRoute} from "./routes";
 import { orderQuote,assertConfiguredPurchase } from "./route-pricing";
 import ExcelJS from "exceljs";
 import { db } from "./db";
@@ -225,8 +226,8 @@ export function resolveRouteTemplate(order:DataRow,kind:"PURCHASE"|"MANIFEST"="P
     "SELECT pt.id template_id,pt.name template_name,pt.template_kind,pt.output_mode,pt.repeat_sections_json,pv.id active_version_id,pv.version_number,pv.stored_path,rc.service,rc.sub_service,rc.supplier,rc.route_variables_json "+
     "FROM service_route_configs rc JOIN purchase_templates pt ON pt.route_config_id=rc.id AND pt.active=1 AND pt.template_kind=? "+
     "JOIN purchase_template_versions pv ON pv.template_id=pt.id AND pv.status='ACTIVE' "+
-    "WHERE rc.active=1 AND lower(rc.service)=lower(?) AND lower(rc.sub_service)=lower(?) AND lower(rc.supplier)=lower(?) LIMIT 1"
-  ).get(kind,text(order.service),text(order.sub_service),text(order.supplier)) as TemplateRecord|undefined;
+    "WHERE rc.id=? LIMIT 1"
+  ).get(kind,resolveRoute(order).id) as TemplateRecord|undefined;
 }
 
 export function resolvePurchaseTemplate(order:DataRow){return resolveRouteTemplate(order,"PURCHASE")}
@@ -321,7 +322,7 @@ export function genericPurchaseRows(orderIds:number[]){
 
 export function lookupManifestTracking(tracking:string){
   const key=tracking.replace(/[\s-]+/g,"").toUpperCase();
-  const row=db.prepare("SELECT ot.id tracking_id,ot.tracking,ot.status,ot.carton_id,o.id order_pk,o.system_order_code,o.order_id,o.customer,o.recipient_name,o.service,o.sub_service,o.supplier,o.workflow_status FROM order_trackings ot JOIN orders o ON o.id=ot.order_id WHERE ot.normalized_tracking=?").get(key) as DataRow|undefined;
+  const row=db.prepare("SELECT ot.id tracking_id,ot.tracking,ot.status,ot.carton_id,o.id order_pk,o.system_order_code,o.order_id,o.customer,o.recipient_name,o.route_id,o.service,o.sub_service,o.supplier,o.workflow_status FROM order_trackings ot JOIN orders o ON o.id=ot.order_id WHERE ot.normalized_tracking=?").get(key) as DataRow|undefined;
   if(!row)throw new Error("Tracking không tồn tại: "+tracking);
   if(row.status!=="ACTIVE"||row.workflow_status==="CANCELLED")throw new Error("Tracking không còn active: "+tracking);
   if(!row.carton_id||!db.prepare("SELECT id FROM order_cartons WHERE id=? AND order_id=?").get(row.carton_id,row.order_pk))throw new Error("Tracking chưa gắn đúng carton: "+tracking);

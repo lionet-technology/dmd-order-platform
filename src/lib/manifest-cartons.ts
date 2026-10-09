@@ -1,3 +1,4 @@
+import {resolveRoute} from "./routes";
 import {db} from "./db";
 import {enforceWarehouseGuard,WarehouseBlock} from "./warehouse-guard";
 
@@ -17,8 +18,7 @@ function cartonCode(service:string,date:string,sequence:number){
   return `${serviceCode(service)}-${date.replaceAll("-","")}-${String(sequence).padStart(3,"0")}`;
 }
 
-function routeValue(value:unknown){return String(value||"").trim()}
-function routeKey(row:DataRow){return [row.service,row.sub_service,row.supplier].map(value=>routeValue(value).toLowerCase()).join("\u0000")}
+function routeKey(row:DataRow){try{return String(resolveRoute(row).id)}catch{throw new WarehouseBlock("ROUTE_MISMATCH","Route chưa được cấu hình hoặc chưa xác định duy nhất.")}}
 
 function createNextCarton(service:string,userId:number,date=localDate(),routeId?:number,segmentKey?:string){
   const sequence=Number((db.prepare("SELECT COALESCE(MAX(daily_sequence),0)+1 sequence FROM manifest_cartons WHERE service=? COLLATE NOCASE AND manifest_date=?").get(service,date) as {sequence:number}).sequence);
@@ -46,7 +46,7 @@ export function manifestCartonDetail(id:number){
   const items=db.prepare(`
     SELECT mci.id item_id,mci.order_id,mci.order_carton_id,mci.tracking_id,mci.added_at,
       ot.tracking,ot.status tracking_status,oc.carton_number,
-      o.system_order_code,o.order_id client_order_id,o.customer,o.recipient_name,o.service,o.sub_service,o.supplier,
+      o.system_order_code,o.order_id client_order_id,o.customer,o.recipient_name,o.route_id,o.service,o.sub_service,o.supplier,
       u.display_name added_by_name
     FROM manifest_carton_items mci
     JOIN orders o ON o.id=mci.order_id
@@ -78,7 +78,7 @@ function resolveIdentifier(raw:string){
   const normalized=identifier.replace(/[\s-]+/g,"").toUpperCase();
   const tracking=db.prepare(`
     SELECT ot.id tracking_id,ot.tracking,ot.carton_id order_carton_id,oc.carton_number,
-      o.id order_id,o.system_order_code,o.order_id client_order_id,o.customer,o.recipient_name,o.service,o.sub_service,o.supplier,o.workflow_status
+      o.id order_id,o.system_order_code,o.order_id client_order_id,o.customer,o.recipient_name,o.route_id,o.service,o.sub_service,o.supplier,o.workflow_status
     FROM order_trackings ot JOIN orders o ON o.id=ot.order_id JOIN order_cartons oc ON oc.id=ot.carton_id
     WHERE ot.normalized_tracking=? AND ot.status IN ('ACTIVE','CANCELLED') ORDER BY ot.id DESC LIMIT 1
   `).get(normalized) as DataRow|undefined;
@@ -93,7 +93,7 @@ function resolveIdentifier(raw:string){
   const cartons=Number((db.prepare("SELECT COUNT(*) count FROM order_cartons WHERE order_id=?").get(order.id) as {count:number}).count);
   const rows=db.prepare(`
     SELECT ot.id tracking_id,ot.tracking,ot.carton_id order_carton_id,oc.carton_number,
-      o.id order_id,o.system_order_code,o.order_id client_order_id,o.customer,o.recipient_name,o.service,o.sub_service,o.supplier,o.workflow_status
+      o.id order_id,o.system_order_code,o.order_id client_order_id,o.customer,o.recipient_name,o.route_id,o.service,o.sub_service,o.supplier,o.workflow_status
     FROM order_cartons oc JOIN orders o ON o.id=oc.order_id
     JOIN order_trackings ot ON ot.id=(SELECT active.id FROM order_trackings active WHERE active.carton_id=oc.id AND active.status='ACTIVE' ORDER BY active.id DESC LIMIT 1)
     WHERE o.id=? ORDER BY oc.carton_number
@@ -110,7 +110,7 @@ export function addManifestIdentifier(raw:string,requestedCartonId:number|undefi
   const incomingRoute=rows[0];
   if(rows.some(row=>routeKey(row)!==routeKey(incomingRoute)))throw new Error("Một Order đang có nhiều route, cần kiểm tra lại trước khi đóng thùng.");
   const tx=db.transaction(()=>{
-    const route=db.prepare("SELECT * FROM service_route_configs WHERE service=? COLLATE NOCASE AND sub_service=? COLLATE NOCASE AND supplier=? COLLATE NOCASE AND active=1").get(service,routeValue(incomingRoute.sub_service),routeValue(incomingRoute.supplier)) as DataRow|undefined;
+    const route=resolveRoute(incomingRoute);
     let carton=requestedCartonId?db.prepare("SELECT * FROM manifest_cartons WHERE id=?").get(requestedCartonId) as DataRow|undefined:undefined;
     if(requestedCartonId&&!carton)throw new Error("Không tìm thấy thùng.");
     if(carton&&carton.status!=="OPEN")throw new Error("Hãy tiếp tục / mở lại thùng trước khi scan.");

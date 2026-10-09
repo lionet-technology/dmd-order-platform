@@ -1,0 +1,55 @@
+const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),assert=require('node:assert/strict');
+const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'dmd-routes-'));process.env.DMD_DB_PATH=path.join(tmp,'test.db');process.env.NODE_ENV='test';
+const {seed}=require('./seed-epacket.cjs');seed();
+const {db}=require('../src/lib/db.ts'),{routeLifecycle}=require('../src/lib/routes.ts'),{saveDrafts,submitDrafts,draftData}=require('../src/lib/client-drafts.ts'),{createPriceVersion,activatePricing}=require('../src/lib/route-pricing.ts'),{STANDARD}=require('../src/lib/epacket-pricing.ts'),{proposeRouteChange,confirmRouteChange}=require('../src/lib/order-route-changes.ts'),{addSupplierCost}=require('../src/lib/finance.ts'),{addOrderTracking}=require('../src/lib/order-operations.ts'),{resolveRouteTemplate}=require('../src/lib/purchase-templates.ts'),{createUser}=require('../src/lib/auth.ts');
+const admin=db.prepare("SELECT * FROM users WHERE role='ADMIN'").get(),sales=db.prepare("SELECT * FROM users WHERE role='SALES'").get(),client=db.prepare("SELECT * FROM users WHERE role='CLIENT' ORDER BY id").get();
+const route=db.prepare("SELECT * FROM service_route_configs WHERE sub_service='Standard' AND supplier='DMD'").get(),eco=db.prepare("SELECT * FROM service_route_configs WHERE sub_service='Eco'").get();
+let checks=0;function check(v,m){checks++;assert.ok(v,m)}function rejects(f,m){checks++;assert.throws(f,m)}
+const row={order_id:'ROUTE-ARCH-1',country:'US',carton_count:1,weight:.05,length:10,width:5,height:3,recipient_name:'Ann',address1:'100 Main St',city:'Houston',state:'TX',zip:'77002',phone:'2025550100',item:'T-shirt',material:'Cotton'};
+function newOrder(code){const d=saveDrafts(client,client.id,route.id,[{...row,order_id:code}])[0],r=submitDrafts(client,[d.draft_id]);check(r.orders.length===1,JSON.stringify(r));return r.orders[0].id}
+try{
+ check(route.service_identity_id>0,'identity created');
+ rejects(()=>db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier) VALUES ('EPACKET','standard','OTHER')").run(),/UNIQUE/);
+ rejects(()=>db.prepare("UPDATE service_route_configs SET supplier='OTHER' WHERE id=?").run(route.id),/immutable/);
+ const noRefs=Number(db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier,active) VALUES ('EMPTY','Standard','DMD',0)").run().lastInsertRowid);
+ rejects(()=>routeLifecycle(noRefs,'DELETE',false,admin.id),/xác nhận/);routeLifecycle(noRefs,'DELETE',true,admin.id);check(!db.prepare('SELECT id FROM service_route_configs WHERE id=?').get(noRefs),'unused route deletes');
+ rejects(()=>db.prepare("UPDATE service_route_configs SET route_variables_json='{\"changed\":true}' WHERE id=?").run(route.id),/config has orders/);
+ const sameSupplier=Number(db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier,active) VALUES ('ePacket','Standard','DMD',0)").run().lastInsertRowid);check(sameSupplier!==route.id,'new config may reuse same service/supplier with new Route ID');routeLifecycle(sameSupplier,'INACTIVE',true,admin.id);routeLifecycle(sameSupplier,'DELETE',true,admin.id);
+ const id=newOrder('CHANGE-1'),before=db.prepare('SELECT * FROM orders WHERE id=?').get(id);
+ const proposal=proposeRouteChange(sales,id,eco.id,'Customer approved by phone');
+ check(proposal.delta_cents!==0,'requote delta');
+ const outsider=createUser({username:'route.other',display_name:'Other',role:'CLIENT',sales_user_id:sales.id,password:'TestPass123!'});
+ rejects(()=>confirmRouteChange(outsider,id,proposal.id),/quyền|Client/);
+ confirmRouteChange(client,id,proposal.id);
+ const changed=db.prepare('SELECT * FROM orders WHERE id=?').get(id),reserved=db.prepare('SELECT * FROM purchase_reserves WHERE order_id=?').get(id);
+ check(changed.route_id===eco.id,'Client confirms concrete route');check(reserved.amount_cents===Math.round(changed.total_due*100),'reserve matches quote');check(JSON.parse(changed.pricing_snapshot_json).route_id===eco.id,'snapshot agrees');check(db.prepare("SELECT id FROM order_events WHERE order_id=? AND event_type='ROUTE_CHANGE_CONFIRMED' AND actor_user_id=?").get(id,client.id),'actor audit');
+ rejects(()=>db.prepare("UPDATE orders SET pricing_snapshot_json='{}' WHERE id=?").run(id),/immutable/);
+ const up=proposeRouteChange(admin,id,route.id,'Upgrade');check(up.delta_cents>0,'increase reviewed');
+ const total=db.prepare("SELECT COALESCE(SUM(CASE WHEN direction='CREDIT' THEN amount ELSE -amount END),0) n FROM ledger_entries WHERE client_user_id=?").get(client.id).n;
+ db.prepare("INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount) VALUES (?,'PAYMENT','DEBIT',?)").run(client.id,total);
+ const frozen=db.prepare('SELECT * FROM orders WHERE id=?').get(id),hold=db.prepare('SELECT amount_cents FROM purchase_reserves WHERE order_id=?').get(id);
+ rejects(()=>confirmRouteChange(admin,id,up.id),/Balance/);check(JSON.stringify(db.prepare('SELECT * FROM orders WHERE id=?').get(id))===JSON.stringify(frozen),'insufficient funds rollback order');check(db.prepare('SELECT amount_cents FROM purchase_reserves WHERE order_id=?').get(id).amount_cents===hold.amount_cents,'insufficient funds rollback reserve');
+ db.prepare("INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount) VALUES (?,'PAYMENT','CREDIT',?)").run(client.id,total);
+ confirmRouteChange(admin,id,up.id);check(db.prepare("SELECT status FROM order_route_change_proposals WHERE id=?").get(up.id).status==='CONFIRMED','Admin can confirm increase');
+ const another=newOrder('SALES-CONFIRM'),salesProposal=proposeRouteChange(sales,another,eco.id,'Switch'),done=confirmRouteChange(sales,another,salesProposal.id);check(done.status==='CONFIRMED','Sales can confirm');
+ const pending=saveDrafts(client,client.id,route.id,[{...row,order_id:'AFTER-SUPPLIER'}])[0];
+ const supplier='NEW-DMD';db.prepare("INSERT INTO enum_values(enum_type,value,parent_value,active) VALUES ('SUPPLIER',?,'',1)").run(supplier);
+ const replacement=Number(db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier,active,client_self_purchase,pricing_engine) VALUES ('ePacket','Standard',?,0,1,'EPACKET_US')").run(supplier).lastInsertRowid);
+ rejects(()=>routeLifecycle(replacement,'ACTIVE',true,admin.id),/đã có Route/);
+ const v=createPriceVersion(replacement,STANDARD,admin.id);activatePricing(replacement,{price_version_id:v.id,base_markup:6,retail_markup:16},admin.id);
+ const snapshot=db.prepare('SELECT route_id,pricing_snapshot_json,supplier FROM orders WHERE id=?').get(id);
+ rejects(()=>routeLifecycle(route.id,'ARCHIVED',false,admin.id),/xác nhận/);
+ const summary=routeLifecycle(route.id,'ARCHIVED',true,admin.id);check(summary.missing_cost_orders>0,'archive outstanding warning counts');routeLifecycle(replacement,'ACTIVE',true,admin.id);
+ check(db.prepare('SELECT service_identity_id FROM service_route_configs WHERE id=?').get(replacement).service_identity_id===route.service_identity_id,'replacement shares identity');check(JSON.stringify(snapshot)===JSON.stringify(db.prepare('SELECT route_id,pricing_snapshot_json,supplier FROM orders WHERE id=?').get(id)),'old order freeze preserved');
+ const d=db.prepare('SELECT * FROM client_order_drafts WHERE id=?').get(pending.draft_id);check(draftData(d).route_id===replacement,'unsubmitted draft follows active identity');
+ const submitted=submitDrafts(client,[pending.draft_id]);check(submitted.orders.length===1,JSON.stringify(submitted));const newO=db.prepare('SELECT * FROM orders WHERE id=?').get(submitted.orders[0].id);check(newO.route_id===replacement&&newO.supplier===supplier,'new order uses replacement');check(newO.discount===before.discount,'discount carried over');
+ check(resolveRouteTemplate(db.prepare('SELECT * FROM orders WHERE id=?').get(id))!==undefined,'archived template still resolves');
+ rejects(()=>routeLifecycle(route.id,'DELETE',true,admin.id),/tham chiếu/);rejects(()=>db.prepare('DELETE FROM service_route_configs WHERE id=?').run(route.id),/historical|FOREIGN/);
+ addOrderTracking({orderId:id,tracking:'ARCHIVE-COST',labelUrl:'https://example.com/label.pdf',actorId:admin.id});
+ const cost=addSupplierCost({tracking:'ARCHIVE-COST',supplier:'DMD',service:'ePacket',sub_service:'Standard',total_net_cost:2});check(cost.matched,'archived tracking cost matches');check(db.prepare('SELECT route_id FROM supplier_costs WHERE id=?').get(cost.id).route_id===route.id,'cost historic route');check(db.prepare('SELECT true_net_cost FROM orders WHERE id=?').get(id).true_net_cost===2,'true cost recorded on frozen order');
+ rejects(()=>addSupplierCost({tracking:'ARCHIVE-COST',supplier,total_net_cost:3}),/Supplier Cost/);
+ rejects(()=>proposeRouteChange(admin,id,eco.id,'too late'),/Tracking|mua/);rejects(()=>db.prepare('UPDATE orders SET route_id=? WHERE id=?').run(eco.id,id),/immutable/);
+ check(confirmRouteChange(admin,id,up.id).status==='CONFIRMED','confirm retry remains idempotent after Tracking');
+ check(db.pragma('foreign_key_check').length===0,'FK integrity');
+ console.log('ROUTE ARCHITECTURE PASS ('+checks+' assertions)');
+}finally{db.close();fs.rmSync(tmp,{recursive:true,force:true})}

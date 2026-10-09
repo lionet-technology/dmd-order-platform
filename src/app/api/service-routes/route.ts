@@ -1,3 +1,4 @@
+import {routeLifecycle,routeReferences} from "@/lib/routes";
 import { NextRequest,NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -39,13 +40,14 @@ export async function GET(req:NextRequest){
     "LEFT JOIN purchase_template_versions mpv ON mpv.template_id=mpt.id AND mpv.status='ACTIVE' "+
     "ORDER BY rc.active DESC,rc.service,rc.sub_service,rc.supplier"
   ).all();
-  return NextResponse.json((rows as Array<{id:number}>).map(row=>({...row,segmentation:readSegmentation(row.id)})));
+  return NextResponse.json((rows as Array<{id:number}>).map(row=>({...row,segmentation:readSegmentation(row.id),...routeReferences(row.id)})));
 }
 
 export async function POST(req:NextRequest){
   const auth=requireUser(req,"ADMIN");if(auth.error)return auth.error;
   try{
     const body=await req.json();
+    if(body.action){return NextResponse.json(routeLifecycle(Number(body.id),String(body.action).toUpperCase(),body.confirm===true,auth.user.id));}
     const segmentation=Object.prototype.hasOwnProperty.call(body,"segmentation")?parseSegmentation(body.segmentation):null;
     const service=canonicalEnumValue("SERVICE",body.service);
     const subService=body.sub_service?canonicalEnumValue("SUB_SERVICE",body.sub_service,service):"";
@@ -53,15 +55,20 @@ export async function POST(req:NextRequest){
     const active=body.active===false||body.active===0?0:1;
     const hasVariables=Object.prototype.hasOwnProperty.call(body,"route_variables")||Object.prototype.hasOwnProperty.call(body,"variables");
     const variables=hasVariables?routeVariables(body.route_variables??body.variables):null;
-    const existing=body.id
-      ? db.prepare("SELECT id FROM service_route_configs WHERE id=?").get(Number(body.id)) as {id:number}|undefined
-      : db.prepare("SELECT id FROM service_route_configs WHERE lower(service)=lower(?) AND lower(sub_service)=lower(?) AND lower(supplier)=lower(?)").get(service,subService,supplier) as {id:number}|undefined;
+    const candidates=body.create_new?[]:body.id
+      ? db.prepare("SELECT id FROM service_route_configs WHERE id=?").all(Number(body.id)) as {id:number}[]
+      : db.prepare("SELECT id FROM service_route_configs WHERE lower(service)=lower(?) AND lower(sub_service)=lower(?) AND lower(supplier)=lower(?)").all(service,subService,supplier) as {id:number}[];
+    if(candidates.length>1)throw Error("Có nhiều phiên bản cấu hình. Hãy chọn Route cụ thể để sửa.");
+    if(body.id&&!candidates.length)throw Error("Route không tồn tại.");
+    const existing=candidates[0];
     const id=db.transaction(()=>{
       let id:number;
+      if(active&&db.prepare("SELECT id FROM service_route_configs WHERE active=1 AND lower(trim(service))=lower(trim(?)) AND lower(trim(sub_service))=lower(trim(?)) AND id<>?").get(service,subService,existing?.id||0))throw Error("Dịch vụ "+service+" - "+subService+" đã có Route đang hoạt động. Vui lòng đổi tên dịch vụ ở Route mới hoặc ngừng kích hoạt Route hiện tại.");
       if(existing){
         id=existing.id;
         const previous=db.prepare("SELECT * FROM service_route_configs WHERE id=?").get(id) as Record<string,unknown>;
-        if([service,subService,supplier].some((value,index)=>value.toLowerCase()!==String(previous[["service","sub_service","supplier"][index]]).toLowerCase())&&db.prepare("SELECT id FROM manifest_cartons WHERE route_config_id=? LIMIT 1").get(id))throw new Error("Route đã gắn với thùng kho. Hãy tạo route mới để giữ lịch sử thùng.");
+        if([service,subService,supplier].some((value,index)=>value.toLowerCase()!==String(previous[["service","sub_service","supplier"][index]]).toLowerCase()))throw new Error("Route ID là bất biến. Hãy tạo Route mới khi thay Supplier hoặc cấu hình định danh.");
+        if(variables&&JSON.stringify(variables)!==String(previous.route_variables_json)&&db.prepare("SELECT id FROM orders WHERE route_id=? LIMIT 1").get(id))throw Error("Route đã phát sinh đơn. Hãy tạo Route mới để đổi cấu hình.");
         if(variables){
           db.prepare("UPDATE service_route_configs SET service=?,sub_service=?,supplier=?,route_variables_json=?,active=?,updated_by_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
             .run(service,subService,supplier,JSON.stringify(variables),active,auth.user.id,id);
@@ -73,7 +80,11 @@ export async function POST(req:NextRequest){
         const result=db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier,route_variables_json,active,created_by_user_id,updated_by_user_id) VALUES (?,?,?,?,?,?,?)")
           .run(service,subService,supplier,JSON.stringify(variables||{}),active,auth.user.id,auth.user.id);
         id=Number(result.lastInsertRowid);
+        const predecessor=db.prepare("SELECT pricing_engine,service,sub_service,supplier FROM service_route_configs WHERE lower(service)=lower(?) AND lower(sub_service)=lower(?) AND id<>? ORDER BY id DESC LIMIT 1").get(service,subService,id) as Record<string,unknown>|undefined;
+        const inherited=predecessor?.pricing_engine||(String(predecessor?.service).toLowerCase()==="epacket"&&["standard","eco"].includes(String(predecessor?.sub_service).toLowerCase())&&String(predecessor?.supplier).toLowerCase()==="dmd"?"EPACKET_US":null);
+        if(inherited)db.prepare("UPDATE service_route_configs SET pricing_engine=? WHERE id=?").run(inherited,id);
       }
+      if(body.pricing_engine!==undefined){if(!["EPACKET_US",null].includes(body.pricing_engine))throw Error("Pricing engine chưa được hỗ trợ.");db.prepare("UPDATE service_route_configs SET pricing_engine=? WHERE id=?").run(body.pricing_engine,id);}
       if(segmentation)saveSegmentation(id,segmentation);
       return id;
     })();

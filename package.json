@@ -23,7 +23,8 @@
     "verify:domain-finance": "node scripts/verify-domain-finance.cjs",
     "e2e:finance": "node scripts/e2e-finance-domain.cjs",
     "verify:balance-idempotency": "node scripts/verify-balance-idempotency.cjs",
-    "verify:drafts": "node scripts/verify-client-drafts.cjs"
+    "verify:drafts": "node scripts/verify-client-drafts.cjs",
+    "verify:route-architecture": "node scripts/verify-route-architecture.cjs && node scripts/verify-route-migration.cjs"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",

@@ -1,3 +1,4 @@
+import {resolveRoute} from "./routes";
 import {canPurchase} from "./order-transition-guards";
 import {hasCaseHold} from "./cases";
 import { assertPurchasing, reservePurchase, accountFinancials } from "./credit";
@@ -34,24 +35,17 @@ export function activatePricing(routeId:number,body:Row,actorId:number){
  return pricingAdmin(routeId);
  }).immediate();
 }
-export function routeFor(o:Row){
- return db.prepare("SELECT * FROM service_route_configs WHERE lower(service)=lower(?) AND lower(sub_service)=lower(?) AND lower(supplier)=lower(?)").get(String(o.service||""),String(o.sub_service||""),String(o.supplier||"")) as Row|undefined;
-}
-export function resolvePurchaseSupplier(o:Row){
- if(String(o.supplier||"").trim())return String(o.supplier);
- const routes=db.prepare("SELECT supplier FROM service_route_configs WHERE lower(service)=lower(?) AND lower(sub_service)=lower(?) AND active=1").all(String(o.service||""),String(o.sub_service||"")) as Row[];
- if(routes.length!==1)throw Error(routes.length?"Có nhiều route cho dịch vụ này; cần xác định bundle trước khi mua vận đơn.":"Dịch vụ chưa có route được cấu hình.");
- return String(routes[0].supplier);
-}
+export function routeFor(o:Row){try{return resolveRoute(o)}catch{return undefined}}
+export function resolvePurchaseSupplier(o:Row){return String(resolveRoute(o).supplier);}
 export function orderQuote(o:Row){
  if(!o.pricing_snapshot_json&&(o.purchase_completed_at||["PURCHASED","RECONCILED"].includes(String(o.workflow_status))))return null;
- const route=routeFor(o);if(!route||!isEPacket(o))return null;
+ const route=routeFor(o);if(!route||!(route.pricing_engine==="EPACKET_US"||isEPacket(o)))return null;
  const active=activePricing(Number(route.id));if(!active)return null;
  const setting=db.prepare("SELECT * FROM client_service_settings WHERE client_user_id=? AND lower(service)=lower(?) AND (lower(sub_service)=lower(?) OR sub_service='') ORDER BY CASE WHEN lower(sub_service)=lower(?) THEN 0 ELSE 1 END LIMIT 1").get(Number(o.client_user_id||0),String(o.service),String(o.sub_service),String(o.sub_service)) as Row|undefined;
  let measurement=o;
  if(o.measurement_mode==="CARTON"&&o.id){const cartons=db.prepare("SELECT * FROM order_cartons WHERE order_id=?").all(Number(o.id)) as Row[];measurement={...o,...cartons[0],id:o.id,carton_count:cartons.length,country:o.country,state:o.state,city:o.city,zip:o.zip}}
  const result=o.pricing_snapshot_json?JSON.parse(String(o.pricing_snapshot_json)) as ReturnType<typeof quote>:quote(measurement,JSON.parse(String(active.tiers_json)),Number(active.base_markup),Number(active.retail_markup),Number(o.discount??setting?.discount_percent??0),JSON.parse(String(active.surcharges_json)));
- if(!route.active)result.reasons.push("Route đang ngừng hoạt động.");
+ if(!route.active&&!o.pricing_snapshot_json)result.reasons.push("Route đang ngừng hoạt động.");
  if(o.client_user_id&&(!setting||!setting.is_enabled))result.reasons.push("Client chưa được phép sử dụng dịch vụ.");
  if(o.workflow_status==="CANCELLED")result.reasons.push("Đơn đã huỷ.");
  if((o.id&&hasCaseHold(Number(o.id)))||o.workflow_status==="HOLD"||route.warehouse_hold||(o.id&&db.prepare("SELECT id FROM warehouse_order_holds WHERE order_id=? AND released_at IS NULL").get(Number(o.id))))result.reasons.push("Đơn hoặc route đang Hold.");
@@ -117,6 +111,7 @@ export function clientDraftAwaitingPurchase(o:Row){
  return !o.service_purchased_at&&db.prepare("SELECT id FROM users WHERE id=? AND role='CLIENT'").get(Number(o.created_by_user_id||0));
 }
 export function assertConfiguredPurchase(o:Row){
+ resolveRoute(o);
  if(o.client_user_id&&!o.pricing_snapshot_json&&!o.tracking&&!o.purchase_completed_at)assertPurchasing(Number(o.client_user_id),0);
  if(clientDraftAwaitingPurchase(o))throw Error("Client chưa đặt mua dịch vụ cho Draft này.");
  const q=orderQuote(o);if(q&&!q.eligible)throw Error("Không đủ điều kiện mua dịch vụ: "+q.reasons.join(" "));

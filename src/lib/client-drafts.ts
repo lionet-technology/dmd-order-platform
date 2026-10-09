@@ -11,11 +11,12 @@ function audit(id:number,actor:AuthUser,action:string,detail:unknown){db.prepare
 function rawDraft(id:number){return db.prepare('SELECT * FROM client_order_drafts WHERE id=? AND deleted_at IS NULL').get(id) as Row|undefined;}
 export function draftData(d:Row):Row{
  const client=getClientAccount(Number(d.client_id));
- const route=db.prepare('SELECT * FROM service_route_configs WHERE id=?').get(Number(d.route_id)) as Row|undefined;
+ let route=db.prepare('SELECT * FROM service_route_configs WHERE id=?').get(Number(d.route_id)) as Row|undefined;
+ if(route&&!route.active&&!d.submitted_order_id)route=db.prepare('SELECT * FROM service_route_configs WHERE service_identity_id=? AND active=1').get(route.service_identity_id) as Row|undefined;
  if(!route||!client)throw Error('Route hoặc Client không còn hợp lệ.');
  const setting=db.prepare("SELECT * FROM client_service_settings WHERE client_user_id=? AND lower(service)=lower(?) AND (lower(sub_service)=lower(?) OR sub_service='') ORDER BY CASE WHEN lower(sub_service)=lower(?) THEN 0 ELSE 1 END LIMIT 1").get(client.id,String(route.service),String(route.sub_service),String(route.sub_service)) as Row|undefined;
  const input=JSON.parse(String(d.input_json)) as Row;
- return {...Object.fromEntries(CLIENT_FIELDS.map(k=>[k,input[k]])),country:normalizeCountry(input.country),client_user_id:client.id,customer:client.display_name,sales_user_id:client.sales_user_id,service:route.service,sub_service:route.sub_service,supplier:route.supplier,discount:setting?.discount_percent??0};
+ return {...Object.fromEntries(CLIENT_FIELDS.map(k=>[k,input[k]])),country:normalizeCountry(input.country),client_user_id:client.id,customer:client.display_name,sales_user_id:client.sales_user_id,route_id:route.id,service:route.service,sub_service:route.sub_service,supplier:route.supplier,discount:setting?.discount_percent??0};
 }
 export function draftView(d:Row,role:string){
  const data=draftData(d),errors:string[]=[];
@@ -30,7 +31,7 @@ export function draftView(d:Row,role:string){
  if(pricing){pricing.reasons=[...errors,...pricing.reasons];pricing.eligible=!pricing.reasons.length;}
  const state=d.failure_reason?'failed':errors.length?'incomplete':pricing?.eligible?'eligible':'support';
  const {supplier,...publicData}=data;void supplier;
- return {...publicData,id:-Number(d.id),draft_id:Number(d.id),route_id:d.route_id,created_at:d.created_at,updated_at:d.updated_at,workflow_status:'SALES_DRAFT',draft_state:state,failure_reason:d.failure_reason,pricing};
+ return {...publicData,id:-Number(d.id),draft_id:Number(d.id),route_id:data.route_id,created_at:d.created_at,updated_at:d.updated_at,workflow_status:'SALES_DRAFT',draft_state:state,failure_reason:d.failure_reason,pricing};
 }
 export function saveDrafts(actor:AuthUser,clientId:number,routeId:number,rows:Row[]){
  if(!rows.length||rows.length>1000)throw Error("Nhập 1–1000 Draft.");
@@ -59,7 +60,7 @@ export function saveDrafts(actor:AuthUser,clientId:number,routeId:number,rows:Ro
 export function listDrafts(actor:AuthUser,clientId?:number){
  if(!["ADMIN","SALES","CLIENT"].includes(actor.role))throw Error("Không có quyền xem Draft.");
  // Copy legacy Client drafts into the raw draft store; keep original records intact.
- const legacy=db.prepare("SELECT o.*,r.id route_id FROM orders o JOIN users u ON u.id=o.client_user_id AND u.role='CLIENT' JOIN service_route_configs r ON r.service=o.service AND r.sub_service=o.sub_service AND r.supplier=o.supplier WHERE o.service_purchased_at IS NULL AND o.purchase_completed_at IS NULL AND (o.workflow_status='SALES_DRAFT' OR (o.workflow_status='PENDING_PURCHASE' AND o.created_by_user_id IN (SELECT id FROM users WHERE role='CLIENT'))) AND NOT EXISTS (SELECT 1 FROM client_order_drafts d WHERE d.legacy_order_id=o.id)").all() as Row[];
+ const legacy=db.prepare("SELECT o.*,r.id route_id FROM orders o JOIN users u ON u.id=o.client_user_id AND u.role='CLIENT' JOIN service_route_configs r ON r.id=o.route_id WHERE o.service_purchased_at IS NULL AND o.purchase_completed_at IS NULL AND (o.workflow_status='SALES_DRAFT' OR (o.workflow_status='PENDING_PURCHASE' AND o.created_by_user_id IN (SELECT id FROM users WHERE role='CLIENT'))) AND NOT EXISTS (SELECT 1 FROM client_order_drafts d WHERE d.legacy_order_id=o.id)").all() as Row[];
  db.transaction(()=>{for(const o of legacy)db.prepare('INSERT OR IGNORE INTO client_order_drafts(client_id,route_id,input_json,legacy_order_id,created_by,updated_by,created_at) VALUES (?,?,?,?,?,?,?)').run(o.client_user_id,o.route_id,JSON.stringify(Object.fromEntries(CLIENT_FIELDS.map(k=>[k,o[k]??'']))),o.id,o.created_by_user_id||o.client_user_id,o.updated_by_user_id||o.created_by_user_id||o.client_user_id,o.created_at);}).immediate();
 
  if(clientId)clientFor(actor,clientId);
@@ -85,10 +86,11 @@ export function submitDrafts(actor:AuthUser,ids:number[]){
  const preview=draftView(d,'CLIENT');if(!preview.pricing?.eligible)throw Error(preview.pricing?.reasons.join(' ')||'Draft chưa đủ điều kiện.');
  const duplicate=db.prepare("SELECT id,system_order_code,order_id,tracking FROM orders WHERE client_user_id=? AND trim(order_id)=? AND (service_purchased_at IS NOT NULL OR purchase_completed_at IS NOT NULL OR (workflow_status<>'SALES_DRAFT' AND (created_by_user_id IS NULL OR created_by_user_id NOT IN (SELECT id FROM users WHERE role='CLIENT')))) LIMIT 1").get(actor.id,key) as Row|undefined;
  if(duplicate)throw Error('Trùng đơn: Tracking '+String(duplicate.tracking||'—')+' · Client Order ID '+duplicate.order_id+' · DMD ID '+String(duplicate.system_order_code||duplicate.id));
+ if(d.legacy_order_id){const legacy=db.prepare('SELECT * FROM orders WHERE id=?').get(d.legacy_order_id) as Row;if(legacy.route_id!==data.route_id&&!legacy.service_purchased_at&&!legacy.pricing_snapshot_json&&!legacy.tracking&&!legacy.purchase_completed_at){db.prepare('UPDATE orders SET route_id=?,service=?,sub_service=?,supplier=? WHERE id=?').run(data.route_id,data.service,data.sub_service,data.supplier,legacy.id);audit(id,actor,'ACTIVE_ROUTE_REPLACEMENT',{old_route_id:legacy.route_id,new_route_id:data.route_id});}}
  const saved=upsertOrder({...data,...(d.legacy_order_id?{id:Number(d.legacy_order_id)}:{create_new:true})}) as Row;
  db.prepare('UPDATE orders SET created_by_user_id=?,updated_by_user_id=?,sales_user_id=? WHERE id=?').run(actor.id,actor.id,actor.sales_user_id,saved.id);
  const o=purchaseService(Number(saved.id),actor);
- db.prepare('UPDATE client_order_drafts SET submitted_order_id=?,failure_reason=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?').run(o.id,id);audit(id,actor,'SUBMIT',{order_id:o.id});
+ db.prepare('UPDATE client_order_drafts SET submitted_order_id=?,route_id=?,failure_reason=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?').run(o.id,o.route_id,id);audit(id,actor,'SUBMIT',{order_id:o.id});
  logOrderEvent({orderId:Number(o.id),eventType:'ORDER_CREATED',summary:'Client xác nhận đặt đơn từ Draft.',actorId:actor.id});
  return {id:o.id,order_id:o.order_id,pricing:safePricing(o,'CLIENT')};
  }).immediate();orders.push(order);

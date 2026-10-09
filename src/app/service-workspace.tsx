@@ -7,7 +7,7 @@ type SegmentRule={rule_type:string;segments:string[];priority:number;active:bool
 type Segmentation={enabled:boolean;rules:SegmentRule[]};
 type EnumRow={id:number;enum_type:string;value:string;parent_value:string;active:number;sort_order:number};
 type RouteRow={
-  id:number;service:string;sub_service:string;supplier:string;active:number;segmentation?:Segmentation;
+  id:number;status?:string;missing_cost_orders?:number;open_claims?:number;can_delete?:boolean;service:string;sub_service:string;supplier:string;active:number;segmentation?:Segmentation;
   template_id?:number;template_name?:string;output_mode?:string;active_version_id?:number;version_number?:number;
   purchase_template_id?:number;purchase_template_name?:string;purchase_output_mode?:string;purchase_active_version_id?:number;purchase_version_number?:number;
   manifest_template_id?:number;manifest_template_name?:string;manifest_output_mode?:string;manifest_active_version_id?:number;manifest_version_number?:number;
@@ -68,7 +68,7 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
   async function createRoute(){
     setBusy(true);setMessage("");
     try{
-      await responseJson(await fetch("/api/service-routes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(form)}));
+      await responseJson(await fetch("/api/service-routes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...form,create_new:true,active:false})}));
       setForm({service:"",sub_service:"",supplier:""});setMessage("Đã lưu Service Route.");await load();
     }catch(error){setMessage("Lỗi: "+(error as Error).message)}
     finally{setBusy(false)}
@@ -141,6 +141,12 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
 
   const selectedRouteId=selected?.id;
   useEffect(()=>{if(selectedRouteId)editorRef.current?.scrollIntoView({block:"start"})},[selectedRouteId]);
+  async function changeLifecycle(action:string){
+    if(!selected)return;
+    const summary=`${selected.missing_cost_orders||0} đơn thiếu True Net Cost, ${selected.open_claims||0} Claim đang mở.`;
+    if(["ARCHIVED","DELETE"].includes(action)&&!window.confirm((action==="DELETE"?"Xóa vĩnh viễn Route chưa có tham chiếu? ":"Lưu trữ Route và giữ lịch sử? ")+summary))return;
+    setBusy(true);try{await responseJson(await fetch("/api/service-routes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:selected.id,action,confirm:true})}));setSelected(null);await load();setMessage("Đã cập nhật vòng đời dịch vụ.")}catch(e){setMessage((e as Error).message)}finally{setBusy(false)}
+  }
   const filteredRoutes=routes.filter(row=>[row.service,row.sub_service,row.supplier].join(" ").toLowerCase().includes(routeSearch.trim().toLowerCase()));
   const services=options(enums,"SERVICE");
   const subServices=form.service?options(enums,"SUB_SERVICE",form.service):[];
@@ -157,12 +163,12 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
       </details>
       <div className="routeListToolbar"><label className="searchBox"><span aria-hidden="true">⌕</span><input aria-label="Tìm cấu hình dịch vụ" placeholder="Tìm Service, Sub-Service, Supplier…" value={routeSearch} onChange={e=>setRouteSearch(e.target.value)}/></label><span>{filteredRoutes.length} / {routes.length} cấu hình · {routes.filter(row=>row.active).length} đang hoạt động</span></div>
       <div className="tableWrap routeTable"><table><thead><tr><th>Service</th><th>Sub-Service</th><th>Supplier</th><th>Purchase Template</th><th>Manifest Template</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
-        {filteredRoutes.length?filteredRoutes.map(row=><tr key={row.id} className={selected?.id===row.id?"selectedRoute":""}><td data-label="Service"><b>{row.service}</b></td><td data-label="Sub-Service">{row.sub_service||"—"}</td><td data-label="Supplier">{row.supplier}</td><td data-label="Purchase Template">{row.purchase_template_name||row.template_name||"Chưa có"}{row.purchase_version_number||row.version_number?<small>Active v{row.purchase_version_number||row.version_number}<ActiveTemplateDownload versionId={row.purchase_active_version_id||row.active_version_id} kind="Purchase"/></small>:null}</td><td data-label="Manifest Template">{row.manifest_template_name||"Chưa có"}{row.manifest_version_number?<small>Active v{row.manifest_version_number}<ActiveTemplateDownload versionId={row.manifest_active_version_id} kind="Manifest"/></small>:null}</td><td data-label="Trạng thái"><span className={row.active?"status goodStatus":"status neutralStatus"}>{row.active?"Active":"Inactive"}</span></td><td data-label="Thao tác"><button className="editBtn" onClick={()=>{setRouteTab("pricing");setSelected(row);setSegmentation(row.segmentation||{enabled:false,rules:[]});setSegmentDrafts((row.segmentation?.rules||[]).map(rule=>rule.segments.join(", ")));setConfigDrafts((row.segmentation?.rules||[]).map(rule=>JSON.stringify(rule.config,null,2)));chooseTemplateKind("PURCHASE",row);let vars:Record<string,string>={};try{vars=JSON.parse(row.route_variables_json||"{}")}catch{}setRouteVariables(Object.entries(vars).map(([key,value])=>({key,value:String(value)})))}}>Cấu hình</button></td></tr>):<tr><td colSpan={7} className="empty">{routes.length?"Không có cấu hình phù hợp với tìm kiếm.":"Chưa có cấu hình. Thêm dịch vụ để bắt đầu."}</td></tr>}
+        {filteredRoutes.length?filteredRoutes.map(row=><tr key={row.id} className={selected?.id===row.id?"selectedRoute":""}><td data-label="Service"><b>{row.service}</b></td><td data-label="Sub-Service">{row.sub_service||"—"}</td><td data-label="Supplier">{row.supplier}</td><td data-label="Purchase Template">{row.purchase_template_name||row.template_name||"Chưa có"}{row.purchase_version_number||row.version_number?<small>Active v{row.purchase_version_number||row.version_number}<ActiveTemplateDownload versionId={row.purchase_active_version_id||row.active_version_id} kind="Purchase"/></small>:null}</td><td data-label="Manifest Template">{row.manifest_template_name||"Chưa có"}{row.manifest_version_number?<small>Active v{row.manifest_version_number}<ActiveTemplateDownload versionId={row.manifest_active_version_id} kind="Manifest"/></small>:null}</td><td data-label="Trạng thái"><span className={row.active?"status goodStatus":"status neutralStatus"}>{row.status||(row.active?"Active":"Inactive")}</span></td><td data-label="Thao tác"><button className="editBtn" onClick={()=>{setRouteTab("pricing");setSelected(row);setSegmentation(row.segmentation||{enabled:false,rules:[]});setSegmentDrafts((row.segmentation?.rules||[]).map(rule=>rule.segments.join(", ")));setConfigDrafts((row.segmentation?.rules||[]).map(rule=>JSON.stringify(rule.config,null,2)));chooseTemplateKind("PURCHASE",row);let vars:Record<string,string>={};try{vars=JSON.parse(row.route_variables_json||"{}")}catch{}setRouteVariables(Object.entries(vars).map(([key,value])=>({key,value:String(value)})))}}>Cấu hình</button></td></tr>):<tr><td colSpan={7} className="empty">{routes.length?"Không có cấu hình phù hợp với tìm kiếm.":"Chưa có cấu hình. Thêm dịch vụ để bắt đầu."}</td></tr>}
       </tbody></table></div>
     </section>
 
     {selected&&<>
-      <div className="routeEditorHeader" ref={editorRef}><div><span className="eyebrow">ĐANG CẤU HÌNH</span><h2>{selected.service}{selected.sub_service?" / "+selected.sub_service:""}</h2><p>Supplier: {selected.supplier} · {selected.active?"Đang hoạt động":"Không hoạt động"}</p></div><button className="secondaryBtn" onClick={()=>setSelected(null)}>Đóng cấu hình</button></div>
+      <div className="routeEditorHeader" ref={editorRef}><div><span className="eyebrow">ĐANG CẤU HÌNH</span><h2>{selected.service}{selected.sub_service?" / "+selected.sub_service:""}</h2><p>Supplier: {selected.supplier} · {selected.active?"Đang hoạt động":"Không hoạt động"}</p></div><div><button className="secondaryBtn" disabled={busy} onClick={()=>void changeLifecycle(selected.active?"INACTIVE":"ACTIVE")}>{selected.active?"Ngừng hoạt động":"Kích hoạt"}</button><button className="secondaryBtn" disabled={busy} onClick={()=>void changeLifecycle("ARCHIVED")}>Archive</button>{selected.can_delete&&<button className="secondaryBtn" disabled={busy} onClick={()=>void changeLifecycle("DELETE")}>Xóa</button>}<button className="secondaryBtn" onClick={()=>setSelected(null)}>Đóng cấu hình</button></div></div>
       <div className="routeEditorTabs" role="group" aria-label="Các mục cấu hình dịch vụ">{[["pricing","Giá & phụ phí"],["templates","Template xuất file"],["segmentation","Phân vùng nâng cao"]].map(([key,label])=><button key={key} className={routeTab===key?"active":""} aria-pressed={routeTab===key} onClick={()=>setRouteTab(key)}>{label}</button>)}</div>
       <div hidden={routeTab!=="pricing"}><RoutePricingPanel key={selected.id} routeId={selected.id}/></div>
       <section hidden={routeTab!=="segmentation"} className="templateConfigCard">

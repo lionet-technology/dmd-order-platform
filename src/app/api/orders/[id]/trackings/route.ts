@@ -43,6 +43,8 @@ export async function POST(req:NextRequest,{params}:{params:Promise<{id:string}>
     const current=db.prepare("SELECT * FROM orders WHERE id=?").get(id) as Record<string,unknown>;
     if(current.workflow_status==="SALES_DRAFT"||clientDraftAwaitingPurchase(current))throw new Error("Client phải xác nhận đặt đơn trước khi Admin mua vận đơn.");
     const configuredSupplier=resolvePurchaseSupplier(current);
+    const concrete=routeFor(current);if(!concrete)throw Error("Route chưa được xác định duy nhất.");
+    if(!current.route_id){db.prepare("UPDATE orders SET route_id=?,service=?,sub_service=?,supplier=? WHERE id=?").run(concrete.id,concrete.service,concrete.sub_service,concrete.supplier,id);current.route_id=concrete.id;current.supplier=configuredSupplier;}
     if(body.supplier&&String(body.supplier)!==configuredSupplier)throw Error("Supplier phải khớp route của đơn.");
     if(!current.supplier){db.prepare("UPDATE orders SET supplier=? WHERE id=?").run(configuredSupplier,id);current.supplier=configuredSupplier;}
     const candidate={...current,supplier:configuredSupplier};

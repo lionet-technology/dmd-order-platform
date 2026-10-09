@@ -1,3 +1,4 @@
+import {resolveRoute} from "./routes";
 import {canWarehouseOutbound} from "./order-transition-guards";
 import {hasCaseHold} from "./cases";
 import {db} from "./db";
@@ -16,7 +17,8 @@ export function warehouseGuard(order:Row,carton:Row):GuardResult {
  const current=db.prepare("SELECT * FROM orders WHERE id=?").get(order.order_id) as Row|undefined;
  if(!current)return block("ROUTE_MISMATCH","Không tìm thấy Order.");
  const route=db.prepare("SELECT * FROM service_route_configs WHERE id=?").get(carton.route_config_id) as Row|undefined;
- if(!route||["service","sub_service","supplier"].some(key=>String(route[key]??"").trim().toLowerCase()!==String(current[key]??"").trim().toLowerCase()))return block("ROUTE_MISMATCH","Thùng chỉ nhận đúng Service / Sub-Service / Supplier của route.");
+ let orderRoute:Row;try{orderRoute=resolveRoute(current)}catch{return block("ROUTE_MISMATCH","Route lịch sử chưa được xác định duy nhất.")}
+ if(!route||Number(route.id)!==Number(orderRoute.id))return block("ROUTE_MISMATCH","Thùng chỉ nhận đúng Service / Sub-Service / Supplier của route.");
  if(current.workflow_status==="CANCELLED")return block("ORDER_CANCELLED","Order đã hủy.");
  if(hasCaseHold(Number(order.order_id))||current.workflow_status==="HOLD"||db.prepare("SELECT id FROM warehouse_order_holds WHERE order_id=? AND released_at IS NULL").get(order.order_id))return block("ORDER_HOLD","Order đang bị hold từ Client / Sales / Admin.");
  const state=canWarehouseOutbound(current);if(!state.allowed)return block("ADMIN_VIOLATION",state.reason);

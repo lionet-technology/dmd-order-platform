@@ -221,7 +221,7 @@ function QuickOrderSheet({role,clients,enums,onDone,edit}:{role:Role;clients:Use
   useEffect(()=>{
     try{window.localStorage.setItem("dmd.orderSheetWidths",JSON.stringify(columnWidths))}catch{}
   },[columnWidths]);
-  const routeOptions=configuredRoutes.map(r=>({value:String(r.id),label:`${r.service} / ${r.sub_service}${role==="ADMIN"?` / ${r.supplier}`:""}`}));
+  const routeOptions=configuredRoutes.map(r=>({value:String(r.id),label:`${r.service} - ${r.sub_service}`}));
   const countryOptions=enumOptions(enums,"COUNTRY");
   const clientOptions=clients
     .filter(client=>client.active!==0||String(edit?.client_user_id||"")===String(client.id))
@@ -229,7 +229,7 @@ function QuickOrderSheet({role,clients,enums,onDone,edit}:{role:Role;clients:Use
 
   const common:SheetColumn[]=[
     {key:"client_user_id",label:"Client *",width:185,type:"combo",options:clientOptions},
-    {key:"order_id",label:"Client Order ID *",width:145},{key:"route_id",label:"Route được cấu hình *",width:220,type:"combo",options:routeOptions},{key:"item",label:"Tên sản phẩm *",width:145},{key:"material",label:"Chất liệu *",width:120},
+    {key:"order_id",label:"Client Order ID *",width:145},{key:"route_id",label:"Dịch vụ *",width:220,type:"combo",options:routeOptions},{key:"item",label:"Tên sản phẩm *",width:145},{key:"material",label:"Chất liệu *",width:120},
     {key:"carton_count",label:"Số carton *",width:82,type:"number"},{key:"weight",label:"Tổng kg *",width:78,type:"number"},
     {key:"length",label:"Dài cm",width:76,type:"number"},{key:"width",label:"Rộng cm",width:76,type:"number"},
     {key:"height",label:"Cao cm",width:76,type:"number"},{key:"manual_volume",label:"Thể tích cm³",width:105,type:"number"},{key:"declared_value",label:"Giá trị SX USD",width:105,type:"number"},
@@ -535,7 +535,6 @@ function ImportCard({ kind, title, detail, templateHref, onDone }:{
 function ClientServiceSettingsEditor({client,enums,onClose}:{client:User;enums:EnumRow[];onClose:()=>void}){
   type SettingDraft={is_enabled:boolean;discount_percent:string;default_sub_service:string;default_supplier:string};
   const services=enumOptions(enums,"SERVICE");
-  const suppliers=enumOptions(enums,"SUPPLIER");
   const [settings,setSettings]=useState<Record<string,SettingDraft>>({});
   const [balance,setBalance]=useState(0);
   const [loading,setLoading]=useState(true);
@@ -586,7 +585,7 @@ function ClientServiceSettingsEditor({client,enums,onClose}:{client:User;enums:E
         </div>
         {row.is_enabled&&<div className="serviceDefaults">
           <label><span>Default Sub-Service</span><select value={row.default_sub_service} onChange={e=>update(option.value,"",{default_sub_service:e.target.value})}><option value="">Không có</option>{subOptions.map(sub=><option key={sub.value}>{sub.value}</option>)}</select></label>
-          <label><span>Default Supplier</span><select value={row.default_supplier} onChange={e=>update(option.value,"",{default_supplier:e.target.value})}><option value="">Chưa đặt</option>{suppliers.map(supplier=><option key={supplier.value}>{supplier.value}</option>)}</select></label>
+
         </div>}
         {subOptions.length>0&&<details className="subDiscounts"><summary>Dịch vụ & discount theo Sub-Service</summary>{subOptions.map(sub=>{const child=value(option.value,sub.value);return <div key={sub.value}><label><input type="checkbox" checked={child.is_enabled} onChange={e=>update(option.value,sub.value,{is_enabled:e.target.checked})}/>{sub.value}</label><label><input aria-label={"Discount "+option.value+" / "+sub.value+" (%)"} type="number" min="0" max="100" step="0.01" value={child.discount_percent} onChange={e=>update(option.value,sub.value,{discount_percent:e.target.value})}/><em>%</em></label><button className="editBtn" disabled={busy} onClick={()=>void save(option.value,sub.value)}>Lưu</button></div>})}</details>}
       </section>;

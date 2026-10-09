@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
+import { migrateRouteArchitecture,backfillLegacyManifestRoutes } from "./route-migration";
 
 const dbPath = process.env.DMD_DB_PATH || path.join(process.cwd(), "data", "dmd-finance-ops.db");
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -10,6 +11,12 @@ export const db = globalForDb.dmdDb ?? new Database(dbPath);
 if (process.env.NODE_ENV !== "production") globalForDb.dmdDb = db;
 
 db.pragma("busy_timeout = 10000");
+// Snapshot before any schema upgrade, including legacy upgrades below.
+if(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='orders'").get() && !db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='route_architecture_migrations'").get()){
+ const backup=dbPath+".before-route-architecture-"+Date.now()+".db";
+ db.exec("VACUUM INTO '"+backup.replace(/'/g,"''")+"'");
+}
+
 // Keep foreign-key enforcement off while legacy schemas are upgraded below.
 db.pragma("foreign_keys = OFF");
 
@@ -628,14 +635,6 @@ db.exec(`
  CREATE INDEX IF NOT EXISTS idx_manifest_cartons_recent ON manifest_cartons(manifest_date DESC,daily_sequence DESC);
  CREATE INDEX IF NOT EXISTS idx_warehouse_holds_order ON warehouse_order_holds(order_id,released_at);
  CREATE INDEX IF NOT EXISTS idx_manifest_events_carton ON manifest_carton_events(manifest_carton_id,id);
- INSERT OR IGNORE INTO service_route_configs(service,sub_service,supplier)
- SELECT DISTINCT COALESCE(o.service,''),COALESCE(o.sub_service,''),COALESCE(o.supplier,'')
- FROM manifest_carton_items i JOIN orders o ON o.id=i.order_id;
- UPDATE manifest_cartons SET route_config_id=(
- SELECT rc.id FROM manifest_carton_items i JOIN orders o ON o.id=i.order_id
- JOIN service_route_configs rc ON rc.service=COALESCE(o.service,'') COLLATE NOCASE
- AND rc.sub_service=COALESCE(o.sub_service,'') COLLATE NOCASE AND rc.supplier=COALESCE(o.supplier,'') COLLATE NOCASE
- WHERE i.manifest_carton_id=manifest_cartons.id LIMIT 1) WHERE route_config_id IS NULL;
 `);
 ensureColumn("warehouse_routing_rules","priority","priority INTEGER NOT NULL DEFAULT 0");
 db.pragma("foreign_keys = ON");
@@ -795,3 +794,6 @@ db.exec(`CREATE TABLE IF NOT EXISTS manual_purchase_drafts (
  order_id INTEGER PRIMARY KEY REFERENCES orders(id), payload_json TEXT NOT NULL,
  updated_by INTEGER NOT NULL REFERENCES users(id), updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );`);
+
+migrateRouteArchitecture(db,dbPath);
+backfillLegacyManifestRoutes(db);

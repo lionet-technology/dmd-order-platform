@@ -54,6 +54,8 @@ async function main(){
   db.prepare("INSERT INTO client_service_settings(client_user_id,service,sub_service,is_enabled,discount_percent,default_sub_service,default_supplier) VALUES (?,?,?,?,?,?,?)")
     .run(client.id,"ePacket","",1,0,"T11","KILOSHIP");
 
+  const routeVariables=JSON.parse(fs.readFileSync(path.join(root,"config/templates/epacket-standard-dmd/route.json"),"utf8")).route_variables;
+  db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier,active,route_variables_json) VALUES ('ePacket','T11','KILOSHIP',1,?)").run(JSON.stringify(routeVariables));
   const order=upsertOrder({
     client_user_id:client.id,created_at:"03/10/2026",order_id:"PURCHASE-001",customer:"Client",sales:"Sales",
     service:"ePacket",sub_service:"T11",supplier:"KILOSHIP",item:"Legacy summary",material:"Mixed",carton_count:2,
@@ -108,8 +110,8 @@ async function main(){
   const manifestScan=await scanPurchaseWorkbook(fs.readFileSync(manifestPath));
   assert(manifestScan.unknown.length===0&&manifestScan.placeholders.length===11,"manifest scanner should accept row index, email and gram placeholders");
 
-  const routeVariables={service_code:"EP_T11",sender_address:"DMD Warehouse, Hanoi"};
-  const routeId=Number(db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier,route_variables_json,created_by_user_id) VALUES (?,?,?,?,?)").run("ePacket","T11","KILOSHIP",JSON.stringify(routeVariables),admin.id).lastInsertRowid);
+  const routeId=db.prepare("SELECT id FROM service_route_configs WHERE service='ePacket' AND sub_service='T11'").get().id;
+  db.prepare("UPDATE service_route_configs SET route_variables_json=?,created_by_user_id=? WHERE id=?").run(JSON.stringify(routeVariables),admin.id,routeId);
   const templateId=Number(db.prepare("INSERT INTO purchase_templates(route_config_id,name,output_mode,repeat_sections_json,created_by_user_id) VALUES (?,?,?,?,?)")
     .run(routeId,"Invoice per Lot","PER_LOT",JSON.stringify([{sheet:"Invoice",row:2,scope:"CARTON_ITEM"}]),admin.id).lastInsertRowid);
   db.prepare("INSERT INTO purchase_template_versions(template_id,version_number,original_filename,stored_path,status,placeholder_map_json,validation_json,created_by_user_id,activated_at) VALUES (?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)")
@@ -126,7 +128,7 @@ async function main(){
   assert(flattened.some(value=>value.includes("SKU-A")&&!value.includes("SKU-B")),"Lot 1 file should contain only Lot 1 goods");
   assert(flattened.some(value=>value.includes("SKU-B")&&!value.includes("SKU-A")),"Lot 2 file should contain only Lot 2 goods");
   assert(flattened.every(value=>value.includes("16")),"each Lot file should retain the computed Order total");
-  assert(flattened.every(value=>value.includes("EP_T11")&&value.includes("DMD Warehouse, Hanoi")),"route variables should render into every generated workbook");
+  assert(flattened.every(value=>value.includes(routeVariables.service_code)&&value.includes(routeVariables.sender_address)),"route variables should render into every generated workbook");
   const scanned=await generateScannedManifestFiles(["lot 2 track"]);
   const scannedBook=new ExcelJS.Workbook();await scannedBook.xlsx.load(scanned.files[0].buffer);
   const scannedText=JSON.stringify(scannedBook.getWorksheet("Manifest").getSheetValues());

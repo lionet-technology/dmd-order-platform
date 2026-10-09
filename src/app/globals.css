@@ -1066,3 +1066,10 @@ td{padding:12px;line-height:1.45}
  .financialActivity td {display:grid;grid-template-columns:90px 1fr;gap:10px;max-width:none;width:auto;white-space:normal;padding:5px 0;border:0;overflow-wrap:anywhere;}
  .financialActivity td::before {content:attr(data-label);font-weight:600;color:var(--muted,#64748b);}
 }
+
+.routeChangeControls { display:grid; grid-template-columns: minmax(150px,1fr) minmax(180px,2fr) auto; align-items:end; gap:12px; }
+.routeChangeControls .field { min-width:0; }
+.routeChangeControls select,.routeChangeControls input { width:100%; box-sizing:border-box; }
+.routeChangeReview { position:fixed; inset:0; z-index:1000; background:rgba(15,23,42,.45); display:grid; place-items:center; padding:20px; }
+.routeChangeReviewBody { width:min(100%,520px); max-height:85vh; overflow:auto; background:white; box-sizing:border-box; border-radius:16px; padding:24px; box-shadow:0 20px 50px rgba(15,23,42,.2); }
+@media(max-width:640px){ .routeChangeControls { grid-template-columns:1fr; } }
