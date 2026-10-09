@@ -25,7 +25,8 @@
     "verify:balance-idempotency": "node scripts/verify-balance-idempotency.cjs",
     "verify:drafts": "node scripts/verify-client-drafts.cjs",
     "verify:route-architecture": "node scripts/verify-route-architecture.cjs && node scripts/verify-route-migration.cjs",
-    "verify:route-review": "node scripts/verify-route-review.cjs"
+    "verify:route-review": "node scripts/verify-route-review.cjs",
+    "verify:draft-bulk": "node scripts/verify-draft-bulk-ux.cjs"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",

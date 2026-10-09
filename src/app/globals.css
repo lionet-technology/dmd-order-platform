@@ -1082,3 +1082,13 @@ td{padding:12px;line-height:1.45}
 @media(max-width:640px){ .confirmationActions { flex-direction:column-reverse; } .confirmationActions button { width:100%; white-space:normal; } }
 
 .routeConfigFields {border:0;padding:0;margin:0;min-width:0;}
+
+.draftWorkspace .dataToolbar label{display:flex;flex-direction:column;gap:6px;font-size:12px}
+.draftWorkspace .dataToolbar select,.draftWorkspace .dataToolbar input,.draftWorkspace td select{min-height:36px;border:1px solid #d0d5dd;border-radius:7px;padding:7px;font-size:12px;background:white}
+.draftWorkspace td.draftReason{min-width:240px;max-width:380px;white-space:normal;line-height:1.5}
+.draftWorkspace td input[type=checkbox]{min-width:16px;height:16px}
+.draftWorkspace th{position:sticky;top:0;background:#f8faff;z-index:1}
+.draftWorkspace>.panel{padding:16px}
+.draftWorkspace .bulkSheetFooter{align-items:flex-start;gap:12px;padding:0}
+.draftWorkspace .bulkSheetFooter .clientUploadActions{display:flex;flex-wrap:wrap;gap:8px;padding:12px}
+@media(max-width:700px){.draftWorkspace .dataToolbar{flex-direction:row;align-items:flex-start}.draftWorkspace .dataToolbar label,.draftWorkspace .dataToolbar>input{flex:1 1 140px;min-width:0}.draftWorkspace select{max-width:100%}.draftWorkspace .bulkSheetFooter{display:block}.draftWorkspace .bulkSheetFooter .clientUploadActions{margin-top:12px}}

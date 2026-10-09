@@ -790,6 +790,8 @@ CREATE TABLE IF NOT EXISTS client_draft_audit (
  actor_id INTEGER NOT NULL REFERENCES users(id), action TEXT NOT NULL, detail_json TEXT NOT NULL,
  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );`);
+ensureColumn("client_order_drafts","request_key","request_key TEXT");
+db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_client_draft_request_key ON client_order_drafts(client_id,request_key) WHERE request_key IS NOT NULL");
 db.exec(`CREATE TABLE IF NOT EXISTS manual_purchase_drafts (
  order_id INTEGER PRIMARY KEY REFERENCES orders(id), payload_json TEXT NOT NULL,
  updated_by INTEGER NOT NULL REFERENCES users(id), updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP

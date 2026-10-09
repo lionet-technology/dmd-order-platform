@@ -3,7 +3,7 @@ import { normalizeCountry } from "@/lib/epacket-pricing";
 import { OperationsWorkspace } from "./operations-workspace";
 import { FinancialWorkspace } from "./financial-workspace";
 import { readableReason } from "./pricing-preview";
-import { ClientPurchasePanel } from "./client-purchase-panel";
+import { DraftWorkspace } from "./draft-workspace";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { BulkTrackingSheet,OrderDetailPanel,ShipmentStatusPanel,TrackingReplacementSheet } from "./order-workspaces";
@@ -915,17 +915,12 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   const [entry,setEntry]=useState<ManualKind|null>(null);
   const [editOrder,setEditOrder]=useState<RowData|null>(null);
   const [clientPurchase,setClientPurchase]=useState(false);
-  const [clientDraft,setClientDraft]=useState<RowData|null>(null);
   const [purchaseOrder,setPurchaseOrder]=useState<RowData|null>(null);
   const [viewOrder,setViewOrder]=useState<RowData|null>(null);
   const [bulkTracking,setBulkTracking]=useState(false);
   const [bulkReplacement,setBulkReplacement]=useState(false);
   const [importKind,setImportKind]=useState<ImportKind|null>(null);
   const [ordersTab,setOrdersTab]=useState("all");
-  const [draftFilter,setDraftFilter]=useState("");
-  const [draftClient,setDraftClient]=useState("");
-  const [draftSelection,setDraftSelection]=useState<number[]>([]);
-  const [draftMessage,setDraftMessage]=useState("");
   const [orderFilters,setOrderFilters]=useState({status:"",service:"",salesUserId:"",reconcile:""});
 
   useEffect(()=>{
@@ -982,13 +977,13 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   };
 
   const loadSection=useCallback(async(target:AppSection,currentPage=page,q=debouncedSearch)=>{
-    const endpoint=target==="orders"&&ordersTab==="draft"?"/api/client-drafts":endpointFor(target);
+    if(target==="orders"&&ordersTab==="draft")return;
+    const endpoint=endpointFor(target);
     if(!endpoint)return;
     setLoading(true);
     try{
       const params=new URLSearchParams({page:String(currentPage),pageSize:"20",q});
       if(target==="orders"){
-        if(ordersTab==="draft"){params.set("view","draft");if(draftFilter)params.set("draftState",draftFilter);if(draftClient)params.set("clientId",draftClient);}
         if(orderFilters.status)params.set("status",orderFilters.status);
         if(orderFilters.service)params.set("service",orderFilters.service);
         if(orderFilters.salesUserId)params.set("salesUserId",orderFilters.salesUserId);
@@ -999,11 +994,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
       if(!res.ok)return;
       setData(await res.json());
     } finally {setLoading(false)}
-  },[page,debouncedSearch,onLogout,orderFilters,ordersTab,draftFilter,draftClient]);
-
-  async function deleteSelectedDrafts(all:boolean){
-    try{const result=await postJson('/api/client-drafts',{action:'delete',all,ids:draftSelection,client_id:Number(draftClient)});setDraftMessage(`Đã xóa ${result.deleted} Draft.`);setDraftSelection([]);await loadSection('orders');}catch(e){setDraftMessage((e as Error).message)}
-  }
+  },[page,debouncedSearch,onLogout,orderFilters,ordersTab]);
 
   const loadRecent=useCallback(async()=>{
     if(role!=="ADMIN"){setRecent([]);return;}
@@ -1114,16 +1105,9 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
 
         {section==="orders"&&<>
           <PageHeader eyebrow="OPERATIONS" title="Orders" description={role==="ADMIN"?"Quản lý toàn bộ đơn hàng và trạng thái xử lý.":role==="SALES"?"Quản lý Orders của các Client được phân công.":"Theo dõi Orders của tài khoản Client này."}
-            actions={role==="CLIENT"?<button className="primaryBtn" onClick={()=>{setClientDraft(null);setClientPurchase(true)}}>＋ Tạo / Import & Đặt mua dịch vụ</button>:<><button className="secondaryBtn" onClick={()=>setImportKind(role==="ADMIN"?"orders":"sales_orders")}>⇩ Import</button>{role==="ADMIN"&&ordersTab==="all"&&<button className="secondaryBtn" onClick={()=>setBulkTracking(true)}>▦ Mua đơn hàng loạt</button>}{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkReplacement(true)}>⇄ Đổi Tracking</button>}<button className="primaryBtn" onClick={()=>openEntry("order")}>＋ Tạo Order</button></>}/>
+            actions={role==="CLIENT"?<button className="primaryBtn" onClick={()=>setClientPurchase(true)}>＋ Tạo / Import & Đặt mua dịch vụ</button>:<>{ordersTab==="all"&&<button className="secondaryBtn" onClick={()=>setImportKind(role==="ADMIN"?"orders":"sales_orders")}>⇩ Import</button>}{role==="ADMIN"&&ordersTab==="all"&&<button className="secondaryBtn" onClick={()=>setBulkTracking(true)}>▦ Mua đơn hàng loạt</button>}{role==="ADMIN"&&ordersTab==="all"&&<button className="secondaryBtn" onClick={()=>setBulkReplacement(true)}>⇄ Đổi Tracking</button>}{ordersTab==="all"&&<button className="secondaryBtn" onClick={()=>openEntry("order")}>＋ Tạo Order</button>}<button className="primaryBtn" onClick={()=>setClientPurchase(true)}>＋ Nhập / Đặt đơn</button></>}/>
           <div className="templateKindTabs"><button className={ordersTab==="all"?"active":""} onClick={()=>{setOrdersTab("all");setPage(1);setOrderFilters(x=>({...x,status:""}))}}>Mọi đơn hàng</button><button className={ordersTab==="draft"?"active":""} onClick={()=>{setOrdersTab("draft");setPage(1);setOrderFilters(x=>({...x,status:""}))}}>Draft</button></div>
-          {ordersTab==="draft"&&<div className="dataToolbar">
-            <select value={draftFilter} onChange={e=>{setDraftFilter(e.target.value);setPage(1)}}><option value="">Tất cả Draft</option><option value="incomplete">Chưa hoàn tất</option><option value="failed">Đặt thất bại</option><option value="eligible">Đủ điều kiện</option><option value="support">Cần hỗ trợ</option></select>
-            {role!=="CLIENT"&&<select value={draftClient} onChange={e=>{setDraftClient(e.target.value);setDraftSelection([]);setPage(1)}}><option value="">Mọi Client</option>{clients.map(c=><option key={c.id} value={c.id}>{c.display_name}</option>)}</select>}
-            <button disabled={role!=="CLIENT"&&!draftClient||!draftSelection.length} onClick={()=>void deleteSelectedDrafts(false)}>Xóa Draft đã chọn ({draftSelection.length})</button>
-            <button disabled={role!=="CLIENT"&&!draftClient} onClick={()=>{if(window.confirm("Xóa tất cả Draft của Client đang chọn?"))void deleteSelectedDrafts(true)}}>Xóa tất cả Draft</button>
-
-            {draftMessage&&<p role="status">{draftMessage}</p>}
-          </div>}
+          {ordersTab==="draft"?<DraftWorkspace role={role} clients={clients} onDone={()=>void refresh()} onAll={()=>setOrdersTab("all")}/>:<>
           <div className="panel dataPanel">
             <div className="dataToolbar orderToolbar">
               <OrderSearchBar value={search} onChange={setSearch}/>
@@ -1136,9 +1120,9 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
               </div>}
               <span>{data.total} records</span>
             </div>
-            {loading?<div className="loadingState">Đang tải dữ liệu…</div>:<Table rows={data.items} cols={ordersTab==="draft"?["draft_state","created_at","order_id","customer","service","sub_service","failure_reason"]:orderCols} selectedIds={draftSelection} onSelect={ordersTab==="draft"?(id,checked)=>setDraftSelection(prev=>checked?[...prev,id]:prev.filter(x=>x!==id)):undefined} canEdit={row=>role==="CLIENT"||!!row.failure_reason} onView={ordersTab==="all"?setViewOrder:undefined} onEdit={ordersTab==="draft"?row=>{if(role==="CLIENT"||row.failure_reason){setClientDraft(row);setClientPurchase(true)}}:undefined} onPurchase={role==="ADMIN"&&ordersTab==="all"?row=>setPurchaseOrder(row):undefined}/>}
+            {loading?<div className="loadingState">Đang tải dữ liệu…</div>:<Table rows={data.items} cols={orderCols} onView={setViewOrder} onPurchase={role==="ADMIN"?row=>setPurchaseOrder(row):undefined}/>}
             <Pager data={data} onPage={setPage}/>
-          </div>
+          </div></>}
         </>}
 
         {(role==="ADMIN"||role==="WAREHOUSE")&&section==="manifest"&&<>
@@ -1195,7 +1179,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
       </div>
     </div>
 
-    {clientPurchase&&<Modal size="wide" title={role==="CLIENT"?"Client · Đặt mua dịch vụ":"Hỗ trợ Draft của Client"} onClose={()=>setClientPurchase(false)}><ClientPurchasePanel support={role!=="CLIENT"} initial={clientDraft} onDone={()=>void refresh()}/></Modal>}
+    {clientPurchase&&<Modal size="fullscreen" title="Nhập & Đặt đơn hàng loạt" onClose={()=>setClientPurchase(false)}><DraftWorkspace role={role} clients={clients} create onDraft={()=>{setClientPurchase(false);setOrdersTab("draft")}} onDone={()=>void refresh()} onAll={()=>{setClientPurchase(false);setOrdersTab("all")}}/></Modal>}
     {viewOrder&&<Modal size="wide" title="Chi tiết Order" onClose={()=>setViewOrder(null)}><OrderDetailPanel orderId={Number(viewOrder.id)} role={role} onDone={refresh} onEdit={row=>{setViewOrder(null);openEntry("order",row as RowData)}} onPurchase={role==="ADMIN"?row=>{setViewOrder(null);setPurchaseOrder(row as RowData)}:undefined}/></Modal>}
 
     {role==="ADMIN"&&bulkTracking&&<Modal size="fullscreen" title="Mua đơn hàng loạt" onClose={()=>setBulkTracking(false)}><BulkTrackingSheet enums={enums} onDone={refresh}/></Modal>}

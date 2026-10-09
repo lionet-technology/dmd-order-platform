@@ -63,10 +63,10 @@ export function refreshDraft(id:number){
  db.prepare("DELETE FROM ledger_entries WHERE entry_type='ORDER_CHARGE' AND reference_type='ORDER' AND reference_id=?").run(String(id));
  return db.prepare("SELECT * FROM orders WHERE id=?").get(id) as Row;
 }
-export function purchaseService(id:number,actor:{id:number;role:string},requireBalance=true){
+export function purchaseService(id:number,actor:{id:number;role:string},requireBalance=true,confirmDraft=false){
  return db.transaction(()=>{
  const o=refreshDraft(id);
- if(actor.role!=="CLIENT"&&(o.workflow_status==="SALES_DRAFT"||clientDraftAwaitingPurchase(o)))throw Error("Client phải xác nhận đặt đơn trước; Admin/Sales chỉ hỗ trợ Draft.");
+ if(!confirmDraft&&actor.role!=="CLIENT"&&(o.workflow_status==="SALES_DRAFT"||clientDraftAwaitingPurchase(o)))throw Error("Client phải xác nhận đặt đơn trước; Admin/Sales chỉ hỗ trợ Draft.");
  if((actor.role==="CLIENT"&&Number(o.client_user_id)!==actor.id)||(actor.role==="SALES"&&!db.prepare("SELECT id FROM users WHERE id=? AND sales_user_id=?").get(Number(o.client_user_id),actor.id)))throw Error("Không có quyền mua Order này.");
  if(!["CLIENT","ADMIN","SALES"].includes(actor.role))throw Error("Không có quyền mua dịch vụ.");
  if(o.workflow_status==="CANCELLED")throw Error("Đơn đã huỷ.");
@@ -100,7 +100,7 @@ export function safePricing(o:Row,role:string){
    if(!route?.client_self_purchase)q.reasons.push("Route chưa cho phép Client tự đặt mua.");
    const financial=accountFinancials(Number(o.client_user_id));
    if(financial.purchase_blocked)q.reasons.push(...financial.reasons);
-   if(financial.available_to_buy_cents<Math.round(q.total_charge*100))q.reasons.push("Balance / credit không đủ.");
+   if(financial.available_to_buy_cents<Math.round(q.total_charge*100))q.reasons.push("Không đủ Balance / Credit: thiếu "+((Math.round(q.total_charge*100)-financial.available_to_buy_cents)/100).toFixed(2)+" USD.");
    q.eligible=!q.reasons.length;
  }
  return {eligible:q.eligible,reasons:q.reasons,currency:q.currency,volumetric_weight:q.volumetric_weight,chargeable_weight:q.chargeable_weight,tier:q.tier,discount_percent:q.discount_percent,service_price:usd(q.sale_price),surcharge_breakdown:q.surcharge_breakdown,surcharge:usd(q.surcharge),total_charge:q.total_charge,...(role==="SALES"?{guidance:q.guidance}:{})};
