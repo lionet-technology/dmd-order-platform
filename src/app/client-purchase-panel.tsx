@@ -10,7 +10,20 @@ const blank=()=>({country:"US",carton_count:1,item:"T-shirt",material:"Cotton"} 
 export function ClientPurchasePanel({onDone,initial,support=false}:{onDone:()=>void;initial?:Row|null;support?:boolean}){
  const [routes,setRoutes]=useState<Route[]>([]),[balance,setBalance]=useState(0),[routeId,setRouteId]=useState(""),[rows,setRows]=useState<Row[]>([initial||blank()]),[checked,setChecked]=useState<Validated[]>([]),[file,setFile]=useState<File|null>(null),[mode,setMode]=useState("manual"),[busy,setBusy]=useState(false),[msg,setMsg]=useState(""),[saved,setSaved]=useState<Array<{id:number;order_id:string;pricing:Preview}>>([]),[selection,setSelection]=useState<number[]>([]);
  const locked=!!initial?.service_purchased_at||!!initial?.purchase_completed_at||["PURCHASED","RECONCILED"].includes(String(initial?.workflow_status));
- useEffect(()=>{if(support&&initial){setRoutes([{id:Number(initial.route_id),service:String(initial.service),sub_service:String(initial.sub_service),discount_percent:0}]);setRouteId(String(initial.route_id));return;}void fetch("/api/client-orders").then(r=>r.json()).then(d=>{setRoutes(d.routes||[]);setBalance(d.balance||0);setRouteId(String((d.routes||[]).find((r:Route)=>initial?r.service===initial.service&&r.sub_service===initial.sub_service:true)?.id||""))})},[initial,support]);
+ useEffect(()=>{
+   let cancelled=false;
+   void (async()=>{
+     const response=await fetch(support?`/api/order-routes?clientId=${initial?.client_user_id}`:"/api/client-orders");
+     const data=await response.json();if(!response.ok)throw Error(data.error||"Không thể tải dịch vụ.");
+     if(cancelled)return;
+     const choices=(support?data:data.routes||[]) as Route[];
+     setRoutes(choices.map(r=>({...r,discount_percent:Number(r.discount_percent||0)})));
+     if(!support)setBalance(Number(data.balance||0));
+     const current=choices.find(r=>Number(r.id)===Number(initial?.route_id))||choices.find(r=>initial?r.service===initial.service&&r.sub_service===initial.sub_service:true);
+     setRouteId(String(current?.id||""));
+   })().catch(e=>{if(!cancelled)setMsg(e.message)});
+   return ()=>{cancelled=true};
+ },[initial,support]);
  useEffect(()=>{
  if(!routeId||locked||support)return;
  const controller=new AbortController(),timer=setTimeout(()=>{void fetch("/api/client-orders",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"preview",route_id:Number(routeId),rows}),signal:controller.signal}).then(async r=>{const d=await r.json();if(!r.ok)throw Error(d.error);setChecked(d.rows)}).catch(e=>{if(e.name!=="AbortError")setMsg(e.message)})},300);
@@ -29,8 +42,8 @@ export function ClientPurchasePanel({onDone,initial,support=false}:{onDone:()=>v
  }catch(e){setMsg((e as Error).message)}finally{setBusy(false)}
  }
  function template(){const blob=new Blob([fields.join(",")+"\r\n"],{type:"text/csv"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="Client_Orders.csv";a.click();URL.revokeObjectURL(url)}
- return <div className="clientPurchase"><div className="clientPurchaseHero"><div><h3>Tạo & đặt mua dịch vụ</h3><p>Lưu Draft → kiểm tra giá → đặt mua → nhận Tracking & Label.</p></div><div className="clientPurchaseBalance"><span>Balance hiện tại</span><b>{balance.toFixed(2)} USD</b></div></div>
- <label className="field"><span>Dịch vụ</span><select value={routeId} disabled={locked} onChange={e=>{setRouteId(e.target.value);setChecked([]);setSaved([])}}><option value="">Chọn dịch vụ được cấp</option>{routes.map(r=><option key={r.id} value={r.id}>{r.service} - {r.sub_service} · Discount {r.discount_percent.toFixed(4)}% từ Retail</option>)}</select></label>
+ return <div className="clientPurchase"><div className="clientPurchaseHero"><div><h3>{support?"Hỗ trợ Draft của Client":"Tạo & đặt mua dịch vụ"}</h3><p>{support?"Sửa dữ liệu và lưu Draft. Client sẽ kiểm tra giá và xác nhận đặt lại.":"Lưu Draft → kiểm tra giá → đặt mua → nhận Tracking & Label."}</p></div>{!support&&<div className="clientPurchaseBalance"><span>Balance hiện tại</span><b>{balance.toFixed(2)} USD</b></div>}</div>
+ <label className="field"><span>Dịch vụ</span><select value={routeId} disabled={locked} onChange={e=>{setRouteId(e.target.value);setChecked([]);setSaved([])}}><option value="">Chọn dịch vụ được cấp</option>{routes.map(r=><option key={r.id} value={r.id}>{r.service}{r.sub_service?" - "+r.sub_service:""}{!support?" · Discount "+r.discount_percent.toFixed(2)+"% từ Retail":""}</option>)}</select></label>
  {!locked&&<><div className="templateKindTabs"><button className={mode==="manual"?"active":""} aria-pressed={mode==="manual"} onClick={()=>setMode("manual")}>Nhập tay / Paste</button><button className={mode==="upload"?"active":""} aria-pressed={mode==="upload"} onClick={()=>setMode("upload")}>Upload CSV / XLSX</button></div>
  {mode==="upload"?<div className="clientUploadActions"><button className="secondaryBtn" onClick={template}>Tải CSV mẫu</button><input type="file" accept=".csv,.xlsx" onChange={e=>setFile(e.target.files?.[0]||null)}/><button className="primaryBtn" disabled={busy||!file||!routeId} onClick={()=>void act("upload")}>Validate & Preview</button></div>:<><p>Paste các cột theo thứ tự bên dưới từ Excel/Sheets. Dữ liệu sai vẫn có thể lưu Draft để sửa.</p><textarea rows={2} placeholder="Dán dòng TSV từ Excel/Sheets tại đây" onPaste={e=>{e.preventDefault();setRows(e.clipboardData.getData("text").trim().split(/\r?\n/).map(line=>({...blank(),...Object.fromEntries(line.split("\t").map((v,i)=>[fields[i],v]))})));setSaved([])}}/></>}
  <div className="tableWrap"><table><thead><tr>{labels.map(l=><th key={l}>{l}</th>)}<th></th></tr></thead><tbody>{rows.map((r,i)=><tr key={i}>{fields.map(k=><td key={k}><input aria-label={labels[fields.indexOf(k)]+" · dòng "+(i+1)} style={{minWidth:105}} value={String(r[k]??"")} onChange={e=>{setRows(prev=>prev.map((row,n)=>n===i?{...row,[k]:e.target.value}:row));setSaved([])}}/></td>)}<td><button className="rowAction dangerBtn" onClick={()=>setRows(prev=>prev.filter((_,n)=>n!==i))}>Bỏ</button></td></tr>)}</tbody></table></div>

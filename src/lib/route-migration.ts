@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3';
 import fs from 'node:fs';
 type Row=Record<string,unknown>;
 export function migrateRouteArchitecture(db:Database.Database,dbPath:string){
- if(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='route_architecture_migrations'").get())return;
+ if(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='route_architecture_migrations'").get()){hardenRouteArchitecture(db);return;}
  const conflicts=db.prepare("SELECT lower(trim(service)) service,lower(trim(sub_service)) sub_service,group_concat(id) route_ids FROM service_route_configs WHERE active=1 GROUP BY lower(trim(service)),lower(trim(sub_service)) HAVING count(*)>1").all();
  if(conflicts.length){fs.writeFileSync(dbPath+'.route-conflicts.json',JSON.stringify(conflicts,null,2));throw Error('Route migration bị chặn: nhiều ACTIVE route cùng dịch vụ. Xem '+dbPath+'.route-conflicts.json');}
  const issues:Row[]=[];
@@ -72,6 +72,7 @@ export function migrateRouteArchitecture(db:Database.Database,dbPath:string){
  db.pragma('legacy_alter_table = OFF');
  db.pragma('foreign_keys = ON');
  }
+ hardenRouteArchitecture(db);
  fs.writeFileSync(dbPath+'.route-backfill-report.json',JSON.stringify({issues},null,2));
 }
 
@@ -83,4 +84,22 @@ export function backfillLegacyManifestRoutes(db:Database.Database){
  for(const o of orders){const rows=o.route_id?db.prepare('SELECT id FROM service_route_configs WHERE id=?').all(o.route_id):db.prepare("SELECT id FROM service_route_configs WHERE lower(trim(service))=lower(trim(?)) AND lower(trim(sub_service))=lower(trim(?)) AND (?='' OR lower(trim(supplier))=lower(trim(?)))").all(String(o.service||''),String(o.sub_service||''),String(o.supplier||''),String(o.supplier||''));if(rows.length!==1){unique=false;break}ids.add(Number((rows[0] as Row).id));}
  if(unique&&ids.size===1)db.prepare('UPDATE manifest_cartons SET route_config_id=? WHERE id=?').run([...ids][0],m.id);
  }
+}
+
+function hardenRouteArchitecture(db:Database.Database){
+ if(db.prepare('SELECT version FROM route_architecture_migrations WHERE version=2').get())return;
+ db.transaction(()=>{
+ db.exec(`DROP TRIGGER IF EXISTS order_route_update;
+ CREATE TRIGGER order_route_update BEFORE UPDATE OF route_id,service,sub_service,supplier ON orders
+ WHEN OLD.route_id IS NOT NULL AND (NEW.route_id IS NOT OLD.route_id OR NEW.service IS NOT OLD.service OR NEW.sub_service IS NOT OLD.sub_service OR NEW.supplier IS NOT OLD.supplier)
+ AND (OLD.purchase_completed_at IS NOT NULL OR trim(COALESCE(OLD.tracking,''))<>'' OR trim(COALESCE(OLD.label,''))<>'' OR EXISTS(SELECT 1 FROM order_trackings WHERE order_id=OLD.id) OR (OLD.pricing_snapshot_json IS NOT NULL AND NOT EXISTS(SELECT 1 FROM order_route_change_proposals WHERE order_id=OLD.id AND status='APPLYING' AND old_route_id=OLD.route_id AND new_route_id=NEW.route_id AND confirmed_by IS NOT NULL)))
+ BEGIN SELECT RAISE(ABORT,'Purchased/tracked route is immutable'); END;
+ DROP TRIGGER IF EXISTS route_delete_orders;
+ CREATE TRIGGER route_delete_orders BEFORE DELETE ON service_route_configs WHEN EXISTS(SELECT 1 FROM orders WHERE route_id=OLD.id OR (route_id IS NULL AND lower(trim(service))=lower(trim(OLD.service)) AND lower(trim(sub_service))=lower(trim(OLD.sub_service)) AND (trim(COALESCE(supplier,''))='' OR lower(trim(supplier))=lower(trim(OLD.supplier))))) BEGIN SELECT RAISE(ABORT,'Route has historical orders; archive instead'); END;
+ CREATE TRIGGER IF NOT EXISTS service_identity_immutable BEFORE UPDATE OF service,sub_service ON service_identities WHEN NEW.service IS NOT OLD.service OR NEW.sub_service IS NOT OLD.sub_service BEGIN SELECT RAISE(ABORT,'Service identity is immutable'); END;
+ CREATE TRIGGER IF NOT EXISTS setting_identity_update AFTER UPDATE OF service,sub_service ON client_service_settings WHEN NEW.service IS NOT OLD.service OR NEW.sub_service IS NOT OLD.sub_service BEGIN
+ INSERT OR IGNORE INTO service_identities(service,sub_service) VALUES(trim(NEW.service),trim(NEW.sub_service));
+ UPDATE client_service_settings SET service_identity_id=(SELECT id FROM service_identities WHERE lower(trim(service))=lower(trim(NEW.service)) AND lower(trim(sub_service))=lower(trim(NEW.sub_service))) WHERE id=NEW.id; END;
+ INSERT INTO route_architecture_migrations(version) VALUES(2);`);
+ }).immediate();
 }

@@ -1073,3 +1073,12 @@ td{padding:12px;line-height:1.45}
 .routeChangeReview { position:fixed; inset:0; z-index:1000; background:rgba(15,23,42,.45); display:grid; place-items:center; padding:20px; }
 .routeChangeReviewBody { width:min(100%,520px); max-height:85vh; overflow:auto; background:white; box-sizing:border-box; border-radius:16px; padding:24px; box-shadow:0 20px 50px rgba(15,23,42,.2); }
 @media(max-width:640px){ .routeChangeControls { grid-template-columns:1fr; } }
+
+.routeConfirmationDialog { width:min(520px,calc(100vw - 32px)); max-height:85vh; overflow:auto; border:1px solid #e2e8f0; border-radius:16px; padding:24px; box-sizing:border-box; box-shadow:0 20px 50px rgba(15,23,42,.2); color:#1e293b; }
+.routeConfirmationDialog::backdrop { background:rgba(15,23,42,.45); }
+.routeConfirmationDialog h3 { margin-top:0; }
+.confirmationActions,.routeLifecycleActions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+.routeLifecycleActions { max-width:100%; }
+@media(max-width:640px){ .confirmationActions { flex-direction:column-reverse; } .confirmationActions button { width:100%; white-space:normal; } }
+
+.routeConfigFields {border:0;padding:0;margin:0;min-width:0;}

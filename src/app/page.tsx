@@ -2,6 +2,7 @@
 import { normalizeCountry } from "@/lib/epacket-pricing";
 import { OperationsWorkspace } from "./operations-workspace";
 import { FinancialWorkspace } from "./financial-workspace";
+import { readableReason } from "./pricing-preview";
 import { ClientPurchasePanel } from "./client-purchase-panel";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
@@ -1194,7 +1195,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
       </div>
     </div>
 
-    {clientPurchase&&<Modal size="wide" title="Client · Đặt mua dịch vụ" onClose={()=>setClientPurchase(false)}><ClientPurchasePanel support={role!=="CLIENT"} initial={clientDraft} onDone={()=>void refresh()}/></Modal>}
+    {clientPurchase&&<Modal size="wide" title={role==="CLIENT"?"Client · Đặt mua dịch vụ":"Hỗ trợ Draft của Client"} onClose={()=>setClientPurchase(false)}><ClientPurchasePanel support={role!=="CLIENT"} initial={clientDraft} onDone={()=>void refresh()}/></Modal>}
     {viewOrder&&<Modal size="wide" title="Chi tiết Order" onClose={()=>setViewOrder(null)}><OrderDetailPanel orderId={Number(viewOrder.id)} role={role} onDone={refresh} onEdit={row=>{setViewOrder(null);openEntry("order",row as RowData)}} onPurchase={role==="ADMIN"?row=>{setViewOrder(null);setPurchaseOrder(row as RowData)}:undefined}/></Modal>}
 
     {role==="ADMIN"&&bulkTracking&&<Modal size="fullscreen" title="Mua đơn hàng loạt" onClose={()=>setBulkTracking(false)}><BulkTrackingSheet enums={enums} onDone={refresh}/></Modal>}
@@ -1283,7 +1284,7 @@ function Table({rows,cols,onView,onEdit,onPurchase,compact=false,selectedIds=[],
         const v=c==="draft_state"?({incomplete:"Chưa hoàn tất",failed:"Đặt thất bại",eligible:"Đủ điều kiện",support:"Cần hỗ trợ"} as Record<string,string>)[String(r[c])]:r[c];
         const isMoney=["amount","est_net_cost","true_net_cost","base_cost","retail","sales_price","surcharge","import_tax","extra_surcharge","extra_import_tax","total_due","reconciliation_delta","total_net_cost"].includes(c);
         const isStatus=["workflow_status","margin_status","reconciliation_status","direction","matched"].includes(c);
-        const display=c==="matched"?(Number(v)?"Linked":"Waiting"):isMoney?money(v):["created_at","occurred_at"].includes(c)?(v?displayDate(v):"—"):String(v??"—");
+        const display=c==="matched"?(Number(v)?"Linked":"Waiting"):isMoney?money(v):["created_at","occurred_at"].includes(c)?(v?displayDate(v):"—"):(c==="failure_reason"?readableReason(String(v??"—")):String(v??"—"));
         if(c==="tracking"){
           let trackingRows:Array<{id?:number;tracking?:string;label_url?:string;status?:string;lot_number?:number}>=[];
           try{trackingRows=JSON.parse(String(r.tracking_data||"[]"))}catch{}

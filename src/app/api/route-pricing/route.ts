@@ -6,7 +6,7 @@ import { readSheet } from "read-excel-file/node";
 export const runtime="nodejs";
 export async function GET(req:NextRequest){
  const auth=requireUser(req,"ADMIN");if(auth.error)return auth.error;
- const id=Number(req.nextUrl.searchParams.get("route_id")),route=db.prepare("SELECT id,client_self_purchase FROM service_route_configs WHERE id=?").get(id);
+ const id=Number(req.nextUrl.searchParams.get("route_id")),route=db.prepare("SELECT id,service,sub_service,supplier,pricing_engine,client_self_purchase FROM service_route_configs WHERE id=?").get(id);
  if(!route)return NextResponse.json({error:"Route không tồn tại."},{status:404});
  if(req.nextUrl.searchParams.get("download")==="1"){
  const active=activePricing(id);if(!active)return NextResponse.json({error:"Chưa có bảng active."},{status:404});

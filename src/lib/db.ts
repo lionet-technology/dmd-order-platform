@@ -12,7 +12,7 @@ if (process.env.NODE_ENV !== "production") globalForDb.dmdDb = db;
 
 db.pragma("busy_timeout = 10000");
 // Snapshot before any schema upgrade, including legacy upgrades below.
-if(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='orders'").get() && !db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='route_architecture_migrations'").get()){
+if(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='orders'").get() && (!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='route_architecture_migrations'").get()||!db.prepare("SELECT version FROM route_architecture_migrations WHERE version=2").get())){
  const backup=dbPath+".before-route-architecture-"+Date.now()+".db";
  db.exec("VACUUM INTO '"+backup.replace(/'/g,"''")+"'");
 }

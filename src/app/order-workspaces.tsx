@@ -1,5 +1,6 @@
 "use client";
 
+import {ConfirmationDialog} from "./confirmation-dialog";
 import {instant} from "@/lib/sla";
 import { PricingPreview,type Preview } from "./pricing-preview";
 import { useCallback,useEffect,useState } from "react";
@@ -99,13 +100,35 @@ function ShipmentStructureEditor({orderId,role}:{orderId:number;role:Role}){
 }
 
 function RouteChangePanel({order,role,onDone}:{order:GenericRow;role:Role;onDone:()=>void}){
- const [routes,setRoutes]=useState<GenericRow[]>([]),[pending,setPending]=useState<GenericRow[]>([]),[route,setRoute]=useState(""),[reason,setReason]=useState(""),[message,setMessage]=useState(""),[busy,setBusy]=useState(false),[review,setReview]=useState<GenericRow|null>(null);
+ const [routes,setRoutes]=useState<GenericRow[]>([]),[pending,setPending]=useState<GenericRow[]>([]),[route,setRoute]=useState(""),[reason,setReason]=useState(""),[message,setMessage]=useState(""),[busy,setBusy]=useState(false),[review,setReview]=useState<GenericRow|null>(null),[reviewError,setReviewError]=useState("");
  const id=Number(order.id);
- const load=useCallback(async()=>{try{setPending(await json(`/api/orders/${id}/route-change`));if(role!=="CLIENT")setRoutes(await json(`/api/order-routes?clientId=${order.client_user_id}`))}catch(e){setMessage((e as Error).message)}},[id,role,order.client_user_id]);
+ const load=useCallback(async()=>{
+   try{
+     setPending(await json(`/api/orders/${id}/route-change`));
+     if(role!=="CLIENT")setRoutes((await json(`/api/order-routes?clientId=${order.client_user_id}`) as GenericRow[]).filter(r=>Number(r.id)!==Number(order.route_id)));
+   }catch(e){setMessage((e as Error).message)}
+ },[id,role,order.client_user_id,order.route_id]);
  useEffect(()=>{void load()},[load]);
- async function propose(){setBusy(true);try{const p=await post(`/api/orders/${id}/route-change`,{route_id:Number(route),reason});setReview(p);await load()}catch(e){setMessage((e as Error).message)}finally{setBusy(false)}}
- async function confirm(){if(!review)return;setBusy(true);try{await post(`/api/orders/${id}/route-change`,{action:"confirm",proposal_id:review.id});setReview(null);setMessage("Đã xác nhận đổi dịch vụ.");await load();onDone()}catch(e){setMessage((e as Error).message)}finally{setBusy(false)}}
- return <section className="detailCard"><h3>Đổi dịch vụ trước khi mua vận đơn</h3>{role!=="CLIENT"&&<div className="routeChangeControls"><label className="field"><span>Dịch vụ</span> <select value={route} onChange={e=>setRoute(e.target.value)}><option value="">Chọn dịch vụ</option>{routes.map(r=><option key={String(r.id)} value={String(r.id)}>{String(r.service)} - {String(r.sub_service)}</option>)}</select></label><label className="field"><span>Lý do</span><input value={reason} onChange={e=>setReason(e.target.value)}/></label><button disabled={busy||!route||!reason.trim()} className="secondaryBtn" onClick={()=>void propose()}>Tính lại giá</button></div>}{pending.map(p=><p key={String(p.id)}>{String(p.service_name)} · Chênh lệch {money(Number(p.delta_cents)/100)} <button className="secondaryBtn" onClick={()=>setReview(p)}>Xem và xác nhận</button></p>)}{review&&<div role="dialog" aria-modal="true" aria-label="Xác nhận đổi dịch vụ" className="routeChangeReview"><div className="cancellationConfirm routeChangeReviewBody"><h3>Xác nhận đổi sang {String(review.service_name)}</h3><p>{String(order.service)} - {String(order.sub_service)}: {money(Number(review.old_total_cents)/100)} → {String(review.service_name)}: {money(Number(review.new_total_cents)/100)}</p><p>Chênh lệch: {money(Number(review.delta_cents)/100)}. {Number(review.delta_cents)>0?"Xác nhận thu thêm cho Client và điều chỉnh khoản giữ tiền.":"Khoản giữ tiền được điều chỉnh theo giá mới."}</p><button className="secondaryBtn" disabled={busy} onClick={()=>setReview(null)}>Đóng</button><button className="primaryBtn" disabled={busy} onClick={()=>void confirm()}>Xác nhận đổi dịch vụ{Number(review.delta_cents)>0?" và thu thêm":""}</button></div></div>}{message&&<p role="status">{message}</p>}</section>;
+ async function propose(){setBusy(true);setMessage("");setReviewError("");try{const p=await post(`/api/orders/${id}/route-change`,{route_id:Number(route),reason});setReview(p);await load()}catch(e){setMessage((e as Error).message)}finally{setBusy(false)}}
+ async function confirm(){if(!review)return;setBusy(true);setReviewError("");try{await post(`/api/orders/${id}/route-change`,{action:"confirm",proposal_id:review.id});setReview(null);setMessage("Đã xác nhận đổi dịch vụ.");await load();onDone()}catch(e){setReviewError((e as Error).message)}finally{setBusy(false)}}
+ if(role==="CLIENT"&&!pending.length)return null;
+ return <section className="detailCard">
+   <h3>{role==="CLIENT"?"Xác nhận thay đổi dịch vụ":"Đổi dịch vụ trước khi mua vận đơn"}</h3>
+   {role!=="CLIENT"&&<div className="routeChangeControls">
+     <label className="field"><span>Dịch vụ</span><select value={route} disabled={busy} onChange={e=>setRoute(e.target.value)}><option value="">Chọn dịch vụ khác</option>{routes.map(r=><option key={String(r.id)} value={String(r.id)}>{String(r.service)}{r.sub_service?" - "+String(r.sub_service):""}</option>)}</select></label>
+     <label className="field"><span>Lý do</span><input value={reason} disabled={busy} onChange={e=>setReason(e.target.value)}/></label>
+     <button disabled={busy||!route||!reason.trim()} className="secondaryBtn" onClick={()=>void propose()}>{busy?"Đang kiểm tra…":"Tính lại giá"}</button>
+   </div>}
+   {role!=="CLIENT"&&!routes.length&&<p>Chưa có dịch vụ khác được cấp cho Client này.</p>}
+   {pending.map(p=><p key={String(p.id)}>{String(p.service_name)} · Chênh lệch {money(Number(p.delta_cents)/100)} <button className="secondaryBtn" disabled={busy} onClick={()=>{setReviewError("");setReview(p)}}>Xem và xác nhận</button></p>)}
+   {review&&<ConfirmationDialog title={"Xác nhận đổi sang "+String(review.service_name)} busy={busy} onClose={()=>setReview(null)}>
+     <p>{String(order.service)}{order.sub_service?" - "+String(order.sub_service):""}: <b>{money(Number(review.old_total_cents)/100)}</b> → {String(review.service_name)}: <b>{money(Number(review.new_total_cents)/100)}</b></p>
+     <p>Chênh lệch: <b>{money(Number(review.delta_cents)/100)}</b>. {Number(review.delta_cents)>0?"Xác nhận khoản tăng giá cho Client trước khi áp dụng.":"Giá và khoản giữ tiền hiện có được điều chỉnh theo giá mới."}</p>
+     {reviewError&&<p className="inlineMsg error" role="alert">{reviewError}</p>}
+     <div className="confirmationActions"><button className="secondaryBtn" disabled={busy} onClick={()=>setReview(null)}>Đóng</button><button className="primaryBtn" disabled={busy} onClick={()=>void confirm()}>{busy?"Đang xác nhận…":"Xác nhận đổi dịch vụ"+(Number(review.delta_cents)>0?" và thu thêm":"")}</button></div>
+   </ConfirmationDialog>}
+   {message&&<p role="status">{message}</p>}
+ </section>;
 }
 
 export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderId:number;role:Role;onEdit:(row:GenericRow)=>void;onPurchase?:(row:GenericRow)=>void;onDone?:()=>void|Promise<void>}){

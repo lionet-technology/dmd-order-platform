@@ -11,7 +11,7 @@ import { ensureOrderShipmentStructure } from "@/lib/order-shipments";
 export const runtime="nodejs";
 
 function accessible(user:{id:number;role:string},orderId:number){
-  const order=db.prepare("SELECT id,service,sub_service,client_user_id,supplier,internal_note,workflow_status,purchase_completed_at,expected_lot_count,carton_count FROM orders WHERE id=?").get(orderId) as {id:number;service:string;sub_service:string;client_user_id:number|null;supplier:string|null;internal_note:string|null;workflow_status:string;purchase_completed_at:string|null;expected_lot_count:number;carton_count:number}|undefined;
+  const order=db.prepare("SELECT id,route_id,service,sub_service,client_user_id,supplier,internal_note,workflow_status,purchase_completed_at,expected_lot_count,carton_count FROM orders WHERE id=?").get(orderId) as {id:number;route_id:number|null;service:string;sub_service:string;client_user_id:number|null;supplier:string|null;internal_note:string|null;workflow_status:string;purchase_completed_at:string|null;expected_lot_count:number;carton_count:number}|undefined;
   if(!order)return {error:NextResponse.json({error:"Order không tồn tại."},{status:404})};
   if(user.role!=="ADMIN"){
     const client=order.client_user_id?getClientAccount(order.client_user_id):undefined;
@@ -25,7 +25,7 @@ export async function GET(req:NextRequest,{params}:{params:Promise<{id:string}>}
   const id=Number((await params).id);const access=accessible(auth.user,id);if(access.error)return access.error;
   const rows=listOrderTrackings(id,auth.user.role==="ADMIN");
   let supplier=access.order?.supplier;
-  if(auth.user.role==="ADMIN"&&!supplier){try{supplier=resolvePurchaseSupplier(access.order!)}catch(e){return NextResponse.json({error:(e as Error).message},{status:400})}}
+  if(auth.user.role==="ADMIN"){try{supplier=resolvePurchaseSupplier(access.order!)}catch(e){return NextResponse.json({error:(e as Error).message},{status:400})}}
   const publicOrder=auth.user.role==="ADMIN"?{...access.order,supplier}:{id:access.order?.id,workflow_status:access.order?.workflow_status,purchase_completed_at:access.order?.purchase_completed_at};
   const progress=auth.user.role==="ADMIN"?db.prepare("SELECT payload_json FROM manual_purchase_drafts WHERE order_id=?").get(id) as {payload_json:string}|undefined:undefined;
   const draft=progress?JSON.parse(progress.payload_json):null;

@@ -88,7 +88,7 @@ export async function POST(req:NextRequest){
       if(segmentation)saveSegmentation(id,segmentation);
       return id;
     })();
-    return NextResponse.json({...db.prepare("SELECT * FROM service_route_configs WHERE id=?").get(id) as Record<string,unknown>,segmentation:readSegmentation(id)},{status:existing?200:201});
+    return NextResponse.json({...db.prepare("SELECT * FROM service_route_configs WHERE id=?").get(id) as Record<string,unknown>,segmentation:readSegmentation(id),...routeReferences(id)},{status:existing?200:201});
   }catch(error){
     return NextResponse.json({error:error instanceof Error?error.message:"Không thể lưu cấu hình tuyến."},{status:400});
   }

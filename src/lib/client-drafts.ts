@@ -12,7 +12,7 @@ function rawDraft(id:number){return db.prepare('SELECT * FROM client_order_draft
 export function draftData(d:Row):Row{
  const client=getClientAccount(Number(d.client_id));
  let route=db.prepare('SELECT * FROM service_route_configs WHERE id=?').get(Number(d.route_id)) as Row|undefined;
- if(route&&!route.active&&!d.submitted_order_id)route=db.prepare('SELECT * FROM service_route_configs WHERE service_identity_id=? AND active=1').get(route.service_identity_id) as Row|undefined;
+ if(route&&!route.active&&!d.submitted_order_id)route=(db.prepare('SELECT * FROM service_route_configs WHERE service_identity_id=? AND active=1').get(route.service_identity_id) as Row|undefined)||route;
  if(!route||!client)throw Error('Route hoặc Client không còn hợp lệ.');
  const setting=db.prepare("SELECT * FROM client_service_settings WHERE client_user_id=? AND lower(service)=lower(?) AND (lower(sub_service)=lower(?) OR sub_service='') ORDER BY CASE WHEN lower(sub_service)=lower(?) THEN 0 ELSE 1 END LIMIT 1").get(client.id,String(route.service),String(route.sub_service),String(route.sub_service)) as Row|undefined;
  const input=JSON.parse(String(d.input_json)) as Row;
@@ -68,13 +68,13 @@ export function listDrafts(actor:AuthUser,clientId?:number){
  if(actor.role==='CLIENT'){where.push('d.client_id=?');args.push(actor.id)}
  else if(actor.role==='SALES'){where.push('d.client_id IN (SELECT id FROM users WHERE sales_user_id=?)');args.push(actor.id)}
  if(clientId){where.push('d.client_id=?');args.push(clientId)}
- return (db.prepare('SELECT d.* FROM client_order_drafts d WHERE '+where.join(' AND ')+' ORDER BY d.id DESC').all(...args) as Row[]).map(d=>draftView(d,actor.role));
+ return (db.prepare('SELECT d.* FROM client_order_drafts d WHERE '+where.join(' AND ')+' ORDER BY d.id DESC').all(...args) as Row[]).map(d=>{try{return draftView(d,actor.role)}catch(e){return {id:-Number(d.id),draft_id:Number(d.id),client_user_id:d.client_id,route_id:d.route_id,created_at:d.created_at,updated_at:d.updated_at,workflow_status:'SALES_DRAFT',draft_state:'support',failure_reason:(e as Error).message,pricing:null}}});
 }
 export function submitDrafts(actor:AuthUser,ids:number[]){
  if(actor.role!=='CLIENT')throw Error('Client phải xác nhận đặt đơn.');
  if(!ids.length||ids.length>1000)throw Error("Chọn 1–1000 Draft.");
  const input=ids.map(id=>rawDraft(id));const counts=new Map<string,number>();
- for(const d of input){if(d&&Number(d.client_id)===actor.id&&!d.submitted_order_id){const key=String(draftData(d).order_id||'').trim();counts.set(key,(counts.get(key)||0)+1)}}
+ for(const d of input){if(d&&Number(d.client_id)===actor.id&&!d.submitted_order_id){try{const key=String(draftData(d).order_id||'').trim();counts.set(key,(counts.get(key)||0)+1)}catch{/* Report invalid drafts independently in the submission loop. */}}}
  const orders:Row[]=[],failures:Row[]=[];
  for(let i=0;i<ids.length;i++){
  const id=ids[i];

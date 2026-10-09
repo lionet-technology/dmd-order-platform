@@ -26,8 +26,8 @@ export async function POST(req:NextRequest){
     if(!(file instanceof File))throw new Error("File template .xlsx là bắt buộc.");
     if(!file.name.toLowerCase().endsWith(".xlsx"))throw new Error("Phase này chỉ hỗ trợ file .xlsx.");
     const routeId=Number(form.get("route_config_id")||0);
-    const route=db.prepare("SELECT * FROM service_route_configs WHERE id=? AND active=1").get(routeId) as Record<string,unknown>|undefined;
-    if(!route)throw new Error("Service Route không hợp lệ hoặc đã inactive.");
+    const route=db.prepare("SELECT * FROM service_route_configs WHERE id=?").get(routeId) as Record<string,unknown>|undefined;
+    if(!route)throw new Error("Service Route không hợp lệ.");
     const templateKind=String(form.get("template_kind")||"PURCHASE").toUpperCase();
     if(!["PURCHASE","MANIFEST"].includes(templateKind))throw new Error("Loại template không hợp lệ.");
     const templateLabel=templateKind==="MANIFEST"?"Manifest Template":"Purchase Template";

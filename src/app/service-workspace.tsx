@@ -1,5 +1,6 @@
 "use client";
 
+import {ConfirmationDialog} from "./confirmation-dialog";
 import { RoutePricingPanel } from "./route-pricing-panel";
 import { useCallback,useEffect,useRef,useState } from "react";
 
@@ -7,7 +8,7 @@ type SegmentRule={rule_type:string;segments:string[];priority:number;active:bool
 type Segmentation={enabled:boolean;rules:SegmentRule[]};
 type EnumRow={id:number;enum_type:string;value:string;parent_value:string;active:number;sort_order:number};
 type RouteRow={
-  id:number;status?:string;missing_cost_orders?:number;open_claims?:number;can_delete?:boolean;service:string;sub_service:string;supplier:string;active:number;segmentation?:Segmentation;
+  id:number;config_locked?:boolean;status?:string;missing_cost_orders?:number;open_claims?:number;can_delete?:boolean;service:string;sub_service:string;supplier:string;active:number;segmentation?:Segmentation;
   template_id?:number;template_name?:string;output_mode?:string;active_version_id?:number;version_number?:number;
   purchase_template_id?:number;purchase_template_name?:string;purchase_output_mode?:string;purchase_active_version_id?:number;purchase_version_number?:number;
   manifest_template_id?:number;manifest_template_name?:string;manifest_output_mode?:string;manifest_active_version_id?:number;manifest_version_number?:number;
@@ -38,9 +39,12 @@ function ActiveTemplateDownload({versionId,kind}:{versionId?:number;kind:"Purcha
 }
 
 export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
+  const [lifecycleReview,setLifecycleReview]=useState<{action:string;route:RouteRow}|null>(null);
+  const [lifecycleError,setLifecycleError]=useState("");
   const [routeSearch,setRouteSearch]=useState("");
   const [routeTab,setRouteTab]=useState("pricing");
   const editorRef=useRef<HTMLDivElement>(null);
+  const [loadingRoutes,setLoadingRoutes]=useState(true);
   const [routes,setRoutes]=useState<RouteRow[]>([]);
   const [selected,setSelected]=useState<RouteRow|null>(null);
   const [form,setForm]=useState({service:"",sub_service:"",supplier:""});
@@ -59,17 +63,20 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
   const [message,setMessage]=useState("");
 
   const load=useCallback(async()=>{
-    const [routeResponse,orderResponse]=await Promise.all([fetch("/api/service-routes"),fetch("/api/orders?page=1&pageSize=50")]);
-    if(routeResponse.ok)setRoutes(await routeResponse.json());
+    setLoadingRoutes(true);
+    try{const [routeResponse,orderResponse]=await Promise.all([fetch("/api/service-routes"),fetch("/api/orders?page=1&pageSize=50")]);
+    if(routeResponse.ok){const next=await routeResponse.json() as RouteRow[];setRoutes(next);setSelected(previous=>previous?next.find(row=>row.id===previous.id)||null:null);}else throw Error((await routeResponse.json()).error||"Không thể tải cấu hình dịch vụ.");
     if(orderResponse.ok){const body=await orderResponse.json();setSamples(body.items||[])}
+    }finally{setLoadingRoutes(false)}
   },[]);
-  useEffect(()=>{void load()},[load]);
+  useEffect(()=>{void load().catch(e=>setMessage("Lỗi: "+e.message))},[load]);
 
   async function createRoute(){
     setBusy(true);setMessage("");
     try{
-      await responseJson(await fetch("/api/service-routes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...form,create_new:true,active:false})}));
-      setForm({service:"",sub_service:"",supplier:""});setMessage("Đã lưu Service Route.");await load();
+      const created=await responseJson(await fetch("/api/service-routes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...form,create_new:true,active:false})})) as RouteRow;
+      setSelected(created);setRouteTab("pricing");setRouteVariables([]);setSegmentation({enabled:false,rules:[]});chooseTemplateKind("PURCHASE",created);
+      setForm({service:"",sub_service:"",supplier:""});setMessage("Đã tạo cấu hình nháp. Thiết lập giá và template trước khi kích hoạt.");await load();
     }catch(error){setMessage("Lỗi: "+(error as Error).message)}
     finally{setBusy(false)}
   }
@@ -141,11 +148,18 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
 
   const selectedRouteId=selected?.id;
   useEffect(()=>{if(selectedRouteId)editorRef.current?.scrollIntoView({block:"start"})},[selectedRouteId]);
-  async function changeLifecycle(action:string){
+  async function changeLifecycle(action:string,confirm=false){
     if(!selected)return;
-    const summary=`${selected.missing_cost_orders||0} đơn thiếu True Net Cost, ${selected.open_claims||0} Claim đang mở.`;
-    if(["ARCHIVED","DELETE"].includes(action)&&!window.confirm((action==="DELETE"?"Xóa vĩnh viễn Route chưa có tham chiếu? ":"Lưu trữ Route và giữ lịch sử? ")+summary))return;
-    setBusy(true);try{await responseJson(await fetch("/api/service-routes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:selected.id,action,confirm:true})}));setSelected(null);await load();setMessage("Đã cập nhật vòng đời dịch vụ.")}catch(e){setMessage((e as Error).message)}finally{setBusy(false)}
+    setBusy(true);setMessage("");setLifecycleError("");
+    try{
+      if(["ARCHIVED","DELETE"].includes(action)&&!confirm){
+        const latest=await responseJson(await fetch("/api/service-routes")) as RouteRow[];
+        const route=latest.find(r=>r.id===selected.id);if(!route)throw Error("Route không còn tồn tại.");
+        setSelected(route);setLifecycleReview({action,route});return;
+      }
+      await responseJson(await fetch("/api/service-routes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:selected.id,action,confirm})}));
+      setLifecycleReview(null);setSelected(null);await load();setMessage("Đã cập nhật vòng đời dịch vụ.");
+    }catch(e){if(lifecycleReview)setLifecycleError((e as Error).message);else setMessage("Lỗi: "+(e as Error).message)}finally{setBusy(false)}
   }
   const filteredRoutes=routes.filter(row=>[row.service,row.sub_service,row.supplier].join(" ").toLowerCase().includes(routeSearch.trim().toLowerCase()));
   const services=options(enums,"SERVICE");
@@ -162,13 +176,13 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
       </div>
       </details>
       <div className="routeListToolbar"><label className="searchBox"><span aria-hidden="true">⌕</span><input aria-label="Tìm cấu hình dịch vụ" placeholder="Tìm Service, Sub-Service, Supplier…" value={routeSearch} onChange={e=>setRouteSearch(e.target.value)}/></label><span>{filteredRoutes.length} / {routes.length} cấu hình · {routes.filter(row=>row.active).length} đang hoạt động</span></div>
-      <div className="tableWrap routeTable"><table><thead><tr><th>Service</th><th>Sub-Service</th><th>Supplier</th><th>Purchase Template</th><th>Manifest Template</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
+      {loadingRoutes?<p role="status">Đang tải cấu hình dịch vụ…</p>:<div className="tableWrap routeTable"><table><thead><tr><th>Service</th><th>Sub-Service</th><th>Supplier</th><th>Purchase Template</th><th>Manifest Template</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
         {filteredRoutes.length?filteredRoutes.map(row=><tr key={row.id} className={selected?.id===row.id?"selectedRoute":""}><td data-label="Service"><b>{row.service}</b></td><td data-label="Sub-Service">{row.sub_service||"—"}</td><td data-label="Supplier">{row.supplier}</td><td data-label="Purchase Template">{row.purchase_template_name||row.template_name||"Chưa có"}{row.purchase_version_number||row.version_number?<small>Active v{row.purchase_version_number||row.version_number}<ActiveTemplateDownload versionId={row.purchase_active_version_id||row.active_version_id} kind="Purchase"/></small>:null}</td><td data-label="Manifest Template">{row.manifest_template_name||"Chưa có"}{row.manifest_version_number?<small>Active v{row.manifest_version_number}<ActiveTemplateDownload versionId={row.manifest_active_version_id} kind="Manifest"/></small>:null}</td><td data-label="Trạng thái"><span className={row.active?"status goodStatus":"status neutralStatus"}>{row.status||(row.active?"Active":"Inactive")}</span></td><td data-label="Thao tác"><button className="editBtn" onClick={()=>{setRouteTab("pricing");setSelected(row);setSegmentation(row.segmentation||{enabled:false,rules:[]});setSegmentDrafts((row.segmentation?.rules||[]).map(rule=>rule.segments.join(", ")));setConfigDrafts((row.segmentation?.rules||[]).map(rule=>JSON.stringify(rule.config,null,2)));chooseTemplateKind("PURCHASE",row);let vars:Record<string,string>={};try{vars=JSON.parse(row.route_variables_json||"{}")}catch{}setRouteVariables(Object.entries(vars).map(([key,value])=>({key,value:String(value)})))}}>Cấu hình</button></td></tr>):<tr><td colSpan={7} className="empty">{routes.length?"Không có cấu hình phù hợp với tìm kiếm.":"Chưa có cấu hình. Thêm dịch vụ để bắt đầu."}</td></tr>}
-      </tbody></table></div>
+      </tbody></table></div>}
     </section>
 
     {selected&&<>
-      <div className="routeEditorHeader" ref={editorRef}><div><span className="eyebrow">ĐANG CẤU HÌNH</span><h2>{selected.service}{selected.sub_service?" / "+selected.sub_service:""}</h2><p>Supplier: {selected.supplier} · {selected.active?"Đang hoạt động":"Không hoạt động"}</p></div><div><button className="secondaryBtn" disabled={busy} onClick={()=>void changeLifecycle(selected.active?"INACTIVE":"ACTIVE")}>{selected.active?"Ngừng hoạt động":"Kích hoạt"}</button><button className="secondaryBtn" disabled={busy} onClick={()=>void changeLifecycle("ARCHIVED")}>Archive</button>{selected.can_delete&&<button className="secondaryBtn" disabled={busy} onClick={()=>void changeLifecycle("DELETE")}>Xóa</button>}<button className="secondaryBtn" onClick={()=>setSelected(null)}>Đóng cấu hình</button></div></div>
+      <div className="routeEditorHeader" ref={editorRef}><div><span className="eyebrow">ĐANG CẤU HÌNH</span><h2>{selected.service}{selected.sub_service?" / "+selected.sub_service:""}</h2><p>Supplier: {selected.supplier} · {selected.active?"Đang hoạt động":"Không hoạt động"}</p></div><div className="routeLifecycleActions"><button className="secondaryBtn" disabled={busy} onClick={()=>void changeLifecycle(selected.active?"INACTIVE":"ACTIVE")}>{selected.active?"Ngừng hoạt động":"Kích hoạt"}</button><button className="secondaryBtn" disabled={busy||selected.status==="ARCHIVED"} onClick={()=>void changeLifecycle("ARCHIVED")}>Lưu trữ</button>{selected.can_delete&&<button className="secondaryBtn" disabled={busy} onClick={()=>void changeLifecycle("DELETE")}>Xóa</button>}<button className="secondaryBtn" onClick={()=>setSelected(null)}>Đóng cấu hình</button></div></div>
       <div className="routeEditorTabs" role="group" aria-label="Các mục cấu hình dịch vụ">{[["pricing","Giá & phụ phí"],["templates","Template xuất file"],["segmentation","Phân vùng nâng cao"]].map(([key,label])=><button key={key} className={routeTab===key?"active":""} aria-pressed={routeTab===key} onClick={()=>setRouteTab(key)}>{label}</button>)}</div>
       <div hidden={routeTab!=="pricing"}><RoutePricingPanel key={selected.id} routeId={selected.id}/></div>
       <section hidden={routeTab!=="segmentation"} className="templateConfigCard">
@@ -198,16 +212,16 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
     {selected&&<section hidden={routeTab!=="templates"} className="templateConfigCard">
       <div className="configHead"><div><b>Template xuất file</b><span>Purchase = file mua label/đơn. Manifest = file khai báo sau khi đã có Tracking.</span></div></div>
       <div className="templateKindTabs"><button className={templateKind==="PURCHASE"?"active":""} aria-pressed={templateKind==="PURCHASE"} onClick={()=>chooseTemplateKind("PURCHASE")}>Purchase Template</button><button className={templateKind==="MANIFEST"?"active":""} aria-pressed={templateKind==="MANIFEST"} onClick={()=>chooseTemplateKind("MANIFEST")}>Manifest Template</button></div>
-      <details className="routeVariablesEditor settingsDisclosure"><summary>Biến cố định cho template</summary>
-        <div className="routeVariablesHead"><div><b>Giá trị dùng chung</b><span>Dữ liệu cố định của cấu hình này. Dùng trong Excel bằng <code>{"{{route.service_code}}"}</code>, <code>{"{{route.sender_address}}"}</code>…</span></div><button className="secondaryBtn" disabled={busy} onClick={()=>void saveRouteVariables()}>Lưu biến cố định</button></div>
-        {routeVariables.map((row,index)=><div className="routeVariableRow" key={index}>
+      <details className="routeVariablesEditor settingsDisclosure"><summary>Biến cố định cho template</summary><fieldset className="routeConfigFields" disabled={busy||selected.config_locked}>
+        <div className="routeVariablesHead"><div><b>Giá trị dùng chung</b><span>Dữ liệu cố định của cấu hình này. Dùng trong Excel bằng <code>{"{{route.service_code}}"}</code>, <code>{"{{route.sender_address}}"}</code>…</span></div><button className="secondaryBtn" disabled={busy||selected.config_locked} onClick={()=>void saveRouteVariables()}>Lưu biến cố định</button></div>
+        {selected.config_locked&&<p role="note">Cấu hình đã có đơn và được giữ để bảo toàn lịch sử. Tạo cấu hình mới nếu cần thay đổi biến cố định.</p>}{routeVariables.map((row,index)=><div className="routeVariableRow" key={index}>
           <input aria-label={"Tên biến "+(index+1)} placeholder="Key, ví dụ service_code" value={row.key} onChange={e=>setRouteVariables(prev=>prev.map((item,i)=>i===index?{...item,key:e.target.value}:item))}/>
           <input aria-label={"Giá trị biến "+(index+1)} placeholder="Giá trị cố định" value={row.value} onChange={e=>setRouteVariables(prev=>prev.map((item,i)=>i===index?{...item,value:e.target.value}:item))}/>
           <code>{row.key.trim()?"{{route."+row.key.trim().toLowerCase()+"}}":"{{route.key}}"}</code>
           <button className="rowAction dangerBtn" onClick={()=>setRouteVariables(prev=>prev.filter((_,i)=>i!==index))}>Bỏ</button>
         </div>)}
         <button className="textBtn" onClick={()=>setRouteVariables(prev=>[...prev,{key:"",value:""}])}>＋ Thêm biến cố định</button>
-      </details>
+      </fieldset></details>
       <div className="templateGrid templateFileGrid">
         <label><span>Tên Template</span><input value={template.name} onChange={e=>setTemplate({...template,name:e.target.value})}/></label>
         <label><span>Cách chia file</span><select value={template.output_mode} onChange={e=>setTemplate({...template,output_mode:e.target.value})}><option value="MULTI_ORDER">Multiple Orders · 1 Carton / Order</option>{template.output_mode==="PER_ORDER"&&<option value="PER_ORDER" disabled>Per Order (legacy)</option>}<option value="PER_LOT">Per Lot · Multi-Carton Order</option></select></label>
@@ -233,6 +247,13 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
         <div>{result.placeholders.map((row,index)=><code key={index}>{row.sheet}!{row.cell} → {row.token}</code>)}</div>
       </div>}
     </section>}
+    {lifecycleReview&&<ConfirmationDialog title={lifecycleReview.action==="DELETE"?"Xóa cấu hình dịch vụ":"Lưu trữ dịch vụ"} busy={busy} onClose={()=>setLifecycleReview(null)}>
+      <p><b>{lifecycleReview.route.service}{lifecycleReview.route.sub_service?" - "+lifecycleReview.route.sub_service:""}</b> · Supplier {lifecycleReview.route.supplier}</p>
+      <p>{lifecycleReview.route.missing_cost_orders||0} đơn chưa có True Net Cost · {lifecycleReview.route.open_claims||0} Claim đang mở.</p>
+      <p>{lifecycleReview.action==="DELETE"?"Chỉ xóa cấu hình chưa có đơn hoặc tham chiếu nghiệp vụ. Thao tác này không thể hoàn tác.":"Dịch vụ ngừng nhận đơn mới. Lịch sử đơn, đối soát chi phí và Claim vẫn được giữ."}</p>
+      {lifecycleError&&<p role="alert" className="inlineMsg error">{lifecycleError}</p>}
+      <div className="confirmationActions"><button className="secondaryBtn" disabled={busy} onClick={()=>setLifecycleReview(null)}>Đóng</button><button className="primaryBtn" disabled={busy} onClick={()=>void changeLifecycle(lifecycleReview.action,true)}>{lifecycleReview.action==="DELETE"?"Xác nhận xóa":"Xác nhận lưu trữ"}</button></div>
+    </ConfirmationDialog>}
     {message&&<div role="status" className={message.startsWith("Lỗi")?"enumMessage error":"enumMessage"}>{message}</div>}
   </div>;
 }

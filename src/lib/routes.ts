@@ -18,7 +18,7 @@ export function routeReferences(id:number){
  if(legacy)refs.unresolved_orders=legacy;
  const missing=(db.prepare('SELECT count(*) n FROM orders WHERE route_id=? AND true_net_cost IS NULL').get(id) as {n:number}).n;
  const claims=db.prepare("SELECT name FROM sqlite_master WHERE name='operation_cases'").get()?(db.prepare("SELECT count(DISTINCT c.id) n FROM operation_cases c JOIN operation_case_orders co ON co.case_id=c.id JOIN orders o ON o.id=co.order_id WHERE o.route_id=? AND c.kind='CLAIM' AND c.status NOT IN ('CLOSED','RESOLVED')").get(id) as {n:number}).n:0;
- return {references:refs,can_delete:!Object.keys(refs).length,missing_cost_orders:missing,open_claims:claims};
+ return {references:refs,config_locked:Boolean(refs.orders||refs.unresolved_orders),can_delete:!Object.keys(refs).length,missing_cost_orders:missing,open_claims:claims};
 }
 export function routeLifecycle(id:number,status:string,confirmed:boolean,actorId:number){return db.transaction(()=>{
  const r=db.prepare('SELECT * FROM service_route_configs WHERE id=?').get(id) as Row|undefined;if(!r)throw Error('Route không tồn tại.');

@@ -15,7 +15,8 @@ export async function GET(req:NextRequest){
  const setting=db.prepare("SELECT * FROM client_service_settings WHERE client_user_id=? AND lower(service)=lower(?) AND (lower(sub_service)=lower(?) OR sub_service='') ORDER BY CASE WHEN lower(sub_service)=lower(?) THEN 0 ELSE 1 END LIMIT 1").get(auth.user.id,String(r.service),String(r.sub_service),String(r.sub_service)) as Row|undefined;
  return setting?.is_enabled?{id:r.id,service:r.service,sub_service:r.sub_service,discount_percent:setting.discount_percent,currency:"USD"}:null}).filter(Boolean);
  const balance=(db.prepare("SELECT COALESCE(SUM(CASE WHEN direction='CREDIT' THEN amount ELSE -amount END),0) balance FROM ledger_entries WHERE client_user_id=?").get(auth.user.id) as {balance:number}).balance;
- return NextResponse.json({routes,balance,financials:accountFinancials(auth.user.id)});
+ const f=accountFinancials(auth.user.id);
+ return NextResponse.json({routes,balance,financials:{balance_cents:f.balance_cents,reserved_cents:f.reserved_cents,available_to_buy_cents:f.available_to_buy_cents,purchase_blocked:f.purchase_blocked,reasons:f.reasons}});
 }
 export async function POST(req:NextRequest){
  const auth=requireUser(req,"CLIENT");if(auth.error)return auth.error;
@@ -52,7 +53,7 @@ export async function POST(req:NextRequest){
  const prepared=rows.map((row,index)=>{
  const old=Number(row.id)>0?db.prepare("SELECT * FROM orders WHERE id=? AND client_user_id=?").get(Number(row.id),auth.user.id) as Row|undefined:undefined;
  if(Number(row.id)>0&&(!old||old.pricing_snapshot_json||old.purchase_completed_at||["CANCELLED","PURCHASED","RECONCILED"].includes(String(old.workflow_status))))throw Error("Không được sửa Order này.");
- const data:Row={...(old?{id:old.id,workflow_status:old.workflow_status}:Number(row.id)<0?{id:row.id,draft_id:-Number(row.id)}:{}),...Object.fromEntries(CLIENT_FIELDS.map(k=>[k,row[k]])),client_user_id:auth.user.id,customer:auth.user.display_name,sales_user_id:auth.user.sales_user_id,service:route.service,sub_service:route.sub_service,supplier:route.supplier,discount:setting.discount_percent,carton_count:row.carton_count??1,country:normalizeCountry(row.country)};
+ const data:Row={...(old?{id:old.id,workflow_status:old.workflow_status}:Number(row.id)<0?{id:row.id,draft_id:-Number(row.id)}:{}),...Object.fromEntries(CLIENT_FIELDS.map(k=>[k,row[k]])),client_user_id:auth.user.id,customer:auth.user.display_name,sales_user_id:auth.user.sales_user_id,route_id:route.id,service:route.service,sub_service:route.sub_service,supplier:route.supplier,discount:setting.discount_percent,carton_count:row.carton_count??1,country:normalizeCountry(row.country)};
  const errors:string[]=[];
  for(const k of ["order_id","recipient_name","address1","city","state","zip","phone","item","material"])if(!String(data[k]||"").trim())errors.push("Thiếu "+k);
  const orderId=String(data.order_id||"").trim();
