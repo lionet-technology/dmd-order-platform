@@ -1,5 +1,5 @@
 import { completeReserve } from "@/lib/credit";
-import { orderQuote,purchaseService,clientDraftAwaitingPurchase,routeFor } from "@/lib/route-pricing";
+import { orderQuote,purchaseService,clientDraftAwaitingPurchase,routeFor,resolvePurchaseSupplier } from "@/lib/route-pricing";
 import { NextRequest, NextResponse } from "next/server";
 import { canAccessClient, getClientAccount, requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -11,7 +11,7 @@ import { ensureOrderShipmentStructure } from "@/lib/order-shipments";
 export const runtime="nodejs";
 
 function accessible(user:{id:number;role:string},orderId:number){
-  const order=db.prepare("SELECT id,client_user_id,supplier,internal_note,workflow_status,purchase_completed_at,expected_lot_count,carton_count FROM orders WHERE id=?").get(orderId) as {id:number;client_user_id:number|null;supplier:string|null;internal_note:string|null;workflow_status:string;purchase_completed_at:string|null;expected_lot_count:number;carton_count:number}|undefined;
+  const order=db.prepare("SELECT id,service,sub_service,client_user_id,supplier,internal_note,workflow_status,purchase_completed_at,expected_lot_count,carton_count FROM orders WHERE id=?").get(orderId) as {id:number;service:string;sub_service:string;client_user_id:number|null;supplier:string|null;internal_note:string|null;workflow_status:string;purchase_completed_at:string|null;expected_lot_count:number;carton_count:number}|undefined;
   if(!order)return {error:NextResponse.json({error:"Order không tồn tại."},{status:404})};
   if(user.role!=="ADMIN"){
     const client=order.client_user_id?getClientAccount(order.client_user_id):undefined;
@@ -24,7 +24,9 @@ export async function GET(req:NextRequest,{params}:{params:Promise<{id:string}>}
   const auth=requireUser(req);if(auth.error)return auth.error;
   const id=Number((await params).id);const access=accessible(auth.user,id);if(access.error)return access.error;
   const rows=listOrderTrackings(id,auth.user.role==="ADMIN");
-  const publicOrder=auth.user.role==="ADMIN"?access.order:{id:access.order?.id,workflow_status:access.order?.workflow_status,purchase_completed_at:access.order?.purchase_completed_at};
+  let supplier=access.order?.supplier;
+  if(auth.user.role==="ADMIN"&&!supplier){try{supplier=resolvePurchaseSupplier(access.order!)}catch(e){return NextResponse.json({error:(e as Error).message},{status:400})}}
+  const publicOrder=auth.user.role==="ADMIN"?{...access.order,supplier}:{id:access.order?.id,workflow_status:access.order?.workflow_status,purchase_completed_at:access.order?.purchase_completed_at};
   const progress=auth.user.role==="ADMIN"?db.prepare("SELECT payload_json FROM manual_purchase_drafts WHERE order_id=?").get(id) as {payload_json:string}|undefined:undefined;
   const draft=progress?JSON.parse(progress.payload_json):null;
   const progressRows=draft?.trackings?.map((row:Record<string,unknown>)=>({...row,...rows.find(r=>r.status==='ACTIVE'&&normalizeTracking(r.tracking)===normalizeTracking(row.tracking))}));
@@ -40,7 +42,10 @@ export async function POST(req:NextRequest,{params}:{params:Promise<{id:string}>
     assertOrderOpen(id);
     const current=db.prepare("SELECT * FROM orders WHERE id=?").get(id) as Record<string,unknown>;
     if(current.workflow_status==="SALES_DRAFT"||clientDraftAwaitingPurchase(current))throw new Error("Client phải xác nhận đặt đơn trước khi Admin mua vận đơn.");
-    const candidate={...current,supplier:body.supplier||current.supplier};
+    const configuredSupplier=resolvePurchaseSupplier(current);
+    if(body.supplier&&String(body.supplier)!==configuredSupplier)throw Error("Supplier phải khớp route của đơn.");
+    if(!current.supplier){db.prepare("UPDATE orders SET supplier=? WHERE id=?").run(configuredSupplier,id);current.supplier=configuredSupplier;}
+    const candidate={...current,supplier:configuredSupplier};
     const quote=orderQuote(candidate);
     if(quote&&!quote.eligible)throw new Error(quote.reasons.join(" "));
     if((current.pricing_snapshot_json||routeFor(current))&&body.supplier&&body.supplier!==current.supplier)throw new Error("Route đã khóa khi đặt mua.");
@@ -51,7 +56,7 @@ export async function POST(req:NextRequest,{params}:{params:Promise<{id:string}>
       const reason=String(body.reason||"").trim();
       logOrderEvent({orderId:id,eventType:"TRACKING_REPLACED",summary:"Đổi Tracking "+String(old?.tracking||"")+" thành "+replacement.tracking+"."+ (reason?" Lý do: "+reason+".":""),actorId:auth.user.id,before:old,after:replacement});
     }else{
-      const supplier=body.supplier?canonicalEnumValue("SUPPLIER",String(body.supplier)):String(access.order?.supplier||"");
+      const supplier=body.supplier?canonicalEnumValue("SUPPLIER",String(body.supplier)):configuredSupplier;
       const expectedLotCount=Math.max(1,Math.trunc(Number(body.expected_lot_count||access.order?.expected_lot_count||1)));
       db.prepare("UPDATE orders SET supplier=?,internal_note=?,expected_lot_count=?,updated_by_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(supplier||null,String(body.internal_note||""),expectedLotCount,auth.user.id,id);
       ensureOrderShipmentStructure(id);

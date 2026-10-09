@@ -37,6 +37,12 @@ export function activatePricing(routeId:number,body:Row,actorId:number){
 export function routeFor(o:Row){
  return db.prepare("SELECT * FROM service_route_configs WHERE lower(service)=lower(?) AND lower(sub_service)=lower(?) AND lower(supplier)=lower(?)").get(String(o.service||""),String(o.sub_service||""),String(o.supplier||"")) as Row|undefined;
 }
+export function resolvePurchaseSupplier(o:Row){
+ if(String(o.supplier||"").trim())return String(o.supplier);
+ const routes=db.prepare("SELECT supplier FROM service_route_configs WHERE lower(service)=lower(?) AND lower(sub_service)=lower(?) AND active=1").all(String(o.service||""),String(o.sub_service||"")) as Row[];
+ if(routes.length!==1)throw Error(routes.length?"Có nhiều route cho dịch vụ này; cần xác định bundle trước khi mua vận đơn.":"Dịch vụ chưa có route được cấu hình.");
+ return String(routes[0].supplier);
+}
 export function orderQuote(o:Row){
  if(!o.pricing_snapshot_json&&(o.purchase_completed_at||["PURCHASED","RECONCILED"].includes(String(o.workflow_status))))return null;
  const route=routeFor(o);if(!route||!isEPacket(o))return null;

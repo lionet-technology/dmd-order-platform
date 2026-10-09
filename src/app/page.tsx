@@ -828,7 +828,7 @@ function PageHeader({eyebrow,title,description,actions}:{eyebrow:string;title:st
 
 type TrackingDraft={id?:number;tracking:string;label_url:string;lot_number:number;status?:string;is_primary?:number;cost_match_type:string;cost_parent_tracking_id?:number|null;replaced_by_tracking_id?:number|null};
 
-function PurchaseOrderPanel({order,enums,onClose,onDone}:{order:RowData;enums:EnumRow[];onClose:()=>void;onDone:()=>void|Promise<void>}){
+function PurchaseOrderPanel({order,onClose,onDone}:{order:RowData;enums:EnumRow[];onClose:()=>void;onDone:()=>void|Promise<void>}){
   const orderId=Number(order.id||0);
   const [supplier,setSupplier]=useState(String(order.supplier||""));
   const [internalNote,setInternalNote]=useState(String(order.internal_note||""));
@@ -837,7 +837,6 @@ function PurchaseOrderPanel({order,enums,onClose,onDone}:{order:RowData;enums:En
   const [busy,setBusy]=useState(true);const [msg,setMsg]=useState("");
   const [replaceId,setReplaceId]=useState<number|null>(null);
   const [replacement,setReplacement]=useState({tracking:"",label_url:"",reason:""});
-  const supplierOptions=enumOptions(enums,"SUPPLIER");
 
   const load=useCallback(async()=>{
     setBusy(true);setMsg("");
@@ -858,7 +857,6 @@ function PurchaseOrderPanel({order,enums,onClose,onDone}:{order:RowData;enums:En
   function removeDraft(index:number){setTrackings(prev=>prev.filter((_,i)=>i!==index))}
 
   async function save(complete:boolean){
-    if(!supplier){setMsg("Lỗi: Hãy chọn Supplier.");return;}
     if(complete&&!active.some(row=>row.tracking.trim())){setMsg("Lỗi: Cần ít nhất một Tracking.");return;}
     const seen=new Set<string>();
     for(const row of active){const key=row.tracking.replace(/[\s-]+/g,"").toUpperCase();if(!key)continue;if(seen.has(key)){setMsg("Lỗi: Tracking bị trùng trong Order.");return;}seen.add(key)}
@@ -880,7 +878,7 @@ function PurchaseOrderPanel({order,enums,onClose,onDone}:{order:RowData;enums:En
   return <div className="purchasePanel">
     <div className="purchaseSummary"><div><span>ORDER</span><b>{String(order.order_id||order.id||"—")}</b></div><div><span>CLIENT</span><b>{String(order.customer||"—")}</b></div><div><span>TRẠNG THÁI</span><b>{String(order.workflow_status||"PENDING_PURCHASE")}</b></div></div>
     <div className="purchaseFields">
-      <SelectField label="Supplier" name="supplier" value={supplier} onChange={(_,value)=>setSupplier(value)} allowCustom={false} requireOption options={supplierOptions}/>
+      <label className="field"><span>Supplier theo route</span><input value={supplier} readOnly/></label>
       <Field label="Số lượng Lô" name="expected_lot_count" type="number" value={expectedLotCount} onChange={(_,value)=>setExpectedLotCount(value)}/>
       <TextAreaField label="Note nội bộ (chỉ Admin)" name="internal_note" value={internalNote} onChange={(_,value)=>setInternalNote(value)}/>
     </div>
