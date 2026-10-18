@@ -1,5 +1,7 @@
 "use client";
 
+import { trackingSheetScope } from "@/lib/tracking-sheet-scope";
+
 import {instant} from "@/lib/sla";
 import { PricingPreview,type Preview } from "./pricing-preview";
 import { useCallback,useEffect,useState } from "react";
@@ -196,7 +198,7 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
   const subs=enums.filter(row=>row.enum_type==="SUB_SERVICE"&&row.active!==0&&(!service||row.parent_value===service));
   const subsFor=(parent:string)=>enums.filter(row=>row.enum_type==="SUB_SERVICE"&&row.active!==0&&row.parent_value===parent);
   const load=useCallback(async()=>{
-    setBusy(true);setMessage("");
+    setBusy(true);
     try{
       const params=new URLSearchParams();
       if(service)params.set("service",service);
@@ -211,7 +213,7 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
     }catch(error){setMessage("Lỗi: "+(error as Error).message)}
     finally{setBusy(false)}
   },[service,subService,supplierFilter,mode]);
-  useEffect(()=>{void load()},[load]);
+  useEffect(()=>{setMessage("");void load()},[load]);
 
   function update(index:number,key:keyof QueueRow,value:string){
     setRows(prev=>prev.map((row,i)=>i===index?{
@@ -277,8 +279,10 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
     }catch(error){setMessage("Lỗi: "+(error as Error).message)}
     finally{setBusy(false)}
   }
-  async function persist(){
-    return post("/api/orders/tracking-queue",{rows});
+  async function persist(orderIds?:number[]){
+    const scopedRows=trackingSheetScope(rows,orderIds);
+    if(!scopedRows.length)throw new Error("Nhập Tracking/Label cho ít nhất một Order.");
+    return post("/api/orders/tracking-queue",{rows:scopedRows});
   }
   async function save(){
     setBusy(true);setMessage("");
@@ -307,7 +311,7 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
     if(!selectedOrders.length){setMessage("Lỗi: Chọn ít nhất một Order.");return}
     setBusy(true);setMessage("");
     try{
-      if(mode==="PURCHASE")await persist();
+      if(mode==="PURCHASE")await persist(selectedOrders);
       const endpoint=mode==="MANIFEST"?"/api/manifest-export":generic?"/api/purchase-export/generic":"/api/purchase-export";
       const response=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({order_ids:selectedOrders})});
       if(!response.ok){const body=await response.json();throw new Error(body.error+(body.missing?.length?" · "+body.missing.map((row:{dmd_id:string;reason:string})=>row.dmd_id+": "+row.reason).join(" | "):""))}

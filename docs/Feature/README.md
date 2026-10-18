@@ -61,3 +61,6 @@ Cập nhật: 2026-10-16. Tài liệu này mô tả hành vi từ code, nguồn 
 - [Supplier Payables nội bộ GĐ1](13-supplier-payables.md): Owner chốt D24; module/API/UI local, không portal.
 - [Verification continuation](VERIFICATION-CONTINUATION-2026-10-16.md): chặn lộ GP/cost, cân đo tự động phạm vi ePacket, Hold evidence, kiểm thử mới và blockers.
 - Pricing D02 vẫn còn dùng Net→Base/Retail cũ; chưa hoàn tất Base Rate độc lập. Không coi GĐ1 đã nghiệm thu.
+
+## Internal UAT 18/10/2026
+- [Biên bản Internal UAT](INTERNAL-UAT-2026-10-18.md): fixture 544 đơn, lô 29 đơn xuyên Client/Admin/Warehouse/Finance qua browser, thùng 100 kiện, hai lỗi sheet đã sửa và giới hạn còn mở. 18 domain suites và 8 HTTP suites PASS không thay nghiệm thu toàn GĐ1.

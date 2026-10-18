@@ -17,3 +17,9 @@
 - IMPLEMENTED local: Admin cập nhật FAILED qua POST /api/shipment-status và dropdown/bulk sheet. Tab Failed dùng GET ?view=failed; queue active/Theo ETD loại FAILED, DELIVERED, ALERT, EXCEPTION. Vẫn yêu cầu Tracking ACTIVE, ETD và Order mở.
 - Lưu status/actor/history, không đặt delivered_at; Admin được sửa trạng thái khi có thông tin mới. Không tự đổi Case, refund hay purchase status; không tự backfill đơn IN_TRANSIT lâu ngày.
 - Case SOLVED (code RESOLVED/CLOSED) độc lập với shipment FAILED. Bằng chứng: route.ts, order-workspaces.tsx, regression verify-rbac.cjs; [Operational Flow](OPERATIONAL-FLOW.md).
+
+## Internal UAT 18/10 — phạm vi sheet
+- Lưu Tracking/Label chỉ gửi các Order có Tracking trong sheet, giữ đủ dòng Carton thuộc Order đó. Không đặt mua hoặc kiểm tra credit các Order trống không liên quan trong queue.
+- Xuất mua chỉ persist các Order đã chọn; không thay route/reserve của các Order còn lại.
+- Phát hiện bằng browser trên queue nhiều Client có một Client bị khóa; xem INTERNAL-UAT-2026-10-18.md để biết kết quả retest và giới hạn.
+- Thông báo lưu/xuất thành công được giữ sau tự tải lại queue; đổi filter xóa thông báo cũ.

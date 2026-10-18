@@ -1,6 +1,6 @@
 const {spawnSync}=require("node:child_process");
 const path=require("node:path");
-const suites=["verify-rbac","verify-operations","verify-purchase-engine","verify-order-flow","verify-credit","verify-balance-idempotency","verify-debt-reconciliation","verify-domain-finance","verify-epacket","verify-manifest-cartons","verify-route-segmentation","verify-supplier-payables","verify-order-cancellation","verify-legacy-migration","verify-template-download","verify-release-gates","verify-sla-demo"];
+const suites=["verify-rbac","verify-operations","verify-purchase-engine","verify-order-flow","verify-credit","verify-balance-idempotency","verify-debt-reconciliation","verify-domain-finance","verify-epacket","verify-manifest-cartons","verify-route-segmentation","verify-supplier-payables","verify-order-cancellation","verify-legacy-migration","verify-template-download","verify-release-gates","verify-sla-demo","verify-tracking-sheet-scope"];
 const env={...process.env,NODE_ENV:"test"};
 // Every suite must select its own disposable DB; never inherit a DB selected by an operator.
 delete env.DMD_DB_PATH;delete env.DMD_VERIFY_DB;
