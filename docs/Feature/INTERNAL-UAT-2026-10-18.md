@@ -50,8 +50,8 @@ Sau browser UAT có 574 Order, 407 ledger entries, 329 Supplier Cost. Không tí
 |---|---|---|---|
 | UAT-01 | P1 | Lưu sheet gửi mọi row trong queue, kể cả Order trống không thao tác; Client khóa ở nhóm khác làm rollback 29 tracking hợp lệ. Export cũng persist cả queue | Đã sửa: save chỉ gửi Order có tracking; giữ đầy đủ Carton cùng Order; export chỉ persist Order đã chọn. Browser retest 29 đơn PASS; regression scope gồm 5 assertions |
 | UAT-02 | P2 | `load()` xóa thông báo thành công ngay sau save/export, nhân viên khó biết đã xong | Đã sửa: refresh nội bộ giữ notice; đổi filter xóa notice cũ. Retest bản cuối ghi trong phần verification |
-| UAT-03 | P2, còn mở | Reconciliation thiếu search/filter/status selection và chọn hàng loạt theo nhóm; hàng trăm Lot khó tìm, phải cuộn dài | Cần cải thiện UX trước vận hành số lượng lớn; chưa đổi API/report/pagination trong lượt này |
-| UAT-04 | P2, còn mở | Supplier Cost ghi theo Lot không có tracking, list chỉ hiện ô tracking trống và thiếu Order/Lot context | Cần thêm cột Order/Lot và filter. Không phải bằng chứng mất mapping; DB đã match trực tiếp Lot |
+| UAT-03 | P2, đã sửa ở vòng tiếp tục | Reconciliation thiếu search/filter/status selection và chọn hàng loạt theo nhóm; hàng trăm Lot khó tìm, phải cuộn dài | Đã thêm search nhiều ID, filter status/route/coverage, phân trang và selection 200 Lot; browser retest bên dưới |
+| UAT-04 | P2, đã sửa ở vòng tiếp tục | Supplier Cost ghi theo Lot không có tracking, list chỉ hiện ô tracking trống và thiếu Order/Lot context | Đã thêm Order/DMD ID/Lot/khách, search/filter và pagination; DB mapping giữ nguyên |
 | UAT-05 | P1 release gate, đã biết | Adapter/gate Base Rate cho UPS/Yun/custom chưa hoàn tất | Không tự sửa business policy hoặc dùng synthetic fixture để tuyên bố PASS; cần Owner và implementation riêng |
 
 Không phát hiện P0 trong phạm vi đã chạy; không suy rộng thành không có P0 toàn hệ thống.
@@ -72,14 +72,41 @@ Không phát hiện P0 trong phạm vi đã chạy; không suy rộng thành kh�
 2. Credit Term bắt đầu/kết thúc trong cửa sổ đối soát tuần, policy quá hạn và tình huống Debt.
 3. Cancellation/void label theo từng Supplier, bằng chứng hoàn/không hoàn và mức phí giữ lại.
 4. Mapping cost/coverage/FX/chứng từ, tiêu chí xác nhận đủ Mid-mile và GP thực; không suy từ PASS thành đủ cost.
-5. Chấp nhận UX bulk hiện tại hay yêu cầu filter/search Finance, nội dung cột Order/Lot và thao tác của máy scanner; thử Owner UAT trước pilot.
+5. Owner UAT trên thiết bị làm việc thật, đặc biệt máy scanner/in và thao tác mobile; filter/search Finance và cột Order/Lot đã bổ sung trong vòng tiếp tục.
 
 **Kết luận:** đã chứng minh một lô Standard xuyên Client → Admin → Warehouse → Finance trên UI với dữ liệu giả lập ở quy mô queue hàng trăm đơn, sửa lỗi queue có thể chặn vận hành. Chưa đủ bằng chứng nghiệm thu toàn GĐ1 hoặc triển khai DB thật.
 
-## Verification cuối trước commit
+## Verification vòng đầu trước commit ccbc690
 
 - Bản build cuối sau cả hai sửa UI: PASS compile + TypeScript + generate 37/37 static pages. Lint PASS, `npm run typecheck` PASS, `git diff --check` PASS.
 - 18 domain suites / 1.000 assertions PASS. 8 HTTP suites / 246 assertions chạy lại toàn bộ trên DB mới `.smoke/http-uat-final-test.db` theo thứ tự Orders → acceptance → Finance → Operations → imports → validation → manifest → cancellation: tất cả PASS.
 - UAT-02 retest trên build cuối: chọn riêng UI-UAT-030 bằng bàn phím desktop, export trả file `Purchase_ePacket_Standard_DMD_1-orders.xlsx`, thông báo **“Đã xuất file mua đơn.”** còn hiển thị sau refresh queue. Parser xác nhận đúng một UI-UAT-030, không có UI-UAT-001…029. Client bị khóa ở queue không chặn export này.
 - Chọn checkbox cuối sheet ở viewport mobile 390 px bằng automation không đổi trạng thái; đổi desktop và dùng Space thành công. Chưa đủ bằng chứng phân biệt vùng bị che bởi sticky footer với giới hạn browser automation. Ghi là **mobile bulk sheet chưa đạt acceptance**, cần kiểm tra thao tác tay/scroll trên thiết bị thật; không tuyên bố mọi chức năng mobile PASS.
 - Logs, ảnh và audit cuối được giữ trong thư mục evidence ngoài Git. DB, `.env`, dependencies và dữ liệu thử không được commit.
+
+
+## Vòng tiếp tục 18/10/2026 — hoàn thiện mục có thể xử lý an toàn
+
+Phần này cập nhật trạng thái sau commit ccbc690, thay các ghi nhận còn mở UAT-03/UAT-04 và mobile ở vòng đầu.
+
+### Đã hoàn thiện và retest
+
+- **UAT-03:** Lot có search tiếng Việt không dấu, dán nhiều Order/DMD ID, filter status/route/coverage, 50 Lot/trang và chọn cả trang. Đổi filter bỏ selection cũ. Browser chọn 50 → 100 → 150 → 200 Lot qua bốn trang, trang thứ năm bị chặn và vẫn giữ 200. Không submit nhóm 200; chỉ test selection/error.
+- Browser dán `UI-UAT-001` + `UI-UAT-002`, lọc PASS/Standard, chọn cả hai, đổi coverage COMPLETE → 0 kết quả và 0 selection. Trả UNKNOWN, chọn lại hai và absorb_loss có lý do → “Đã xử lý 2 Lot và lưu lịch sử”. Không tạo thêm phí khách.
+- **UAT-04:** Supplier Cost hiển thị Order/DMD ID, Lot, khách, tracking, Supplier và trạng thái. Search UAT-0001 trả direct Lot cost với tracking trống nhưng rõ Order/Lot. Trang 2/7 truy cập được. Query UI-ECO + KILOSHIP → empty state; đổi DMD + PASS → đúng ba dòng. GP có phân trang riêng, browser đã mở trang 2/7.
+- **UAT-06 (P2, sửa):** trên 390×844, toolbar sheet không còn ép vùng bảng xuống gần 0; modal cuộn toàn phần, bảng có vùng cuộn tối thiểu, checkbox có kích thước riêng và accessible name. Click checkbox cuối bảng UI-UAT-030 bằng pointer đã chuyển selected 0 → 1 trên mobile; có ảnh. Đây là browser viewport acceptance, chưa thay test thiết bị thật.
+- **UAT-07 (P2, sửa):** Tổng quan đếm direct Lot cost bằng tracking nên báo sai 300 unmatched. Sửa dùng matched_order_id; HTTP regression so tổng với API costs?status=UNMATCHED và PASS. Label đổi thành “Cost chưa ghép Order”. Không thay mapping hoặc sửa dữ liệu cost.
+- BOD đăng nhập vào workspace tài chính, xem được UI-UAT-029 actual 20 / estimate 7,12 / PASS / absorb_loss. Sales epacket.sales chỉ có menu nghiệp vụ được cấp; tìm UAT-0002 thuộc Sales khác trả 0 Order. Chưa nghiệm thu đầy đủ báo cáo KPI/commission BOD/Sales.
+
+### Eco kiểm thử xuyên UI
+
+Client uat.client.4 tạo ba đơn UI-ECO-1…3 qua TSV, chọn Eco, giá mỗi đơn 6,28 USD, mua tổng 18,84 USD. Admin lọc Eco, paste ba tracking/label, save báo “Đã lưu 3 Tracking/Label cho 3 Order”. Warehouse thử Eco vào thùng Standard bị ROUTE_MISMATCH, mở thùng Eco mới, scan từng kiện, chốt thùng 007 và xuất file Manifest. Parser xác nhận đúng ba tracking Eco duy nhất. Finance nhập từng cost 2 USD qua UI, lọc ra ba dòng PASS, tổng 6 USD. DB audit: 3 charge tổng 18,84 USD, 3 costs tổng 6 USD, thùng CLOSED có 3 items, integrity ok và không có FK violations. Giá/chứng từ vẫn là synthetic, coverage chưa xác nhận đầy đủ.
+
+### Regression cuối vòng tiếp tục
+
+- 19 domain suites PASS, **1.014 assertions** (thêm 14 filter/selection checks). Lần chạy harness đầu compile helper về ES5 làm spread Set sai; đã sửa harness target ES2022 và chạy lại PASS. Không tính lần fail/retry vào tổng.
+- 8 HTTP suites cũ chạy lại toàn bộ trên DB mới `.smoke/http-followup-final-test.db`: **246 assertions PASS**. Suite Finance list mới chạy read-only trên DB UAT: **22 assertions PASS**, gồm Order/Lot context, DMD ID search, combined filters, empty results, pagination, SQL parameter binding, role privacy và summary unmatched. Tổng **9 suites / 268 assertions**.
+- Lint PASS, standalone TypeScript PASS, production build PASS (37/37 static pages), git diff --check PASS. Không chạy app/build/tests trên DB vận hành.
+- Bằng chứng bổ sung: ảnh mobile sheet, Finance filters/bulk và Eco manifest/cost; workbook Eco manifest và JSON audit trong thư mục evidence ngoài Git.
+- Các giới hạn cần dữ liệu/thiết bị/Owner ở phần trên vẫn giữ: route manual/Base Rate được duyệt, Credit Term/cancellation policy, cost mapping/coverage/FX, rehearsal DB staging và scanner/in thật. Không tự triển khai các phần business còn thiếu bằng giá giả lập.
+- Push main đã thử theo yêu cầu tiếp tục nhưng automatic approval review vẫn từ chối cập nhật nhánh mặc định, yêu cầu người dùng xác nhận đích main cụ thể. Không đổi remote/nhánh hoặc dùng cách khác để vượt chặn. Commit được lưu local, push chưa hoàn tất.

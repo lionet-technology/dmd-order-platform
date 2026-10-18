@@ -1083,7 +1083,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
             {role==="ADMIN"&&<>
               <div className="metricCard"><span>Ledger balance</span><b>{money(summary?.ledger)}</b><small>Credit − Debit</small></div>
               <div className={Number(summary?.review||0)>0?"metricCard alert":"metricCard"}><span>Need review</span><b>{summary?.review??0}</b><small>Reconciliation cần kiểm tra</small></div>
-              <div className="metricCard"><span>Unmatched cost</span><b>{summary?.unmatched??0}</b><small>Cost chưa match Tracking</small></div>
+              <div className="metricCard"><span>Unmatched cost</span><b>{summary?.unmatched??0}</b><small>Cost chưa ghép Order</small></div>
             </>}
           </section>
 

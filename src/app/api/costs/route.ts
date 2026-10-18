@@ -12,17 +12,21 @@ async function handleGET(req:NextRequest) {
   const auth=requireFinance(req); if(auth.error)return auth.error;
   const {page,pageSize,q,offset}=pageParams(req);
   const params:unknown[]=[];
-  let where="";
+  const clauses:string[]=[];
   if(q){
-    where=" WHERE (sc.tracking LIKE ? OR sc.supplier LIKE ? OR sc.service LIKE ? OR o.order_id LIKE ? OR o.customer LIKE ?)";
-    const like="%"+q+"%"; params.push(like,like,like,like,like);
+    clauses.push("(sc.tracking LIKE ? OR sc.supplier LIKE ? OR sc.service LIKE ? OR o.order_id LIKE ? OR o.system_order_code LIKE ? OR o.customer LIKE ?)");
+    const like="%"+q+"%"; params.push(like,like,like,like,like,like);
   }
-  const total=queryOne<{c:number}>(
-    "SELECT COUNT(*) c FROM supplier_costs sc LEFT JOIN orders o ON o.id=sc.matched_order_id"+where,
-    params,
-  )?.c||0;
+  const supplier=req.nextUrl.searchParams.get("supplier");
+  const status=req.nextUrl.searchParams.get("status");
+  if(supplier){clauses.push("sc.supplier=?");params.push(supplier)}
+  if(status==="UNMATCHED")clauses.push("o.id IS NULL");
+  else if(status){clauses.push("COALESCE(o.reconciliation_status,'PENDING')=?");params.push(status)}
+  const where=clauses.length?" WHERE "+clauses.join(" AND "):"";
+  const join=" FROM supplier_costs sc LEFT JOIN orders o ON o.id=sc.matched_order_id LEFT JOIN order_lots l ON l.id=sc.order_lot_id";
+  const total=queryOne<{c:number}>("SELECT COUNT(*) c"+join+where,params)?.c||0;
   const items=queryAll(
-    "SELECT sc.*,CASE WHEN o.id IS NULL THEN 0 ELSE 1 END matched,o.order_id,o.customer,o.est_net_cost,o.reconciliation_status FROM supplier_costs sc LEFT JOIN orders o ON o.id=sc.matched_order_id"+where+" ORDER BY COALESCE(sc.occurred_at,sc.created_at) DESC,sc.id DESC LIMIT ? OFFSET ?",
+    "SELECT sc.*,CASE WHEN o.id IS NULL THEN 0 ELSE 1 END matched,o.order_id,o.system_order_code,o.customer,l.lot_number,o.est_net_cost,o.reconciliation_status"+join+where+" ORDER BY COALESCE(sc.occurred_at,sc.created_at) DESC,sc.id DESC LIMIT ? OFFSET ?",
     [...params,pageSize,offset],
   );
   return NextResponse.json(paged(items,total,page,pageSize));

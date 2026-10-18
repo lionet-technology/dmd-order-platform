@@ -1,0 +1,9 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),ts=require('typescript'),Module=require('node:module'),path=require('node:path');
+const filename=path.resolve(__dirname,'../src/lib/reconciliation-filters.ts'),m=new Module(filename);
+m._compile(ts.transpileModule(fs.readFileSync(filename,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,filename);
+const {filterReconciliationLots:filter,lotRoute,selectLotPage}=m.exports;let checks=0;
+const eq=(a,b)=>{assert.deepEqual(a,b);checks++};
+const rows=[{id:1,order_reference:'ORD-A',order_id:12,system_order_code:'DMD-001',customer:'Ánh Mai',service:'ePacket',sub_service:'Eco',supplier:'DMD',reconciliation_status:null,actual_cost_coverage:'UNKNOWN'},{id:2,order_reference:'ORD-B',order_id:13,system_order_code:'DMD-002',customer:'Lotus',service:'UPS',sub_service:'Saver',supplier:'KILOSHIP',reconciliation_status:'REVIEW',actual_cost_coverage:'PARTIAL'},{id:3,order_reference:'ORD-C',order_id:14,customer:'Lotus',service:'ePacket',sub_service:'Eco',supplier:'DMD',reconciliation_status:'PASS',actual_cost_coverage:'COMPLETE'}];
+const f=(over={})=>filter(rows,{query:'',status:'',route:'',coverage:'',...over}).map(r=>r.id);
+eq(f(),[1,2,3]);eq(f({query:'anh mai'}),[1]);eq(f({query:'DMD-002\nORD-C'}),[2,3]);eq(f({query:'ORD-A, ORD-B; ORD-C'}),[1,2,3]);eq(f({status:'PENDING'}),[1]);eq(f({status:'REVIEW',coverage:'PARTIAL'}),[2]);eq(f({route:'ePacket / Eco / DMD',coverage:'COMPLETE'}),[3]);eq(f({query:'not found'}),[]);eq(lotRoute(rows[0]),'ePacket / Eco / DMD');eq(selectLotPage([1],[2,2,3]),[1,2,3]);eq(selectLotPage([1,2,3],[2,3]),[1]);eq(selectLotPage([],[]),[]);eq(selectLotPage([],Array.from({length:200},(_,i)=>i)).length,200);assert.throws(()=>selectLotPage(Array.from({length:200},(_,i)=>i),[201]),/200/);checks++;
+console.log('FINANCE FILTERS PASS ('+checks+' assertions)');

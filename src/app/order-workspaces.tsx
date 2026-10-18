@@ -364,7 +364,7 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
         const index=rows.indexOf(row);
         const rowClass=(groupIndex%2?"orderGroupAlt":"orderGroupBase")+" "+(rowIndex===0?"orderGroupStart":"");
         return <tr key={row.system_order_code+"-"+row.carton_slot} className={rowClass}>
-          {rowIndex===0&&<td rowSpan={group.length} className="orderLevelField"><input type="checkbox" checked={selectedOrders.includes(row.order_pk)} onChange={()=>toggleOrder(row.order_pk)}/></td>}
+          {rowIndex===0&&<td rowSpan={group.length} className="orderLevelField"><input type="checkbox" aria-label={"Chọn Order "+row.client_order_id+" / "+row.system_order_code} checked={selectedOrders.includes(row.order_pk)} onChange={()=>toggleOrder(row.order_pk)}/></td>}
           <td><b>{row.system_order_code}</b></td>
           <td>{row.client_order_id}</td><td>{row.customer}</td><td>{row.recipient_name}</td>
           {rowIndex===0&&<td rowSpan={group.length} className="orderLevelField">{(()=>{const status=mode==="MANIFEST"?row.manifest_status:row.purchase_status;const issue=mode==="MANIFEST"?row.manifest_issue:row.purchase_issue;return <><span className={"templateState "+String(status||"MISSING_TEMPLATE").toLowerCase()}>{status==="READY"?"Ready":status==="MISSING_DATA"?"Thiếu dữ liệu":status==="CHECK_AFTER_SAVE"?"Cần lưu lại":"Chưa có Template"}</span>{issue&&<small>{issue}</small>}</>})()}</td>}

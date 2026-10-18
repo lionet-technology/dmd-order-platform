@@ -12,7 +12,7 @@ async function handleGET(req:NextRequest) {
     return NextResponse.json({items:db.prepare("SELECT * FROM lot_reconciliation_versions WHERE lot_id=? ORDER BY id DESC").all(id)});
   }
   if(req.nextUrl.searchParams.get("granularity")==="lot"){
-    return NextResponse.json({items:db.prepare(`SELECT l.*,o.order_id order_reference,o.customer,o.actual_cost_coverage,o.effective_net_cost,v.cost_snapshot_json,v.estimated_cents,v.actual_cents,v.status reconciliation_status,v.decision,v.reason,v.id reconciliation_version FROM order_lots l JOIN orders o ON o.id=l.order_id LEFT JOIN lot_reconciliation_versions v ON v.id=(SELECT MAX(id) FROM lot_reconciliation_versions WHERE lot_id=l.id) ORDER BY o.id,l.lot_number`).all()});
+    return NextResponse.json({items:db.prepare(`SELECT l.*,o.order_id order_reference,o.system_order_code,o.service,o.sub_service,o.supplier,o.customer,o.actual_cost_coverage,o.effective_net_cost,v.cost_snapshot_json,v.estimated_cents,v.actual_cents,v.status reconciliation_status,v.decision,v.reason,v.id reconciliation_version FROM order_lots l JOIN orders o ON o.id=l.order_id LEFT JOIN lot_reconciliation_versions v ON v.id=(SELECT MAX(id) FROM lot_reconciliation_versions WHERE lot_id=l.id) ORDER BY o.id,l.lot_number`).all()});
   }
   const {page,pageSize,q,offset}=pageParams(req);
   const where=["(true_net_cost IS NOT NULL OR reconciliation_status='REVIEW')"];

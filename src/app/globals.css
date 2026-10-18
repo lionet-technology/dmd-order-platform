@@ -1067,3 +1067,15 @@ td{padding:12px;line-height:1.45}
  .financialActivity td {display:grid;grid-template-columns:90px 1fr;gap:10px;max-width:none;width:auto;white-space:normal;padding:5px 0;border:0;overflow-wrap:anywhere;}
  .financialActivity td::before {content:attr(data-label);font-weight:600;color:var(--muted,#64748b);}
 }
+
+/* UAT: keep the spreadsheet usable when mobile toolbars exceed the viewport. */
+.bulkSheetScroll input[type="checkbox"]{min-width:20px;width:20px;min-height:20px;height:20px;padding:0;cursor:pointer}
+.financeFilters{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin:16px 0}
+.financeFilters .field{min-width:150px}.financeFilters .field:first-child{flex:1;min-width:220px}
+.financePagination{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:14px 0}
+@media(max-width:700px){
+  .fullscreenModal .modalBody:has(.bulkSheet){overflow:auto}
+  .bulkSheet{height:auto;min-height:100%;display:block}
+  .bulkSheetScroll{min-height:280px;max-height:60dvh;overflow:auto;scroll-padding-top:48px}
+  .financeFilters .field{min-width:0;width:100%}
+}

@@ -64,3 +64,4 @@ Cập nhật: 2026-10-16. Tài liệu này mô tả hành vi từ code, nguồn 
 
 ## Internal UAT 18/10/2026
 - [Biên bản Internal UAT](INTERNAL-UAT-2026-10-18.md): fixture 544 đơn, lô 29 đơn xuyên Client/Admin/Warehouse/Finance qua browser, thùng 100 kiện, hai lỗi sheet đã sửa và giới hạn còn mở. 18 domain suites và 8 HTTP suites PASS không thay nghiệm thu toàn GĐ1.
+- Vòng tiếp tục: hoàn thiện filter/pagination/context Finance và mobile sheet, sửa unmatched counter; thêm Eco xuyên UI, BOD/Sales checks. 19 domain suites / 1.014 assertions và 9 HTTP suites / 268 assertions PASS. Các gate dữ liệu/policy thật vẫn mở; xem biên bản.

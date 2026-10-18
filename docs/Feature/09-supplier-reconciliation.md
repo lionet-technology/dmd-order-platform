@@ -63,3 +63,11 @@ API Costs/Reconciliation và nhập Excel kind=costs chỉ BOD/FINANCE; Admin v�
 
 ## Delta lượt tiếp tục 16/10/2026
 Sổ [phải trả Supplier](13-supplier-payables.md) được Owner đưa vào GĐ1 D24, đã có module/API/UI local; không suy thanh toán từ cost hoặc tạo lại cost từ invoice. Reconciliation revenue bổ sung WEIGHT_ADJUSTMENT thực charge; cancellation revenue không cộng lại. Orders payload non-Admin đã lọc các trường GP/cost mới; D22 vẫn blocker.
+
+## Internal UAT tiếp tục 18/10 — tìm và chọn dữ liệu Finance
+
+- Supplier Cost: search Order/DMD ID/Tracking/khách/service, filter Supplier và trạng thái đối soát hoặc chưa ghép Order, phân trang 50 dòng. GET costs thêm `system_order_code`, `lot_number`; direct Lot cost không còn mất ngữ cảnh khi tracking trống. Các quyền BOD/FINANCE giữ nguyên.
+- Lot: search không dấu theo Order/DMD ID/khách/route, dán danh sách ID ngăn bởi dòng mới, dấu phẩy hoặc chấm phẩy (match bất kỳ ID). Filter status/route/coverage kết hợp AND. 50 Lot mỗi trang, chọn cả trang, tối đa 200 Lot; đổi filter bỏ selection cũ. Chọn trang khác giữ selection, tổng selection hiển thị rõ; action áp dụng toàn bộ Lot đã chọn.
+- GP có phân trang riêng 50 Order, ghi rõ không dùng bộ lọc Lot. Không thay đổi giá, cách tính tiền, eligibility, coverage hoặc hành vi đối soát.
+- Regression pure filter/selection gồm nhiều ID, tiếng Việt không dấu, tổ hợp filter, giữ/bỏ selection theo trang, ranh giới 200; HTTP và browser verification xem biên bản Internal UAT.
+- Bộ đếm Unmatched cost ở Tổng quan dùng `matched_order_id`, không so tracking chính của Order; cost ghép trực tiếp Lot hoặc tracking thay thế không bị đếm nhầm là chưa ghép.

@@ -23,3 +23,4 @@
 - Xuất mua chỉ persist các Order đã chọn; không thay route/reserve của các Order còn lại.
 - Phát hiện bằng browser trên queue nhiều Client có một Client bị khóa; xem INTERNAL-UAT-2026-10-18.md để biết kết quả retest và giới hạn.
 - Thông báo lưu/xuất thành công được giữ sau tự tải lại queue; đổi filter xóa thông báo cũ.
+- Tiếp tục 18/10: sheet mobile cho phép cuộn toàn bộ nội dung modal và dành vùng bảng cao tối thiểu 280 px; không để toolbar chiếm hết vùng dòng. Checkbox có kích thước riêng và tên Order/DMD ID cho truy cập bàn phím/screen reader. Chưa đồng nghĩa acceptance trên máy thật.
