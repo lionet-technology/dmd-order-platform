@@ -1,5 +1,6 @@
 "use client";
 
+import {CancellationPolicyPanel} from "./cancellation-policy-panel";
 import { RoutePricingPanel } from "./route-pricing-panel";
 import { useCallback,useEffect,useRef,useState } from "react";
 
@@ -163,7 +164,8 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
 
     {selected&&<>
       <div className="routeEditorHeader" ref={editorRef}><div><span className="eyebrow">ĐANG CẤU HÌNH</span><h2>{selected.service}{selected.sub_service?" / "+selected.sub_service:""}</h2><p>Supplier: {selected.supplier} · {selected.active?"Đang hoạt động":"Không hoạt động"}</p></div><button className="secondaryBtn" onClick={()=>setSelected(null)}>Đóng cấu hình</button></div>
-      <div className="routeEditorTabs" role="group" aria-label="Các mục cấu hình dịch vụ">{[["pricing","Giá & phụ phí"],["templates","Template xuất file"],["segmentation","Phân vùng nâng cao"]].map(([key,label])=><button key={key} className={routeTab===key?"active":""} aria-pressed={routeTab===key} onClick={()=>setRouteTab(key)}>{label}</button>)}</div>
+      <div className="routeEditorTabs" role="group" aria-label="Các mục cấu hình dịch vụ">{[["pricing","Giá & phụ phí"],["cancellation","Hoàn / Huỷ"],["templates","Template xuất file"],["segmentation","Phân vùng nâng cao"]].map(([key,label])=><button key={key} className={routeTab===key?"active":""} aria-pressed={routeTab===key} onClick={()=>setRouteTab(key)}>{label}</button>)}</div>
+      <div hidden={routeTab!=="cancellation"}><CancellationPolicyPanel key={selected.id} route={selected} onSaved={()=>void load()}/></div>
       <div hidden={routeTab!=="pricing"}><RoutePricingPanel key={selected.id} routeId={selected.id}/></div>
       <section hidden={routeTab!=="segmentation"} className="templateConfigCard">
       <div className="routeVariablesEditor segmentationEditor">

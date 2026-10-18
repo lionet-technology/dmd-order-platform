@@ -1,3 +1,4 @@
+import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import { NextRequest,NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -16,7 +17,7 @@ function inspect(raw:Record<string,unknown>){
   return {...raw,tracking_id:owner.id,order_pk:owner.order_id,...order,error:""};
 }
 
-export async function POST(req:NextRequest){
+async function handlePOST(req:NextRequest){
   const auth=requireUser(req,"ADMIN");if(auth.error)return auth.error;
   try{
     const body=await req.json();
@@ -38,3 +39,5 @@ export async function POST(req:NextRequest){
     return NextResponse.json({updated});
   }catch(error){return NextResponse.json({error:error instanceof Error?error.message:"Không thể đổi Tracking"},{status:400})}
 }
+
+export const POST=withFinancialPrivacy(handlePOST);

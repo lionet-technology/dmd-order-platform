@@ -1,3 +1,4 @@
+import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import { NextRequest,NextResponse } from "next/server";
 import fs from "node:fs";
 import path from "node:path";
@@ -7,7 +8,7 @@ import { missingRoutePlaceholders,scanPurchaseWorkbook,validateRepeatSections } 
 
 export const runtime="nodejs";
 
-export async function GET(req:NextRequest){
+async function handleGET(req:NextRequest){
   const auth=requireUser(req,"ADMIN");if(auth.error)return auth.error;
   const rows=db.prepare(
     "SELECT pt.*,rc.service,rc.sub_service,rc.supplier,pv.id version_id,pv.version_number,pv.original_filename,pv.status,pv.placeholder_map_json,pv.validation_json,pv.created_at version_created_at "+
@@ -18,7 +19,7 @@ export async function GET(req:NextRequest){
   return NextResponse.json(rows);
 }
 
-export async function POST(req:NextRequest){
+async function handlePOST(req:NextRequest){
   const auth=requireUser(req,"ADMIN");if(auth.error)return auth.error;
   try{
     const form=await req.formData();
@@ -89,3 +90,6 @@ export async function POST(req:NextRequest){
     return NextResponse.json({error:error instanceof Error?error.message:"Không thể upload Purchase Template."},{status:400});
   }
 }
+
+export const GET=withFinancialPrivacy(handleGET);
+export const POST=withFinancialPrivacy(handlePOST);

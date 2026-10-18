@@ -1,7 +1,8 @@
+import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import {NextRequest,NextResponse} from "next/server";
 import {requireUser} from "@/lib/auth";
 import {db} from "@/lib/db";
-export async function POST(req:NextRequest,{params}:{params:Promise<{id:string}>}){
+async function handlePOST(req:NextRequest,{params}:{params:Promise<{id:string}>}){
  const auth=requireUser(req,"ADMIN");if(auth.error)return auth.error;
  try{const body=await req.json();if(typeof body.hold!=="boolean")throw new Error("hold phải là boolean.");
  const id=Number((await params).id);
@@ -10,3 +11,5 @@ export async function POST(req:NextRequest,{params}:{params:Promise<{id:string}>
  return NextResponse.json({route_config_id:id,hold:body.hold});
  }catch(error){return NextResponse.json({error:(error as Error).message},{status:400})}
 }
+
+export const POST=withFinancialPrivacy(handlePOST);

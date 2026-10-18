@@ -1,5 +1,6 @@
 import { refreshDraft,activePricing,routeFor } from "./route-pricing";
 import { db } from "./db";
+import { reconcileLots } from "./reconciliation";
 import {defaultDirection} from "./transaction-taxonomy";
 import {moneyCommand} from "./money-command";
 import { validateOrderEnums, validateSupplierCostEnums } from "./enums";
@@ -57,7 +58,9 @@ export type SupplierCostInput = {
   supplier?: string;
   service?: string;
   sub_service?: string;
-  tracking: string;
+  tracking?: string;
+  order_id?: number;
+  lot_number?: number;
   occurred_at?: string | null;
   item?: string;
   destination?: string;
@@ -459,9 +462,22 @@ export function upsertOrder(input: OrderInput) {
 }
 
 export function addSupplierCost(input: SupplierCostInput) {
+ return db.transaction(()=>addSupplierCostOnce(input)).immediate();
+}
+function addSupplierCostOnce(input: SupplierCostInput) {
   const tracking = text(input.tracking);
-  if (!tracking) throw new Error("Tracking là bắt buộc để link chi phí.");
+  const direct=input.order_id!==undefined||input.lot_number!==undefined;
+  let lot:{id:number}|undefined;
+  if(direct){
+    if(!Number.isInteger(input.order_id)||!Number.isInteger(input.lot_number)||Number(input.lot_number)<1)throw Error("Cần Order ID và số Lot hợp lệ.");
+    if(!db.prepare("SELECT id FROM orders WHERE id=?").get(input.order_id))throw Error("Order không tồn tại.");
+    ensureOrderShipmentStructure(Number(input.order_id));
+    lot=db.prepare("SELECT id FROM order_lots WHERE order_id=? AND lot_number=?").get(input.order_id,input.lot_number) as {id:number}|undefined;
+    if(!lot)throw Error("Lot không thuộc Order.");
+    if(tracking)throw Error("Chi phí theo Lot không cần Tracking; không nhập hai cách ghép cùng lúc.");
+  }else if (!tracking) throw new Error("Cần số Lot + Order ID hoặc Tracking để link chi phí.");
   const normalizedTracking=normalizeTracking(tracking);
+  if(lot&&db.prepare('SELECT lot_id FROM lot_cost_components WHERE lot_id=?').get(lot.id))throw Error('Lot dùng component; cần mapping supplier component trước khi import aggregate.');
   if(input.source_key){
     const duplicate=db.prepare("SELECT id,matched_order_id,total_net_cost FROM supplier_costs WHERE source_key=?").get(input.source_key) as {id:number;matched_order_id:number|null;total_net_cost:number}|undefined;
     if(duplicate)return {id:duplicate.id,tracking,matched:Boolean(duplicate.matched_order_id),total_net_cost:duplicate.total_net_cost,duplicate:true,warning:"Dòng này đã được import trước đó nên không ghi nhận lại."};
@@ -471,10 +487,14 @@ export function addSupplierCost(input: SupplierCostInput) {
   const fee = num(input.fee);
   const exportCustoms = num(input.export_customs);
   const importCustoms = num(input.import_customs);
-  const totalNet = money(num(input.total_net_cost) || netPrice + fee + exportCustoms + importCustoms);
-  if (!totalNet) throw new Error("Cần Total Net Cost hoặc các thành phần chi phí.");
+  const explicitTotal=input.total_net_cost!==null&&input.total_net_cost!==undefined&&input.total_net_cost!=='';
+  const parsedTotal=explicitTotal?Number(String(input.total_net_cost).replace(/[$,%\s,]/g,'')):netPrice+fee+exportCustoms+importCustoms;
+  if(!Number.isFinite(parsedTotal)||parsedTotal<0||parsedTotal>1e9)throw Error("Total Net Cost phải là số không âm hợp lệ.");
+  const totalNet=money(parsedTotal);
+  if(!explicitTotal&&!totalNet)throw Error("Cần Total Net Cost hoặc các thành phần chi phí.");
 
   const owner=findTrackingOwner(tracking);
+  if(owner&&db.prepare('SELECT c.lot_id FROM lot_cost_components c JOIN order_lots l ON l.id=c.lot_id WHERE l.order_id=? LIMIT 1').get(owner.order_id))throw Error('Order dùng component; aggregate tracking feed cần mapping component.');
   const extraSurcharge=money(num(input.extra_surcharge));const importTax=money(num(input.import_tax));
   const surchargeType=extraSurcharge?(text(input.surcharge_type)||"phụ phí bổ sung"):"";
   const result = db.prepare(`
@@ -488,8 +508,10 @@ export function addSupplierCost(input: SupplierCostInput) {
     totalNet,extraSurcharge,importTax,surchargeType,text(input.note), input.batch_id || null,input.source_key||null
   );
 
-  const matched=Boolean(owner);
-  if(owner)matchSupplierCostsForOrder(owner.order_id);
+  const matched=Boolean(owner||lot);
+  if(lot){db.prepare("UPDATE supplier_costs SET matched_order_id=?,order_lot_id=? WHERE id=?").run(input.order_id,lot.id,result.lastInsertRowid);matchSupplierCostsForOrder(Number(input.order_id));}
+  else if(owner)matchSupplierCostsForOrder(owner.order_id);
+  if(owner||lot)reconcileLots(Number(input.order_id||owner?.order_id));
   return {
     id: Number(result.lastInsertRowid),
     tracking,

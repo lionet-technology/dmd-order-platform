@@ -1,3 +1,4 @@
+import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import { orderQuote,purchaseService } from "@/lib/route-pricing";
 import { NextRequest, NextResponse } from "next/server";
 import { canAccessClient, getClientAccount, requireUser } from "@/lib/auth";
@@ -19,7 +20,7 @@ function accessible(user:{id:number;role:string},orderId:number){
   return {order};
 }
 
-export async function GET(req:NextRequest,{params}:{params:Promise<{id:string}>}){
+async function handleGET(req:NextRequest,{params}:{params:Promise<{id:string}>}){
   const auth=requireUser(req);if(auth.error)return auth.error;
   const id=Number((await params).id);const access=accessible(auth.user,id);if(access.error)return access.error;
   const rows=listOrderTrackings(id,auth.user.role==="ADMIN");
@@ -27,7 +28,7 @@ export async function GET(req:NextRequest,{params}:{params:Promise<{id:string}>}
   return NextResponse.json({order:publicOrder,trackings:auth.user.role==="ADMIN"?rows:rows.filter(x=>x.status==="ACTIVE").map(({normalized_tracking,cost_match_type,cost_parent_tracking_id,replaced_by_tracking_id,...row})=>row)});
 }
 
-export async function POST(req:NextRequest,{params}:{params:Promise<{id:string}>}){
+async function handlePOST(req:NextRequest,{params}:{params:Promise<{id:string}>}){
   const auth=requireUser(req,"ADMIN");if(auth.error)return auth.error;
   const id=Number((await params).id);const access=accessible(auth.user,id);if(access.error)return access.error;
   try{
@@ -56,6 +57,10 @@ export async function POST(req:NextRequest,{params}:{params:Promise<{id:string}>
         const raw=trackingRows[index];
         if(!String(raw.tracking||"").trim())continue;
         const cartonId=Number(raw.carton_id||cartons[index]?.id||0)||null;
+        if(cartonId&&raw.lot_number!==undefined){
+          const cartonLot=db.prepare('SELECT l.lot_number FROM order_cartons c JOIN order_lots l ON l.id=c.order_lot_id WHERE c.id=? AND c.order_id=?').get(cartonId,id) as {lot_number:number}|undefined;
+          if(cartonLot&&Number(raw.lot_number)!==cartonLot.lot_number)throw new Error('Lot của Tracking không khớp Carton. Cập nhật khai báo kiện hàng trước khi cấp Tracking.');
+        }
         if(raw.id)updateOrderTracking({orderId:id,id:Number(raw.id),labelUrl:raw.label_url,lotNumber:raw.lot_number,cartonId,costMatchType:raw.cost_match_type,costParentTrackingId:raw.cost_parent_tracking_id,isPrimary:Boolean(raw.is_primary)});
         else addOrderTracking({orderId:id,tracking:raw.tracking,labelUrl:raw.label_url,lotNumber:raw.lot_number,cartonId,actorId:auth.user.id,costMatchType:raw.cost_match_type,costParentTrackingId:raw.cost_parent_tracking_id});
       }
@@ -73,3 +78,6 @@ export async function POST(req:NextRequest,{params}:{params:Promise<{id:string}>
     return NextResponse.json({order:db.prepare("SELECT * FROM orders WHERE id=?").get(id),trackings:listOrderTrackings(id,true)});
   }catch(error){return NextResponse.json({error:error instanceof Error?error.message:"Không thể cập nhật Tracking"},{status:400})}
 }
+
+export const GET=withFinancialPrivacy(handleGET);
+export const POST=withFinancialPrivacy(handlePOST);

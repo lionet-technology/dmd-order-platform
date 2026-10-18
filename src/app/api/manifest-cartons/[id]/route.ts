@@ -1,16 +1,17 @@
+import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import {NextRequest,NextResponse} from "next/server";
 import {requireAnyRole} from "@/lib/auth";
 import {changeManifestStatus,closeManifestCarton,manifestCartonDetail,removeManifestItem} from "@/lib/manifest-cartons";
 
 export const runtime="nodejs";
 
-export async function GET(req:NextRequest,{params}:{params:Promise<{id:string}>}){
+async function handleGET(req:NextRequest,{params}:{params:Promise<{id:string}>}){
   const auth=requireAnyRole(req,["ADMIN","WAREHOUSE"]);if(auth.error)return auth.error;
   try{return NextResponse.json(manifestCartonDetail(Number((await params).id)))}
   catch(error){return NextResponse.json({reason_code:(error as {reason_code?:string}).reason_code,error:error instanceof Error?error.message:"Không thể tải thùng Manifest."},{status:404})}
 }
 
-export async function POST(req:NextRequest,{params}:{params:Promise<{id:string}>}){
+async function handlePOST(req:NextRequest,{params}:{params:Promise<{id:string}>}){
   const auth=requireAnyRole(req,["ADMIN","WAREHOUSE"]);if(auth.error)return auth.error;
   try{
     const id=Number((await params).id);const body=await req.json();
@@ -20,3 +21,6 @@ export async function POST(req:NextRequest,{params}:{params:Promise<{id:string}>
     throw new Error("Thao tác không hợp lệ.");
   }catch(error){return NextResponse.json({reason_code:(error as {reason_code?:string}).reason_code,error:error instanceof Error?error.message:"Không thể cập nhật thùng Manifest."},{status:400})}
 }
+
+export const GET=withFinancialPrivacy(handleGET);
+export const POST=withFinancialPrivacy(handlePOST);

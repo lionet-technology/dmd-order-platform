@@ -1,10 +1,19 @@
+import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import { NextRequest, NextResponse } from "next/server";
-import { requireUser } from "@/lib/auth";
-import { queryAll, queryOne } from "@/lib/db";
+import { requireFinance } from "@/lib/auth";
+import { db, queryAll, queryOne } from "@/lib/db";
 import { pageParams, paged } from "@/lib/pagination";
+import { reconciliationAction } from "@/lib/reconciliation";
 export const runtime = "nodejs";
-export async function GET(req:NextRequest) {
-  const auth=requireUser(req,"ADMIN"); if(auth.error)return auth.error;
+async function handleGET(req:NextRequest) {
+  const auth=requireFinance(req); if(auth.error)return auth.error;
+  if(req.nextUrl.searchParams.has("history_lot_id")){
+    const id=Number(req.nextUrl.searchParams.get("history_lot_id"));if(!Number.isInteger(id)||id<1)return NextResponse.json({error:"Lot ID không hợp lệ"},{status:400});
+    return NextResponse.json({items:db.prepare("SELECT * FROM lot_reconciliation_versions WHERE lot_id=? ORDER BY id DESC").all(id)});
+  }
+  if(req.nextUrl.searchParams.get("granularity")==="lot"){
+    return NextResponse.json({items:db.prepare(`SELECT l.*,o.order_id order_reference,o.customer,o.actual_cost_coverage,o.effective_net_cost,v.cost_snapshot_json,v.estimated_cents,v.actual_cents,v.status reconciliation_status,v.decision,v.reason,v.id reconciliation_version FROM order_lots l JOIN orders o ON o.id=l.order_id LEFT JOIN lot_reconciliation_versions v ON v.id=(SELECT MAX(id) FROM lot_reconciliation_versions WHERE lot_id=l.id) ORDER BY o.id,l.lot_number`).all()});
+  }
   const {page,pageSize,q,offset}=pageParams(req);
   const where=["(true_net_cost IS NOT NULL OR reconciliation_status='REVIEW')"];
   const params:unknown[]=[];
@@ -15,8 +24,17 @@ export async function GET(req:NextRequest) {
   const whereSql=" WHERE "+where.join(" AND ");
   const total=queryOne<{c:number}>("SELECT COUNT(*) c FROM orders"+whereSql,params)?.c||0;
   const items=queryAll(
-    "SELECT tracking,order_id,customer,supplier,service,sub_service,est_net_cost,true_net_cost,reconciliation_delta,reconciliation_status,extra_surcharge,extra_import_tax,total_due,gross_margin_pct,margin_status FROM orders"+whereSql+" ORDER BY CASE reconciliation_status WHEN 'REVIEW' THEN 0 ELSE 1 END,ABS(COALESCE(reconciliation_delta,0)) DESC LIMIT ? OFFSET ?",
+    "SELECT tracking,order_id,customer,supplier,service,sub_service,est_net_cost,true_net_cost,reconciliation_delta,reconciliation_status,extra_surcharge,extra_import_tax,total_due,estimated_gp,estimated_margin_pct,finalized_gp,finalized_margin_pct AS gross_margin_pct,margin_status,actual_cost_coverage,effective_net_cost,cost_coverage_json FROM orders"+whereSql+" ORDER BY CASE reconciliation_status WHEN 'REVIEW' THEN 0 ELSE 1 END,ABS(COALESCE(reconciliation_delta,0)) DESC LIMIT ? OFFSET ?",
     [...params,pageSize,offset],
   );
   return NextResponse.json(paged(items,total,page,pageSize));
 }
+
+async function handlePOST(req:NextRequest){
+ const auth=requireFinance(req);if(auth.error)return auth.error;
+ try{return NextResponse.json({items:reconciliationAction(auth.user,await req.json())});}
+ catch(error){return NextResponse.json({error:error instanceof Error?error.message:"Không thể đối soát"},{status:400});}
+}
+
+export const GET=withFinancialPrivacy(handleGET);
+export const POST=withFinancialPrivacy(handlePOST);

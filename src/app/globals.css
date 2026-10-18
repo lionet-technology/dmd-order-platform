@@ -72,6 +72,7 @@ p{color:var(--muted);line-height:1.5;margin-bottom:0}
 .metricCard.alert{border-color:#fdba74;background:#fffaf5}
 .metricCard.alert>b{color:var(--warn)}
 .dashboardGrid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:14px}
+.financeRoleWorkspace{max-width:1440px;margin:0 auto;padding:24px 32px;min-height:100vh}.financeRoleWorkspace>nav{margin:20px 0}.financeRoleWorkspace>.panel{padding:20px}.financeRoleWorkspace .tableWrap{margin:16px 0}.financeRoleWorkspace h2,.financeRoleWorkspace h3{margin-bottom:12px}.financeRoleWorkspace .settingsGrid{margin:16px 0}@media(max-width:640px){.financeRoleWorkspace{padding:20px 14px}.financeRoleWorkspace>.panel{padding:14px}.financeRoleWorkspace>nav{display:flex;flex-wrap:wrap;gap:8px}}
 .panel{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
 .panelHead{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line)}
 .panelHead h3{margin:0}

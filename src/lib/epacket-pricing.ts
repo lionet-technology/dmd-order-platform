@@ -1,5 +1,5 @@
 // All measurements are kilograms/centimetres. Never round before selecting a tier.
-export type Tier={weight:number;net:number};
+export type Tier={weight:number;net:number;base_rate?:number};
 export const STANDARD:Tier[]="0.05 5.01;0.10 5.57;0.15 6.58;0.20 7.12;0.25 8.51;0.30 9.04;0.35 10.62;0.40 11.16;0.45 11.70;0.50 14.13;0.55 14.68;0.60 15.21;0.65 15.75;0.70 16.30;0.75 16.83;0.80 17.38;0.85 17.91;0.90 18.46;0.95 20.36;1.00 20.91;1.10 21.99;1.20 23.07;1.30 24.15;1.40 26.41;1.50 27.49;1.60 28.57;1.70 29.64;1.80 30.72;1.90 32.38;2.00 33.46;2.20 35.63;2.40 38.62;2.60 40.78;2.80 43.75;3.00 45.92;3.20 48.99;3.40 51.16;3.60 53.32;3.80 56.09;4.00 58.25;4.20 61.06;4.40 63.22;4.60 66.42;4.80 68.59;5.00 71.46;5.50 78.70;6.00 83.79;6.50 91.05;7.00 96.13;7.50 108.18;8.00 113.85;8.50 120.39;9.00 126.93;9.50 133.73;10.00 141.75".split(";").map(row=>{const [weight,net]=row.split(" ").map(Number);return {weight,net}});
 export const ECO:Tier[]="0.05 4.84;0.10 5.20;0.15 5.62;0.20 5.98;0.25 6.90;0.30 7.26;0.35 8.55;0.40 8.91;0.45 9.27;0.50 11.07;0.55 11.43;0.60 11.79;0.65 12.15;0.70 12.51;0.75 12.88;0.80 13.24;0.85 13.60;0.90 13.96;0.95 14.89;1.00 15.25;1.10 15.98;1.20 16.70;1.30 17.42;1.40 19.03;1.50 19.76;1.60 20.48;1.70 21.20;1.80 21.92;1.90 23.33;2.00 24.05;2.20 25.49;2.40 27.37;2.60 28.81;2.80 30.79;3.00 32.23;3.20 34.06;3.40 35.50;3.60 36.95;3.80 38.77;4.00 40.21;4.20 42.07;4.40 43.51;4.60 45.39;4.80 46.83;5.00 49.12;5.50 53.22;6.00 57.33;6.50 61.45;7.00 65.57;7.50 69.68;8.00 73.71;8.50 77.77;9.00 81.82;9.50 86.16;10.00 91.16".split(";").map(row=>{const [weight,net]=row.split(" ").map(Number);return {weight,net}});
 export const usd=(n:number)=>Math.round((n+Number.EPSILON)*100)/100;
@@ -22,9 +22,10 @@ export function validateRules(value:unknown):SurchargeRules{
 }
 export function validateTiers(value:unknown):Tier[]{
  if(!Array.isArray(value)||!value.length||value.length>1000)throw Error("Bảng giá phải có các bậc cân.");
- const tiers=value.map(v=>({weight:Number(v.weight),net:Number(v.net)}));
+ const tiers=value.map(v=>({weight:Number(v.weight),net:Number(v.net),...(v.base_rate!==undefined?{base_rate:Number(v.base_rate)}:{})}));
  let previous=0;
  for(const t of tiers){if(!Number.isFinite(t.weight)||!Number.isFinite(t.net)||t.weight<=previous||t.weight>10||t.net<=0)throw Error("Bậc cân tăng dần, không trùng, tối đa 10 kg; Net phải lớn hơn 0.");previous=t.weight}
+ for(const t of tiers)if(t.base_rate!==undefined&&(!Number.isFinite(t.base_rate)||t.base_rate<=0))throw Error("Base Rate phải lớn hơn 0.");
  if(previous!==10)throw Error("Bảng giá phải kết thúc ở 10 kg.");
  return tiers;
 }
@@ -40,10 +41,11 @@ export function quote(o:Record<string,unknown>,tiers:Tier[],baseMarkup=6,retailM
  if(chargeable>10)reasons.push("Chargeable Weight vượt 10 kg; hãy đổi dịch vụ.");
  const tier=actual>0&&volume>0&&Number.isFinite(chargeable)?tiers.find(t=>t.weight>=chargeable):undefined;
  if(!tier)reasons.push("Không có bậc cân phù hợp.");
- const net=tier?.net||0,base=net*(1+baseMarkup/100),retail=net*(1+retailMarkup/100),sale=retail*(1-discount/100);
+ // Legacy formula is retained solely for remeasurement of existing locked snapshots.
+ const net=tier?.net||0,base=tier?.base_rate??net*(1+baseMarkup/100),retail=tier?.base_rate!==undefined?base*(1+retailMarkup/100):net*(1+retailMarkup/100),sale=retail*(1-discount/100);
  const surcharges:Array<{code:string;amount:number;note:string}>=[];
  if(rules.oversize_enabled&&l>rules.length_55){const high=l>rules.length_75,threshold=high?rules.length_75:rules.length_55,amount=high?rules.amount_75:rules.amount_55;surcharges.push({code:high?"OVERSIZE_LENGTH_75":"OVERSIZE_LENGTH_55",amount,note:"Phụ phí quá khổ chiều dài >"+threshold+"cm: "+amount+" USD"})}
  if(rules.remote_enabled&&remoteArea(o,rules.remote_zips))surcharges.push({code:"NON_CONTINENTAL",amount:rules.remote_amount,note:"Non-continental surcharge (phụ phí vùng xa): "+rules.remote_amount+" USD"});
  const surcharge=surcharges.reduce((s,r)=>s+r.amount,0),gpBase=Math.max(sale-base,0),commission=sale*.001+gpBase*.12;
- return {eligible:!reasons.length,reasons,currency:"USD",volumetric_weight:volumetric,chargeable_weight:chargeable,tier:tier?.weight||null,net,base,retail,discount_percent:discount,sale_price:sale,surcharge_breakdown:surcharges,surcharge,total_charge:usd(sale+surcharge),gross_profit_net:sale-net,gross_profit_base:gpBase,commission,commission_basis:{sale,base,gpBase},guidance:{floor:Math.ceil(net*1.02/base*100)||97,base:100,retail:Math.ceil(retail/base*100)||110}};
+ return {eligible:!reasons.length,reasons,currency:"USD",volumetric_weight:volumetric,chargeable_weight:chargeable,tier:tier?.weight||null,net,base,retail,discount_percent:discount,sale_price:sale,surcharge_breakdown:surcharges,surcharge,total_charge:usd(sale+surcharge),gross_profit_net:sale-net,gross_profit_base:gpBase,commission,commission_basis:{sale,base,gpBase},guidance:{floor:tier?.base_rate!==undefined?100:Math.ceil(net*1.02/base*100)||97,base:100,retail:Math.ceil(retail/base*100)||110}};
 }

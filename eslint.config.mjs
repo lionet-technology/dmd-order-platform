@@ -23,6 +23,8 @@ export default defineConfig([
     "build/**",
     "next-env.d.ts",
     ".smoke/**",
+    // Historical workspace snapshots, excluded from the application by tsconfig.
+    "Codex/**",
     "scripts/seed-demo-data.cjs",
   ]),
 ]);

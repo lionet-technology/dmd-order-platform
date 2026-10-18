@@ -1,3 +1,4 @@
+import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import { NextRequest,NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -6,9 +7,9 @@ import { logOrderEvent,publishPublicNote } from "@/lib/order-audit";
 import { assertOrderOpen } from "@/lib/order-operations";
 
 export const runtime="nodejs";
-const STATUSES=new Set(["WAITING_HANDOVER","RECEIVED","IN_TRANSIT","DELIVERED","ALERT","EXCEPTION"]);
+const STATUSES=new Set(["WAITING_HANDOVER","RECEIVED","IN_TRANSIT","DELIVERED","ALERT","EXCEPTION","FAILED"]);
 
-export async function GET(req:NextRequest){
+async function handleGET(req:NextRequest){
   const auth=requireUser(req,"ADMIN");if(auth.error)return auth.error;
   const view=String(req.nextUrl.searchParams.get("view")||"active");
   const q=String(req.nextUrl.searchParams.get("q")||"").trim();
@@ -17,8 +18,9 @@ export async function GET(req:NextRequest){
   const params:unknown[]=[];
   if(view==="delivered")where.push("ot.shipment_status='DELIVERED'");
   else if(view==="alerts")where.push("ot.shipment_status='ALERT'");
+  else if(view==="failed")where.push("ot.shipment_status='FAILED'");
   else if(view==="exceptions")where.push("ot.shipment_status='EXCEPTION'");
-  else where.push("ot.shipment_status NOT IN ('DELIVERED','ALERT','EXCEPTION')");
+  else where.push("ot.shipment_status NOT IN ('DELIVERED','ALERT','EXCEPTION','FAILED')");
   if(q){const like="%"+q+"%";where.push("(ot.tracking LIKE ? OR o.order_id LIKE ? OR o.system_order_code LIKE ? OR o.customer LIKE ? OR o.recipient_name LIKE ?)");params.push(like,like,like,like,like)}
   if(service){where.push("o.service=?");params.push(service)}
   const sql="SELECT ot.id tracking_id,ot.tracking,ot.label_url,ot.shipment_status,ot.etd_at,ot.delivered_at,"+
@@ -29,7 +31,7 @@ export async function GET(req:NextRequest){
   return NextResponse.json({items,total:items.length,page:1,pageSize:1000,totalPages:1});
 }
 
-export async function POST(req:NextRequest){
+async function handlePOST(req:NextRequest){
   const auth=requireUser(req,"ADMIN");if(auth.error)return auth.error;
   try{
     const body=await req.json();
@@ -66,3 +68,6 @@ export async function POST(req:NextRequest){
     return NextResponse.json({updated});
   }catch(error){return NextResponse.json({error:error instanceof Error?error.message:"Không thể cập nhật shipment status"},{status:400})}
 }
+
+export const GET=withFinancialPrivacy(handleGET);
+export const POST=withFinancialPrivacy(handlePOST);

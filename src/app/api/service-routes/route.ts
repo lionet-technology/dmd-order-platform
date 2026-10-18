@@ -1,8 +1,10 @@
+import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import { NextRequest,NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { canonicalEnumValue } from "@/lib/enums";
 
+import {parseCancellationRules,readCancellationRules,saveCancellationRules} from "@/lib/cancellation-config";
 import { parseSegmentation, readSegmentation, saveSegmentation } from "@/lib/route-segmentation";
 
 export const runtime="nodejs";
@@ -24,7 +26,7 @@ function routeVariables(value:unknown){
   return result;
 }
 
-export async function GET(req:NextRequest){
+async function handleGET(req:NextRequest){
   const auth=requireUser(req,"ADMIN");if(auth.error)return auth.error;
   const rows=db.prepare(
     "SELECT rc.*,"+
@@ -39,13 +41,14 @@ export async function GET(req:NextRequest){
     "LEFT JOIN purchase_template_versions mpv ON mpv.template_id=mpt.id AND mpv.status='ACTIVE' "+
     "ORDER BY rc.active DESC,rc.service,rc.sub_service,rc.supplier"
   ).all();
-  return NextResponse.json((rows as Array<{id:number}>).map(row=>({...row,segmentation:readSegmentation(row.id)})));
+  return NextResponse.json((rows as Array<{id:number}>).map(row=>({...row,segmentation:readSegmentation(row.id),cancellation_policy:readCancellationRules(row.id)})));
 }
 
-export async function POST(req:NextRequest){
+async function handlePOST(req:NextRequest){
   const auth=requireUser(req,"ADMIN");if(auth.error)return auth.error;
   try{
     const body=await req.json();
+    const cancellation=Object.prototype.hasOwnProperty.call(body,"cancellation_policy")?parseCancellationRules(body.cancellation_policy):null;
     const segmentation=Object.prototype.hasOwnProperty.call(body,"segmentation")?parseSegmentation(body.segmentation):null;
     const service=canonicalEnumValue("SERVICE",body.service);
     const subService=body.sub_service?canonicalEnumValue("SUB_SERVICE",body.sub_service,service):"";
@@ -74,11 +77,15 @@ export async function POST(req:NextRequest){
           .run(service,subService,supplier,JSON.stringify(variables||{}),active,auth.user.id,auth.user.id);
         id=Number(result.lastInsertRowid);
       }
+      if(cancellation)saveCancellationRules(id,cancellation,body.cancellation_reason,auth.user.id);
       if(segmentation)saveSegmentation(id,segmentation);
       return id;
     })();
-    return NextResponse.json({...db.prepare("SELECT * FROM service_route_configs WHERE id=?").get(id) as Record<string,unknown>,segmentation:readSegmentation(id)},{status:existing?200:201});
+    return NextResponse.json({...db.prepare("SELECT * FROM service_route_configs WHERE id=?").get(id) as Record<string,unknown>,segmentation:readSegmentation(id),cancellation_policy:readCancellationRules(id)},{status:existing?200:201});
   }catch(error){
     return NextResponse.json({error:error instanceof Error?error.message:"Không thể lưu cấu hình tuyến."},{status:400});
   }
 }
+
+export const GET=withFinancialPrivacy(handleGET);
+export const POST=withFinancialPrivacy(handlePOST);

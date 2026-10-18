@@ -1,3 +1,4 @@
+import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import { refreshDraft,safePricing,stripPricingInternals } from "@/lib/route-pricing";
 import { NextRequest, NextResponse } from "next/server";
 import { canAccessClient, getClientAccount, requireUser } from "@/lib/auth";
@@ -9,7 +10,7 @@ import { logOrderEvent,publicNoteText,sanitizePrivateNoteForSales } from "@/lib/
 
 export const runtime = "nodejs";
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const auth=requireUser(req); if(auth.error)return auth.error;
   const {page,pageSize,q,offset}=pageParams(req);
   const where:string[]=[];
@@ -79,7 +80,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(paged(items,total,page,pageSize));
 }
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const auth=requireUser(req); if(auth.error)return auth.error;
   if(auth.user.role==="CLIENT")return NextResponse.json({error:"Client chỉ có quyền xem Orders."},{status:403});
 
@@ -165,3 +166,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Không thể lưu order" }, { status: 400 });
   }
 }
+
+export const GET=withFinancialPrivacy(handleGET);
+export const POST=withFinancialPrivacy(handlePOST);

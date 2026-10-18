@@ -1,3 +1,4 @@
+import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import { refreshDraft,safePricing,stripPricingInternals } from "@/lib/route-pricing";
 import { NextRequest,NextResponse } from "next/server";
 import { canAccessClient,getClientAccount,requireUser } from "@/lib/auth";
@@ -9,7 +10,7 @@ import { cancellationPolicy } from "@/lib/order-cancellation";
 
 export const runtime="nodejs";
 
-export async function GET(req:NextRequest,{params}:{params:Promise<{id:string}>}){
+async function handleGET(req:NextRequest,{params}:{params:Promise<{id:string}>}){
   const auth=requireUser(req);if(auth.error)return auth.error;
   const id=Number((await params).id);
   const found=db.prepare("SELECT id FROM orders WHERE id=?").get(id);
@@ -31,3 +32,5 @@ export async function GET(req:NextRequest,{params}:{params:Promise<{id:string}>}
   else safe.internal_note=sanitizePrivateNoteForSales(order.internal_note,order.supplier);
   return NextResponse.json(safe);
 }
+
+export const GET=withFinancialPrivacy(handleGET);

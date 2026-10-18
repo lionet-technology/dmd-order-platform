@@ -1,3 +1,4 @@
+import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import { assertConfiguredPurchase,clientDraftAwaitingPurchase,purchaseService,orderQuote } from "@/lib/route-pricing";
 import { NextRequest,NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
@@ -72,7 +73,7 @@ function text(value:unknown){return String(value??"").trim()}
 function norm(value:unknown){return text(value).toLowerCase()}
 function cell(row:unknown[],headers:Map<string,number>,name:string){const index=headers.get(norm(name));return index===undefined?"":row[index]}
 
-export async function GET(req:NextRequest){
+async function handleGET(req:NextRequest){
   const auth=requireUser(req,"ADMIN");if(auth.error)return auth.error;
   const service=String(req.nextUrl.searchParams.get("service")||"");
   const subService=String(req.nextUrl.searchParams.get("sub_service")||"");
@@ -94,7 +95,7 @@ export async function GET(req:NextRequest){
   return NextResponse.json({rows,total:rows.length});
 }
 
-export async function PUT(req:NextRequest){
+async function handlePUT(req:NextRequest){
   const auth=requireUser(req,"ADMIN");if(auth.error)return auth.error;
   try{
     const form=await req.formData();const file=form.get("file");
@@ -126,7 +127,7 @@ export async function PUT(req:NextRequest){
   }catch(error){return NextResponse.json({error:error instanceof Error?error.message:"Không đọc được file Excel."},{status:400})}
 }
 
-export async function POST(req:NextRequest){
+async function handlePOST(req:NextRequest){
   const auth=requireUser(req,"ADMIN");if(auth.error)return auth.error;
   try{
     const body=await req.json();const rows=Array.isArray(body.rows)?body.rows:[] as Array<Record<string,unknown>>;
@@ -180,3 +181,7 @@ export async function POST(req:NextRequest){
     return NextResponse.json({saved,orders:groups.size});
   }catch(error){return NextResponse.json({error:error instanceof Error?error.message:"Không thể lưu Tracking/Label"},{status:400})}
 }
+
+export const GET=withFinancialPrivacy(handleGET);
+export const PUT=withFinancialPrivacy(handlePUT);
+export const POST=withFinancialPrivacy(handlePOST);

@@ -1,3 +1,4 @@
+import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import { NextRequest,NextResponse } from "next/server";
 import JSZip from "jszip";
 import { requireUser } from "@/lib/auth";
@@ -5,7 +6,7 @@ import { generatePurchaseFiles } from "@/lib/purchase-templates";
 
 export const runtime="nodejs";
 
-export async function POST(req:NextRequest){
+async function handlePOST(req:NextRequest){
   const auth=requireUser(req,"ADMIN");if(auth.error)return auth.error;
   try{
     const body=await req.json();
@@ -43,3 +44,5 @@ export async function POST(req:NextRequest){
     return NextResponse.json({error:error instanceof Error?error.message:"Không thể xuất file mua đơn."},{status:400});
   }
 }
+
+export const POST=withFinancialPrivacy(handlePOST);

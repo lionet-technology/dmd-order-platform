@@ -173,6 +173,23 @@ async function main() {
   const clientBOrders = await get(ordersRoute.GET, "http://local/api/orders?page=1&pageSize=20", clientBCookie);
   assert(clientAOrders.body.total === 1 && clientBOrders.body.total === 0, "Clients should only see their own Orders");
 
+  // Seed non-null values so projection regressions cannot pass on absent fixture data.
+  const privateFields = ["estimated_gp","estimated_margin_pct","finalized_gp","finalized_margin_pct","effective_net_cost","cost_coverage_json"];
+  db.prepare("UPDATE orders SET estimated_gp=11,estimated_margin_pct=12,finalized_gp=13,finalized_margin_pct=14,effective_net_cost=15,cost_coverage_json='PRIVATE-COST-COVERAGE' WHERE id=?").run(orderA.body.id);
+  const detailRoute = require(path.join(root, "src/app/api/orders/[id]/route.ts"));
+  for (const [role,cookie] of [["SALES",salesACookie],["CLIENT",clientACookie]]) {
+    const list = await get(ordersRoute.GET, "http://local/api/orders?page=1&pageSize=20", cookie);
+    const detail = await responseJson(await detailRoute.GET(request("http://local/api/orders/"+orderA.body.id, "GET", undefined, cookie), {params:Promise.resolve({id:String(orderA.body.id)})}));
+    assert(list.status===200 && detail.status===200, role+" can read own order list/detail");
+    for (const field of privateFields) {
+      assert(!Object.hasOwn(list.body.items[0],field), role+" list hides "+field);
+      assert(!Object.hasOwn(detail.body,field), role+" detail hides "+field);
+      if(role==="SALES")assert(!Object.hasOwn(orderA.body,field), "Sales create response hides "+field);
+    }
+  }
+  const crossDetail = await responseJson(await detailRoute.GET(request("http://local/api/orders/"+orderA.body.id, "GET", undefined, clientBCookie), {params:Promise.resolve({id:String(orderA.body.id)})}));
+  assert(crossDetail.status===403, "Client cannot read another client's detail");
+
   const clientWriteOrder = await post(ordersRoute.POST, "http://local/api/orders", {
     client_user_id: clientA.body.id, order_id: "CLIENT-WRITE", service: "ePacket", country: "US",
   }, clientACookie);
@@ -228,6 +245,30 @@ async function main() {
   const adminUsers = await get(usersRoute.GET, "http://local/api/users", adminCookie);
   assert(adminUsers.status === 200 && adminUsers.body.filter((user) => user.role === "CLIENT").length === 2,
     "Admin should see all Client accounts");
+
+  // Shipment failure is independent of Case resolution and purchase failure.
+  const shipmentRoute = require(path.join(root, "src/app/api/shipment-status/route.ts"));
+  const trackedOrder = Number(db.prepare("SELECT id FROM orders LIMIT 1").get().id);
+  const trackingId = Number(db.prepare("INSERT INTO order_trackings(order_id,tracking,normalized_tracking,status,shipment_status,etd_at) VALUES (?,'FAILED-TEST','FAILEDTEST','ACTIVE','IN_TRANSIT','2026-10-01')").run(trackedOrder).lastInsertRowid);
+  const failBody = {tracking_id: trackingId, shipment_status: 'FAILED'};
+  const denied = await post(shipmentRoute.POST, 'http://local/api/shipment-status', failBody, salesACookie);
+  assert(denied.status === 403, 'Sales cannot mark shipment FAILED');
+  const casesBefore = db.prepare('SELECT COUNT(*) n FROM operation_cases').get().n;
+  const failed = await post(shipmentRoute.POST, 'http://local/api/shipment-status', failBody, adminCookie);
+  assert(failed.status === 200, 'Admin can mark shipment FAILED');
+  const activeShipments = await get(shipmentRoute.GET, 'http://local/api/shipment-status?view=active', adminCookie);
+  const failedShipments = await get(shipmentRoute.GET, 'http://local/api/shipment-status?view=failed', adminCookie);
+  assert(!activeShipments.body.items.some(t => t.tracking_id === trackingId), 'FAILED excluded from active tracking queue');
+  assert(failedShipments.body.items.some(t => t.tracking_id === trackingId), 'FAILED has separate filter');
+  const failedRow = db.prepare('SELECT * FROM order_trackings WHERE id=?').get(trackingId);
+  assert(failedRow.delivered_at === null, 'FAILED does not imply delivery');
+  assert(db.prepare('SELECT COUNT(*) n FROM operation_cases').get().n === casesBefore, 'Shipment failure does not create or solve Cases');
+  const retryFailed = await post(shipmentRoute.POST, 'http://local/api/shipment-status', failBody, adminCookie);
+  assert(retryFailed.status === 200, 'Repeated FAILED update remains valid');
+  const restored = await post(shipmentRoute.POST, 'http://local/api/shipment-status', {...failBody,shipment_status:'IN_TRANSIT'}, adminCookie);
+  assert(restored.status === 200, 'Admin can correct failed tracking');
+  const restoredQueue = await get(shipmentRoute.GET, 'http://local/api/shipment-status?view=active', adminCookie);
+  assert(restoredQueue.body.items.some(t => t.tracking_id === trackingId), 'Corrected tracking returns to active queue');
 
   console.log(`RBAC smoke PASS (${checks} assertions)`);
 }

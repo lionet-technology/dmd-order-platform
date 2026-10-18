@@ -9,10 +9,13 @@ export function activePricing(routeId:number,at=new Date().toISOString()){
  return db.prepare("SELECT a.*,p.tiers_json,c.base_markup,c.retail_markup,c.currency,c.surcharges_json FROM route_pricing_activations a JOIN route_price_versions p ON p.id=a.price_version_id JOIN route_pricing_configs c ON c.id=a.config_version_id WHERE a.route_id=? AND a.effective_at<=? ORDER BY a.effective_at DESC,a.id DESC LIMIT 1").get(routeId,at) as Row|undefined;
 }
 export function pricingAdmin(routeId:number){
- return {active:activePricing(routeId),versions:db.prepare("SELECT * FROM route_price_versions WHERE route_id=? ORDER BY version_number DESC").all(routeId),configs:db.prepare("SELECT * FROM route_pricing_configs WHERE route_id=? ORDER BY id DESC").all(routeId),activations:db.prepare("SELECT * FROM route_pricing_activations WHERE route_id=? ORDER BY effective_at DESC,id DESC").all(routeId)};
+ const active=activePricing(routeId);
+ const independent=active&&JSON.parse(String(active.tiers_json)).every((t:{base_rate?:number})=>Number.isFinite(t.base_rate)&&Number(t.base_rate)>0);
+ return {active:active?{...active,sales_markup_percent:independent?Number(active.retail_markup):null}:undefined,versions:db.prepare("SELECT * FROM route_price_versions WHERE route_id=? ORDER BY version_number DESC").all(routeId),configs:db.prepare("SELECT * FROM route_pricing_configs WHERE route_id=? ORDER BY id DESC").all(routeId),activations:db.prepare("SELECT * FROM route_pricing_activations WHERE route_id=? ORDER BY effective_at DESC,id DESC").all(routeId)};
 }
 export function createPriceVersion(routeId:number,tiers:unknown,actorId:number){
  const validated=validateTiers(tiers);
+ if(validated.some(t=>t.base_rate===undefined))throw Error("Cần bảng Base Rate độc lập do Owner duyệt; không suy ra giá bán từ Net.");
  return db.transaction(()=>{
  const n=(db.prepare("SELECT COALESCE(MAX(version_number),0)+1 n FROM route_price_versions WHERE route_id=?").get(routeId) as {n:number}).n;
  const id=Number(db.prepare("INSERT INTO route_price_versions(route_id,version_number,tiers_json,created_by_user_id) VALUES (?,?,?,?)").run(routeId,n,JSON.stringify(validated),actorId).lastInsertRowid);
@@ -23,7 +26,10 @@ export function activatePricing(routeId:number,body:Row,actorId:number){
  return db.transaction(()=>{
  const price=db.prepare("SELECT * FROM route_price_versions WHERE id=? AND route_id=?").get(Number(body.price_version_id),routeId) as Row|undefined;
  if(!price)throw Error("Version bảng giá không thuộc route.");
- const base=Number(body.base_markup??6),retail=Number(body.retail_markup??16);
+ const tiers=validateTiers(JSON.parse(String(price.tiers_json)));
+ if(tiers.some(t=>t.base_rate===undefined))throw Error("Bảng giá cũ chưa có Base Rate được duyệt.");
+ if(body.base_markup!==undefined&&Number(body.base_markup)!==0)throw Error("Base Rate độc lập không dùng Base markup.");
+ const base=0,retail=Number(body.retail_markup??16);
  if(!Number.isFinite(base)||!Number.isFinite(retail)||base<0||base>1000||retail<base||retail>1000)throw Error("Markup không hợp lệ; Retail phải >= Base.");
  if(body.currency&&body.currency!=="USD")throw Error("Phase 1 chỉ dùng USD.");
  const rules=validateRules(body.surcharges??DEFAULT_SURCHARGES);
@@ -45,6 +51,7 @@ export function orderQuote(o:Row){
  let measurement=o;
  if(o.measurement_mode==="CARTON"&&o.id){const cartons=db.prepare("SELECT * FROM order_cartons WHERE order_id=?").all(Number(o.id)) as Row[];measurement={...o,...cartons[0],id:o.id,carton_count:cartons.length,country:o.country,state:o.state,city:o.city,zip:o.zip}}
  const result=o.pricing_snapshot_json?JSON.parse(String(o.pricing_snapshot_json)) as ReturnType<typeof quote>:quote(measurement,JSON.parse(String(active.tiers_json)),Number(active.base_markup),Number(active.retail_markup),Number(o.discount??setting?.discount_percent??0),JSON.parse(String(active.surcharges_json)));
+ if(!o.pricing_snapshot_json&&JSON.parse(String(active.tiers_json)).some((t:{base_rate?:number})=>!Number.isFinite(t.base_rate)||Number(t.base_rate)<=0))result.reasons.push("Route chưa có bảng Base Rate được Owner duyệt.");
  if(!route.active)result.reasons.push("Route đang ngừng hoạt động.");
  if(o.client_user_id&&(!setting||!setting.is_enabled))result.reasons.push("Client chưa được phép sử dụng dịch vụ.");
  if(o.workflow_status==="CANCELLED")result.reasons.push("Đơn đã huỷ.");
@@ -101,7 +108,7 @@ export function safePricing(o:Row,role:string){
  }
  return {eligible:q.eligible,reasons:q.reasons,currency:q.currency,volumetric_weight:q.volumetric_weight,chargeable_weight:q.chargeable_weight,tier:q.tier,discount_percent:q.discount_percent,service_price:usd(q.sale_price),surcharge_breakdown:q.surcharge_breakdown,surcharge:usd(q.surcharge),total_charge:q.total_charge,...(role==="SALES"?{guidance:q.guidance}:{})};
 }
-export function stripPricingInternals(o:Row){for(const k of ["pricing_snapshot_json","commission_amount","pricing_version_id","pricing_config_version_id"])delete o[k];return o}
+export function stripPricingInternals(o:Row){for(const k of ["pricing_snapshot_json","commission_amount","pricing_version_id","pricing_config_version_id","estimated_gp","estimated_margin_pct","finalized_gp","finalized_margin_pct","effective_net_cost","cost_coverage_json"])delete o[k];return o}
 
 export function clientDraftAwaitingPurchase(o:Row){
  return !o.service_purchased_at&&db.prepare("SELECT id FROM users WHERE id=? AND role='CLIENT'").get(Number(o.created_by_user_id||0));
@@ -109,5 +116,6 @@ export function clientDraftAwaitingPurchase(o:Row){
 export function assertConfiguredPurchase(o:Row){
  if(o.client_user_id&&!o.pricing_snapshot_json&&!o.tracking&&!o.purchase_completed_at)assertPurchasing(Number(o.client_user_id),0);
  if(clientDraftAwaitingPurchase(o))throw Error("Client chưa đặt mua dịch vụ cho Draft này.");
+ if(isEPacket(o)&&!o.pricing_snapshot_json&&!activePricing(Number(routeFor(o)?.id||0)))throw Error("Route chưa có bảng Base Rate được Owner duyệt.");
  const q=orderQuote(o);if(q&&!q.eligible)throw Error("Không đủ điều kiện mua dịch vụ: "+q.reasons.join(" "));
 }

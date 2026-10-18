@@ -49,7 +49,7 @@ SQLite is created automatically at data/dmd-finance-ops.db.
 - Balance manual form supports Customer/User, but the old Excel Balance template still does not have that key.
 - Multi-carton merge is intentionally conservative: if one Order ID has multiple pending drafts, the system refuses automatic merge.
 
-See docs/logic.md for rules and open questions.
+For current business decisions, see [docs/Feature/README.md](docs/Feature/README.md) and [docs/Feature/DECISIONS-2026-10-13.md](docs/Feature/DECISIONS-2026-10-13.md). Earlier MVP rules are archived under `docs/legacy-logic/` and are not authoritative.
 
 ## UI
 

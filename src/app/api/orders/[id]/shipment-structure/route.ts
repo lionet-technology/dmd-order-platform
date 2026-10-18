@@ -1,3 +1,4 @@
+import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import { NextRequest,NextResponse } from "next/server";
 import { canAccessClient,getClientAccount,requireUser,type AuthUser } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -16,7 +17,7 @@ function accessible(user:AuthUser,orderId:number,warehouseRead=false){
   return {order};
 }
 
-export async function GET(req:NextRequest,{params}:{params:Promise<{id:string}>}){
+async function handleGET(req:NextRequest,{params}:{params:Promise<{id:string}>}){
   const auth=requireUser(req);if(auth.error)return auth.error;
   const id=Number((await params).id);
   const access=accessible(auth.user,id,true);if(access.error)return access.error;
@@ -29,7 +30,7 @@ export async function GET(req:NextRequest,{params}:{params:Promise<{id:string}>}
   return NextResponse.json({...structure,readiness});
 }
 
-export async function PATCH(req:NextRequest,{params}:{params:Promise<{id:string}>}){
+async function handlePATCH(req:NextRequest,{params}:{params:Promise<{id:string}>}){
   const auth=requireUser(req);if(auth.error)return auth.error;
   if(auth.user.role==="CLIENT")return NextResponse.json({error:"Client chỉ được xem khai báo kiện hàng."},{status:403});
   const id=Number((await params).id);
@@ -44,3 +45,6 @@ export async function PATCH(req:NextRequest,{params}:{params:Promise<{id:string}
     return NextResponse.json({error:error instanceof Error?error.message:"Không thể lưu khai báo kiện hàng."},{status:400});
   }
 }
+
+export const GET=withFinancialPrivacy(handleGET);
+export const PATCH=withFinancialPrivacy(handlePATCH);

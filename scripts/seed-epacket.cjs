@@ -24,7 +24,12 @@ function seed(reset=false,preserveConfig=false){
  db.prepare("INSERT OR IGNORE INTO service_route_configs(service,sub_service,supplier,route_variables_json) VALUES ('ePacket',?,'DMD',?)").run(sub,source?.route_variables_json||JSON.stringify(config.route_variables));
  const route=db.prepare("SELECT * FROM service_route_configs WHERE service='ePacket' AND sub_service=? AND supplier='DMD'").get(sub);
  if(!preserveConfig||!activePricing(route.id))db.prepare("UPDATE service_route_configs SET client_self_purchase=1,active=1,updated_by_user_id=? WHERE id=?").run(admin.id,route.id);
- if(!preserveConfig||!activePricing(route.id)){const v=createPriceVersion(route.id,tiers,admin.id);activatePricing(route.id,{price_version_id:v.id,base_markup:6,retail_markup:16,surcharges:DEFAULT_SURCHARGES},admin.id);}
+ if(!preserveConfig||!activePricing(route.id)){
+ // Synthetic prices are only valid in disposable regression databases.
+ if(process.env.NODE_ENV!=="test")throw Error("Nhập bảng Base Rate được Owner duyệt trước; seed không tự chuyển Net thành Base Rate.");
+ const v=createPriceVersion(route.id,tiers.map(t=>({...t,base_rate:t.net*1.06})),admin.id);
+ activatePricing(route.id,{price_version_id:v.id,retail_markup:(1.16/1.06-1)*100,surcharges:DEFAULT_SURCHARGES},admin.id);
+ }
  for(const c of clients)db.prepare("INSERT INTO client_service_settings(client_user_id,service,sub_service,is_enabled,discount_percent,default_sub_service,default_supplier,updated_by_user_id) VALUES (?,'ePacket',?,1,?,?,'DMD',?) ON CONFLICT(client_user_id,service,sub_service) DO UPDATE SET is_enabled=1,discount_percent=excluded.discount_percent,default_sub_service=excluded.default_sub_service,default_supplier='DMD'").run(c.id,sub,(1-c.target/1.16)*100,sub,admin.id);
  for(const kind of ["PURCHASE","MANIFEST"]){
  if(db.prepare("SELECT id FROM purchase_templates WHERE route_config_id=? AND template_kind=? AND active=1").get(route.id,kind))continue;

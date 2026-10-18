@@ -1,10 +1,11 @@
+import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import { NextRequest,NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { generatePreview } from "@/lib/purchase-templates";
 
 export const runtime="nodejs";
 
-export async function POST(req:NextRequest,{params}:{params:Promise<{id:string}>}){
+async function handlePOST(req:NextRequest,{params}:{params:Promise<{id:string}>}){
   const auth=requireUser(req,"ADMIN");if(auth.error)return auth.error;
   try{
     const versionId=Number((await params).id);
@@ -20,3 +21,5 @@ export async function POST(req:NextRequest,{params}:{params:Promise<{id:string}>
     return NextResponse.json({error:error instanceof Error?error.message:"Không thể tạo preview."},{status:400});
   }
 }
+
+export const POST=withFinancialPrivacy(handlePOST);

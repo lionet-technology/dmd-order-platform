@@ -40,8 +40,8 @@ async function main(){
  throws(()=>upsertOrder({...manual,id,weight:2,client_user_id:client.id}));
  throws(()=>r.purchaseService(id,{id:clients[0].id,role:"CLIENT"}));
  const draft=db.prepare("SELECT * FROM orders WHERE order_id NOT LIKE '%INVALID%' AND service_purchased_at IS NULL LIMIT 1").get(),before=r.refreshDraft(draft.id).sales_price;
- const newVersion=r.createPriceVersion(route.id,p.STANDARD.map(t=>({...t,net:t.net*2})),admin.id);
- r.activatePricing(route.id,{price_version_id:newVersion.id,base_markup:7,retail_markup:18},admin.id);
+ const newVersion=r.createPriceVersion(route.id,p.STANDARD.map(t=>({...t,net:t.net*2,base_rate:t.net*1.06})),admin.id);
+ r.activatePricing(route.id,{price_version_id:newVersion.id,retail_markup:18},admin.id);
  check(r.refreshDraft(id).pricing_snapshot_json===snapshot&&r.refreshDraft(id).total_due===charged,"purchased immutability");check(r.refreshDraft(draft.id).sales_price!==before,"draft recalc active");
  throws(()=>db.prepare("UPDATE route_price_versions SET tiers_json='[]' WHERE id=?").run(newVersion.id));
  throws(()=>db.prepare("UPDATE orders SET pricing_snapshot_json='{}' WHERE id=?").run(id));

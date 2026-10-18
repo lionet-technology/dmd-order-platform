@@ -1,8 +1,9 @@
+import {orderChargedCents,orderRefundedCents} from "./order-refunds";
 import {deadline,slaState} from "./sla";
 import {db} from "./db";
 import {moneyCommand} from "./money-command";
 import {caseAccess,caseEvent} from "./cases";
-import {requireAdmin,cents,localDay,audit,validDay,shippingChargeCents} from "./credit";
+import {requireAdmin,cents,localDay,audit,validDay} from "./credit";
 import {publishPublicNote} from "./order-audit";
 import type {AuthUser} from "./auth";
 type Row=Record<string,unknown>;
@@ -18,16 +19,20 @@ function claimActionOnce(user:AuthUser,b:Row){return db.transaction(()=>{
  const previous=db.prepare("SELECT * FROM claim_decisions WHERE case_id=?").get(id);if(previous)return previous;
  const refund=cents(b.refund_amount||0),compensation=cents(b.compensation_amount||0);if(!String(b.reason||'').trim())throw Error("Cần lý do quyết định.");
  const orders=db.prepare("SELECT o.* FROM orders o JOIN operation_case_orders co ON co.order_id=o.id WHERE co.case_id=?").all(id) as Row[];const clients=[...new Set(orders.map(o=>Number(o.client_user_id)))];if(clients.length!==1||!clients[0])throw Error("Claim chi tiền phải thuộc cùng một Client.");
- const orderIds=orders.map(o=>String(o.id)),placeholders=orders.map(()=>'?').join(',');const charged=shippingChargeCents(orders.map(o=>Number(o.id)));
- const priorRefund=Number((db.prepare(`SELECT COALESCE(SUM(ROUND(e.amount*100)),0) n FROM ledger_entries e WHERE e.direction='CREDIT' AND e.entry_type='REFUND' AND ((e.reference_type='ORDER_CANCELLATION' AND e.reference_id IN (${placeholders})) OR (e.reference_type='CLAIM' AND EXISTS (SELECT 1 FROM operation_case_orders co WHERE CAST(co.case_id AS TEXT)=e.reference_id AND CAST(co.order_id AS TEXT) IN (${placeholders}))))`).get(...orderIds,...orderIds) as {n:number}).n);
- if(refund>Math.max(0,charged-priorRefund))throw Error("Refund vượt cước còn có thể hoàn; compensation là khoản riêng.");
+ const raw=b.refund_allocations;
+ const allocations: Array<{order_id:number;amount_cents:number}>=Array.isArray(raw)?raw.map((v:Row)=>({order_id:Number(v.order_id),amount_cents:cents(v.amount)})):orders.map(o=>({order_id:Number(o.id),amount_cents:cents(b['refund_order_'+o.id]??(orders.length===1?refund/100:0))}));
+ if(allocations.length!==orders.length||new Set(allocations.map(a=>a.order_id)).size!==orders.length||allocations.some(a=>!orders.some(o=>Number(o.id)===a.order_id)))throw Error("Phân bổ phải chứa đúng mỗi Order của Claim một lần.");
+ if(allocations.reduce((n,a)=>n+a.amount_cents,0)!==refund)throw Error("Tổng phân bổ từng Order phải bằng tổng hoàn cước.");
+ for(const a of allocations)if(a.amount_cents>Math.max(0,orderChargedCents(a.order_id)-orderRefundedCents(a.order_id)))throw Error("Refund vượt cước còn có thể hoàn của Order #"+a.order_id);
+
  const goods=orders.reduce((n,o)=>n+Number(o.declared_value|| (db.prepare('SELECT COALESCE(SUM(ci.quantity*oi.unit_manufacturing_value),0) n FROM order_items oi JOIN carton_items ci ON ci.order_item_id=oi.id WHERE oi.order_id=?').get(o.id) as {n:number}).n||0),0);
  const warnings=compensation>Math.round(goods*100)?['Bồi thường vượt giá trị khai báo/sản xuất của hàng hóa']:[];
  if(warnings.length)caseEvent(id,user,'COMPENSATION_WARNING',{warnings,goods_value:goods,compensation_amount:compensation/100},c.visibility==='PUBLIC'?'PUBLIC':'INTERNAL');
  const decision=Number(db.prepare("INSERT INTO claim_decisions(case_id,refund_cents,compensation_cents,reason,decided_by) VALUES (?,?,?,?,?)").run(id,refund,compensation,String(b.reason),user.id).lastInsertRowid);
+ for(const a of allocations)db.prepare("INSERT INTO claim_refund_allocations(case_id,order_id,amount_cents) VALUES (?,?,?)").run(id,a.order_id,a.amount_cents);
  for(const [type,amount] of [['REFUND',refund],['COMPENSATION',compensation]] as const)if(amount)db.prepare("INSERT INTO ledger_entries(client_user_id,occurred_at,entry_type,direction,amount,customer,reference_type,reference_id,note,created_by_user_id) VALUES (?,?,?,'CREDIT',?,?,'CLAIM',?,?,?)").run(clients[0],localDay(),type,amount/100,orders[0].customer,String(id),String(b.reason),user.id);
- db.prepare("UPDATE operation_cases SET status='RESOLVED',resolved_by=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(user.id,id);caseEvent(id,user,'FINALIZED',{refund_amount:refund/100,compensation_amount:compensation/100,reason:b.reason},c.visibility==='PUBLIC'?'PUBLIC':'INTERNAL');
- for(const o of orders)publishPublicNote({orderId:Number(o.id),eventType:'REFUND',summary:'Order thuộc Claim #'+id+' đã xử lý. Xem tổng hoàn cước/bồi thường tại Claim; không phân bổ payout cho riêng Order. '+String(b.reason),actorId:user.id});audit(clients[0],user.id,'CLAIM_FINALIZED',{id,decision});return {id:decision,warnings};
+ db.prepare("UPDATE operation_cases SET status='RESOLVED',resolved_by=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(user.id,id);caseEvent(id,user,'FINALIZED',{refund_amount:refund/100,compensation_amount:compensation/100,reason:b.reason,refund_allocations:allocations},c.visibility==='PUBLIC'?'PUBLIC':'INTERNAL');
+ for(const o of orders)publishPublicNote({orderId:Number(o.id),eventType:'REFUND',summary:'Order thuộc Claim #'+id+' đã xử lý. Hoàn cước riêng Order: '+((allocations.find(a=>a.order_id===Number(o.id))?.amount_cents||0)/100)+' USD; bồi thường ghi riêng tại Claim. '+String(b.reason),actorId:user.id});audit(clients[0],user.id,'CLAIM_FINALIZED',{id,decision});return {id:decision,warnings};
  }
  if(action==='create_recovery'){
  const supplier=String(b.supplier||'').trim();if(!supplier)throw Error("Supplier bắt buộc.");const expected=cents(b.expected_amount);const recovery=Number(db.prepare("INSERT INTO supplier_recoveries(case_id,supplier,expected_cents,due_date,note,created_by) VALUES (?,?,?,?,?,?)").run(id,supplier,expected,deadline('SUPPLIER_RECOVERY',undefined,b.due_date?validDay(b.due_date):undefined),String(b.note||''),user.id).lastInsertRowid);caseEvent(id,user,'SUPPLIER_RECOVERY_CREATED',{recovery_id:recovery});return {id:recovery};

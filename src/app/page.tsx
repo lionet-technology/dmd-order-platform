@@ -1,6 +1,9 @@
 "use client";
+import { FinanceWorkspace } from "./finance-role-workspace";
 import { normalizeCountry } from "@/lib/epacket-pricing";
 import { OperationsWorkspace } from "./operations-workspace";
+import { SupplierPayablesWorkspace } from "./supplier-payables-workspace";
+import { ReconciliationWorkspace } from "./reconciliation-workspace";
 import { FinancialWorkspace } from "./financial-workspace";
 import { ClientPurchasePanel } from "./client-purchase-panel";
 
@@ -11,7 +14,7 @@ import { ServiceConfigurationPanel } from "./service-workspace";
 import { TRACKING_REPLACEMENT_REASONS } from "@/lib/order-rules";
 
 type Role = "ADMIN" | "SALES" | "CLIENT" | "WAREHOUSE";
-type User = { id:number; username:string; display_name:string; role:Role; sales_user_id?:number|null; sales_display_name?:string|null; active?:number; is_root_admin?:number };
+type User = { id:number; username:string; display_name:string; role:Role|"BOD"|"FINANCE"; sales_user_id?:number|null; sales_display_name?:string|null; active?:number; is_root_admin?:number };
 type RowData = Record<string, string | number | null>;
 type PagedRows = { items:RowData[]; total:number; page:number; pageSize:number; totalPages:number };
 type AppSection = "dashboard"|"orders"|"manifest"|"shipping"|"costs"|"recon"|"ledger"|"accounts"|"masterdata"|"operations";
@@ -237,7 +240,6 @@ function QuickOrderSheet({role,clients,enums,onDone,edit}:{role:Role;clients:Use
   ];
   const columns:SheetColumn[]=role==="ADMIN"?[
     ...common,
-    {key:"est_net_cost",label:"Net Cost Est",width:95,type:"number"},
     {key:"base_cost",label:"Base Cost",width:90,type:"number"},{key:"retail",label:"Retail Price",width:95,type:"number"},{key:"sales_price",label:"Giá bán",width:95,type:"number"},
     {key:"surcharge",label:"Phụ phí",width:90,type:"number"},{key:"import_tax",label:"Thuế NK",width:90,type:"number"},
   ]:common;
@@ -634,7 +636,7 @@ function UserManager({users,enums,onDone,currentUser}:{users:User[];enums:EnumRo
         <Field label="Tên hiển thị" name="display_name" value={form.display_name} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} required/>
         <Field label="Username" name="username" value={form.username} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} required/>
         <Field label="Mật khẩu ban đầu" name="password" type="password" value={form.password} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} required/>
-        <SelectField label="Role" name="role" value={form.role} onChange={(n,v)=>setForm(x=>({...x,[n]:v,sales_user_id:v==="CLIENT"?x.sales_user_id:""}))} allowCustom={false} requireOption options={[{value:"WAREHOUSE",label:"Nhân viên kho"},{value:"SALES",label:"Sales"},{value:"CLIENT",label:"Client"},{value:"ADMIN",label:"Admin"}]}/>
+        <SelectField label="Role" name="role" value={form.role} onChange={(n,v)=>setForm(x=>({...x,[n]:v,sales_user_id:v==="CLIENT"?x.sales_user_id:""}))} allowCustom={false} requireOption options={[{value:"WAREHOUSE",label:"Nhân viên kho"},{value:"SALES",label:"Sales"},{value:"CLIENT",label:"Client"},{value:"ADMIN",label:"Admin vận hành"},{value:"BOD",label:"BOD"},{value:"FINANCE",label:"Finance"}]}/>
         {form.role==="CLIENT"&&<SelectField label="Sales phụ trách" name="sales_user_id" value={form.sales_user_id} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} allowCustom={false} requireOption options={salesUsers.map(user=>({value:String(user.id),label:user.display_name+" (@"+user.username+")"}))}/>}
       </div>
       <div className="formFooter"><span className={msg.startsWith("Lỗi")?"inlineMsg error":"inlineMsg"}>{msg}</span><button className="primaryBtn" disabled={busy}>{busy?"Đang tạo…":"Tạo tài khoản"}</button></div>
@@ -896,7 +898,7 @@ function PurchaseOrderPanel({order,enums,onClose,onDone}:{order:RowData;enums:En
 }
 
 function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
-  const role=user.role;
+  const role=user.role as Role; // BOD/Finance are routed to FinanceWorkspace by Home.
   const [summary,setSummary]=useState<Summary|null>(null);
   const [claimAttention,setClaimAttention]=useState(0);
   const [users,setUsers]=useState<User[]>([]);
@@ -1023,7 +1025,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   async function logout(){await fetch("/api/auth/logout",{method:"POST"});onLogout()}
 
   const orderCols=role==="ADMIN"
-    ?["workflow_status","created_at","system_order_code","order_id","sales","customer","item","service","sub_service","chargeable_weight","tracking","true_net_cost","sales_price","extra_surcharge","extra_import_tax","total_due","reconciliation_status"]
+    ?["workflow_status","created_at","system_order_code","order_id","sales","customer","item","service","sub_service","chargeable_weight","tracking","sales_price","extra_surcharge","extra_import_tax","total_due","reconciliation_status"]
     :["workflow_status","created_at","system_order_code","order_id","customer","item","service","sub_service","chargeable_weight","tracking","sales_price","surcharge","total_due"];
 
   const nav:Array<{key:AppSection;label:string;icon:string;roles:Role[]}>=[
@@ -1033,8 +1035,8 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
     {key:"shipping",label:"Theo dõi vận chuyển",icon:"⌁",roles:["ADMIN"]},
     {key:"operations",label:"Control Tower",icon:"◎",roles:["ADMIN","SALES","CLIENT","WAREHOUSE"]},
     {key:"ledger",label:"Balance Ledger",icon:"≋",roles:["ADMIN","SALES","CLIENT"]},
-    {key:"costs",label:"Supplier Costs",icon:"$ ",roles:["ADMIN"]},
-    {key:"recon",label:"Reconciliation",icon:"✓",roles:["ADMIN"]},
+    {key:"costs",label:"Supplier Costs",icon:"$ ",roles:[]},
+    {key:"recon",label:"Reconciliation",icon:"✓",roles:[]},
     {key:"masterdata",label:"Dịch vụ",icon:"☷",roles:["ADMIN"]},
     {key:"accounts",label:"Tài khoản",icon:"♙",roles:["ADMIN"]},
   ];
@@ -1093,7 +1095,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
             <div className="quickPanel">
               <h3>Thao tác nhanh</h3>
               <button onClick={()=>openEntry("order")}><i>＋</i><div><b>Tạo Order</b><span>Nhập một order mới</span></div></button>
-              {role==="ADMIN"&&<button onClick={()=>openEntry("cost")}><i>$</i><div><b>Nhập Supplier Cost</b><span>Reconcile theo Tracking</span></div></button>}
+
               {role==="ADMIN"&&<button onClick={()=>openEntry("balance")}><i>≋</i><div><b>Ghi Balance</b><span>Payment / Refund / Adjustment</span></div></button>}
             </div>
           </section>
@@ -1130,8 +1132,9 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
         </>}
 
         {role==="ADMIN"&&section==="costs"&&<>
-          <PageHeader eyebrow="FINANCE" title="Supplier Costs" description="Theo dõi chi phí thực tế và trạng thái link với Orders."
+          <PageHeader eyebrow="FINANCE" title="Supplier Costs & Phải trả" description="Theo dõi chi phí thực tế và trạng thái link với Orders."
             actions={<><button className="secondaryBtn" onClick={()=>setImportKind("costs")}>⇩ Import</button><button className="primaryBtn" onClick={()=>openEntry("cost")}>＋ Nhập Cost</button></>}/>
+          <SupplierPayablesWorkspace suppliers={enumOptions(enums,"SUPPLIER").map(s=>s.value)}/>
           <div className="panel dataPanel">
             <div className="dataToolbar"><SearchBar value={search} onChange={setSearch} placeholder="Tìm Tracking, supplier, service, Order ID..."/><span>{data.total} records</span></div>
             {loading?<div className="loadingState">Đang tải dữ liệu…</div>:<Table rows={data.items} cols={["occurred_at","tracking","matched","order_id","customer","supplier","service","total_net_cost","reconciliation_status"]}/>}
@@ -1140,7 +1143,8 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
         </>}
 
         {role==="ADMIN"&&section==="recon"&&<>
-          <PageHeader eyebrow="FINANCE CONTROL" title="Reconciliation" description="So sánh Estimated Net và True Net Cost, ưu tiên các order REVIEW."/>
+          <PageHeader eyebrow="FINANCE CONTROL" title="Reconciliation" description="Đối soát theo số Lot, xử lý Review và phụ phí có phê duyệt."/>
+          <ReconciliationWorkspace/>
           <div className="panel dataPanel">
             <div className="dataToolbar"><SearchBar value={search} onChange={setSearch} placeholder="Tìm Tracking, Order ID, khách, supplier, status..."/><span>{data.total} records</span></div>
             {loading?<div className="loadingState">Đang tải dữ liệu…</div>:<Table rows={data.items} cols={["reconciliation_status","tracking","order_id","customer","supplier","service","est_net_cost","true_net_cost","reconciliation_delta","gross_margin_pct","margin_status","total_due"]}/>}
@@ -1212,7 +1216,7 @@ function AuthScreen({setup,onSuccess}:{setup:boolean;onSuccess:()=>void}){
     }catch(error){setMsg(error instanceof Error?error.message:"Không đăng nhập được")}
     finally{setBusy(false)}
   }
-  return <main className="authPage"><form className="authCard" onSubmit={submit}><span className="eyebrow">DMD · FINANCE OPS</span><h1>{setup?"Tạo Admin đầu tiên":"Đăng nhập"}</h1><p>{setup?"Khởi tạo tài khoản quản trị. Sau đó Admin sẽ tạo các tài khoản vận hành.":"Dùng tài khoản Admin, Sales, Client hoặc Nhân viên kho được cấp."}</p>
+  return <main className="authPage"><form className="authCard" onSubmit={submit}><span className="eyebrow">DMD · FINANCE OPS</span><h1>{setup?"Tạo Admin đầu tiên":"Đăng nhập"}</h1><p>{setup?"Khởi tạo tài khoản quản trị. Sau đó Admin sẽ tạo các tài khoản vận hành.":"Dùng tài khoản Admin, BOD, Finance, Sales, Client hoặc Nhân viên kho được cấp."}</p>
     {setup&&<Field label="Tên hiển thị" name="display_name" value={form.display_name} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} required/>}
     <Field label="Username" name="username" value={form.username} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} required/>
     <Field label="Password" name="password" type="password" value={form.password} onChange={(n,v)=>setForm(x=>({...x,[n]:v}))} required/>
@@ -1227,6 +1231,7 @@ export default function Home(){
   useEffect(()=>{void refresh()},[refresh]);
   if(!status)return <main className="authPage"><div className="authCard"><p>Đang tải…</p></div></main>;
   if(status.setup_required||!status.user)return <AuthScreen setup={status.setup_required} onSuccess={refresh}/>;
+  if(status.user.role==="BOD"||status.user.role==="FINANCE")return <FinanceWorkspace user={status.user} onLogout={clearUser}/>;
   return <Platform user={status.user} onLogout={clearUser}/>;
 }
 
@@ -1252,7 +1257,7 @@ function Table({rows,cols,onView,onEdit,onPurchase,compact=false}:{rows:RowData[
   return <div className={compact?"tableWrap compactTable":"tableWrap"}><table><thead><tr>{hasActions&&<th>Thao tác</th>}{cols.map(c=><th key={c} className={["amount","est_net_cost","true_net_cost","base_cost","retail","sales_price","surcharge","import_tax","extra_surcharge","extra_import_tax","total_due","reconciliation_delta","total_net_cost","gross_margin_pct","chargeable_weight"].includes(c)?"numericCell":undefined}>{label(c)}</th>)}</tr></thead><tbody>
     {rows.length===0?<tr><td colSpan={cols.length+(hasActions?1:0)} className="empty">Chưa có dữ liệu.</td></tr>
     :rows.map((r,i)=><tr key={String(r.id||r.tracking||r.order_id||i)}>
-      {hasActions&&<td className="actionCell"><div className="rowActions">{onView&&<button className="rowAction" onClick={()=>onView(r)}>View</button>}{onEdit&&r.workflow_status!=="CANCELLED"&&<button className="rowAction" onClick={()=>onEdit(r)}>Sửa</button>}{onPurchase&&r.workflow_status!=="CANCELLED"&&<button className="rowAction primaryRowAction" onClick={()=>onPurchase(r)}>{Number(r.tracking_count||0)>0?"Tracking":"Mua đơn"}</button>}</div></td>}
+      {hasActions&&<td className="actionCell"><div className="rowActions">{onView&&<button className="rowAction" onClick={()=>onView(r)}>View</button>}{onEdit&&r.workflow_status!=="CANCELLED"&&r.workflow_status!=="PURCHASED"&&!r.service_purchased_at&&!r.purchase_completed_at&&<button className="rowAction" onClick={()=>onEdit(r)}>Sửa</button>}{onPurchase&&r.workflow_status!=="CANCELLED"&&<button className="rowAction primaryRowAction" onClick={()=>onPurchase(r)}>{Number(r.tracking_count||0)>0?"Tracking":"Mua đơn"}</button>}</div></td>}
       {cols.map(c=>{
         if(c==="workflow_status"&&r.pricing_eligibility_json&&!r.service_purchased_at){
           let eligibility:{eligible?:boolean;reasons?:string[]}={};try{eligibility=JSON.parse(String(r.pricing_eligibility_json))}catch{}

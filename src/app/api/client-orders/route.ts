@@ -1,3 +1,4 @@
+import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import {accountFinancials} from "@/lib/credit";
 import { NextRequest,NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
@@ -9,7 +10,7 @@ import { logOrderEvent } from "@/lib/order-audit";
 import { normalizeCountry } from "@/lib/epacket-pricing";
 export const runtime="nodejs";
 type Row=Record<string,unknown>;
-export async function GET(req:NextRequest){
+async function handleGET(req:NextRequest){
  const auth=requireUser(req,"CLIENT");if(auth.error)return auth.error;
  const routes=(db.prepare("SELECT r.* FROM service_route_configs r WHERE r.active=1 AND r.client_self_purchase=1").all() as Row[]).filter(r=>activePricing(Number(r.id))).map(r=>{
  const setting=db.prepare("SELECT * FROM client_service_settings WHERE client_user_id=? AND lower(service)=lower(?) AND (lower(sub_service)=lower(?) OR sub_service='') ORDER BY CASE WHEN lower(sub_service)=lower(?) THEN 0 ELSE 1 END LIMIT 1").get(auth.user.id,String(r.service),String(r.sub_service),String(r.sub_service)) as Row|undefined;
@@ -17,7 +18,7 @@ export async function GET(req:NextRequest){
  const balance=(db.prepare("SELECT COALESCE(SUM(CASE WHEN direction='CREDIT' THEN amount ELSE -amount END),0) balance FROM ledger_entries WHERE client_user_id=?").get(auth.user.id) as {balance:number}).balance;
  return NextResponse.json({routes,balance,financials:accountFinancials(auth.user.id)});
 }
-export async function POST(req:NextRequest){
+async function handlePOST(req:NextRequest){
  const auth=requireUser(req,"CLIENT");if(auth.error)return auth.error;
  try{
  let body:Row;
@@ -71,3 +72,6 @@ export async function POST(req:NextRequest){
  return NextResponse.json({orders},{status:201});
  }catch(e){return NextResponse.json({error:e instanceof Error?e.message:"Không thể xử lý Order."},{status:400})}
 }
+
+export const GET=withFinancialPrivacy(handleGET);
+export const POST=withFinancialPrivacy(handlePOST);

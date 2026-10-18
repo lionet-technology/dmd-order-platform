@@ -3,7 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "./db";
 import {issueEndedStatements} from "./credit";
 
-export type UserRole = "ADMIN" | "SALES" | "CLIENT" | "WAREHOUSE";
+import {ensureFinanceRoles} from "./finance-role-schema";
+ensureFinanceRoles();
+export const isFinanceRole=(role:string)=>role==="BOD"||role==="FINANCE";
+export type UserRole = "ADMIN" | "SALES" | "CLIENT" | "WAREHOUSE" | "BOD" | "FINANCE";
 export type AuthUser = {
   id: number;
   username: string;
@@ -135,6 +138,8 @@ export function currentUser(req: NextRequest): AuthUser | null {
 export function requireUser(req: NextRequest, role?: UserRole) {
   const user = currentUser(req);
   if (!user) return { error: NextResponse.json({ error:"Unauthorized" }, { status:401 }) };
+  if(isFinanceRole(user.role)&&!["/api/auth/status","/api/auth/login","/api/auth/logout","/api/enums"].includes(req.nextUrl.pathname))return {error:NextResponse.json({error:"Forbidden"},{status:403})};
+  if(isFinanceRole(user.role)&&req.method!=="GET")return {error:NextResponse.json({error:"Forbidden"},{status:403})};
   if (role && user.role !== role) return { error: NextResponse.json({ error:"Forbidden" }, { status:403 }) };
   return { user };
 }
@@ -144,6 +149,13 @@ export function requireAnyRole(req:NextRequest,roles:UserRole[]){
   if(!user)return {error:NextResponse.json({error:"Unauthorized"},{status:401})};
   if(!roles.includes(user.role))return {error:NextResponse.json({error:"Forbidden"},{status:403})};
   return {user};
+}
+
+export function requireFinance(req:NextRequest){
+ const user=currentUser(req);
+ if(!user)return {error:NextResponse.json({error:"Unauthorized"},{status:401})};
+ if(!isFinanceRole(user.role))return {error:NextResponse.json({error:"Chỉ BOD/Finance được xem Supplier Cost và GP-Net."},{status:403})};
+ return {user};
 }
 
 export function publicUser(user: AuthUser) {

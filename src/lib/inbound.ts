@@ -5,7 +5,8 @@ import {moneyCommand} from "./money-command";
 import type {AuthUser} from "./auth";
 import {orderAccess,caseAction} from "./cases";
 import {cents,localDay,audit,accountFinancials} from "./credit";
-import {quote} from "./epacket-pricing";
+import {quote,isEPacket} from "./epacket-pricing";
+import {reconcileLots} from "./reconciliation";
 import {publishPublicNote} from "./order-audit";
 type Row=Record<string,unknown>;
 db.exec(`CREATE TABLE IF NOT EXISTS inbound_parcels(id INTEGER PRIMARY KEY,scan_key TEXT NOT NULL,order_id INTEGER REFERENCES orders(id),status TEXT NOT NULL CHECK(status IN ('UNIDENTIFIED','RECEIVED','MEASURED')),received_by INTEGER NOT NULL REFERENCES users(id),received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,matched_by INTEGER REFERENCES users(id),matched_at TEXT,note TEXT);
@@ -48,11 +49,26 @@ function inboundActionOnce(user:AuthUser,b:Row){return db.transaction(()=>{
  if(db.prepare("SELECT a.id FROM weight_adjustments a WHERE a.order_id=? AND a.status='PENDING_APPROVAL'").get(o.id))throw Error("Xử lý adjustment hiện tại trước khi cân lại.");
  const measurement=Number(db.prepare("INSERT INTO inbound_measurements(parcel_id,carton_id,weight,length,width,height,chargeable_weight,created_by) VALUES (?,?,?,?,?,?,?,?)").run(p.id,carton.id,weight,length,width,height,chargeable,user.id).lastInsertRowid);
  db.prepare("UPDATE inbound_parcels SET status='MEASURED' WHERE id=?").run(p.id);
- if(o.pricing_snapshot_json){const frozen=JSON.parse(String(o.pricing_snapshot_json)) as Row,version=db.prepare("SELECT tiers_json FROM route_price_versions WHERE id=?").get(Number(o.pricing_version_id)) as Row,config=db.prepare("SELECT * FROM route_pricing_configs WHERE id=?").get(Number(o.pricing_config_version_id)) as Row;
+ if(o.pricing_snapshot_json&&isEPacket(o)){const frozen=JSON.parse(String(o.pricing_snapshot_json)) as Row,version=db.prepare("SELECT tiers_json FROM route_price_versions WHERE id=?").get(Number(o.pricing_version_id)) as Row,config=db.prepare("SELECT * FROM route_pricing_configs WHERE id=?").get(Number(o.pricing_config_version_id)) as Row;
+ if(!version||!config){
+ const exception=caseAction(user,{action:'create',kind:'HOLD',visibility:'INTERNAL',severity:'HIGH',order_ids:[Number(o.id)],summary:'Không tìm thấy cấu hình giá đã khóa cho số đo kho',next_action:'Admin kiểm tra cấu hình và giá đã khóa; không tự đoán phụ phí'});
+ audit(Number(o.client_user_id),user.id,'MEASUREMENT_PRICING_UNAVAILABLE',{order_id:o.id,measurement,hold_case_id:exception.id});return {measurement_id:measurement,hold_case_id:exception.id,pricing_available:false};
+ }
  const q=quote({...o,weight,length,width,height,volume:length*width*height,carton_count:1},JSON.parse(String(version.tiers_json)),Number(config.base_markup),Number(config.retail_markup),Number(frozen.discount_percent),JSON.parse(String(config.surcharges_json)));
- if(!q.eligible)throw Error("Thông số thực tế cần xử lý ngoại lệ: "+q.reasons.join('; '));
+ if(!q.eligible){
+ const exception=caseAction(user,{action:'create',kind:'HOLD',visibility:'INTERNAL',severity:'HIGH',order_ids:[Number(o.id)],summary:'Thông số kho ngoài giới hạn service: '+q.reasons.join('; '),next_action:'Admin xử lý Hold, đổi route/label hoặc trả hàng; giữ số đo làm bằng chứng'});
+ audit(Number(o.client_user_id),user.id,'MEASUREMENT_SERVICE_INVALID',{order_id:o.id,measurement,reasons:q.reasons,hold_case_id:exception.id});
+ return {measurement_id:measurement,hold_case_id:exception.id,service_valid:false};
+ }
  const already=Number((db.prepare("SELECT COALESCE(SUM(amount_cents),0) n FROM weight_adjustments WHERE order_id=? AND status='CHARGED'").get(o.id) as {n:number}).n),amount=cents(q.total_charge)-cents(frozen.total_charge)-already;
- if(Number(q.tier)>Number(frozen.tier)&&amount>0){db.prepare("INSERT INTO weight_adjustments(measurement_id,order_id,amount_cents,actual_total_cents,declared_tier,actual_tier) VALUES (?,?,?,?,?,?)").run(measurement,o.id,amount,cents(q.total_charge),frozen.tier,q.tier);publishPublicNote({orderId:Number(o.id),eventType:'SURCHARGE_NOTICE',summary:'Cân đo thực tế: phụ thu '+(amount/100).toFixed(2)+' USD đang chờ Sales/Admin duyệt.',actorId:user.id,publicData:{amount:amount/100,currency:'USD'}});}
+ if(amount>0){
+ const adjustment=Number(db.prepare("INSERT INTO weight_adjustments(measurement_id,order_id,amount_cents,actual_total_cents,declared_tier,actual_tier) VALUES (?,?,?,?,?,?)").run(measurement,o.id,amount,cents(q.total_charge),frozen.tier,q.tier).lastInsertRowid);
+ const ledger=Number(db.prepare("INSERT INTO ledger_entries(client_user_id,occurred_at,entry_type,direction,amount,customer,reference_type,reference_id,note,created_by_user_id) VALUES (?,?,'WEIGHT_ADJUSTMENT','DEBIT',?,?,'WEIGHT_ADJUSTMENT',?,'Automatic actual measurement surcharge',?)").run(o.client_user_id,localDay(),amount/100,o.customer,String(adjustment),user.id).lastInsertRowid);
+ db.prepare("UPDATE weight_adjustments SET status='CHARGED',ledger_id=? WHERE id=?").run(ledger,adjustment);
+ publishPublicNote({orderId:Number(o.id),eventType:'SURCHARGE_NOTICE',summary:'Đã tự động thu phụ phí cân đo '+(amount/100).toFixed(2)+' USD theo giá đã khóa.',actorId:user.id,publicData:{amount:amount/100,currency:'USD'}});
+ audit(Number(o.client_user_id),user.id,'AUTO_WEIGHT_ADJUSTMENT',{order_id:o.id,measurement,adjustment_id:adjustment,amount_cents:amount,ledger_id:ledger});
+ reconcileLots(Number(o.id));accountFinancials(Number(o.client_user_id));
+ }
  }else if(chargeable>Number(carton.chargeable_weight||o.chargeable_weight||0)){audit(Number(o.client_user_id),user.id,'MEASUREMENT_REQUIRES_MANUAL_PRICING',{order_id:o.id,measurement});caseAction(user,{action:'create',kind:'EXCEPTION',visibility:'INTERNAL',severity:'MEDIUM',order_ids:[Number(o.id)],summary:'Cân đo vượt khai báo; cần báo giá phụ thu',next_action:'Sales/Admin nhập phụ thu từ bảng giá route'});}
  return {measurement_id:measurement};
  }

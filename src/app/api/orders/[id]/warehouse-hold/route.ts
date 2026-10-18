@@ -1,8 +1,9 @@
+import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import {NextRequest,NextResponse} from "next/server";
 import {requireUser,canAccessClient,getClientAccount} from "@/lib/auth";
 import {db} from "@/lib/db";
 import {logInternalEvent} from "@/lib/order-audit";
-export async function POST(req:NextRequest,{params}:{params:Promise<{id:string}>}){
+async function handlePOST(req:NextRequest,{params}:{params:Promise<{id:string}>}){
  const auth=requireUser(req);if(auth.error)return auth.error;
  if(!["ADMIN","CLIENT","SALES"].includes(auth.user.role))return NextResponse.json({error:"Không có quyền hold."},{status:403});
  const id=Number((await params).id);
@@ -21,3 +22,5 @@ export async function POST(req:NextRequest,{params}:{params:Promise<{id:string}>
  return NextResponse.json({holds:db.prepare("SELECT * FROM warehouse_order_holds WHERE order_id=? AND released_at IS NULL").all(id)});
  }catch(error){return NextResponse.json({error:(error as Error).message},{status:400})}
 }
+
+export const POST=withFinancialPrivacy(handlePOST);

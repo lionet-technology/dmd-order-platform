@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "test": "node scripts/verify-all.cjs",
+    "verify:release-gates": "node scripts/verify-release-gates.cjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
@@ -15,6 +17,7 @@
     "verify:manifest": "node scripts/verify-manifest-cartons.cjs",
     "verify:epacket": "node scripts/verify-epacket.cjs",
     "seed:epacket": "node scripts/seed-epacket.cjs",
+    "verify:debt-reconciliation": "node scripts/verify-debt-reconciliation.cjs",
     "verify:credit": "node scripts/verify-credit.cjs",
     "verify:operations": "node scripts/verify-operations.cjs",
     "e2e:operations": "node scripts/e2e-operations.cjs",
@@ -22,7 +25,9 @@
     "verify:sla-demo": "node scripts/verify-sla-demo.cjs",
     "verify:domain-finance": "node scripts/verify-domain-finance.cjs",
     "e2e:finance": "node scripts/e2e-finance-domain.cjs",
-    "verify:balance-idempotency": "node scripts/verify-balance-idempotency.cjs"
+    "verify:balance-idempotency": "node scripts/verify-balance-idempotency.cjs",
+    "typecheck": "tsc --noEmit",
+    "verify:supplier-payables": "node scripts/verify-supplier-payables.cjs"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",

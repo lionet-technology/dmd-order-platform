@@ -16,7 +16,7 @@ export const PURCHASE_PLACEHOLDERS=[
   "order.recipient_name","order.address_1","order.address_2","order.city","order.state","order.postal_code",
   "order.country","order.phone","order.recipient_email","order.recipient_address","order.client_order_id","order.dmd_order_id","order.client","order.service",
   "order.sub_service","order.supplier","order.carton_count","order.lot_count","order.total_manufacturing_value",
-  "lot.number","lot.net_cost","lot.total_manufacturing_value",
+  "lot.number","lot.total_manufacturing_value",
   "carton.number","carton.weight","carton.weight_g","carton.length","carton.width","carton.height","carton.volume",
   "carton.chargeable_weight","carton.tracking","carton.label_url","carton.total_manufacturing_value",
   "item.sku","item.description","item.quantity","item.material","item.unit_manufacturing_value","item.total_manufacturing_value",
@@ -126,6 +126,7 @@ function contextsFor(orderIds:number[],scope:RepeatScope,lotId?:number,cartonIds
 }
 
 function valueFor(token:string,context:ExportContext,routeVariables:RouteVariables={}):unknown{
+  if(!(PURCHASE_PLACEHOLDERS as readonly string[]).includes(token)&&!/^route\.[a-z][a-z0-9_]*$/.test(token))throw Error("Placeholder không được phép trong file vận hành: "+token);
   const {order,lot,carton,item,row}=context;
   const weight=Number(carton?.weight||order.weight||0);
   const recipientAddress=[order.address1,order.address2].map(text).filter(Boolean).join(" ");

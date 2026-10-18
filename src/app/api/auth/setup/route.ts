@@ -1,7 +1,8 @@
+import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import { NextRequest, NextResponse } from "next/server";
 import { createSession, createUser, setSessionCookie, userCount } from "@/lib/auth";
 export const runtime="nodejs";
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   try {
     if (userCount()>0) return NextResponse.json({error:"Setup đã hoàn tất."},{status:409});
     const body=await req.json();
@@ -14,3 +15,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({error:error instanceof Error?error.message:"Setup failed"},{status:400});
   }
 }
+
+export const POST=withFinancialPrivacy(handlePOST);

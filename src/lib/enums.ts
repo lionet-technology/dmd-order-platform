@@ -129,6 +129,7 @@ function cascadeRename(type:EnumType,oldValue:string,newValue:string,parent:stri
       db.prepare("UPDATE supplier_costs SET sub_service=? WHERE lower(sub_service)=lower(?)").run(newValue,oldValue);
     }
   }else if(type==="SUPPLIER"){
+    if(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='supplier_invoices'").get()&&db.prepare("SELECT id FROM supplier_invoices WHERE lower(supplier)=lower(?) LIMIT 1").get(oldValue))throw new Error("Supplier đã có sổ phải trả; giữ tên lịch sử, tạo Supplier mới và deactivate tên cũ.");
     db.prepare("UPDATE orders SET supplier=? WHERE lower(supplier)=lower(?)").run(newValue,oldValue);
     db.prepare("UPDATE supplier_costs SET supplier=? WHERE lower(supplier)=lower(?)").run(newValue,oldValue);
   }else if(type==="COUNTRY"){

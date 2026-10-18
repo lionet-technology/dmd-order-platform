@@ -1,3 +1,4 @@
+import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import { NextRequest,NextResponse } from "next/server";
 import JSZip from "jszip";
 import { requireAnyRole } from "@/lib/auth";
@@ -6,7 +7,7 @@ import {manifestCartonTrackings,markManifestCartonExported} from "@/lib/manifest
 
 export const runtime="nodejs";
 
-export async function POST(req:NextRequest){
+async function handlePOST(req:NextRequest){
   const auth=requireAnyRole(req,["ADMIN","WAREHOUSE"]);if(auth.error)return auth.error;
   try{
     const body=await req.json();
@@ -48,3 +49,5 @@ export async function POST(req:NextRequest){
     return NextResponse.json({error:error instanceof Error?error.message:"Không thể xuất Manifest."},{status:400});
   }
 }
+
+export const POST=withFinancialPrivacy(handlePOST);

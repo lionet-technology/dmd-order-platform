@@ -12,13 +12,15 @@ async function main(){
  const admin=adminLogin.cookie,client=clientLogin.cookie;
  const users=await call("/api/users",{cookie:admin});const clientId=users.data.find(x=>x.username==="e2e.client").id;
  await call("/api/financials",{method:"POST",cookie:admin,body:{client_id:clientId,action:"configure",credit_limit:10000,credit_term_days:365}});
- async function create(price=100){const result=await call("/api/orders",{method:"POST",cookie:admin,body:{order_id:"HTTP-CANCEL-"+(++seq),client_user_id:clientId,service:"ePacket",sub_service:"T11",item:"Fixture shirts",material:"Cotton",carton_count:1,weight:1,manual_volume:5000,sales_price:price}});check(result.status===201,"create cancel fixture");return result.data}
+ const policy=await call('/api/service-routes',{method:'POST',cookie:admin,body:{service:'ePacket',sub_service:'T11',supplier:'KILOSHIP',cancellation_reason:'Explicit HTTP test-only supplier policy fixture',cancellation_policy:{PRE_PURCHASE:{allowed:true,refund_percent:100},PURCHASED:{allowed:true,refund_percent:100},ISSUED:{allowed:true,refund_percent:90},SHIPPED:{allowed:false,refund_percent:0}}}});
+ check(policy.status===200||policy.status===201,'Configure explicit test-only cancellation policy');
+ async function create(price=100){const result=await call("/api/orders",{method:"POST",cookie:admin,body:{order_id:"HTTP-CANCEL-"+(++seq),client_user_id:clientId,service:"ePacket",sub_service:"T11",supplier:"KILOSHIP",item:"Fixture shirts",material:"Cotton",carton_count:1,weight:1,manual_volume:5000,sales_price:price}});check(result.status===201,"create cancel fixture");return result.data}
  async function issue(order){const result=await call("/api/orders/"+order.id+"/trackings",{method:"POST",cookie:admin,body:{complete:true,trackings:[{tracking:"HTTP-CANCEL-TRACK-"+order.id,label_url:"https://labels.test/"+order.id+".pdf"}]}});check(result.status===200,"issue tracking and label: "+JSON.stringify(result.data));return result.data.trackings[0]}
  for(const actor of [adminLogin,salesLogin,clientLogin])for(const issued of [false,true]){
   const order=await create();if(issued)await issue(order);
   const quote=await call("/api/orders/"+order.id,{cookie:actor.cookie});check(quote.data.cancellation.allowed&&quote.data.cancellation.refund_percent===(issued?90:100)&&quote.data.cancellation.refund_amount===(issued?90:100),"server refund quote for "+actor.data?.user?.role);
   let response=await call("/api/orders/"+order.id+"/cancel",{method:"POST",cookie:actor.cookie,body:{reason:"HTTP cancellation test",refund_percent:100,refund_amount:999999,actor_user_id:999}});
-  if(actor.cookie!==admin){check(response.data.pending_approval,"Client/Sales refund waits for approval");response=await call("/api/orders/"+order.id+"/cancel",{method:"POST",cookie:admin,body:{}});}
+  check(!response.data.pending_approval,"Eligible Client/Sales cancellation completes automatically under configured policy");
   check(response.status===200&&response.data.refund_amount===(issued?90:100),"server ignores forged refund or actor");
   const detail=await call("/api/orders/"+order.id,{cookie:client});const event=detail.data.events.find(x=>x.event_type==="REFUND");
   check(detail.data.workflow_status==="CANCELLED"&&detail.data.total_due===(issued?10:0),"client sees retained fee");

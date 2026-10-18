@@ -1,16 +1,17 @@
+import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import {NextRequest,NextResponse} from "next/server";
 import {requireAnyRole} from "@/lib/auth";
 import {addManifestIdentifier,listManifestCartons,removeManifestIdentifier,createManifestCarton} from "@/lib/manifest-cartons";
 
 export const runtime="nodejs";
 
-export async function GET(req:NextRequest){
+async function handleGET(req:NextRequest){
   const auth=requireAnyRole(req,["ADMIN","WAREHOUSE"]);if(auth.error)return auth.error;
   const limit=Number(req.nextUrl.searchParams.get("limit")||30);
   return NextResponse.json({cartons:listManifestCartons(limit)});
 }
 
-export async function POST(req:NextRequest){
+async function handlePOST(req:NextRequest){
   const auth=requireAnyRole(req,["ADMIN","WAREHOUSE"]);if(auth.error)return auth.error;
   try{
     const body=await req.json();
@@ -27,3 +28,6 @@ export async function POST(req:NextRequest){
     return NextResponse.json({reason_code:(error as {reason_code?:string}).reason_code,error:error instanceof Error?error.message:"Không thể thêm Order vào thùng Manifest."},{status:400});
   }
 }
+
+export const GET=withFinancialPrivacy(handleGET);
+export const POST=withFinancialPrivacy(handlePOST);

@@ -163,7 +163,7 @@ export function validatePurchaseReadiness(orderId:number){
 
 export function syncLotCostsForOrder(orderId:number){
   ensureOrderShipmentStructure(orderId);
-  db.prepare("UPDATE supplier_costs SET order_lot_id=(SELECT c.order_lot_id FROM order_trackings ot JOIN order_cartons c ON c.id=ot.carton_id WHERE ot.id=supplier_costs.matched_order_tracking_id AND ot.order_id=? LIMIT 1) WHERE matched_order_id=?").run(orderId,orderId);
+  db.prepare("UPDATE supplier_costs SET order_lot_id=(SELECT COALESCE(c.order_lot_id,l.id) FROM order_trackings ot LEFT JOIN order_cartons c ON c.id=ot.carton_id LEFT JOIN order_lots l ON l.order_id=ot.order_id AND l.lot_number=ot.lot_number WHERE ot.id=supplier_costs.matched_order_tracking_id AND ot.order_id=? LIMIT 1) WHERE matched_order_id=? AND matched_order_tracking_id IS NOT NULL").run(orderId,orderId);
   const lots=db.prepare("SELECT id FROM order_lots WHERE order_id=?").all(orderId) as Array<{id:number}>;
   for(const lot of lots){
     const total=db.prepare("SELECT COUNT(*) count,COALESCE(SUM(total_net_cost),0) net_cost FROM supplier_costs WHERE order_lot_id=?").get(lot.id) as {count:number;net_cost:number};

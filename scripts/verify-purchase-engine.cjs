@@ -75,6 +75,8 @@ async function main(){
   addOrderTracking({orderId:order.id,tracking:"LOT-1-TRACK",labelUrl:"https://labels.test/1.pdf",cartonId:Number(cartons[0].id),actorId:admin.id});
   addOrderTracking({orderId:order.id,tracking:"LOT-2-TRACK",labelUrl:"https://labels.test/2.pdf",cartonId:Number(cartons[1].id),actorId:admin.id});
   assert(validateManifestReadiness(order.id).ready,"manifest should be ready once every carton has an active Tracking");
+  const {reconciliationAction}=require(path.join(root,'src/lib/reconciliation.ts'));
+  reconciliationAction(admin,{items:[{order_id:order.id,lot_number:1,action:'estimate',amount:10,reason:'Lot estimate'},{order_id:order.id,lot_number:2,action:'estimate',amount:20,reason:'Lot estimate'}]});
   addSupplierCost({supplier:"KILOSHIP",service:"ePacket",sub_service:"T11",tracking:"LOT-1-TRACK",total_net_cost:10,source_key:"purchase-cost-1"});
   addSupplierCost({supplier:"KILOSHIP",service:"ePacket",sub_service:"T11",tracking:"LOT-2-TRACK",total_net_cost:20,extra_surcharge:5,import_tax:7,surcharge_type:"Remote area",source_key:"purchase-cost-2"});
 
@@ -82,7 +84,7 @@ async function main(){
   const lots=db.prepare("SELECT * FROM order_lots WHERE order_id=? ORDER BY lot_number").all(order.id);
   assert(lots[0].net_cost===10&&lots[1].net_cost===20&&lots.every(lot=>lot.cost_status==="MATCHED"),"each Lot should carry its matched supplier cost");
   assert(current.gross_profit_net===70,"gross profit should be sales price minus total Lot cost");
-  assert(current.total_due===112,"surcharge and tax should affect amount due");
+  assert(current.total_due===100,"supplier feed must not automatically bill customer fees or tax");
   const salesEvents=listOrderEvents(order.id,"SALES");
   const adminEvents=listOrderEvents(order.id,"ADMIN");
   assert(!salesEvents.some(event=>event.event_type==="SUPPLIER_COST_MATCHED"),"Sales history must not expose supplier cost audit");

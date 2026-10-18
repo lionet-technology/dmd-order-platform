@@ -1,10 +1,11 @@
+import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { canonicalEnumValue } from "@/lib/enums";
 
 export const runtime="nodejs";
-export async function GET(req:NextRequest){
+async function handleGET(req:NextRequest){
   const auth=requireUser(req);if(auth.error)return auth.error;
   const requested=Number(req.nextUrl.searchParams.get("clientUserId")||0);
   const clientId=auth.user.role==="CLIENT"?auth.user.id:requested;
@@ -20,7 +21,7 @@ export async function GET(req:NextRequest){
   }
   return NextResponse.json(settings);
 }
-export async function POST(req:NextRequest){
+async function handlePOST(req:NextRequest){
   const auth=requireUser(req,"ADMIN");if(auth.error)return auth.error;
   try{
     const body=await req.json();const clientId=Number(body.client_user_id||0);
@@ -36,3 +37,6 @@ export async function POST(req:NextRequest){
     return NextResponse.json(db.prepare("SELECT * FROM client_service_settings WHERE client_user_id=? AND service=? AND sub_service=?").get(clientId,service,sub));
   }catch(error){return NextResponse.json({error:error instanceof Error?error.message:"Không thể lưu cấu hình dịch vụ"},{status:400})}
 }
+
+export const GET=withFinancialPrivacy(handleGET);
+export const POST=withFinancialPrivacy(handlePOST);

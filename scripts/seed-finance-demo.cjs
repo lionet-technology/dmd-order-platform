@@ -11,15 +11,15 @@ const {seed}=require('./seed-epacket.cjs');
 const {db}=require('../src/lib/db.ts'),{createUser}=require('../src/lib/auth.ts');
 const credit=require('../src/lib/credit.ts'),cases=require('../src/lib/cases.ts'),inbound=require('../src/lib/inbound.ts'),claims=require('../src/lib/claims.ts');
 const {purchaseService}=require('../src/lib/route-pricing.ts');
-const {cancelOrder}=require('../src/lib/order-cancellation.ts');
+require('../src/lib/order-cancellation.ts');
 const manifest=require('../src/lib/manifest-cartons.ts');
-const tables=['money_command_receipts','supplier_recovery_receipts','supplier_recoveries','claim_decisions','operation_case_events','operation_case_orders','operation_cases','weight_adjustments','inbound_measurements','inbound_parcels','cancellation_requests','credit_statement_notes','credit_manual_allocations','credit_allocations','credit_items','credit_debts','credit_statements','rejected_payments','purchase_reserves','financial_audit','manifest_carton_items','manifest_carton_events','manifest_cartons','warehouse_order_holds','order_events','supplier_costs','carton_items','order_trackings','order_cartons','order_items','order_lots','ledger_entries','orders','service_costs','import_batches'];
+const tables=['lot_reconciliation_versions','lot_cost_adjustments','lot_reconciliation_settings','claim_refund_allocations','debt_daily_interest','debt_interest_events','credit_debt_sources','money_command_receipts','supplier_recovery_receipts','supplier_recoveries','claim_decisions','operation_case_events','operation_case_orders','operation_cases','weight_adjustments','inbound_measurements','inbound_parcels','cancellation_requests','credit_statement_notes','credit_manual_allocations','credit_allocations','credit_items','credit_debts','credit_statements','rejected_payments','purchase_reserves','financial_audit','manifest_carton_items','manifest_carton_events','manifest_cartons','warehouse_order_holds','order_events','supplier_costs','carton_items','order_trackings','order_cartons','order_items','order_lots','ledger_entries','orders','service_costs','import_batches'];
 const backup=path.join(path.dirname(process.env.DMD_DB_PATH), 'demo-backup-'+Date.now()+'.db');
 db.exec("VACUUM INTO '"+backup.replace(/'/g,"''")+"'");
 try{
 const result=db.transaction(()=>{
  for(const t of db.prepare("SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'immutable_%'").all())db.exec('DROP TRIGGER '+t.name);
- for(const t of tables){if(!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(t))continue;db.prepare('DELETE FROM "'+t+'"').run();db.prepare('DELETE FROM sqlite_sequence WHERE name=?').run(t);}
+ for(const t of tables){if(!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(t))continue;try{db.prepare('DELETE FROM "'+t+'"').run()}catch(e){throw Error('Demo cleanup '+t+': '+e.message)}db.prepare('DELETE FROM sqlite_sequence WHERE name=?').run(t);}
  db.prepare("UPDATE users SET purchase_locked=0,purchase_lock_reason=NULL WHERE username IN ('epacket.client.a','epacket.client.b','epacket.client.c') AND role='CLIENT'").run();
  const summary=seed(false,true);
  const admin=db.prepare("SELECT * FROM users WHERE role='ADMIN' AND active=1 ORDER BY is_root_admin DESC,id LIMIT 1").get();
@@ -46,7 +46,7 @@ const result=db.transaction(()=>{
  // Explicit Admin override, audited through production action.
  credit.financialAction(admin,c.id,{action:'allocate',ledger_id:pay,reason:'Demo explicit payment allocation',allocations:[{statement_id:statements[0].id,amount:first.amount_cents/100},{statement_id:statements[1].id,amount:1}]});
  }
- if(i===2){const first=credit.receivables(c.id).statements[0];credit.financialAction(admin,c.id,{action:'debt',statement_id:first.id,amount:Math.min(5,first.outstanding_cents/100),deadline:day(-2),reason:'Demo overdue debt installment'});credit.financialAction(admin,c.id,{action:'configure',credit_limit:500,credit_term_days:14,purchase_locked:true,reason:'Demo manual lock: review overdue account'});}
+ if(i===2){const first=credit.receivables(c.id).statements[0];credit.financialAction(admin,c.id,{action:'debt',statement_id:first.id,amount:Math.min(5,first.outstanding_cents/100),deadline:day(2),reason:'Demo debt installment'});db.prepare('UPDATE credit_debts SET deadline=? WHERE client_id=?').run(day(-2),c.id);credit.financialAction(admin,c.id,{action:'configure',credit_limit:500,credit_term_days:14,purchase_locked:true,reason:'Demo manual lock: review overdue account'});}
  }
  const prepaid=clients[0],os=orders(prepaid),drafts=os.filter(o=>o.workflow_status==='SALES_DRAFT'&&!String(o.order_id).includes('INVALID'));
  for(const [i,o] of drafts.slice(0,2).entries()){
@@ -62,7 +62,7 @@ const result=db.transaction(()=>{
  const claim=cases.caseAction(prepaid,{action:'create',kind:'CLAIM',visibility:'PUBLIC',order_ids:[purchased[1].id],summary:'Demo client claim: delivery delay',assigned_to:sales.id});
  db.prepare('UPDATE operation_cases SET created_at=? WHERE id=?').run(new Date(Date.now()-46*3600000).toISOString(),claim.id);
  const resolved=cases.caseAction(prepaid,{action:'create',kind:'CLAIM',visibility:'PUBLIC',order_ids:[purchased[2].id,purchased[3].id],summary:'Demo damaged products / resolved multi-order claim'});
- claims.claimAction(admin,{action:'finalize',case_id:resolved.id,refund_amount:1,compensation_amount:2,reason:'Demo approved damage claim'});
+ claims.claimAction(admin,{action:'finalize',case_id:resolved.id,refund_amount:1,refund_allocations:[{order_id:purchased[2].id,amount:1},{order_id:purchased[3].id,amount:0}],compensation_amount:2,reason:'Demo approved damage claim'});
  const recovery=claims.claimAction(admin,{action:'create_recovery',case_id:resolved.id,supplier:'DMD',expected_amount:2,note:'Demo supplier recovery: remaining loss visible'});
  claims.claimAction(admin,{action:'receive_recovery',case_id:resolved.id,recovery_id:recovery.id,amount:1,reference:'DEMO-SUPPLIER-RECEIPT'});
  const overdueClaim=cases.caseAction(clients[2],{action:'create',kind:'CLAIM',visibility:'PUBLIC',order_ids:[orders(clients[2])[0].id],summary:'Demo overdue first response claim',hold_requested:true});db.prepare('UPDATE operation_cases SET created_at=? WHERE id=?').run(new Date(Date.now()-49*3600000).toISOString(),overdueClaim.id);
@@ -107,7 +107,8 @@ const result=db.transaction(()=>{
  manifestSummary.push(...[closedId,nextId].map(id=>manifest.manifestCartonDetail(id).carton));
  }
  const cancelDraft=orders(clients[1]).find(o=>o.workflow_status==='SALES_DRAFT'&&!String(o.order_id).includes('INVALID'));
- if(cancelDraft)cancelOrder(cancelDraft.id,admin);
+ // Static demo fixture only; do not invent a real Supplier cancellation policy.
+ if(cancelDraft)db.prepare("UPDATE orders SET workflow_status='CANCELLED' WHERE id=?").run(cancelDraft.id);
  credit.statementSchema();
  if(db.prepare('PRAGMA foreign_key_check').all().length)throw Error('Demo foreign key check failed');
  return {...summary,backup,manifest:manifestSummary,hold:hold.id,claim:claim.id,resolved_claim:resolved.id,warehouse:warehouse.username};

@@ -1,3 +1,4 @@
+import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import { NextRequest,NextResponse } from "next/server";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -6,7 +7,7 @@ import { db } from "@/lib/db";
 
 export const runtime="nodejs";
 
-export async function GET(req:NextRequest,{params}:{params:Promise<{id:string}>}){
+async function handleGET(req:NextRequest,{params}:{params:Promise<{id:string}>}){
   const auth=requireUser(req,"ADMIN");if(auth.error)return auth.error;
   const versionId=Number((await params).id);
   if(!Number.isSafeInteger(versionId)||versionId<1)return NextResponse.json({error:"Version không hợp lệ."},{status:400});
@@ -27,3 +28,5 @@ export async function GET(req:NextRequest,{params}:{params:Promise<{id:string}>}
     return NextResponse.json({error:"Không thể đọc workbook template đang dùng."},{status:404});
   }
 }
+
+export const GET=withFinancialPrivacy(handleGET);

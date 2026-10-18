@@ -4,6 +4,8 @@ function check(name,passed,detail){results.push({name,passed:Boolean(passed),...
 async function call(p,b,c){const headers={};if(c)headers.cookie=c;let body;if(b instanceof FormData)body=b;else if(b!==undefined){headers["content-type"]="application/json";body=JSON.stringify(b)}const r=await fetch(base+p,{method:b===undefined?"GET":"POST",headers,body});return {status:r.status,data:await r.json().catch(()=>null),cookie:(r.headers.get("set-cookie")||"").split(";")[0]}}
 async function main(){
  const admin=(await call("/api/auth/login",{username:"e2e.admin",password:"TestPass123!"})).cookie;
+ const finance=(await call("/api/auth/login",{username:"e2e.finance",password:"TestPass123!"})).cookie;
+ const supplierNet=async()=>((await call("/api/costs?q="+prefix,undefined,finance)).data.items||[]).reduce((n,r)=>n+r.total_net_cost,0);
  const user=async(role,suffix,sales)=>{const r=await call("/api/users",{username:prefix+"."+suffix,display_name:prefix+" "+suffix,role,password:"TestPass123!",sales_user_id:sales},admin);if(r.status!==201)throw Error(JSON.stringify(r));return r.data};
  const sales=await user("SALES","sales"),client=await user("CLIENT","client",sales.id);
  await call("/api/financials",{client_id:client.id,action:"configure",credit_limit:10000,credit_term_days:365},admin);
@@ -32,14 +34,14 @@ async function main(){
  await call("/api/orders/"+order.id+"/trackings",{supplier:"KILOSHIP",trackings:[{tracking:prefix+"-OLD",label_url:"https://labels.test/import.pdf"}],complete:true},admin);
  const costHeaders=["Supplier","Dịch vụ","Sub-Service","Tracking","Total Net Cost","Phụ phí Bổ sung","Thuế NK","Note","Ngày"];
  bytes=await workbook(costHeaders,[["KILOSHIP","ePacket","",prefix+"-OLD",42,2,3,"Imported surcharge","01/10/2026"]]);
- r=await upload("costs",bytes,admin);
+ r=await upload("costs",bytes,finance);
  check("Cost Excel imports one charge",r.status===200&&r.data.imported===1,r);
  let detail=(await call("/api/orders/"+order.id,undefined,admin)).data;
- check("Cost Excel aggregates net/tax/surcharge",detail.true_net_cost===42&&detail.extra_surcharge===2&&detail.extra_import_tax===3&&detail.total_due===105,detail);
+ check("Cost Excel matches finance net without changing customer price",await supplierNet()===42&&detail.true_net_cost===undefined&&detail.extra_surcharge===2&&detail.extra_import_tax===3&&detail.total_due===order.total_due,detail);
  const beforeEvents=detail.events.length;
- r=await upload("costs",bytes,admin);
+ r=await upload("costs",bytes,finance);
  detail=(await call("/api/orders/"+order.id,undefined,admin)).data;
- check("Cost Excel replay is idempotent",r.status===200&&r.data.imported===0&&detail.true_net_cost===42&&detail.events.length===beforeEvents,r);
+ check("Cost Excel replay is idempotent",r.status===200&&r.data.imported===0&&await supplierNet()===42&&detail.events.length===beforeEvents,r);
  check("Sales cannot import supplier costs",(await upload("costs",bytes,sc)).status===403);
  check("Client cannot import orders",(await upload("orders",bytes,cc)).status===403);
  const replacementHeaders=["Tracking cũ","Tracking mới","URL Label mới","Lý do"];
@@ -48,17 +50,17 @@ async function main(){
  check("Tracking Excel replaces by old tracking",r.status===200&&r.data.imported===1,r);
  detail=(await call("/api/orders/"+order.id,undefined,admin)).data;
  check("Tracking Excel retains old tracking",detail.trackings.some(x=>x.tracking===prefix+"-OLD"&&x.status==="REPLACED"));
- check("Tracking Excel keeps financial totals",detail.true_net_cost===42&&detail.total_due===105);
+ check("Tracking Excel keeps financial totals",await supplierNet()===42&&detail.total_due===order.total_due);
  const publicDetail=(await call("/api/orders/"+order.id,undefined,cc)).data;
  check("Replacement is public without internal reason",!publicDetail.public_note.includes("Điều chỉnh tuyến vận chuyển")&&publicDetail.events.some(x=>x.event_type==="TRACKING_LABEL_CHANGED"));
  check("Public note hides Supplier and Net Cost",!/supplier|net cost/i.test(String(publicDetail.public_note)));
  check("Supplier cost audit remains Admin-only",publicDetail.events.every(x=>x.event_type!=="SUPPLIER_COST_MATCHED"));
- const originalNet=detail.true_net_cost;
+ const originalNet=await supplierNet();
  bytes=await workbook(costHeaders,[["KILOSHIP","ePacket","",prefix+"-NEW",5,0,0,"first valid row","01/10/2026"],["UNKNOWN-SUPPLIER","ePacket","",prefix+"-NEW",7,0,0,"invalid second row","01/10/2026"]]);
- r=await upload("costs",bytes,admin);
+ r=await upload("costs",bytes,finance);
  const failedDetail=(await call("/api/orders/"+order.id,undefined,admin)).data;
  check("Invalid cost workbook rejects request",r.status===400,r);
- check("Rejected cost workbook rolls back valid earlier row",failedDetail.true_net_cost===originalNet,{before:originalNet,after:failedDetail.true_net_cost});
+ check("Rejected cost workbook rolls back valid earlier row",await supplierNet()===originalNet,{before:originalNet,after:await supplierNet(),customer_total:failedDetail.total_due});
  bytes=await workbook(["Wrong header"],[["bad"]]);r=await upload("orders",bytes,admin);
  check("Missing workbook headers rejected",r.status===400);
  r=await upload("orders",Buffer.from("not excel"),admin);

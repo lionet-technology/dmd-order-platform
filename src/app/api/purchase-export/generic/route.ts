@@ -1,3 +1,4 @@
+import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import { NextRequest,NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { requireUser } from "@/lib/auth";
@@ -17,7 +18,7 @@ const columns=[
   ["tracking","Tracking"],["label_url","URL Label"],
 ] as const;
 
-export async function POST(req:NextRequest){
+async function handlePOST(req:NextRequest){
   const auth=requireUser(req,"ADMIN");if(auth.error)return auth.error;
   try{
     const body=await req.json();
@@ -41,3 +42,5 @@ export async function POST(req:NextRequest){
     return NextResponse.json({error:error instanceof Error?error.message:"Không thể xuất Generic."},{status:400});
   }
 }
+
+export const POST=withFinancialPrivacy(handlePOST);

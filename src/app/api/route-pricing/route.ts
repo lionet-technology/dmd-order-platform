@@ -1,22 +1,25 @@
+import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import { NextRequest,NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { activePricing,activatePricing,createPriceVersion,pricingAdmin } from "@/lib/route-pricing";
 import { readSheet } from "read-excel-file/node";
 export const runtime="nodejs";
-export async function GET(req:NextRequest){
+async function handleGET(req:NextRequest){
  const auth=requireUser(req,"ADMIN");if(auth.error)return auth.error;
+ if(!auth.user.is_root_admin)return NextResponse.json({error:"Chỉ Owner quản lý bảng Base Rate đã duyệt."},{status:403});
  const id=Number(req.nextUrl.searchParams.get("route_id")),route=db.prepare("SELECT id,client_self_purchase FROM service_route_configs WHERE id=?").get(id);
  if(!route)return NextResponse.json({error:"Route không tồn tại."},{status:404});
  if(req.nextUrl.searchParams.get("download")==="1"){
  const active=activePricing(id);if(!active)return NextResponse.json({error:"Chưa có bảng active."},{status:404});
- const rows=JSON.parse(String(active.tiers_json)) as Array<{weight:number;net:number}>;
- return new NextResponse("weight,net\r\n"+rows.map(r=>r.weight+","+r.net).join("\r\n"),{headers:{"content-type":"text/csv; charset=utf-8","content-disposition":'attachment; filename="Net_USD_route_'+id+'_v'+active.price_version_id+'.csv"'}});
+ const rows=JSON.parse(String(active.tiers_json)) as Array<{weight:number;net:number;base_rate?:number}>;
+ return new NextResponse("weight,net,base_rate\r\n"+rows.map(r=>r.weight+",,"+(r.base_rate??"")).join("\r\n"),{headers:{"content-type":"text/csv; charset=utf-8","content-disposition":'attachment; filename="Base_Rate_USD_route_'+id+'_v'+active.price_version_id+'.csv"'}});
  }
  return NextResponse.json({...route,...pricingAdmin(id)});
 }
-export async function POST(req:NextRequest){
+async function handlePOST(req:NextRequest){
  const auth=requireUser(req,"ADMIN");if(auth.error)return auth.error;
+ if(!auth.user.is_root_admin)return NextResponse.json({error:"Chỉ Owner quản lý bảng Base Rate đã duyệt."},{status:403});
  try{
  let body:Record<string,unknown>;
  if(req.headers.get("content-type")?.includes("multipart/form-data")){
@@ -25,16 +28,17 @@ export async function POST(req:NextRequest){
  const buffer=Buffer.from(await file.arrayBuffer());let tiers;
  if(file.name.toLowerCase().endsWith(".csv")){
  const rows=buffer.toString("utf8").trim().split(/\r?\n/).map(r=>r.split(",").map(c=>c.trim()));
- if(rows[0].join(",").replace(/^\uFEFF/,"").toLowerCase()!=="weight,net")throw Error("Header phải là weight,net.");
- tiers=rows.slice(1).map(r=>({weight:Number(r[0]),net:Number(r[1])}));
+ if(rows[0].join(",").replace(/^\uFEFF/,"").toLowerCase()!=="weight,net,base_rate")throw Error("Header phải là weight,net,base_rate. Base Rate phải được Owner duyệt.");
+ tiers=rows.slice(1).map(r=>({weight:Number(r[0]),net:Number(r[1]),base_rate:Number(r[2])}));
  }else if(file.name.toLowerCase().endsWith(".xlsx")){
  const rows=await readSheet(buffer,1) as unknown[][];
- if(rows[0]?.map(String).join(",").toLowerCase()!=="weight,net")throw Error("Header phải là weight,net.");
- tiers=rows.slice(1).filter(r=>r.some(v=>v!=null)).map(r=>({weight:Number(r[0]),net:Number(r[1])}));
+ if(rows[0]?.map(String).join(",").toLowerCase()!=="weight,net,base_rate")throw Error("Header phải là weight,net,base_rate. Base Rate phải được Owner duyệt.");
+ tiers=rows.slice(1).filter(r=>r.some(v=>v!=null)).map(r=>({weight:Number(r[0]),net:Number(r[1]),base_rate:Number(r[2])}));
  }else throw Error("Chỉ nhận CSV/XLSX.");
- body={action:"upload",route_id:Number(f.get("route_id")),tiers};
+ body={action:"upload",route_id:Number(f.get("route_id")),tiers,approval_confirmed:f.get("approval_confirmed")==="true"};
  }else body=await req.json();
  const id=Number(body.route_id);
+ if(body.action==="upload"&&body.approval_confirmed!==true)throw Error("Owner cần xác nhận bảng Base Rate đã được duyệt.");
  if(!db.prepare("SELECT id FROM service_route_configs WHERE id=?").get(id))throw Error("Route không tồn tại.");
  if(body.action==="upload")return NextResponse.json(createPriceVersion(id,body.tiers,auth.user.id),{status:201});
  if(body.action==="activate")return NextResponse.json(activatePricing(id,body,auth.user.id));
@@ -48,3 +52,6 @@ export async function POST(req:NextRequest){
  throw Error("Thao tác không hợp lệ.");
  }catch(e){return NextResponse.json({error:e instanceof Error?e.message:"Không thể lưu pricing."},{status:400})}
 }
+
+export const GET=withFinancialPrivacy(handleGET);
+export const POST=withFinancialPrivacy(handlePOST);

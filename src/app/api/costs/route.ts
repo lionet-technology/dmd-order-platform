@@ -1,5 +1,6 @@
+import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import { NextRequest, NextResponse } from "next/server";
-import { requireUser } from "@/lib/auth";
+import { requireFinance } from "@/lib/auth";
 import { db, queryAll, queryOne } from "@/lib/db";
 import { pageParams, paged } from "@/lib/pagination";
 import { addSupplierCost } from "@/lib/finance";
@@ -7,8 +8,8 @@ import { logOrderEvent } from "@/lib/order-audit";
 
 export const runtime = "nodejs";
 
-export async function GET(req:NextRequest) {
-  const auth=requireUser(req,"ADMIN"); if(auth.error)return auth.error;
+async function handleGET(req:NextRequest) {
+  const auth=requireFinance(req); if(auth.error)return auth.error;
   const {page,pageSize,q,offset}=pageParams(req);
   const params:unknown[]=[];
   let where="";
@@ -27,8 +28,8 @@ export async function GET(req:NextRequest) {
   return NextResponse.json(paged(items,total,page,pageSize));
 }
 
-export async function POST(req: NextRequest) {
-  const auth=requireUser(req,"ADMIN"); if(auth.error)return auth.error;
+async function handlePOST(req: NextRequest) {
+  const auth=requireFinance(req); if(auth.error)return auth.error;
   try {
     const body = await req.json();
     const result=addSupplierCost(body) as {id:number;matched?:boolean};
@@ -44,3 +45,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Không thể lưu chi phí" }, { status: 400 });
   }
 }
+
+export const GET=withFinancialPrivacy(handleGET);
+export const POST=withFinancialPrivacy(handlePOST);

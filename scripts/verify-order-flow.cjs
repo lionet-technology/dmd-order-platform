@@ -40,6 +40,10 @@ async function main(){
   const override=upsertOrder({client_user_id:client.id,order_id:"OVERRIDE",service:"ePacket",item:"Bag",material:"Nylon",carton_count:1,weight:1,manual_volume:5000,discount:8,discount_note:"Campaign exception"});
   assert(override.discount_source==="MANUAL","manual discount should be auditable");
 
+  // Reconciliation fixture has two real Lots and explicit estimates, no representative tracking confirmation.
+  db.prepare("INSERT INTO order_lots(order_id,lot_number) VALUES (?,2)").run(first.id);
+  const reconciliation=require(path.join(root,"src/lib/reconciliation.ts"));
+  for(const lot_number of [1,2])reconciliation.reconciliationAction(admin,{action:"estimate",order_id:first.id,lot_number,amount:100,reason:"Fixture approved Lot estimate"});
   const a1=addOrderTracking({orderId:first.id,tracking:"1Z-A1",labelUrl:"https://labels.test/a1.pdf",lotNumber:1,actorId:admin.id,isPrimary:true});
   const a2=addOrderTracking({orderId:first.id,tracking:"1Z-A2",labelUrl:"https://labels.test/a2.pdf",lotNumber:1,actorId:admin.id});
   addOrderTracking({orderId:first.id,tracking:"1Z-B1",labelUrl:"https://labels.test/b1.pdf",lotNumber:2,actorId:admin.id});
@@ -55,14 +59,15 @@ async function main(){
   const lot2Cost=addSupplierCost({supplier:"KILOSHIP",service:"ePacket",sub_service:"T11",tracking:"1Z-B1",total_net_cost:18,source_key:"cost-b1"});
   assert(oldCost.matched&&lot2Cost.matched,"cost must match current and replaced tracking aliases");
   const reconciled=order(first.id);
-  assert(reconciled.true_net_cost===43,"Order True Net Cost should sum billable tracking rows");
+  assert(reconciled.true_net_cost===43,"Order True Net Cost should sum mapped Lot costs");
   assert(reconciled.extra_surcharge===2&&reconciled.extra_import_tax===3,"tax and surcharge should aggregate across trackings");
-  assert(reconciled.total_due===105,"total due should equal sales price plus tax and surcharge");
-  assert(String(reconciled.public_note).includes("đã được thay thế")&&String(reconciled.public_note).includes("thuế nhập khẩu 3 USD")&&String(reconciled.public_note).includes("phụ phí 2 USD (Phụ phí điều chỉnh địa chỉ)"),"public updates should contain sanitized tracking, tax and surcharge events");
+  assert(reconciled.total_due===100,"Supplier feed must not automatically charge tax or surcharge to Client");
+  assert(String(reconciled.public_note).includes("đã được thay thế")&&!String(reconciled.public_note).includes("thuế nhập khẩu 3 USD")&&!String(reconciled.public_note).includes("phụ phí 2 USD"),"Public replacement event is visible; supplier feed must not publish automatic Client fee notices");
   assert(!String(reconciled.public_note).includes("Cập nhật từ đơn vị vận chuyển"),"tracking replacement reason must remain internal");
   assert(!/supplier|net cost/i.test(String(reconciled.public_note)),"public updates must not expose Supplier or Net Cost");
   assert(!/supplier|net cost|address correction/i.test(String(reconciled.internal_note||"")),"private note must not receive supplier reconciliation detail");
-  assert(reconciled.gross_profit_net===57,"gross profit must equal sales price minus net cost and exclude surcharge/tax");
+  assert(reconciled.actual_cost_coverage==="UNKNOWN" && reconciled.finalized_gp===null && reconciled.effective_net_cost===null,"Aggregate ePacket supplier feed cannot finalize GP or silently assume actual Mid-mile coverage");
+  assert(reconciled.estimated_gp===-100 && reconciled.gross_profit_net===reconciled.estimated_gp && reconciled.margin_status==="PROVISIONAL","Legacy GP projection remains explicitly estimated until coverage is confirmed; supplier surcharge/tax never becomes Client revenue");
   const salesEvents=listOrderEvents(first.id,"SALES");
   const adminEvents=listOrderEvents(first.id,"ADMIN");
   assert(!salesEvents.some(event=>event.event_type==="SUPPLIER_COST_MATCHED"),"Sales history must hide supplier cost events");
