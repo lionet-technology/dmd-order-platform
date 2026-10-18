@@ -5,7 +5,10 @@ import { moneyCommand } from './money-command';
 import { logAdminEvent, publishPublicNote } from './order-audit';
 import { ensureOrderShipmentStructure } from './order-shipments';
 type Row=Record<string,unknown>;
+// Next.js may evaluate API modules in parallel build workers. Serialize the
+// check-and-ALTER sequence across SQLite connections to avoid migration races.
 export function reconciliationSchema(){
+ db.transaction(() => {
  for(const name of ['finalized_gp','finalized_margin_pct','estimated_gp','estimated_margin_pct'])if(!(db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r=>r.name===name))db.exec(`ALTER TABLE orders ADD COLUMN ${name} REAL`);
  for(const [name,type] of Object.entries({actual_cost_coverage:"TEXT NOT NULL DEFAULT 'UNKNOWN'",effective_net_cost:'REAL',cost_coverage_json:'TEXT'}))if(!(db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r=>r.name===name))db.exec(`ALTER TABLE orders ADD COLUMN ${name} ${type}`);
  db.exec(`CREATE TABLE IF NOT EXISTS lot_cost_components(lot_id INTEGER NOT NULL REFERENCES order_lots(id),component TEXT NOT NULL CHECK(component IN ('LAST_MILE','MID_MILE','WAREHOUSE','OTHER')),estimated_cents INTEGER NOT NULL CHECK(estimated_cents>=0),actual_cents INTEGER CHECK(actual_cents>=0),reference TEXT NOT NULL,PRIMARY KEY(lot_id,component));
@@ -16,9 +19,10 @@ export function reconciliationSchema(){
  CREATE TRIGGER IF NOT EXISTS immutable_lot_adjustment_delete BEFORE DELETE ON lot_cost_adjustments BEGIN SELECT RAISE(ABORT,'Cost adjustment history is immutable'); END;
  CREATE TRIGGER IF NOT EXISTS immutable_lot_version_update BEFORE UPDATE ON lot_reconciliation_versions BEGIN SELECT RAISE(ABORT,'Reconciliation history is immutable'); END;
  CREATE TRIGGER IF NOT EXISTS immutable_lot_version_delete BEFORE DELETE ON lot_reconciliation_versions BEGIN SELECT RAISE(ABORT,'Reconciliation history is immutable'); END;`);
+ if(!(db.prepare('PRAGMA table_info(lot_reconciliation_versions)').all() as Row[]).some(r=>r.name==='cost_snapshot_json'))db.exec('ALTER TABLE lot_reconciliation_versions ADD COLUMN cost_snapshot_json TEXT');
+ }).immediate();
 }
 reconciliationSchema();
-if(!(db.prepare('PRAGMA table_info(lot_reconciliation_versions)').all() as Row[]).some(r=>r.name==='cost_snapshot_json'))db.exec('ALTER TABLE lot_reconciliation_versions ADD COLUMN cost_snapshot_json TEXT');
 export function reconcileLots(orderId:number){
  ensureOrderShipmentStructure(orderId);
  const order=db.prepare('SELECT * FROM orders WHERE id=?').get(orderId) as Row;
