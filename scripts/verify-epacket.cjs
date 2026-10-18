@@ -54,7 +54,35 @@ async function main(){
  const csvRows=await parseClientFile(Buffer.from(csv),"test.csv");check(csvRows.length===2&&csvRows[0].address1.includes(","),"CSV quoted fields");
  response=await post("preview",csvRows);body=await response.json();check(body.rows[0].pricing.eligible&&!body.rows[1].pricing.eligible,"import per-row eligibility");
  response=await post("save",csvRows);body=await response.json();check(response.status===201&&body.orders.length===2,"import invalid draft retained");
- response=await post("purchase",[],{order_ids:body.orders.map(o=>o.id)});check(response.status===400,"atomic import purchase rejects invalid");
+ const batchIds=body.orders.map(o=>o.id);
+ response=await post('purchase',[],{order_ids:batchIds});body=await response.json();
+ check(response.status===200&&body.succeeded===1&&body.failed===1,'partial batch purchases valid Order and reports invalid Order');
+ check(body.results[0].status==='PURCHASED'&&body.results[1].status==='FAILED'&&body.results[1].error_type==='DATA','per Order purchase results and data error');
+ check(db.prepare("SELECT COUNT(*) n FROM purchase_reserves WHERE order_id=? AND status='RESERVED'").get(batchIds[0]).n===1,'successful Order reserve retained');
+ check(db.prepare('SELECT COUNT(*) n FROM purchase_reserves WHERE order_id=?').get(batchIds[1]).n===0,'invalid Order has no reserve');
+ response=await post('purchase',[],{order_ids:[batchIds[0]]});body=await response.json();check(body.succeeded===1&&db.prepare('SELECT COUNT(*) n FROM purchase_reserves WHERE order_id=?').get(batchIds[0]).n===1,'retry does not double reserve');
+ const trackingQueue=require('../src/app/api/orders/tracking-queue/route.ts');
+ const adminQueue=await trackingQueue.GET(req('GET',null,admin,'http://local/api/orders/tracking-queue?view=READY'));
+ const readyQueue=await adminQueue.json();
+ const issueQueue=await (await trackingQueue.GET(req('GET',null,admin,'http://local/api/orders/tracking-queue?view=ISSUES'))).json();
+ check(readyQueue.rows.every(x=>x.purchase_status==='READY')&&issueQueue.rows.every(x=>x.purchase_status!=='READY'),'Admin default queue excludes ineligible Orders');
+ check(issueQueue.rows.length>0&&issueQueue.rows.some(x=>x.purchase_issue&&x.purchase_error_type),'Admin issue view exposes reasons and categories');
+ check(readyQueue.counts.ready===new Set(readyQueue.rows.map(x=>x.order_pk)).size&&issueQueue.counts.issues===new Set(issueQueue.rows.map(x=>x.order_pk)).size,'Admin ready/issues counters describe Orders');
+ check(!readyQueue.rows.some(x=>x.order_pk===batchIds[1])&&!issueQueue.rows.some(x=>x.order_pk===batchIds[1]),'Unpurchased Client Draft excluded from both Admin purchase queues');
+ // Limited purchasing room should reserve the first two, flag the third,
+ // and keep earlier successful purchases committed.
+ response=await post('save',[1,2,3].map(n=>({...manual,order_id:'BATCH-BALANCE-'+n})));body=await response.json();
+ const limitedIds=body.orders.map(o=>o.id),unitCents=Math.round(body.orders[0].pricing.total_charge*100);
+ const {accountFinancials}=require('../src/lib/credit.ts');
+ const beforeRoom=accountFinancials(client.id).available_to_buy_cents;
+ const adjustment=Math.round(unitCents*2.5)-beforeRoom;
+ db.prepare("INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount,customer) VALUES (?,'ADJUSTMENT',?,?,?)").run(client.id,adjustment>=0?'CREDIT':'DEBIT',Math.abs(adjustment)/100,client.display_name);
+ response=await post('purchase',[],{order_ids:limitedIds});body=await response.json();
+ check(response.status===200&&body.succeeded===2&&body.failed===1,'limited Balance permits only first two purchases');
+ check(body.results[2].error_type==='DATA'&&/Balance|credit/i.test(body.results[2].error),'insufficient Balance classified data error');
+ check(db.prepare("SELECT COUNT(*) n FROM purchase_reserves WHERE order_id IN (?,?,?) AND status='RESERVED'").get(...limitedIds).n===2,'two successful reserves survive third failure');
+ // Compensate via a new ledger entry; immutable accounting history must not be deleted.
+ db.prepare("INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount,customer) VALUES (?,'ADJUSTMENT',?,?,?)").run(client.id,adjustment>=0?'DEBIT':'CREDIT',Math.abs(adjustment)/100,client.display_name);
  const book=new ExcelJS.Workbook(),sheet=book.addWorksheet("Orders");sheet.addRow(Object.keys(manual));sheet.addRow(Object.values(manual));const xrows=await parseClientFile(Buffer.from(await book.xlsx.writeBuffer()),"orders.xlsx");check(xrows[0].order_id==="CLIENT-MANUAL","XLSX import reader");
  throws(()=>r.activatePricing(route.id,{price_version_id:newVersion.id,base_markup:30,retail_markup:16},admin.id));
  const frozenQuote=r.orderQuote(r.refreshDraft(id));

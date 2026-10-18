@@ -1,4 +1,6 @@
 import {withFinancialPrivacy} from "@/lib/financial-privacy";
+import {assertPurchasing} from '@/lib/credit';
+import {purchaseErrorType} from '@/lib/client-bulk-purchase';
 import { assertConfiguredPurchase,clientDraftAwaitingPurchase,purchaseService,orderQuote } from "@/lib/route-pricing";
 import { NextRequest,NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
@@ -18,7 +20,7 @@ type QueueRow={
   order_pk:number;system_order_code:string;client_order_id:string;customer:string;recipient_name:string;
   service:string;sub_service:string;carton_count:number;carton_slot:number;carton_id:number|null;supplier:string;
   expected_lot_count:number;tracking_id:number|null;tracking:string;label_url:string;
-  purchase_status:string;purchase_issue:string;manifest_status:string;manifest_issue:string;
+  purchase_status:string;purchase_issue:string;purchase_error_type:string;manifest_status:string;manifest_issue:string;
 };
 
 function baseOrders(service="",subService="",supplier=""){
@@ -46,8 +48,18 @@ function queueRows(service="",subService="",supplier="",mode:"PURCHASE"|"MANIFES
     ensureOrderShipmentStructure(Number(order.id));
     const template=resolvePurchaseTemplate(order);
     const readiness=validatePurchaseReadiness(Number(order.id));
-    const purchaseStatus=!template?"MISSING_TEMPLATE":readiness.ready?"READY":"MISSING_DATA";
-    const purchaseIssue=!template?"Chưa có Purchase Template":readiness.issues.map(issue=>issue.message).join(" ");
+    const issues=readiness.issues.map(issue=>issue.message);
+    for(const field of ['order_id','recipient_name','address1','city','state','zip','phone','item','material']){
+      if(!String(order[field]||'').trim())issues.push('Thiếu thông tin bắt buộc: '+field);
+    }
+    if(!order.pricing_snapshot_json){
+      const quote=orderQuote(order);
+      if(!quote)issues.push('Route chưa có cấu hình giá hợp lệ.');
+      else if(order.client_user_id){try{assertPurchasing(Number(order.client_user_id),quote.total_charge)}catch(e){issues.push((e as Error).message)}}
+    }
+    const purchaseStatus=!template?'MISSING_TEMPLATE':issues.length?'MISSING_DATA':'READY';
+    const purchaseIssue=(!template?['Chưa có Purchase Template']:[]).concat(issues).join(' ');
+    const errorType=(!template||issues.some(issue=>purchaseErrorType(issue)==='SYSTEM'))?'SYSTEM':issues.length?'DATA':'';
     const manifestTemplate=resolveManifestTemplate(order);
     const manifestReadiness=validateManifestReadiness(Number(order.id));
     const manifestStatus=!manifestTemplate?"MISSING_TEMPLATE":manifestReadiness.ready?"READY":"MISSING_DATA";
@@ -62,7 +74,7 @@ function queueRows(service="",subService="",supplier="",mode:"PURCHASE"|"MANIFES
         sub_service:String(order.sub_service||""),carton_count:cartonCount,carton_slot:index+1,carton_id:carton?.id||null,supplier:String(order.supplier||""),
         expected_lot_count:Math.max(1,Number(order.expected_lot_count||1)),tracking_id:tracking?Number(tracking.id):null,
         tracking:String(tracking?.tracking||""),label_url:String(tracking?.label_url||""),
-        purchase_status:purchaseStatus,purchase_issue:purchaseIssue,manifest_status:manifestStatus,manifest_issue:manifestIssue,
+        purchase_status:purchaseStatus,purchase_issue:purchaseIssue,purchase_error_type:errorType,manifest_status:manifestStatus,manifest_issue:manifestIssue,
       });
     }
   }
@@ -79,7 +91,12 @@ async function handleGET(req:NextRequest){
   const subService=String(req.nextUrl.searchParams.get("sub_service")||"");
   const supplier=String(req.nextUrl.searchParams.get("supplier")||"");
   const mode=String(req.nextUrl.searchParams.get("mode")||"PURCHASE").toUpperCase()==="MANIFEST"?"MANIFEST":"PURCHASE";
-  const rows=queueRows(service,subService,supplier,mode);
+  const allRows=queueRows(service,subService,supplier,mode);
+  const view=String(req.nextUrl.searchParams.get('view')||'READY').toUpperCase();
+  const readyOrders=new Set(allRows.filter(row=>row.purchase_status==='READY').map(row=>row.order_pk));
+  const issueOrders=new Set(allRows.filter(row=>row.purchase_status!=='READY').map(row=>row.order_pk));
+  const rows=mode==='MANIFEST'?allRows:allRows.filter(row=>view==='ISSUES'?issueOrders.has(row.order_pk):readyOrders.has(row.order_pk));
+  const counts={ready:readyOrders.size,issues:issueOrders.size};
   if(req.nextUrl.searchParams.get("format")==="xlsx"){
     const headers=["DMD ID","Client Order ID","Client","Người nhận","Service","Sub-Service","Số lượng Carton","Carton số","Supplier","Số lượng Lô","Tracking","URL Label"];
     const excelRows=[
@@ -92,7 +109,7 @@ async function handleGET(req:NextRequest){
     const buffer=await writeXlsxFile(excelRows).toBuffer();
     return new NextResponse(new Uint8Array(buffer),{headers:{"content-type":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","content-disposition":"attachment; filename=dmd-tracking-label-queue.xlsx"}});
   }
-  return NextResponse.json({rows,total:rows.length});
+  return NextResponse.json({rows,total:rows.length,counts});
 }
 
 async function handlePUT(req:NextRequest){
@@ -120,7 +137,7 @@ async function handlePUT(req:NextRequest){
         supplier:text(cell(source,headers,"Supplier"))||String(order.supplier||""),
         expected_lot_count:Math.max(1,Number(cell(source,headers,"Số lượng Lô")||order.expected_lot_count||1)),
         tracking_id:existing?.id||null,tracking:trackingValue,label_url:text(cell(source,headers,"URL Label")),
-        purchase_status:"",purchase_issue:"",manifest_status:"",manifest_issue:"",
+        purchase_status:"",purchase_issue:"",purchase_error_type:"",manifest_status:"",manifest_issue:"",
       });
     }
     return NextResponse.json({rows,total:rows.length});

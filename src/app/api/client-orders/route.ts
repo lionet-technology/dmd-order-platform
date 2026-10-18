@@ -5,9 +5,10 @@ import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { upsertOrder } from "@/lib/finance";
 import { CLIENT_FIELDS,parseClientFile } from "@/lib/client-order-import";
-import { activePricing,orderQuote,purchaseService,safePricing } from "@/lib/route-pricing";
+import { activePricing,orderQuote,safePricing } from "@/lib/route-pricing";
 import { logOrderEvent } from "@/lib/order-audit";
 import { normalizeCountry } from "@/lib/epacket-pricing";
+import {purchaseBatch} from '@/lib/client-bulk-purchase';
 export const runtime="nodejs";
 type Row=Record<string,unknown>;
 async function handleGET(req:NextRequest){
@@ -31,8 +32,7 @@ async function handlePOST(req:NextRequest){
  if(action==="purchase"){
  const ids=Array.isArray(body.order_ids)?body.order_ids.map(Number):[];
  if(!ids.length||ids.length>1000)throw Error("Chọn 1–1000 Order.");
- const orders=db.transaction(()=>ids.map(id=>purchaseService(id,auth.user))).immediate();
- return NextResponse.json({orders:orders.map(o=>({id:o.id,order_id:o.order_id,pricing:safePricing(o,"CLIENT")}))});
+ return NextResponse.json(purchaseBatch(ids,auth.user));
  }
  const route=db.prepare("SELECT * FROM service_route_configs WHERE id=? AND active=1 AND client_self_purchase=1").get(Number(body.route_id)) as Row|undefined;
  if(!route)throw Error("Route chưa cho phép Client tự đặt mua.");
