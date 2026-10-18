@@ -13,5 +13,6 @@ A production `next build` against an existing configured SQLite database failed 
 - `npm test`: **PASS**, 17 domain suites / 995 assertions.
 - `npm run lint`: **PASS**.
 - Earlier run against isolated empty DB: build **PASS**.
+- Production local server (`next start`) with a separate new database and `scripts/e2e-order-api.cjs`: **PASS**, 32 HTTP assertions.
 
-No database reset, seed, or deployment was performed. These checks alone do not replace a rehearsal on a backup of the real production DB or a fresh browser UAT. HTTP/UI tests from the previous verification report were not rerun in this focused fix.
+No existing database reset, seed, or deployment was performed. These checks alone do not replace a rehearsal on a backup of the real production DB or a fresh browser UAT. The other seven HTTP suites and browser UI tests from the previous verification report were not rerun in this focused fix.
