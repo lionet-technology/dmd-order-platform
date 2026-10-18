@@ -49,17 +49,18 @@ function queueRows(service="",subService="",supplier="",mode:"PURCHASE"|"MANIFES
     const template=resolvePurchaseTemplate(order);
     const readiness=validatePurchaseReadiness(Number(order.id));
     const issues=readiness.issues.map(issue=>issue.message);
+    const accountIssues=new Set<string>();
     for(const field of ['order_id','recipient_name','address1','city','state','zip','phone','item','material']){
       if(!String(order[field]||'').trim())issues.push('Thiếu thông tin bắt buộc: '+field);
     }
     if(!order.pricing_snapshot_json){
       const quote=orderQuote(order);
       if(!quote)issues.push('Route chưa có cấu hình giá hợp lệ.');
-      else if(order.client_user_id){try{assertPurchasing(Number(order.client_user_id),quote.total_charge)}catch(e){issues.push((e as Error).message)}}
+      else if(order.client_user_id){try{assertPurchasing(Number(order.client_user_id),quote.total_charge)}catch(e){const message=(e as Error).message;issues.push(message);accountIssues.add(message)}}
     }
     const purchaseStatus=!template?'MISSING_TEMPLATE':issues.length?'MISSING_DATA':'READY';
     const purchaseIssue=(!template?['Chưa có Purchase Template']:[]).concat(issues).join(' ');
-    const errorType=(!template||issues.some(issue=>purchaseErrorType(issue)==='SYSTEM'))?'SYSTEM':issues.length?'DATA':'';
+    const errorType=(!template||issues.some(issue=>!accountIssues.has(issue)&&purchaseErrorType(issue)==='SYSTEM'))?'SYSTEM':issues.length?'DATA':'';
     const manifestTemplate=resolveManifestTemplate(order);
     const manifestReadiness=validateManifestReadiness(Number(order.id));
     const manifestStatus=!manifestTemplate?"MISSING_TEMPLATE":manifestReadiness.ready?"READY":"MISSING_DATA";

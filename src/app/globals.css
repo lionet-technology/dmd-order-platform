@@ -1079,3 +1079,6 @@ td{padding:12px;line-height:1.45}
   .bulkSheetScroll{min-height:280px;max-height:60dvh;overflow:auto;scroll-padding-top:48px}
   .financeFilters .field{min-width:0;width:100%}
 }
+
+.balanceOverviewCards{display:none}
+@media(max-width:640px){.balanceOverviewTable{display:none}.balanceOverviewCards{display:grid;gap:12px}.balanceOverviewCards article{padding:14px;border:1px solid #e2e8f0;border-radius:12px}.balanceOverviewCards dl{display:grid;grid-template-columns:1fr 1fr;gap:12px}.balanceOverviewCards dd{margin:4px 0;font-size:18px;font-weight:700}.balanceOverviewCards dt{color:#64748b;font-size:12px}}

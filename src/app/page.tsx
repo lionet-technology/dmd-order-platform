@@ -422,10 +422,13 @@ function QuickOrderSheet({role,clients,enums,onDone,edit}:{role:Role;clients:Use
 type EntrySheetProps={
   title:string;hint:string;columns:SheetColumn[];blank:()=>SheetRow;storageKey:string;
   validate:(row:SheetRow)=>string;save:(row:SheetRow)=>Promise<unknown>;onDone:()=>void;
+  hasData?:(row:SheetRow)=>boolean;
+  beforeSave?:(rows:SheetRow[])=>Promise<React.ReactNode>;
   optionsFor?:(row:SheetRow,col:SheetColumn)=>Array<{value:string;label:string}>;
 };
 
-function EntrySheet({title,hint,columns,blank,storageKey,validate,save,onDone,optionsFor}:EntrySheetProps){
+function EntrySheet({title,hint,columns,blank,storageKey,validate,save,onDone,optionsFor,beforeSave,hasData}:EntrySheetProps){
+  const [review,setReview]=useState<React.ReactNode>(null);
   const [rows,setRows]=useState<SheetRow[]>(()=>Array.from({length:8},blank));
   const [errors,setErrors]=useState<Record<number,string>>({});
   const [msg,setMsg]=useState("");
@@ -433,7 +436,7 @@ function EntrySheet({title,hint,columns,blank,storageKey,validate,save,onDone,op
   const [widths,setWidths]=useState<Record<string,number>>({});
   useEffect(()=>{try{const raw=localStorage.getItem(storageKey);if(raw)setWidths(JSON.parse(raw))}catch{}},[storageKey]);
   useEffect(()=>{try{localStorage.setItem(storageKey,JSON.stringify(widths))}catch{}},[widths,storageKey]);
-  const dirty=(row:SheetRow)=>Object.values(row).some(v=>String(v||"").trim()!=="");
+  const dirty=(row:SheetRow)=>hasData?hasData(row):Object.values(row).some(v=>String(v||"").trim()!=="");
   const active=rows.map((row,index)=>({row,index})).filter(x=>dirty(x.row));
   function update(row:number,key:string,value:string){setRows(prev=>prev.map((r,i)=>i===row?{...r,[key]:value}:r));setErrors(prev=>{const n={...prev};delete n[row];return n})}
   function add(count=5){setRows(prev=>[...prev,...Array.from({length:count},blank)])}
@@ -447,17 +450,18 @@ function EntrySheet({title,hint,columns,blank,storageKey,validate,save,onDone,op
     setRows(prev=>{const n=[...prev];while(n.length<startRow+matrix.length)n.push(blank());matrix.forEach((vals,ro)=>vals.forEach((value,co)=>{const col=columns[startCol+co];if(col)n[startRow+ro]={...n[startRow+ro],[col.key]:value.trim()}}));return n});
   }
   function resize(e:React.MouseEvent,keyName:string,current:number){e.preventDefault();const start=e.clientX,startW=widths[keyName]||current;const move=(ev:MouseEvent)=>setWidths(x=>({...x,[keyName]:Math.max(58,Math.min(420,startW+ev.clientX-start))}));const up=()=>{document.removeEventListener("mousemove",move);document.removeEventListener("mouseup",up)};document.addEventListener("mousemove",move);document.addEventListener("mouseup",up)}
-  async function saveAll(){
+  async function saveAll(approved=false){
     if(!active.length){setMsg("Nhập ít nhất 1 dòng.");return}
     const invalid:Record<number,string>={};active.forEach(({row,index})=>{const err=validate(row);if(err)invalid[index]=err});
     if(Object.keys(invalid).length){setErrors(invalid);setMsg("Có dòng dữ liệu chưa hợp lệ.");return}
-    setBusy(true);setErrors({});setMsg("");
+    if(beforeSave&&!approved){setBusy(true);try{setReview(await beforeSave(active.map(x=>x.row)))}catch(e){setMsg((e as Error).message)}finally{setBusy(false)}return}
+    setReview(null);setBusy(true);setErrors({});setMsg("");
     const results=await Promise.all(active.map(async({row,index})=>{try{if(!row.request_key)row.request_key=crypto.randomUUID();await save(row);return{index,ok:true as const}}catch(error){return{index,ok:false as const,error:error instanceof Error?error.message:"Không thể lưu"}}}));
     const failed=results.filter(x=>!x.ok);const succeeded=results.filter(x=>x.ok).map(x=>x.index);
-    if(failed.length){const next:Record<number,string>={};failed.forEach(x=>{if(!x.ok)next[x.index]=x.error});setErrors(next);setRows(prev=>prev.map((r,i)=>succeeded.includes(i)?blank():r));setMsg(`Đã lưu ${succeeded.length} dòng, ${failed.length} dòng lỗi.`);setBusy(false);return}
-    setBusy(false);onDone();
+    if(failed.length){const next:Record<number,string>={};failed.forEach(x=>{if(!x.ok)next[x.index]=x.error});setErrors(next);setRows(prev=>prev.map((r,i)=>succeeded.includes(i)?blank():r));setMsg(`Đã lưu ${succeeded.length} dòng, ${failed.length} dòng lỗi.`);setBusy(false);if(beforeSave)onDone();return}
+    if(beforeSave)setRows(Array.from({length:8},blank));setBusy(false);onDone();
   }
-  return <div className="sheetEntry">
+  return <div className="sheetEntry">{review&&<div className="modalBackdrop" style={{zIndex:200}}><section className="modalPanel" role="dialog" aria-modal="true" aria-label="Kiểm tra batch Balance"><header className="modalHeader"><h2>Kiểm tra trước khi ghi Balance</h2><button className="secondaryBtn" onClick={()=>setReview(null)}>Quay lại sửa</button></header><div className="modalBody">{review}<button className="primaryBtn" disabled={busy} onClick={()=>void saveAll(true)}>Xác nhận ghi batch</button></div></section></div>}
     <div className="sheetToolbar"><div><b>{title}</b><span>{hint}</span></div><div className="sheetTools"><button className="secondaryBtn" onClick={()=>add(5)}>＋ 5 dòng</button><button className="primaryBtn" disabled={busy||!active.length} onClick={()=>void saveAll()}>{busy?"Đang lưu…":`Lưu ${active.length||""} dòng`}</button></div></div>
     <div className="sheetScroll"><table className="sheetTable"><colgroup><col style={{width:42}}/>{columns.map(c=><col key={c.key} style={{width:widths[c.key]||c.width||110}}/>)}<col style={{width:54}}/></colgroup>
       <thead><tr><th className="sheetCorner">#</th>{columns.map(c=>{const w=widths[c.key]||c.width||110;return <th key={c.key} style={{width:w,minWidth:w,maxWidth:w}}><span>{c.label}</span><i className="columnResizer" onMouseDown={e=>resize(e,c.key,w)}/></th>})}<th className="sheetActionHead"/></tr></thead>
@@ -493,6 +497,11 @@ const BALANCE_TYPES=[
   {value:"ADJUSTMENT_CREDIT",label:"Adjustment Credit (+)"},{value:"ADJUSTMENT_DEBIT",label:"Adjustment Debit (-)"},
 ];
 function BalanceSheet({clients,onDone,role}:{clients:User[];onDone:()=>void;role:string}){
+  const [snapshots,setSnapshots]=useState<Record<string,unknown>[]>([]),[receipt,setReceipt]=useState('');
+  const refreshContext=useCallback(async()=>{const r=await fetch('/api/financials?view=overview');const d=await r.json();if(!r.ok)throw Error(d.error);setSnapshots(d.items);return d.items as Record<string,unknown>[]},[]);
+  useEffect(()=>{void refreshContext().catch(e=>setReceipt(e.message))},[refreshContext]);
+  const beforeBatch=useRef<Record<string,unknown>[]>([]);
+  async function reviewBalance(rows:SheetRow[]){const latest=await refreshContext();beforeBatch.current=latest.filter(c=>rows.some(row=>row.client_user_id===String(c.id)));return <><p>{rows.length} dòng giao dịch. Kiểm tra Client, loại giao dịch, số tiền và reference trước khi ghi. Số dư dưới đây là thời điểm kiểm tra; kết quả sau ghi được đọc lại từ hệ thống.</p>{rows.map((row,i)=>{const f=latest.find(c=>String(c.id)===row.client_user_id);if(!f)throw Error('Client không còn trong phạm vi quyền.');return <article key={i}><h3>Dòng {i+1} · {String(f.display_name)}</h3><p>{row.entry_type} · {money(row.amount)} · {row.reference_type} {row.reference_id} · {row.note}</p><p>Wallet {money(Number(f.purchasing_balance_cents)/100)} · AR {money(Number(f.receivable_cents)/100)} · Reserve {money(Number(f.reserved_cents)/100)} · Có thể mua {money(Number(f.available_to_buy_cents)/100)}</p><p>{(f.reasons as string[]).join('; ')}</p></article>})}</>}
   const clientOptions=clients.filter(client=>client.active!==0).map(client=>({value:String(client.id),label:client.display_name+" (@"+client.username+")"}));
   const columns:SheetColumn[]=[
     {key:"occurred_at",label:"Ngày",width:115,type:"dateText"},{key:"entry_type",label:"Hạng mục *",width:165,type:"combo",options:role==="SALES"?BALANCE_TYPES.filter(t=>["PAYMENT","ADDITIONAL_FEE"].includes(t.value)):BALANCE_TYPES},
@@ -502,9 +511,9 @@ function BalanceSheet({clients,onDone,role}:{clients:User[];onDone:()=>void;role
   ];
   const blank=()=>({occurred_at:today(),entry_type:"PAYMENT",amount:"",client_user_id:"",customer:"",reference_type:"MANUAL",reference_id:"",bill_url:"",note:""});
   const credit=new Set(["PAYMENT","REFUND","ERROR_REFUND","ERROR_PROCESSING","ADJUSTMENT_CREDIT"]);
-  return <EntrySheet title="Ghi Balance" hint="Paste nhiều dòng · CREDIT/DEBIT tự suy ra từ hạng mục" columns={columns} blank={blank} storageKey="dmd.balanceSheetWidths"
+  return <><details className="panel" open><summary>Kiểm soát Client trước nhập liệu</summary><p>Payment tự phân bổ theo quy tắc hiện có. Không nhập số dư thay thế; mỗi dòng là một giao dịch.</p><div className="tableWrap"><table><thead><tr><th>Client</th><th>Wallet</th><th>AR</th><th>Reserves</th><th>Có thể mua</th><th>Trạng thái</th></tr></thead><tbody>{snapshots.map(c=><tr key={String(c.id)}><td>{String(c.display_name)}</td>{['purchasing_balance_cents','receivable_cents','reserved_cents','available_to_buy_cents'].map(k=><td key={k}>{money(Number(c[k])/100)}</td>)}<td>{(c.reasons as string[]).join('; ')||'Trong hạn mức'}</td></tr>)}</tbody></table></div></details>{receipt&&<p role="status">{receipt}</p>}<EntrySheet title="Ghi Balance" beforeSave={reviewBalance} hasData={row=>!!(row.amount||row.client_user_id||row.note||row.reference_id)} hint="Paste nhiều dòng · CREDIT/DEBIT tự suy ra từ hạng mục" columns={columns} blank={blank} storageKey="dmd.balanceSheetWidths"
     validate={row=>row.occurred_at&&!isValidDateText(row.occurred_at)?"Ngày sai định dạng":!BALANCE_TYPES.some(x=>x.value===row.entry_type)?"Hạng mục không hợp lệ":!row.amount||Number(row.amount)<=0?"Số tiền phải > 0":!row.client_user_id?"Thiếu Client":""}
-    save={row=>{const client=clients.find(item=>String(item.id)===row.client_user_id);return postJson("/api/ledger",{...row,customer:client?.display_name||row.customer,direction:credit.has(row.entry_type)?"CREDIT":"DEBIT"})}} onDone={onDone}/>;
+    save={row=>{const client=clients.find(item=>String(item.id)===row.client_user_id);return postJson("/api/ledger",{...row,customer:client?.display_name||row.customer,direction:credit.has(row.entry_type)?"CREDIT":"DEBIT"})}} onDone={()=>{void refreshContext().then(latest=>setReceipt('Đã đọc lại kết quả batch. '+beforeBatch.current.map(before=>{const after=latest.find(c=>c.id===before.id);return String(before.display_name)+': '+[['Wallet','purchasing_balance_cents'],['AR','receivable_cents'],['Reserve','reserved_cents'],['Có thể mua','available_to_buy_cents']].map(([label,key])=>label+' '+money(Number(before[key])/100)+' → '+money(Number(after?.[key])/100)).join('; ')}).join(' | '))).catch(e=>setReceipt(e.message))}}/><button className="secondaryBtn" onClick={onDone}>Hoàn tất & đóng</button></>;
 }
 
 function ImportCard({ kind, title, detail, templateHref, onDone }:{

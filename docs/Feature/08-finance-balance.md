@@ -48,3 +48,6 @@ BOD/FINANCE không có quyền sửa Client wallet qua API Ledger/Financials; ch
 
 ## Delta lượt tiếp tục 16/10/2026
 Phụ phí cân đo tự động đã có cho ePacket có giá khóa: WEIGHT_ADJUSTMENT debit, public note/audit cùng transaction; statement/refundable total dùng shippingChargeCents, reconciliation revenue thêm khoản đã debit (không cộng hai lần khi Order đã hủy). Legacy/manual route còn pending. Sổ [phải trả Supplier](13-supplier-payables.md) là GĐ1 D24, độc lập Client Balance/Cost/Recovery; portal login sau GĐ1.
+
+## 18/10 — tổng quan kiểm soát Client và review giao dịch
+Admin/Sales có tổng quan trong phạm vi quyền, gồm Wallet, Credit Limit, AR, overdue, reserves, room mua, lý do khóa và warning allocations lịch sử; tìm/lọc rủi ro rồi drill-down. Mobile dùng thẻ Client. GET overview dùng accountFinancials hiện có (có thể materialize FIFO/interest như màn chi tiết), không đổi công thức tiền. Form chi tiết có review và kết quả trước/sau trong cùng transaction; sheet Balance có review từng dòng và snapshot trước/sau batch, không dự đoán phân bổ. Import Excel chưa có preflight mới. Xem [UAT mới và giới hạn](UAT-BULK-LEDGER-2026-10-18.md).
