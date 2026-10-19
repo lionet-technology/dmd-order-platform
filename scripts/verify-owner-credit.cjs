@@ -1,0 +1,98 @@
+const fs=require("node:fs");
+const os=require("node:os");
+const path=require("node:path");
+const Module=require("node:module");
+const ts=require("typescript");
+
+const root=path.resolve(__dirname,"..");
+const dbPath=path.join(fs.mkdtempSync(path.join(os.tmpdir(),'dmd-owner-credit-')),'test.db');
+process.env.DMD_DB_PATH=dbPath;
+process.env.NODE_ENV="test";
+
+const originalResolve=Module._resolveFilename;
+Module._resolveFilename=function(request,parent,isMain,options){
+  if(request.startsWith("@/")){
+    const target=path.join(root,"src",request.slice(2));
+    for(const candidate of [target,target+".ts",target+".tsx",path.join(target,"index.ts")])if(fs.existsSync(candidate))return candidate;
+  }
+  return originalResolve.call(this,request,parent,isMain,options);
+};
+require.extensions[".ts"]=function(module,filename){
+  const source=fs.readFileSync(filename,"utf8");
+  const result=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true},fileName:filename});
+  module._compile(result.outputText,filename);
+};
+
+const {db}=require(path.join(root,"src/lib/db.ts"));
+const {createUser}=require(path.join(root,"src/lib/auth.ts"));
+const credit=require(path.join(root,"src/lib/credit.ts"));
+let checks=0;const assert=(v,m)=>{checks++;if(!v)throw Error(m)};const rejects=(f,m)=>{let ok=false;try{f()}catch{ok=true}assert(ok,m)};
+const RealDate=Date;
+let instant='2026-10-19T16:59:59.999Z';
+global.Date=class extends RealDate {constructor(...args){super(...(args.length?args:[instant]));}static now(){return new RealDate(instant).getTime();}};
+const admin=createUser({username:'owner.admin',display_name:'Owner UAT Admin',password:'TestPass123!',role:'ADMIN'});
+const sales=createUser({username:'owner.sales',display_name:'Owner UAT Sales',password:'TestPass123!',role:'SALES'});
+const client=createUser({username:'owner.client',display_name:'Owner UAT Balance',password:'TestPass123!',role:'CLIENT',sales_user_id:sales.id});
+const finance=createUser({username:'owner.finance',display_name:'Owner UAT Finance',password:'TestPass123!',role:'FINANCE'});
+const entry=(type,direction,amount)=>Number(db.prepare('INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount,occurred_at) VALUES (?,?,?,?,?)').run(client.id,type,direction,amount,credit.localDay()).lastInsertRowid);
+credit.financialAction(admin,client.id,{action:'configure',credit_limit:1000,credit_term_days:14});
+entry('ORDER_CHARGE','DEBIT',1200);
+let f=credit.accountFinancials(client.id);
+assert(f.balance_cents===-120000&&f.net_balance_cents===-120000,'Record all negative balance beyond credit limit');
+assert(f.purchase_blocked&&f.debts.length===0,'Beyond credit blocks purchase without automatic Debt');
+const order=Number(db.prepare("INSERT INTO orders(client_user_id,order_id,total_due) VALUES (?,'OWNER-RESERVE',100)").run(client.id).lastInsertRowid);
+db.prepare("INSERT INTO purchase_reserves(order_id,client_id,amount_cents,status) VALUES (?,?,10000,'RESERVED')").run(order,client.id);
+const command={action:'debt',statement_id:f.statements[0].id,amount:800,deadline:'2026-10-19',daily_rate_pct:0,reason:'Owner approved support',request_key:'owner-transfer'};
+for(const actor of [sales,finance,client])rejects(()=>credit.financialAction(actor,client.id,command),'Only Admin transfers Debt: '+actor.role);
+const ledgerCount=db.prepare('SELECT COUNT(*) n FROM ledger_entries').get().n;
+f=credit.financialAction(admin,client.id,command);
+const debt=f.debts[0].id;
+assert(f.net_balance_cents===-40000&&f.available_to_buy_cents===50000,'Transfer releases room with Reserve counted once');
+assert(f.balance_cents===-120000&&db.prepare('SELECT COUNT(*) n FROM ledger_entries').get().n===ledgerCount,'No fake Payment or ledger credit from restructuring');
+credit.financialAction(admin,client.id,command);
+assert(credit.accountFinancials(client.id).debts[0].principal_cents===80000,'Exact retry transfers once');
+rejects(()=>credit.financialAction(admin,client.id,{...command,amount:801}),'Changed payload on same key rejected');
+rejects(()=>credit.financialAction(admin,client.id,{...command,amount:401,request_key:'overdraw'}),'Cannot transfer more than remaining negative Balance');
+credit.assertPurchasing(client.id,500);
+assert(!f.purchase_blocked&&credit.localDay()==='2026-10-19','Deadline day remains purchasable until Vietnam midnight');
+instant='2026-10-19T17:00:00.000Z';
+f=credit.accountFinancials(client.id);
+assert(credit.localDay()==='2026-10-20'&&f.purchase_blocked,'Vietnam midnight blocks outstanding Debt');
+rejects(()=>credit.assertPurchasing(client.id,1),'Purchase enforces overdue gate');
+for(const actor of [sales,finance,client])rejects(()=>credit.financialAction(actor,client.id,{action:'extend_debt',debt_id:debt,deadline:'2026-10-21',reason:'Support'}),'Only Admin extends: '+actor.role);
+f=credit.financialAction(admin,client.id,{action:'extend_debt',debt_id:debt,deadline:'2026-10-21',reason:'Owner support',request_key:'owner-extend'});
+assert(!f.purchase_blocked&&f.available_to_buy_cents===50000,'Extension reopens buying with unchanged credit/reserve');
+const audit=JSON.parse(db.prepare("SELECT data_json FROM financial_audit WHERE event='extend_debt'").get().data_json);
+assert(audit.previous_deadline==='2026-10-19'&&audit.deadline==='2026-10-21'&&audit.reason==='Owner support','Extension audit has old/new deadline and reason');
+credit.financialAction(admin,client.id,{action:'configure',credit_limit:1000,credit_term_days:14,purchase_locked:true,reason:'Independent lock'});
+assert(credit.accountFinancials(client.id).purchase_blocked,'Extension cannot bypass independent lock');
+credit.financialAction(admin,client.id,{action:'configure',credit_limit:1000,credit_term_days:14});
+for(const actor of [sales,finance,client])rejects(()=>credit.financialAction(actor,client.id,{action:'debt_rate',debt_id:debt,daily_rate_pct:0.1,reason:'Rate'}),'Only Admin changes rate: '+actor.role);
+credit.financialAction(admin,client.id,{action:'debt_rate',debt_id:debt,daily_rate_pct:0.1,reason:'Rate support',request_key:'rate-change'});
+const rateAudit=JSON.parse(db.prepare("SELECT data_json FROM financial_audit WHERE event='debt_rate'").get().data_json);
+assert(rateAudit.previous_daily_rate_pct===0&&rateAudit.daily_rate_pct===0.1&&rateAudit.effective_day==='2026-10-20','Rate audit preserves old/new values and effective day');
+credit.financialAction(admin,client.id,{action:'debt_rate',debt_id:debt,daily_rate_pct:0,reason:'Zero rate'});
+const payment=entry('PAYMENT','CREDIT',800);f=credit.accountFinancials(client.id);
+assert(f.available_to_buy_cents===50000&&f.net_balance_cents===-40000,'Debt repayment restores no purchasing room twice');
+assert(db.prepare('SELECT debt_id FROM credit_allocations WHERE ledger_id=?').get(payment).debt_id===debt,'Payment allocates Debt first');
+entry('PAYMENT','CREDIT',450);f=credit.accountFinancials(client.id);
+assert(f.statements.every(s=>s.outstanding_cents===0)&&f.purchasing_balance_cents===5000&&f.net_balance_cents===5000,'Payment pays remaining AR before Wallet surplus');
+assert(f.available_to_buy_cents===95000,'Only AR payment and actual surplus change available room');
+// Unallocated credit can leave AR outstanding: only real negative Balance may be transferred.
+const c2=createUser({username:'owner.wallet',display_name:'Wallet support',password:'TestPass123!',role:'CLIENT',sales_user_id:sales.id});
+db.prepare("INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount,occurred_at) VALUES (?,'ADDITIONAL_FEE','DEBIT',100,?)").run(c2.id,credit.localDay());
+db.prepare("INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount,occurred_at) VALUES (?,'REFUND','CREDIT',100,?)").run(c2.id,credit.localDay());
+const c2f=credit.accountFinancials(c2.id);
+rejects(()=>credit.financialAction(admin,c2.id,{...command,statement_id:c2f.statements[0].id,amount:1,deadline:'2026-10-21',request_key:'no-negative'}),'Outstanding AR with nonnegative Balance cannot create extra room');
+const beforeReject=credit.accountFinancials(client.id);
+const originalPayment=db.prepare('SELECT * FROM ledger_entries WHERE id=?').get(payment);
+credit.financialAction(admin,client.id,{action:'reject_payment',ledger_id:payment,reason:'Whole payment invalid',request_key:'reject-once'});
+credit.financialAction(admin,client.id,{action:'reject_payment',ledger_id:payment,reason:'Whole payment invalid',request_key:'reject-once'});
+const rejection=JSON.parse(db.prepare("SELECT data_json FROM financial_audit WHERE event='reject_payment'").get().data_json);
+assert(rejection.previous_allocations.some(a=>a.debt_id===debt)&&rejection.reversed_cents===80000&&rejection.reversal_id,'Full reversal preserves original allocations and reversal reference in audit');
+assert(JSON.stringify(originalPayment)===JSON.stringify(db.prepare('SELECT * FROM ledger_entries WHERE id=?').get(payment)),'Original Payment remains unchanged');
+assert(db.prepare("SELECT COUNT(*) n FROM ledger_entries WHERE entry_type='PAYMENT_REVERSAL'").get().n===1,'Full rejection retry posts once');
+assert(credit.accountFinancials(client.id).debts.length===beforeReject.debts.length,'Rejection never creates new Debt');
+global.Date=RealDate;
+console.log('OWNER CREDIT RULES PASS ('+checks+' assertions); isolated DB '+dbPath);
+db.close();

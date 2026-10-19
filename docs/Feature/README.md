@@ -67,3 +67,5 @@ Cập nhật: 2026-10-16. Tài liệu này mô tả hành vi từ code, nguồn 
 - Vòng tiếp tục: hoàn thiện filter/pagination/context Finance và mobile sheet, sửa unmatched counter; thêm Eco xuyên UI, BOD/Sales checks. 19 domain suites / 1.014 assertions và 9 HTTP suites / 268 assertions PASS. Các gate dữ liệu/policy thật vẫn mở; xem biên bản.
 
 - [Bulk & Balance Ledger UAT sau 4a836ea](UAT-BULK-LEDGER-2026-10-18.md): tổng quan Client, kiểm soát trước ghi tiền, mobile cards; phân biệt browser, HTTP và acceptance còn mở.
+
+- [Owner Credit 19/10](VERIFICATION-OWNER-CREDIT-2026-10-19.md): semantics Balance ròng, giới hạn chuyển Debt, regression quyền/concurrency và blockers Finance Reconciliation.

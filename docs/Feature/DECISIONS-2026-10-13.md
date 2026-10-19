@@ -51,3 +51,7 @@
 ## Quyết định Owner 17–18/10/2026
 - D25: BOD và FINANCE là role riêng. Được xem/nhập cost, đối soát, ghi invoice/payment Supplier; không có quyền Admin khác. Root cấp role tường minh; không nâng quyền tự động.
 - D26: Nhập bảng Base Rate được Owner duyệt; chặn mua route chưa cấu hình. Không tự chụp giá Net thành Base Rate thật. Code gate ePacket đã có; route manual khác vẫn cần adapter/gate. Không dùng fixture giả lập làm giá vận hành.
+
+## Owner chốt 19/10/2026
+- D27: Credit Limit là giới hạn Balance ròng âm được phép mua; Reserve giảm sức mua, ledger vẫn ghi đủ số âm vượt hạn mức. Chuyển phần Balance âm sang Debt chỉ Admin thao tác, có deadline/lãi riêng; không Payment giả, không tự động, không tăng room lần hai khi trả Debt. Debt trong hạn không chiếm Credit Limit; còn nợ sau deadline khóa từ 00:00 ngày tiếp theo tại Asia/Ho_Chi_Minh. Admin gia hạn/đổi lãi có audit.
+- D28: Sales ghi Payment ngay; Finance cần bulk xác nhận/báo sai lệch và thông báo Client/Sales. Đây là yêu cầu cần triển khai, chưa phải tính năng hiện hành. Partial allocation reversal cần rule xác định và bảo toàn nghĩa vụ; không xóa Payment gốc hay tự tạo Debt. Chi tiết proposal/blocker trong báo cáo 19/10.

@@ -46,3 +46,8 @@
 - Sổ phải trả Supplier nội bộ (invoice/payment allocation/outstanding) nằm trong GĐ1 theo Owner, đã triển khai local và cần UAT. Portal/login vẫn DEFERRED.
 - Auto surcharge/invalid-service Hold có cho ePacket có bảng giá khóa; các route chưa có adapter, reroute/return còn thiếu.
 - Release blockers: Pricing D02 độc lập Net, quyền D22 BOD/finance, supplier coverage/FX, legacy/migration và UAT.
+
+## Ưu tiên 19/10
+1. ePacket US pilot: giá Base/retail và cancellation policy thật được duyệt, carrier credentials/label/tracking, cost coverage/FX/chứng từ thật, migration/backup rehearsal và Owner acceptance.
+2. Finance Reconciliation: bulk verify/report discrepancy, durable notification Client/Sales, preview adjustment; chốt thứ tự partial reversal và nguồn chuyển Balance âm ngoài Statement trước khi triển khai ghi tiền.
+3. Xem [bằng chứng và blockers 19/10](VERIFICATION-OWNER-CREDIT-2026-10-19.md); test xanh không đồng nghĩa production-ready.
