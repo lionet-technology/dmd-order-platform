@@ -1,5 +1,6 @@
 import {deadline,slaState} from "./sla";
 import {db} from "./db";
+import {RefundService} from "./refunds";
 import {assertClientAccess,requireAdmin,validDay,statementOrderIds} from "./credit";
 import type {AuthUser} from "./auth";
 type Row=Record<string,unknown>;
@@ -14,6 +15,7 @@ export function caseAccess(user:AuthUser,id:number){const c=db.prepare("SELECT *
 export function caseEvent(id:number,user:AuthUser,event:string,data:unknown,visibility='INTERNAL'){db.prepare("INSERT INTO operation_case_events(case_id,actor_id,event,visibility,data_json) VALUES (?,?,?,?,?)").run(id,user.id,event,visibility,JSON.stringify(data));}
 const slaRank=(v:unknown)=>['OVERDUE','NEAR_DUE','ON_TIME','NONE','DONE'].indexOf(String(v));
 export function casesFor(user:AuthUser):Array<Row & {orders:unknown[];events:unknown[]}>{
+ new RefundService(db);
  const all=db.prepare("SELECT c.*,u.display_name assignee_name FROM operation_cases c LEFT JOIN users u ON u.id=c.assigned_to ORDER BY c.hold_requested DESC,c.id DESC").all() as Row[];
  return all.flatMap(c=>{try{caseAccess(user,Number(c.id));}catch{return []}
  const orders=db.prepare("SELECT o.id order_id,o.system_order_code,o.order_id client_order_ref,o.customer,o.client_user_id,o.declared_value,COALESCE(NULLIF(o.declared_value,0),(SELECT SUM(ci.quantity*oi.unit_manufacturing_value) FROM order_items oi JOIN carton_items ci ON ci.order_item_id=oi.id WHERE oi.order_id=o.id),0) goods_value FROM orders o JOIN operation_case_orders co ON co.order_id=o.id WHERE co.case_id=?").all(c.id) as Row[];
@@ -23,7 +25,8 @@ export function casesFor(user:AuthUser):Array<Row & {orders:unknown[];events:unk
  const firstDue=c.kind==='CLAIM'?deadline('CLIENT_CLAIM',c.created_at):c.due_date;
  const firstStatus=slaState(firstDue,!!response||closed),nextStatus=slaState(c.next_action_due_at,closed);
  const sla=c.kind==='CLAIM'&&!response&&!closed?firstStatus:nextStatus==='NONE'&&c.kind!=='CLAIM'?slaState(c.due_date,closed):nextStatus;
- const decision=db.prepare("SELECT refund_cents,compensation_cents,reason,created_at FROM claim_decisions WHERE case_id=?").get(c.id);
+ const currentDecision=db.prepare("SELECT refund_cents,compensation_cents,category,reason,created_at FROM refund_events WHERE claim_id=? AND kind='CLAIM_DECISION' ORDER BY id DESC LIMIT 1").get(c.id);
+ const decision=currentDecision||db.prepare("SELECT refund_cents,compensation_cents,reason,created_at FROM claim_decisions WHERE case_id=?").get(c.id);
  return [{...c,order_refs:orders.map(o=>String(o.customer||'')+' / '+String(o.system_order_code||o.client_order_ref)).join(', '),first_response_due_at:firstDue,first_responded_at:response?.created_at||null,first_response_sla_status:firstStatus,next_action_sla_status:nextStatus,sla_status:sla,decision:decision||null,orders,events}];
  }).sort((a:Row,b:Row)=>Number(b.hold_requested)-Number(a.hold_requested)||slaRank(a.sla_status)-slaRank(b.sla_status)||Number(b.id)-Number(a.id));
 }

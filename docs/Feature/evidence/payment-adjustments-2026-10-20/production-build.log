@@ -1,0 +1,74 @@
+
+> dmd-finance-ops@0.1.0 build
+> next build
+
+▲ Next.js 16.3.6 (Turbopack)
+✓ Running next.config.ts took 147ms
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 3.3s
+  Running TypeScript ...
+  Finished TypeScript in 7.0s ...
+  Collecting page data using 7 workers ...
+  Generating static pages using 7 workers (0/39) ...
+  Generating static pages using 7 workers (9/39)
+  Generating static pages using 7 workers (19/39)
+  Generating static pages using 7 workers (29/39)
+✓ Generating static pages using 7 workers (39/39) in 884ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ƒ /api/auth/login
+├ ƒ /api/auth/logout
+├ ƒ /api/auth/setup
+├ ƒ /api/auth/status
+├ ƒ /api/cancellation-requests
+├ ƒ /api/cases
+├ ƒ /api/claims
+├ ƒ /api/client-orders
+├ ƒ /api/client-services
+├ ƒ /api/control-tower
+├ ƒ /api/costs
+├ ƒ /api/enums
+├ ƒ /api/enums/[id]
+├ ƒ /api/financials
+├ ƒ /api/health
+├ ƒ /api/import
+├ ƒ /api/inbound
+├ ƒ /api/ledger
+├ ƒ /api/manifest-cartons
+├ ƒ /api/manifest-cartons/[id]
+├ ƒ /api/manifest-export
+├ ƒ /api/manifest-scan
+├ ƒ /api/orders
+├ ƒ /api/orders/[id]
+├ ƒ /api/orders/[id]/cancel
+├ ƒ /api/orders/[id]/shipment-structure
+├ ƒ /api/orders/[id]/trackings
+├ ƒ /api/orders/[id]/warehouse-hold
+├ ƒ /api/orders/tracking-queue
+├ ƒ /api/orders/tracking-replacements
+├ ƒ /api/payment-reconciliation
+├ ƒ /api/purchase-export
+├ ƒ /api/purchase-export/generic
+├ ƒ /api/purchase-jobs
+├ ƒ /api/purchase-template-versions/[id]/download
+├ ƒ /api/purchase-template-versions/[id]/preview
+├ ƒ /api/purchase-templates
+├ ƒ /api/purchase-templates/[id]/activate
+├ ƒ /api/reconciliation
+├ ƒ /api/refunds
+├ ƒ /api/route-pricing
+├ ƒ /api/service-routes
+├ ƒ /api/service-routes/[id]/warehouse-hold
+├ ƒ /api/shipment-status
+├ ƒ /api/summary
+├ ƒ /api/supplier-payables
+├ ƒ /api/users
+└ ƒ /api/users/[id]
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand

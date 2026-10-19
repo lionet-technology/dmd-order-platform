@@ -1,5 +1,19 @@
 # Các quyết định sản phẩm — 2026-10-13
 
+## Payment Adjustment application continuation — 20/10/2026
+
+Finance can now append linked actual-receipt adjustments through the Payment Reconciliation UI/API. Original Payment and adjustment ledger/history are immutable; reductions consume the Payment's Balance portion, then reverse principal and interest; increases settle current Debt interest/principal before surplus. Client/Sales notifications, optimistic versions and atomic actor-scoped receipts are implemented. Existing Payment allocations into Statements are **blocked pending reviewed migration**; the global legacy FIFO and Statement-dependent Debt conversion remain. This is a verified partial delivery, not completion of the Owner financial cutover. See [Payment feature](15-payment-reconciliation.md) and [current evidence](VERIFICATION-PAYMENT-ADJUSTMENTS-2026-10-20.md).
+
+
+## Payment reconciliation continuation — 20/10/2026
+
+Finance bulk confirmation/discrepancy is connected to real Payment ledger rows through a dedicated API and UI. It appends immutable reconciliation history, atomic Client/Sales notifications and optimistic version checks without moving money or allocations. Payment Adjustment and the approved Payment/Debt/Statement cutover remain incomplete. See [Payment reconciliation](15-payment-reconciliation.md) and [verification/migration/UAT](VERIFICATION-PAYMENTS-2026-10-20.md).
+
+
+## Owner financial update — 20/10/2026
+
+Owner Refund decision is implemented in the application for new-format Claims, including signed obligations, actual payouts and manual recovery. New rule does not infer migrated opening balances from old decisions. Payment/Debt/Statement target remains approved but not fully integrated. See [Refund Management](14-refund-management.md) and [continuation evidence](VERIFICATION-REFUNDS-2026-10-20.md).
+
 **Trạng thái:** APPROVED BUSINESS SPEC, không đồng nghĩa IMPLEMENTED. Quyết định này ưu tiên hơn các tài liệu legacy; code vẫn cần được dev điều chỉnh và test.
 
 | ID | Quyết định | Tham chiếu |

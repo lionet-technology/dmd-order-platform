@@ -1,5 +1,19 @@
 # DMD Report — Luồng vận hành và business rules
 
+## Payment Adjustment application continuation — 20/10/2026
+
+Finance can now append linked actual-receipt adjustments through the Payment Reconciliation UI/API. Original Payment and adjustment ledger/history are immutable; reductions consume the Payment's Balance portion, then reverse principal and interest; increases settle current Debt interest/principal before surplus. Client/Sales notifications, optimistic versions and atomic actor-scoped receipts are implemented. Existing Payment allocations into Statements are **blocked pending reviewed migration**; the global legacy FIFO and Statement-dependent Debt conversion remain. This is a verified partial delivery, not completion of the Owner financial cutover. See [Payment feature](15-payment-reconciliation.md) and [current evidence](VERIFICATION-PAYMENT-ADJUSTMENTS-2026-10-20.md).
+
+
+## Payment reconciliation continuation — 20/10/2026
+
+Finance bulk confirmation/discrepancy is connected to real Payment ledger rows through a dedicated API and UI. It appends immutable reconciliation history, atomic Client/Sales notifications and optimistic version checks without moving money or allocations. Payment Adjustment and the approved Payment/Debt/Statement cutover remain incomplete. See [Payment reconciliation](15-payment-reconciliation.md) and [verification/migration/UAT](VERIFICATION-PAYMENTS-2026-10-20.md).
+
+
+## Owner financial update — 20/10/2026
+
+Current implemented flow: Claim decision/revision → signed Client Refund Balance → explicit Finance actual payout to Balance OR Bank; negative refund exposure permits explicit Admin recovery only. Dedicated refund reports and notifications are connected. Payment/Debt/Statement workflows below remain legacy and require the approved cutover. See [Refund Management](14-refund-management.md) and [continuation evidence](VERIFICATION-REFUNDS-2026-10-20.md).
+
 ## Delta Owner trong lượt kiểm tra 17–18/10/2026
 Owner chọn BOD/FINANCE là role riêng: được xem/nhập Supplier Cost, đối soát, invoice/payment Supplier, không quyền Admin khác. Owner chọn bảng Base Rate được duyệt và chặn mua khi chưa cấu hình, không suy từ Net. Code ePacket đã có gate; route manual khác vẫn là gap. Chi tiết hiện hành: feature 01, 03 và VERIFICATION-COMMIT-2026-10-18.md. Tài liệu nguồn export trong project sources giữ nguyên; bản đó chưa chứa D24–D26.
 

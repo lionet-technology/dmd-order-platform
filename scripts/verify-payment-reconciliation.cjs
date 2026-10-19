@@ -1,0 +1,45 @@
+const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),Module=require('node:module'),ts=require('typescript'),assert=require('node:assert/strict');
+const root=path.resolve(__dirname,'..'),dir=fs.mkdtempSync(path.join(os.tmpdir(),'dmd-payment-reconciliation-'));
+process.env.DMD_DB_PATH=path.join(dir,'synthetic.db');process.env.NODE_ENV='test';
+const resolve=Module._resolveFilename;Module._resolveFilename=function(r,p,m,o){if(r.startsWith('@/'))r=path.join(root,'src',r.slice(2));return resolve.call(this,r,p,m,o)};
+require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true}}).outputText,f);
+const {db}=require('../src/lib/db.ts'),auth=require('../src/lib/auth.ts'),{addLedgerEntry}=require('../src/lib/finance.ts'),{PaymentReconciliation}=require('../src/lib/payment-reconciliation.ts'),{NextRequest}=require('next/server');
+const create=(n,role,sales_user_id)=>auth.createUser({username:'payment.'+n,display_name:n,password:'SyntheticPass123!',role,sales_user_id});
+const admin=create('admin','ADMIN'),sales=create('sales','SALES'),otherSales=create('sales2','SALES'),client=create('client','CLIENT',sales.id),other=create('other','CLIENT',otherSales.id),finance=create('finance','FINANCE'),bod=create('bod','BOD'),warehouse=create('warehouse','WAREHOUSE');
+const service=new PaymentReconciliation(db);let checks=0;const eq=(a,b,m)=>{checks++;assert.deepEqual(a,b,m)},reject=(f,m)=>{checks++;assert.throws(f,undefined,m)};
+const payment=(id,key)=>addLedgerEntry({client_user_id:id,created_by_user_id:sales.id,entry_type:'PAYMENT',amount:10,request_key:key});
+const a=payment(client.id,'a'),b=payment(client.id,'b'),c=payment(other.id,'c');
+const money=()=>db.prepare('SELECT id,amount,direction FROM ledger_entries ORDER BY id').all(),allocations=()=>db.prepare('SELECT * FROM credit_allocations ORDER BY id').all();
+const payload={action:'reconcile',status:'DISCREPANCY',reason:'Bank reference mismatch',request_key:'first',rows:[{ledger_id:a.id,expected_event_id:0},{ledger_id:b.id,expected_event_id:0}]};
+async function main(){try{
+ const before=money(),beforeAllocations=allocations();const result=service.batch(finance,payload);
+ eq(result.items.length,2,'Atomic bulk reconciles two payments');eq(money(),before,'Reconciliation never changes wallet');eq(allocations(),beforeAllocations,'Reconciliation never changes allocations');
+ eq(service.batch(finance,payload),result,'Exact replay returns receipt');reject(()=>service.batch(finance,{...payload,reason:'different'}),'Same-key conflict');
+ for(const u of [admin,sales,client,bod,warehouse])reject(()=>service.batch(u,payload),'Only Finance writes '+u.role);
+ reject(()=>service.batch(finance,{...payload,request_key:'stale'}),'Stale version rejected');
+ reject(()=>service.batch(finance,{...payload,request_key:'duplicate',rows:[{ledger_id:c.id,expected_event_id:0},{ledger_id:c.id,expected_event_id:0}]}),'Duplicate payment rejected atomically');eq(service.history(finance,c.id),[],'Duplicate bulk rolled back');
+ reject(()=>service.batch(finance,{...payload,request_key:'rollback',rows:[{ledger_id:c.id,expected_event_id:0},{ledger_id:9999,expected_event_id:0}]}),'Invalid row rolls back bulk');eq(service.history(finance,c.id),[],'No partial event');
+ const ns=service.notifications(client);eq(ns.length,2,'Client gets durable notifications');eq(service.notifications(sales).length,2,'Assigned Sales notified');eq(service.notifications(otherSales).length,0,'Other Sales not notified');
+ service.acknowledge(client,ns[0].id);service.acknowledge(client,ns[0].id);eq(service.notifications(client)[0].is_read,1,'Ack idempotent');reject(()=>service.acknowledge(other,ns[0].id),'Recipient isolation');
+ eq(service.list(sales,{}).items.length,2,'Sales list scoped');eq(service.list(client,{}).items.length,2,'Client list scoped');reject(()=>service.history(otherSales,a.id),'Cross Client history denied');reject(()=>service.list(warehouse,{}),'Warehouse denied');
+ eq(service.list(finance,{status:'PENDING'}).items.map(r=>r.ledger_id),[c.id],'Pending filter');eq(service.list(finance,{q:String(a.id)}).items.map(r=>r.ledger_id),[a.id],'ID search');reject(()=>service.list(finance,{page:'NaN'}),'Invalid pagination');
+ reject(()=>db.prepare('UPDATE ledger_entries SET amount=1 WHERE id=?').run(a.id),'Reconciled original immutable');reject(()=>db.prepare('DELETE FROM payment_reconciliation_events').run(),'Audit immutable');
+ const confirmed=service.batch(finance,{...payload,status:'CONFIRMED',request_key:'corrected',rows:result.items.map(r=>({ledger_id:r.ledger_id,expected_event_id:r.event_id}))});eq(service.history(client,a.id).map(r=>r.status),['CONFIRMED','DISCREPANCY'],'Correction appends history');
+ reject(()=>service.batch(finance,{...payload,status:'CONFIRMED',request_key:'no-op',rows:[{ledger_id:a.id,expected_event_id:confirmed.items[0].event_id}]}),'Repeated status rejected');
+ db.exec("CREATE TRIGGER inject_payment_notification_failure BEFORE INSERT ON payment_reconciliation_notifications BEGIN SELECT RAISE(ABORT,'injected'); END;");reject(()=>service.batch(finance,{...payload,request_key:'notification-failure',rows:[{ledger_id:c.id,expected_event_id:0}]}),'Notification failure rolls back');eq(service.history(finance,c.id),[],'Outbox atomic');db.exec('DROP TRIGGER inject_payment_notification_failure');
+ const api=require('../src/app/api/payment-reconciliation/route.ts'),tokens=new Map();
+ const req=(user,body,url='/api/payment-reconciliation')=>{if(user&&!tokens.has(user.id))tokens.set(user.id,auth.createSession(user.id).token);return new NextRequest('http://local'+url,{method:body?'POST':'GET',headers:{...(user?{cookie:'dmd_session='+tokens.get(user.id)}:{}),...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined})};
+ for(const u of [undefined,admin,sales,client,finance,bod,warehouse])eq((await api.GET(req(u))).status,!u?401:u===warehouse?403:200,'HTTP list '+u?.role);
+ eq((await api.GET(req(otherSales,null,'/api/payment-reconciliation?ledger_id='+a.id))).status,403,'HTTP cross-client');eq((await api.POST(req(sales,payload))).status,403,'HTTP Sales cannot reconcile');
+ const concurrent={...payload,request_key:'concurrent',rows:[{ledger_id:c.id,expected_event_id:0}]};
+ const {Worker}=require('node:worker_threads');const signals=Array.from({length:4},()=>{const buffer=new SharedArrayBuffer(4);new Worker(path.join(__dirname,'payment-reconciliation-worker.cjs'),{workerData:{file:process.env.DMD_DB_PATH,actor:{id:finance.id,role:'FINANCE'},payload:concurrent,signal:buffer}});return new Int32Array(buffer)});
+ for(const signal of signals){if(!Atomics.load(signal,0))Atomics.wait(signal,0,0,30000);eq(Atomics.load(signal,0),1,'Concurrent independent writer');}
+ eq(service.history(finance,c.id).length,1,'Forty concurrent retries produce one event');eq((await api.POST(req(finance,concurrent))).status,200,'HTTP exact replay');
+ eq(db.prepare('SELECT COUNT(*) n FROM financial_audit WHERE event=?').get('PAYMENT_RECONCILIATION').n,5,'One audit per committed event');eq(db.prepare('PRAGMA foreign_key_check').all(),[],'Foreign keys');
+ const d=payment(client.id,'competing');
+ const competing=Array.from({length:4},(_,i)=>{const buffer=new SharedArrayBuffer(4);new Worker(path.join(__dirname,'payment-reconciliation-worker.cjs'),{workerData:{file:process.env.DMD_DB_PATH,actor:{id:finance.id,role:'FINANCE'},payload:{...payload,request_key:'competing-'+i,rows:[{ledger_id:d.id,expected_event_id:0}]},allow_stale:true,signal:buffer}});return new Int32Array(buffer)});
+ for(const signal of competing)if(!Atomics.load(signal,0))Atomics.wait(signal,0,0,30000);
+ eq(competing.map(s=>Atomics.load(s,0)).sort(),[1,2,2,2],'One competing command succeeds; three see stale version');eq(service.history(finance,d.id).length,1,'No competing overwrite');
+ console.log('PAYMENT RECONCILIATION DOMAIN/API PASS ('+checks+' assertions)');
+ }finally{db.close();fs.rmSync(dir,{recursive:true,force:true})}}
+main().catch(e=>{console.error(e);process.exitCode=1});

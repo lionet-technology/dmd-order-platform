@@ -1,5 +1,19 @@
 # Balance, Credit & Statement
 
+## Payment Adjustment application continuation — 20/10/2026
+
+Finance can now append linked actual-receipt adjustments through the Payment Reconciliation UI/API. Original Payment and adjustment ledger/history are immutable; reductions consume the Payment's Balance portion, then reverse principal and interest; increases settle current Debt interest/principal before surplus. Client/Sales notifications, optimistic versions and atomic actor-scoped receipts are implemented. Existing Payment allocations into Statements are **blocked pending reviewed migration**; the global legacy FIFO and Statement-dependent Debt conversion remain. This is a verified partial delivery, not completion of the Owner financial cutover. See [Payment feature](15-payment-reconciliation.md) and [current evidence](VERIFICATION-PAYMENT-ADJUSTMENTS-2026-10-20.md).
+
+
+## Payment reconciliation continuation — 20/10/2026
+
+Finance bulk confirmation/discrepancy is connected to real Payment ledger rows through a dedicated API and UI. It appends immutable reconciliation history, atomic Client/Sales notifications and optimistic version checks without moving money or allocations. Payment Adjustment and the approved Payment/Debt/Statement cutover remain incomplete. See [Payment reconciliation](15-payment-reconciliation.md) and [verification/migration/UAT](VERIFICATION-PAYMENTS-2026-10-20.md).
+
+
+## Owner financial update — 20/10/2026
+
+Claims/Refund application adapter is implemented: decisions change signed Refund Balance, Finance actual Balance payout credits ledger once, Bank payout never credits ledger, Admin manual recovery debits ledger. Public Balance projects signed net ledger. Recovery is excluded from legacy service-fee receivables. Payment/Debt/Statement still need cutover. See [Refund Management](14-refund-management.md) and [continuation evidence](VERIFICATION-REFUNDS-2026-10-20.md).
+
 ## Delta quyền 18/10/2026
 BOD/FINANCE không có quyền sửa Client wallet qua API Ledger/Financials; chỉ scope Supplier đã chốt. Operational Admin không được ghi SERVICE_COST vào Client ledger. Payload tài chính vận hành lọc Supplier Net/GP và dòng SERVICE_COST; migration dữ liệu legacy cần rehearsal riêng.
 

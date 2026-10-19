@@ -1,6 +1,8 @@
 "use client";
 import {useCallback,useEffect,useRef,useState,type FormEvent} from "react";
 import {ReconciliationWorkspace} from "./reconciliation-workspace";
+import {RefundWorkspace} from "./refund-workspace";
+import {PaymentReconciliationWorkspace} from "./payment-reconciliation-workspace";
 import {SupplierPayablesWorkspace} from "./supplier-payables-workspace";
 type Row=Record<string,unknown>;
 export function FinanceWorkspace({user,onLogout}:{user:{display_name:string;role:string};onLogout:()=>void}){
@@ -19,7 +21,7 @@ export function FinanceWorkspace({user,onLogout}:{user:{display_name:string;role
  }
  async function importCost(event:FormEvent<HTMLFormElement>){event.preventDefault();setBusy(true);setError("");setNotice("");const form=event.currentTarget,body=new FormData(form);body.set("kind","costs");try{const response=await fetch("/api/import",{method:"POST",body}),data=await response.json();if(!response.ok)throw Error(data.error);setNotice("Đã nhập "+data.imported+" dòng chi phí.");form.reset();await load();}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
  return <main className="financeRoleWorkspace"><header className="pageHeader"><div><span className="eyebrow">{user.role}</span><h1>Tài chính Supplier</h1><p>{user.display_name}</p></div><button className="secondaryBtn" onClick={async()=>{await fetch("/api/auth/logout",{method:"POST"});onLogout()}}>Đăng xuất</button></header>
- <nav className="settingsActions" aria-label="Tài chính Supplier">{[["costs","Supplier Cost"],["reconciliation","Reconciliation"],["payables","Supplier Payables"]].map(([id,label])=><button className={tab===id?"primaryBtn":"secondaryBtn"} key={id} onClick={()=>{setTab(id);setNotice("");setError("")}}>{label}</button>)}</nav>
+ <nav className="settingsActions" aria-label="Tài chính Supplier">{[["costs","Supplier Cost"],["reconciliation","Reconciliation"],["payables","Supplier Payables"],["refunds","Refund Management"],["payments","Payment Reconciliation"]].map(([id,label])=><button className={tab===id?"primaryBtn":"secondaryBtn"} key={id} onClick={()=>{setTab(id);setNotice("");setError("")}}>{label}</button>)}</nav>
  {error&&<p role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
  {tab==="costs"&&<section className="panel"><h2>Supplier Cost</h2><form onSubmit={importCost} className="settingsActions"><label className="field">File đối soát Supplier (.xlsx, tối đa 10 MB)<input type="file" name="file" accept=".xlsx" required/></label><button className="secondaryBtn" disabled={busy}>Nhập Excel chi phí</button></form><form onSubmit={save} className="settingsGrid">
  <label className="field">Tracking<input name="tracking" required/></label>
@@ -37,6 +39,8 @@ export function FinanceWorkspace({user,onLogout}:{user:{display_name:string;role
  {!loading&&!rows.length&&<p>Không có chi phí phù hợp bộ lọc.</p>}
  <div className="financePagination"><button className="secondaryBtn" disabled={loading||page<=1} onClick={()=>setPage(p=>p-1)}>Chi phí: trang trước</button><span>Trang {page} / {totalPages}</span><button className="secondaryBtn" disabled={loading||page>=totalPages} onClick={()=>setPage(p=>p+1)}>Chi phí: trang sau</button></div></section>}
  {tab==="reconciliation"&&<ReconciliationWorkspace/>}
+ {tab==="refunds"&&<RefundWorkspace role={user.role}/>}
+ {tab==="payments"&&<PaymentReconciliationWorkspace role={user.role}/>}
  {tab==="payables"&&<SupplierPayablesWorkspace suppliers={suppliers}/>}
  </main>;
 }

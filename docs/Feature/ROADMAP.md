@@ -1,5 +1,19 @@
 # Roadmap triển khai — đã được Product chốt 13/10/2026
 
+## Payment Adjustment application continuation — 20/10/2026
+
+Finance can now append linked actual-receipt adjustments through the Payment Reconciliation UI/API. Original Payment and adjustment ledger/history are immutable; reductions consume the Payment's Balance portion, then reverse principal and interest; increases settle current Debt interest/principal before surplus. Client/Sales notifications, optimistic versions and atomic actor-scoped receipts are implemented. Existing Payment allocations into Statements are **blocked pending reviewed migration**; the global legacy FIFO and Statement-dependent Debt conversion remain. This is a verified partial delivery, not completion of the Owner financial cutover. See [Payment feature](15-payment-reconciliation.md) and [current evidence](VERIFICATION-PAYMENT-ADJUSTMENTS-2026-10-20.md).
+
+
+## Payment reconciliation continuation — 20/10/2026
+
+Finance bulk confirmation/discrepancy is connected to real Payment ledger rows through a dedicated API and UI. It appends immutable reconciliation history, atomic Client/Sales notifications and optimistic version checks without moving money or allocations. Payment Adjustment and the approved Payment/Debt/Statement cutover remain incomplete. See [Payment reconciliation](15-payment-reconciliation.md) and [verification/migration/UAT](VERIFICATION-PAYMENTS-2026-10-20.md).
+
+
+## Owner financial update — 20/10/2026
+
+Claims/Refund API/UI and dedicated refund report are now implemented locally and have isolated domain/API plus role-browser verification. Payment reconciliation/adjustment, Statement-independent Debt, final financial Statement integration, historical migration and full release UAT remain open. See [Refund Management](14-refund-management.md) and [continuation evidence](VERIFICATION-REFUNDS-2026-10-20.md).
+
 ## Trạng thái 18/10/2026
 Đã triển khai local role BOD/FINANCE trong scope Supplier và gate Base Rate cho ePacket. Chưa hoàn tất adapter/approval Base Rate ở mọi route manual, bảng giá thật, coverage/FX/chứng từ thực và migration/UAT. Test local xanh không thay nghiệm thu GĐ1; xem VERIFICATION-COMMIT-2026-10-18.md.
 

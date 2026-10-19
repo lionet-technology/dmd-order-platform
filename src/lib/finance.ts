@@ -524,10 +524,11 @@ function addSupplierCostOnce(input: SupplierCostInput) {
 
 export function addLedgerEntry(input: LedgerInput): unknown {
  return moneyCommand("ledger:"+Number(input.client_user_id||0)+":"+Number(input.created_by_user_id||0),input.request_key,input,()=>{
-  if(text(input.reference_type).toUpperCase()==="ORDER_CANCELLATION")throw new Error("Khoản hoàn huỷ đơn chỉ được tạo qua chức năng Huỷ đơn.");
+  if(["ORDER_CANCELLATION","REFUND_ACTUAL","CLAIM","PAYMENT_ADJUSTMENT"].includes(text(input.reference_type).toUpperCase()))throw new Error("Nguồn giao dịch này chỉ được ghi qua chức năng Huỷ đơn / Claim / Refund tương ứng.");
   const amount = money(num(input.amount));
   if (amount<=0) throw new Error("Số tiền phải lớn hơn 0.");
   const type = text(input.entry_type).toUpperCase();
+  if(type==="PAYMENT_ADJUSTMENT")throw Error("Payment Adjustment phải ghi qua Finance reconciliation.");
   const expectedDirection=defaultDirection(type);
   const direction = input.direction || expectedDirection;
   const result = db.prepare(`

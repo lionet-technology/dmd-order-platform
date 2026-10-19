@@ -4,6 +4,8 @@ import { normalizeCountry } from "@/lib/epacket-pricing";
 import { OperationsWorkspace } from "./operations-workspace";
 import { SupplierPayablesWorkspace } from "./supplier-payables-workspace";
 import { ReconciliationWorkspace } from "./reconciliation-workspace";
+import {RefundWorkspace} from "./refund-workspace";
+import {PaymentReconciliationWorkspace} from "./payment-reconciliation-workspace";
 import { FinancialWorkspace } from "./financial-workspace";
 import { ClientPurchasePanel } from "./client-purchase-panel";
 
@@ -1010,6 +1012,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   },[role]);
 
   useEffect(()=>{void loadSummary();void loadUsers();void loadEnums();void loadRecent()},[loadSummary,loadUsers,loadEnums,loadRecent]);
+  useEffect(()=>{const refresh=()=>{void loadSummary();if(section==='ledger')void loadSection('ledger')};window.addEventListener('dmd-financial-updated',refresh);return ()=>window.removeEventListener('dmd-financial-updated',refresh)},[loadSummary,loadSection,section]);
   useEffect(()=>{if(["orders","shipping","costs","recon","ledger"].includes(section))void loadSection(section,page,debouncedSearch)},[section,page,debouncedSearch,loadSection]);
 
   const refresh=useCallback(async()=>{
@@ -1163,7 +1166,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
 
         {section==="operations"&&<OperationsWorkspace role={role}/>}
         {section==="ledger"&&<>
-          <FinancialWorkspace role={role} clients={clients}/>
+          <><FinancialWorkspace role={role} clients={clients}/><PaymentReconciliationWorkspace role={role}/><RefundWorkspace role={role}/></>
           <PageHeader eyebrow="FINANCE" title="Balance Ledger" description={role==="ADMIN"?"Dòng tiền Credit / Debit và các order charge tự động.":role==="SALES"?"Balance Ledger của các Client được phân công.":"Balance Ledger của tài khoản Client này."}
             actions={role==="ADMIN"?<><button className="secondaryBtn" onClick={()=>setImportKind("balance")}>⇩ Import</button><button className="primaryBtn" onClick={()=>openEntry("balance")}>＋ Ghi Balance</button></>:role==="SALES"?<button className="primaryBtn" onClick={()=>openEntry("balance")}>＋ Ghi Balance</button>:undefined}/>
           <div className="panel dataPanel">

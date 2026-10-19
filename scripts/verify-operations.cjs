@@ -38,28 +38,14 @@ const original=credit.accountFinancials(client.id).balance_cents;
 const claim=cases.caseAction(client,{action:'create',kind:'CLAIM',visibility:'PUBLIC',order_ids:[a,b],summary:'Delayed',due_date:credit.shiftDay(credit.localDay(),-1)});
 assert(credit.accountFinancials(client.id).balance_cents===original,'Claim opening does not release funds');rejects(()=>claims.claimAction(sales,{action:'finalize',case_id:claim.id,refund_amount:1,reason:'x'}),'Sales cannot refund');
 db.prepare("INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount,reference_type,reference_id) VALUES (?,'ORDER_CHARGE','DEBIT',10,'ORDER',?)").run(client.id,String(a));
-claims.claimAction(admin,{action:'finalize',case_id:claim.id,refund_amount:5,refund_allocations:[{order_id:a,amount:5},{order_id:b,amount:0}],compensation_amount:2,reason:'Approved'});assert(credit.accountFinancials(client.id).balance_cents===-300,'Separate refund compensation credited once');claims.claimAction(admin,{action:'finalize',case_id:claim.id,refund_amount:5,compensation_amount:2,reason:'Retry'});assert(credit.accountFinancials(client.id).balance_cents===-300,'Claim finalize idempotent');
-const keyedClaim={action:'finalize',case_id:claim.id,refund_amount:5,compensation_amount:2,reason:'Retry',request_key:'claim-retry'};assert(JSON.stringify(claims.claimAction(admin,keyedClaim))===JSON.stringify(claims.claimAction(admin,keyedClaim)),'Claim original result receipt');
-// Allocation regressions run in a rolled-back transaction to preserve other fixtures.
-const refunds=require(path.join(root,'src/lib/order-refunds.ts'));
-const rollback=Error('allocation test rollback');
-try{db.transaction(()=>{
- assert(refunds.orderRefundedCents(a)===500&&refunds.orderRefundedCents(b)===0,'Refund allocated only to selected Order');
- db.prepare("INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount,reference_type,reference_id) VALUES (?,'ORDER_CHARGE','DEBIT',10,'ORDER',?)").run(client.id,String(b));
- const next=cases.caseAction(client,{action:'create',kind:'CLAIM',visibility:'PUBLIC',order_ids:[a,b],summary:'Allocation test'});
- const payload={action:'finalize',case_id:next.id,refund_amount:6,reason:'Allocation test'};
- rejects(()=>claims.claimAction(admin,payload),'Multi-order refund requires explicit allocations');
- rejects(()=>claims.claimAction(admin,{...payload,refund_allocations:[{order_id:a,amount:6},{order_id:b,amount:0}]}),'Per-order remaining limit enforced');
- rejects(()=>claims.claimAction(admin,{...payload,refund_allocations:[{order_id:b,amount:3},{order_id:b,amount:3}]}),'Duplicate allocation rejected');
- rejects(()=>claims.claimAction(admin,{...payload,refund_allocations:[{order_id:a,amount:0},{order_id:b,amount:5}]}),'Allocation total mismatch rejected');
- claims.claimAction(admin,{...payload,refund_allocations:[{order_id:a,amount:0},{order_id:b,amount:6}]});
- assert(refunds.orderRefundedCents(a)===500&&refunds.orderRefundedCents(b)===600,'Overlapping claims preserve remaining amount per Order');
- db.prepare("INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount,reference_type,reference_id) VALUES (?,'REFUND','CREDIT',1,'ORDER_CANCELLATION',?)").run(client.id,String(b));
- assert(refunds.orderRefundedCents(b)===700,'Cancellation refund shares remaining limit');
- db.prepare('DELETE FROM claim_refund_allocations WHERE case_id=?').run(next.id);
- assert(refunds.orderRefundedCents(a)===1100,'Legacy unallocated claim remains conservative');
- throw rollback;
- }).immediate()}catch(e){if(e!==rollback)throw e}
+const {RefundService}=require('../src/lib/refunds.ts'),refunds=new RefundService(db);
+const finance=user('ops.finance','FINANCE');
+const decision={action:'finalize',case_id:claim.id,refund_amount:5,compensation_amount:2,category:'DELAYED',reason:'Approved',request_key:'claim-decision'};
+claims.claimAction(admin,decision);assert(credit.accountFinancials(client.id).balance_cents===-1000&&refunds.balance(client.id)===700,'Claim changes obligation without wallet credit');
+assert(JSON.stringify(claims.claimAction(admin,decision))===JSON.stringify(claims.claimAction(admin,decision)),'Decision retry receipt');
+refunds.execute(finance,{action:'to_balance',client_id:client.id,amount_cents:700,reference:'actual',reason:'Executed',request_key:'actual-refund'});
+assert(credit.accountFinancials(client.id).balance_cents===-300&&refunds.balance(client.id)===0,'Finance actual refund credits wallet once');
+assert(require('../src/lib/order-refunds.ts').orderRefundedCents(a)===0,'Client payout has no invented Order allocation');
 const recovery=claims.claimAction(admin,{action:'create_recovery',case_id:claim.id,supplier:'DMD',expected_amount:6});claims.claimAction(admin,{action:'receive_recovery',case_id:claim.id,recovery_id:recovery.id,amount:4,reference:'BANK-1'});claims.claimAction(admin,{action:'receive_recovery',case_id:claim.id,recovery_id:recovery.id,amount:4,reference:'BANK-1'});const keyedReceipt={action:'receive_recovery',case_id:claim.id,recovery_id:recovery.id,amount:4,reference:'BANK-1',request_key:'receipt-retry'};assert(JSON.stringify(claims.claimAction(admin,keyedReceipt))===JSON.stringify(claims.claimAction(admin,keyedReceipt)),'Receipt exact retry');assert(claims.recoveriesFor(admin)[0].receipts[0].created_at&&claims.recoveriesFor(admin)[0].receipts[0].occurred_at,'Supplier receipt has separate economic and recording times');assert(claims.recoveriesFor(admin)[0].recovered_cents===400,'Recovery receipt idempotent');assert(credit.accountFinancials(client.id).balance_cents===-300,'Supplier receipt does not credit client');rejects(()=>claims.recoveriesFor(sales),'Supplier recovery private');assert(!JSON.stringify(cases.casesFor(sales)).includes('SUPPLIER_RECOVERY_RECEIVED'),'Supplier financial audit private');
 const parcel=inbound.inboundAction(warehouse,{action:'scan',scan_key:'DMD-A'});assert(parcel.status==='RECEIVED','DMD scan identified');assert(inbound.inboundAction(warehouse,{action:'scan',scan_key:'DMD-A'}).id===parcel.id,'Repeated inbound scan idempotent');
 const unknown=inbound.inboundAction(warehouse,{action:'scan',scan_key:'unknown'});assert(unknown.status==='UNIDENTIFIED','Unknown inventory retained');inbound.inboundAction(sales,{action:'match',parcel_id:unknown.id,order_id:b});assert(inbound.inboundFor(sales).parcels.length===2,'Sales sees assigned client inbound');rejects(()=>inbound.inboundFor(client),'Client cannot inspect internal warehouse');
@@ -126,9 +112,9 @@ cases.caseAction(sales,{action:'comment',case_id:request.id,message:'Private inv
 cases.caseAction(sales,{action:'comment',case_id:request.id,message:'Review underway',visibility:'PUBLIC'});cases.caseAction(sales,{action:'update',case_id:request.id,next_action:'Check supplier',next_action_due_at:credit.shiftDay(credit.localDay(),-1)});requestRow=cases.casesFor(sales).find(c=>c.id===request.id);assert(requestRow.first_response_sla_status==='DONE'&&requestRow.next_action_sla_status==='OVERDUE','Public response and follow-up independent');
 rejects(()=>cases.caseAction(client,{action:'create',kind:'HOLD',visibility:'PUBLIC',order_ids:[a],summary:'Direct hold'}),'Client cannot create actual Hold');
 const claimHistory=db.prepare("SELECT summary FROM order_events WHERE order_id=? AND event_type='REFUND'").all(a);assert(claimHistory.every(e=>!e.summary.includes('hoàn cước tổng')&&e.summary.includes('Claim #')),'Multi-order timeline references Claim without total payout duplication');
-const overlap=cases.caseAction(client,{action:'create',kind:'CLAIM',visibility:'PUBLIC',order_ids:[a],summary:'Overlap'});rejects(()=>claims.claimAction(admin,{action:'finalize',case_id:overlap.id,refund_amount:orderChargedCents(a)/100+1,reason:'Over remaining'}),'Overlapping Claim refund bounded by remaining charge');
+const overlap=cases.caseAction(client,{action:'create',kind:'CLAIM',visibility:'PUBLIC',order_ids:[a],summary:'Overlap'});claims.claimAction(admin,{action:'finalize',case_id:overlap.id,refund_amount:orderChargedCents(a)/100+1,reason:'Independent obligation',request_key:'over-charge-obligation'});assert(refunds.balance(client.id)>0,'Claim obligation independent from actual payout');
 assert(credit.accountFinancials(client.id).purchase_blocked,'Mandatory weight debit and balance limit block future buying');
-const huge=claims.claimAction(admin,{action:'finalize',case_id:overlap.id,compensation_amount:1000,reason:'Approved exceptional compensation'});assert(huge.warnings.length===1,'Compensation above declared value warns without blocking');
+const huge=claims.claimAction(admin,{action:'finalize',case_id:overlap.id,compensation_amount:1000,reason:'Approved exceptional compensation',request_key:'revised-compensation'});assert(huge.refund_balance_cents===100000,'Revised compensation affects obligation without auto payout');
 rejects(()=>claims.claimAction(admin,{action:'receive_recovery',case_id:claim.id,recovery_id:recovery.id,amount:3,reference:'EXCESS'}),'Supplier over-recovery requires decision');
 const invalid=order(client.id,'TERMINAL');db.prepare("UPDATE orders SET workflow_status='CANCELLED' WHERE id=?").run(invalid);const orphan=inbound.inboundAction(warehouse,{action:'scan',scan_key:'Orphan'});rejects(()=>inbound.inboundAction(sales,{action:'match',parcel_id:orphan.id,order_id:invalid}),'Unidentified cannot match cancelled');rejects(()=>inbound.inboundAction(warehouse,{action:'scan',scan_key:'DMD-TERMINAL'}),'Cancelled scan blocked');
 

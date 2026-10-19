@@ -1,5 +1,9 @@
 # Control Tower, Cases, Claims & SLA
 
+## Owner financial update — 20/10/2026
+
+Current Claim finalization/revisions now change only signed Refund Balance and require request keys; the older automatic wallet credit, per-Order refund allocation and shipping-charge caps below are historical. Actual Finance refunds and Admin recovery are separate. Legacy Claim Clients require migration before new financial actions. See [Refund Management](14-refund-management.md) and [continuation evidence](VERIFICATION-REFUNDS-2026-10-20.md).
+
 **Trạng thái:** Có triển khai trong repository, không đồng nghĩa đã được nghiệm thu production. **Rà soát:** 2026-10-13 (đọc code và tài liệu; chưa chạy E2E). **Quy tắc:** code + automated tests là bằng chứng hành vi hiện tại; yêu cầu chưa triển khai ghi riêng, không mô tả như đã chạy.
 
 ## Hành vi

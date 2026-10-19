@@ -1,5 +1,9 @@
 # Mua đơn & xử lý thất bại
 
+## Owner financial update — 20/10/2026
+
+Approved target: Client partial-success bulk purchase, explicit failed-Draft reselection, no auto retry; READY requires purchased/reserved, complete data/template and no Hold, without another balance check. Only overdue Debt and independent locks block; Statement paid/unpaid does not. Current application integration remains pending. See [approved rules](OWNER-FINANCE-2026-10-20.md) and [verification/migration/UAT](VERIFICATION-FINANCIAL-CORE-2026-10-20.md).
+
 ## Delta 18/10/2026
 Purchase mới ePacket Standard/Eco DMD bị chặn nếu version active thiếu Base Rate do Owner nhập; không tự đổi Net thành Base. Snapshot lịch sử không repricing. Gate Base Rate cho luồng manual UPS/Yun/custom vẫn chưa hoàn tất, không tự tuyên bố áp dụng toàn GĐ1.
 
