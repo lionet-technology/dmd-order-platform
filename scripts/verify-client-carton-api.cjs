@@ -51,9 +51,14 @@ async function main(){try{
  const multiId=response.data.orders[0].id;
  test(db.prepare('SELECT count(*) n FROM order_cartons WHERE order_id=?').get(multiId).n===3,'Three physical Cartons in same Order');
  test(db.prepare('SELECT count(*) n FROM order_lots WHERE order_id=?').get(multiId).n===1,'Default one Lot');
+ const manualGate=require('../src/lib/manual-route-price.ts');
+ test((()=>{try{manualGate.setManualOrderPrice(multiId,38.75,admin.id);return false}catch{return true}})(),'Admin cannot price an unsubmitted Client Draft');
  const pending=await clientAPI.POST(request({action:'purchase',order_ids:[multiId]},clients[0]));
  test(pending.status===200&&(await pending.json()).succeeded===1,'Client submits unpriced UPS Order to Admin');
  test(!db.prepare('SELECT order_id FROM purchase_reserves WHERE order_id=?').get(multiId),'No zero-price Reserve on unpriced order');
+ db.prepare("UPDATE orders SET workflow_status='HOLD' WHERE id=?").run(multiId);
+ test((()=>{try{manualGate.setManualOrderPrice(multiId,38.75,admin.id);return false}catch{return true}})(),'Held manual Order cannot be priced');
+ db.prepare("UPDATE orders SET workflow_status='PENDING_PURCHASE' WHERE id=?").run(multiId);
  const editSubmitted=await post(clientAPI,clients[0],ups,[{...multiInput[0],id:multiId,weight:1}], 'save');
  test(editSubmitted.status===400,'Submitted unpriced UPS Order cannot be edited by Client before Admin price');
  const queue=require('../src/app/api/orders/tracking-queue/route.ts');

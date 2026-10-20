@@ -2,6 +2,8 @@ import {db} from './db';
 import {reservePurchase} from './credit';
 import {assertRouteCartons} from './carton-policy';
 import {logOrderEvent} from './order-audit';
+import {canPurchase} from './order-transition-guards';
+import {hasCaseHold} from './cases';
 
 /** One approved customer total per Order; never a per-carton or Supplier Net amount. */
 export function isManualPriceRoute(service:unknown){return /^(UPS|Chuyên tuyến)$/i.test(String(service??'').trim());}
@@ -9,8 +11,12 @@ export function setManualOrderPrice(orderId:number,amount:unknown,actorId:number
  return db.transaction(()=>{
   const order=db.prepare('SELECT * FROM orders WHERE id=?').get(orderId) as Record<string,unknown>|undefined;
   if(!order||!isManualPriceRoute(order.service))throw Error('Route không hỗ trợ giá thủ công.');
+  const purchasing=canPurchase(order);
+  if(!purchasing.allowed||!order.service_purchased_at)throw Error('Client chưa gửi yêu cầu mua hoặc Order không được phép cấp dịch vụ.');
+  if(hasCaseHold(orderId)||db.prepare('SELECT id FROM warehouse_order_holds WHERE order_id=? AND released_at IS NULL').get(orderId))throw Error('Order đang Hold, không được cấp Tracking/Label.');
   const max=db.prepare('SELECT max_cartons_per_order FROM service_route_configs WHERE lower(service)=lower(?) AND lower(sub_service)=lower(?) AND lower(supplier)=lower(?) AND active=1').get(order.service,order.sub_service,order.supplier) as {max_cartons_per_order:number}|undefined;
   if(!max)throw Error('Route chưa được cấu hình active.');
+  if((db.prepare('SELECT warehouse_hold FROM service_route_configs WHERE lower(service)=lower(?) AND lower(sub_service)=lower(?) AND lower(supplier)=lower(?) AND active=1').get(order.service,order.sub_service,order.supplier) as {warehouse_hold:number}|undefined)?.warehouse_hold)throw Error('Route đang Hold.');
   assertRouteCartons(order.service,max.max_cartons_per_order,order.carton_count);
   const value=Number(amount),cents=Math.round(value*100);
   if(!Number.isFinite(value)||!Number.isSafeInteger(cents)||cents<=0||Math.abs(value*100-cents)>0.000001)throw Error('Giá bán thủ công toàn Order phải lớn hơn 0, tối đa hai chữ số thập phân.');

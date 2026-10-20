@@ -1,6 +1,8 @@
 # Roadmap triển khai — đã được Product chốt 13/10/2026
 
 ## UPS/Chuyên tuyến manual GĐ1 — 20/10/2026
+Bổ sung hardening trước UAT: Admin chỉ được nhập giá khi Order đã gửi mua và không đang Hold (cấp Order/Case/Kho/Route); Client không sửa Carton Quantity dẫn tới sai số Carton khi chọn Multiple, và file import phân nhóm phải sửa từ file gốc thay vì thay đổi cục bộ một dòng. Đã bổ sung regression tương ứng; full browser click-through vẫn mở vì browser companion chưa paired.
+
 Thực hiện request Owner: cho submit Order chưa có giá, Admin nhập tổng giá bán khi cấp Tracking/Label (Reserve/Charge idempotent), Client nhập tay có Single/Multiple Cartons, API multi-carton public để sau; mở rộng regression E2E từ XLSX→Draft→Client submit→Admin price/Tracking→Manifest/Statement và single-Order detail. Chưa hoàn tất Owner browser UAT, real UPS prices/Supplier templates, triển khai database đích/pilot. Xem `VERIFICATION-MANUAL-UPS-CARTON-2026-10-20.md`.
 
 

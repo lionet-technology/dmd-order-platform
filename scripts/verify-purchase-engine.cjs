@@ -74,6 +74,7 @@ async function main(){
   assert(validatePurchaseReadiness(order.id).ready,"fully declared cartons should be purchase-ready");
 
   const cartons=structure.cartons;
+  db.prepare("UPDATE orders SET workflow_status='PENDING_PURCHASE',service_purchased_at=CURRENT_TIMESTAMP WHERE id=?").run(order.id);
   require(path.join(root,'src/lib/manual-route-price.ts')).setManualOrderPrice(order.id,100,admin.id);
   addOrderTracking({orderId:order.id,tracking:"LOT-1-TRACK",labelUrl:"https://labels.test/1.pdf",cartonId:Number(cartons[0].id),actorId:admin.id});
   addOrderTracking({orderId:order.id,tracking:"LOT-2-TRACK",labelUrl:"https://labels.test/2.pdf",cartonId:Number(cartons[1].id),actorId:admin.id});
