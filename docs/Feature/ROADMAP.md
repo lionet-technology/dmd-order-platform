@@ -1,5 +1,8 @@
 # Roadmap triển khai — đã được Product chốt 13/10/2026
 
+## Benchmark Statement V2 bổ sung 20/10/2026
+Đã chạy baseline synthetic-only 100 Client × 100 Ledger = 10.000 dòng; p50 8,21 ms, p95 29,54 ms cho lần preview + history, SQLite integrity OK. Đây không phải HTTP stress test hay tải production. Tiếp theo vẫn cần browser UAT đủ năm role, multi-carton/partial bulk/recovery xuyên luồng, HTTP concurrent load, diễn tập cutover trên đúng DB đích đã xác minh, pilot có phê duyệt. Xem `VERIFICATION-STATEMENT-LOAD-2026-10-20.md`.
+
 ## Audit remediation — 20/10/2026
 
 Statement movement drilldown now uses labelled stacked rows at widths ≤640px, retaining signed Balance/Debt/Refund deltas, posting/reporting dates, source, Payment principal/interest and detail. Desktop retains the comparison table. Empty periods explicitly say there are no movements. Browser mobile verified on rebuilt candidate for Admin and Finance; complete role/device acceptance remains open. HTTP harnesses now use a multi-carton UPS fixture and the explicit Issues queue; Finance checks the approved Claim→Refund obligation rule and rejects retired Statement allocation, replacing obsolete auto-wallet expectations.
