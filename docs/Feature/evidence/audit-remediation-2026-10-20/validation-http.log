@@ -1,0 +1,46 @@
+{
+  "passed": 8,
+  "failed": 0,
+  "results": [
+    {
+      "name": "Reject edit: negative weight",
+      "passed": true,
+      "status": 400
+    },
+    {
+      "name": "Reject edit: zero carton count",
+      "passed": true,
+      "status": 400
+    },
+    {
+      "name": "Reject edit: fractional carton count",
+      "passed": true,
+      "status": 400
+    },
+    {
+      "name": "Reject edit: negative manual volume",
+      "passed": true,
+      "status": 400
+    },
+    {
+      "name": "Reject edit: negative dimensional divisor",
+      "passed": true,
+      "status": 400
+    },
+    {
+      "name": "Reject edit: discount over 100",
+      "passed": true,
+      "status": 400
+    },
+    {
+      "name": "Reject edit: negative discount",
+      "passed": true,
+      "status": 400
+    },
+    {
+      "name": "Reject negative ledger payment",
+      "passed": true,
+      "status": 400
+    }
+  ]
+}

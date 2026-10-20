@@ -1082,3 +1082,13 @@ td{padding:12px;line-height:1.45}
 
 .balanceOverviewCards{display:none}
 @media(max-width:640px){.balanceOverviewTable{display:none}.balanceOverviewCards{display:grid;gap:12px}.balanceOverviewCards article{padding:14px;border:1px solid #e2e8f0;border-radius:12px}.balanceOverviewCards dl{display:grid;grid-template-columns:1fr 1fr;gap:12px}.balanceOverviewCards dd{margin:4px 0;font-size:18px;font-weight:700}.balanceOverviewCards dt{color:#64748b;font-size:12px}}
+
+/* Statement drilldown keeps every financial column readable on narrow screens. */
+@media(max-width:640px){
+ .statementMovements.tableWrap{overflow:visible}
+ .statementMovements table,.statementMovements tbody{display:block;width:100%;min-width:0}
+ .statementMovements thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+ .statementMovements tbody tr{display:block;border:1px solid var(--line);border-radius:10px;padding:10px;margin:12px 0}
+ .statementMovements tbody td{display:grid;grid-template-columns:minmax(95px,40%) minmax(0,1fr);gap:8px;white-space:normal;overflow-wrap:anywhere;padding:7px 0;border:0}
+ .statementMovements tbody td::before{content:attr(data-label);font-weight:600;color:#64748b}
+}

@@ -1,5 +1,12 @@
 # Roadmap triển khai — đã được Product chốt 13/10/2026
 
+## Audit remediation — 20/10/2026
+
+Statement movement drilldown now uses labelled stacked rows at widths ≤640px, retaining signed Balance/Debt/Refund deltas, posting/reporting dates, source, Payment principal/interest and detail. Desktop retains the comparison table. Empty periods explicitly say there are no movements. Browser mobile verified on rebuilt candidate for Admin and Finance; complete role/device acceptance remains open. HTTP harnesses now use a multi-carton UPS fixture and the explicit Issues queue; Finance checks the approved Claim→Refund obligation rule and rejects retired Statement allocation, replacing obsolete auto-wallet expectations.
+
+Operational `available_to_buy_cents` now reports `max(0, net Balance + Credit Limit - Reserve)` as approved. Signed Balance remains unchanged; insufficient signed headroom, Hold and overdue Debt still block independently. Debt repayment does not release room twice. Statement V2 is already operational (immutable snapshots, late postings, Claim dispute and BOD parity); older pending delivery notes below are historical. Current validation and outstanding acceptance: [audit remediation evidence](VERIFICATION-AUDIT-REMEDIATION-2026-10-20.md). No unverified database reset or activation of `fc_*`.
+
+
 ## Consecutive period UI continuation — 20/10/2026
 
 The Statement history API returns `next_period_start` from the checkpoint or last issued end in the same serialized read as history. Selecting a Client automatically loads history and selects that unissued period; a next-period button restores its dates. A future period is labelled as unavailable for Finalize. Captured Credit Limit/Reserve appear separately as references, never added to balances. Client-switch/unmount invalidates pending Statement and Claim responses. Existing role, immutable snapshot, late-posting and Debt-first rules remain unchanged. See [current as-is audit and rerun evidence](STATUS-AS-IS-2026-10-20.md). Legacy migration and complete production acceptance remain open. Older progress sections below are historical.

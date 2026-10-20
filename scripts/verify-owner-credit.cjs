@@ -40,6 +40,7 @@ entry('ORDER_CHARGE','DEBIT',1200);
 let f=credit.accountFinancials(client.id);
 assert(f.balance_cents===-120000&&f.net_balance_cents===-120000,'Record all negative balance beyond credit limit');
 assert(f.purchase_blocked&&f.debts.length===0,'Beyond credit blocks purchase without automatic Debt');
+assert(f.available_to_buy_cents===0,'Purchase room floors at zero while signed Balance stays negative');
 const order=Number(db.prepare("INSERT INTO orders(client_user_id,order_id,total_due) VALUES (?,'OWNER-RESERVE',100)").run(client.id).lastInsertRowid);
 db.prepare("INSERT INTO purchase_reserves(order_id,client_id,amount_cents,status) VALUES (?,?,10000,'RESERVED')").run(order,client.id);
 const command={action:'debt',statement_id:f.statements[0].id,amount:800,deadline:'2026-10-19',daily_rate_pct:0,reason:'Owner approved support',request_key:'owner-transfer'};

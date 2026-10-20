@@ -11,7 +11,7 @@ async function call(path,body,cookie){const headers={};if(cookie)headers.cookie=
  for(const tracking of ['missing','E2E-A1'])check((await call('/api/manifest-scan',{tracking},admin)).r.status===400,'unknown/replaced');
  check((await call('/api/manifest-export',{order_ids:[item.data.item.order_pk]},admin)).r.status===400,'reject legacy order selection');
  check((await call('/api/manifest-export',{trackings:['E2E-A2','e2e a2']},admin)).r.status===400,'reject duplicates');
- const config=JSON.parse(fs.readFileSync('config/templates/epacket-standard-dmd/route.json'));const route=await call('/api/service-routes',{...config,sub_service:'T11',supplier:'KILOSHIP'},admin);check(route.r.ok,'test route');
+ const config=JSON.parse(fs.readFileSync('config/templates/epacket-standard-dmd/route.json'));const route=await call('/api/service-routes',{...config,service:"UPS",sub_service:'T11',supplier:'KILOSHIP'},admin);check(route.r.ok,'test route');
  const form=new FormData();for(const [k,v] of Object.entries({route_config_id:route.data.id,template_kind:'MANIFEST',name:'Scan QA',output_mode:'MULTI_ORDER',repeat_sections:JSON.stringify(config.repeat_sections)}))form.set(k,String(v));form.set('file',new Blob([fs.readFileSync('config/templates/epacket-standard-dmd/manifest.xlsx')]),'manifest.xlsx');
  const upload=await call('/api/purchase-templates',form,admin);check(upload.r.ok&&!upload.data.errors.length,'template validation');
  const activate=await call('/api/purchase-templates/'+upload.data.version.template_id+'/activate',{version_id:upload.data.version.id},admin);check(activate.r.ok,'template activation');

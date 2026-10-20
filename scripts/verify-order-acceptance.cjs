@@ -100,13 +100,13 @@ async function main() {
   const active=(await call("/api/shipment-status?view=active",undefined,admin)).data.items;
   check("Delivered and exception tracks excluded from active view",active.every(x=>x.etd_at&&!["DELIVERED","ALERT","EXCEPTION"].includes(x.shipment_status)));
   check("Active view sorted by ETD",active.every((x,i)=>!i||active[i-1].etd_at<=x.etd_at));
-  const queueResponse=await fetch(base+"/api/orders/tracking-queue?format=xlsx",{headers:{cookie:admin}});
+  const queueResponse=await fetch(base+"/api/orders/tracking-queue?view=ISSUES&format=xlsx",{headers:{cookie:admin}});
   check("Bulk queue Excel download works",queueResponse.ok&&queueResponse.headers.get("content-type").includes("spreadsheet"));
   const bytes=await queueResponse.arrayBuffer();
   const fd=new FormData();fd.set("file",new Blob([bytes]),"queue.xlsx");
   r=await call("/api/orders/tracking-queue",fd,admin,"PUT");
   check("Bulk queue exported Excel can be uploaded",r.status===200&&Array.isArray(r.data.rows)&&r.data.rows.some(x=>x.order_pk===a.id));
-  const q=(await call("/api/orders/tracking-queue",undefined,admin)).data.rows;
+  const q=(await call("/api/orders/tracking-queue?view=ISSUES",undefined,admin)).data.rows;
   check("Queue keeps rows for incomplete carton coverage",q.filter(x=>x.order_pk===a.id).length===3);
   const d=await createOrder(ca,"D",2);
   const rows=[1,2].map(n=>({order_pk:d.id,carton_slot:n,tracking:prefix+"-D"+n,label_url:"https://labels.test/d"+n+".pdf",supplier:"KILOSHIP",expected_lot_count:1}));

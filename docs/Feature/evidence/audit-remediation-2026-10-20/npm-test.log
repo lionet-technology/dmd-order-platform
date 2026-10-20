@@ -1,0 +1,88 @@
+
+> dmd-finance-ops@0.1.0 test
+> node scripts/verify-all.cjs
+
+
+SUITE verify-rbac
+RBAC smoke PASS (65 assertions)
+
+SUITE verify-operations
+{"checks":65,"ok":true}
+
+SUITE verify-purchase-engine
+PURCHASE ENGINE PASS (45 assertions)
+
+SUITE verify-order-flow
+ORDER FLOW PASS (25 assertions)
+
+SUITE verify-credit
+{"checks":48,"ok":true}
+
+SUITE verify-owner-credit
+OWNER CREDIT RULES PASS (47 assertions); isolated DB /var/folders/x6/q7g3prc91cng1tjxqpd64yvc0000gn/T/dmd-owner-credit-ivkOgw/test.db
+
+SUITE verify-balance-idempotency
+{"checks":6,"ok":true}
+
+SUITE verify-debt-reconciliation
+{"checks":61,"ok":true}
+
+SUITE verify-domain-finance
+{"checks":70,"ok":true}
+
+SUITE verify-epacket
+EPACKET PASS (170 assertions)
+
+SUITE verify-manifest-cartons
+MANIFEST CARTONS PASS (57 assertions)
+
+SUITE verify-route-segmentation
+ROUTE SEGMENTATION PASS (36 assertions)
+
+SUITE verify-supplier-payables
+SUPPLIER PAYABLES PASS (51 assertions)
+
+SUITE verify-order-cancellation
+ORDER CANCELLATION PASS (128 assertions)
+
+SUITE verify-legacy-migration
+{
+  "passed": 14,
+  "failed": 0,
+  "failures": []
+}
+
+SUITE verify-template-download
+TEMPLATE DOWNLOAD PASS (23 assertions)
+
+SUITE verify-release-gates
+RELEASE GATES PASS (92 assertions)
+
+SUITE verify-sla-demo
+{"checks":47,"ok":true}
+
+SUITE verify-tracking-sheet-scope
+TRACKING SHEET SCOPE PASS (5 assertions)
+
+SUITE verify-finance-filters
+FINANCE FILTERS PASS (14 assertions)
+
+SUITE verify-financial-core
+{"ok":true,"checks":79,"database":"isolated temporary SQLite; no operational DB imported"}
+
+SUITE verify-refunds
+REFUNDS DOMAIN/API PASS (60 assertions)
+
+SUITE verify-payment-reconciliation
+PAYMENT RECONCILIATION DOMAIN/API PASS (52 assertions)
+
+SUITE verify-payment-adjustments
+PAYMENT ADJUSTMENT DOMAIN/API PASS (66 assertions)
+
+SUITE verify-bod-finance-report
+BOD FINANCE REPORT PASS (13 assertions)
+
+SUITE verify-statements-v2
+STATEMENT V2 PASS (78 assertions)
+
+ALL DOMAIN SUITES PASS (26 suites)

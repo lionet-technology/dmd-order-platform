@@ -1,5 +1,12 @@
 # Feature documentation — DMD Report
 
+## Audit remediation — 20/10/2026
+
+Statement movement drilldown now uses labelled stacked rows at widths ≤640px, retaining signed Balance/Debt/Refund deltas, posting/reporting dates, source, Payment principal/interest and detail. Desktop retains the comparison table. Empty periods explicitly say there are no movements. Browser mobile verified on rebuilt candidate for Admin and Finance; complete role/device acceptance remains open. HTTP harnesses now use a multi-carton UPS fixture and the explicit Issues queue; Finance checks the approved Claim→Refund obligation rule and rejects retired Statement allocation, replacing obsolete auto-wallet expectations.
+
+Operational `available_to_buy_cents` now reports `max(0, net Balance + Credit Limit - Reserve)` as approved. Signed Balance remains unchanged; insufficient signed headroom, Hold and overdue Debt still block independently. Debt repayment does not release room twice. Statement V2 is already operational (immutable snapshots, late postings, Claim dispute and BOD parity); older pending delivery notes below are historical. Current validation and outstanding acceptance: [audit remediation evidence](VERIFICATION-AUDIT-REMEDIATION-2026-10-20.md). No unverified database reset or activation of `fc_*`.
+
+
 ## Statement V2 operational integration — 20/10/2026 (current implementation)
 
 This section supersedes earlier delivery-status notes below; approved business rules are unchanged. Statement V2 is connected to the active operational Ledger, Debt/allocations, daily interest and Refund events, with API and UI. `fc_*` remains inactive. See [implementation, evidence and remaining gates](VERIFICATION-STATEMENT-V2-2026-10-20.md).
