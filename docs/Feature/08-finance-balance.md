@@ -1,5 +1,12 @@
 # Balance, Credit & Statement
 
+## Cutover từng phần 20/10/2026 — đã triển khai trong app, chưa release production
+- Admin **chuyển Balance âm sang một Debt Account/Client trực tiếp tại tab Điều khiển Client**, nhập tổng tiền, deadline, lãi suất tùy chọn và lý do; **không chọn Statement hoặc Order**. Chuyển đổi chỉ tăng Balance ròng khả dụng và Debt tương ứng trong nghiệp vụ, không ghi Payment hay charge giả. Không tự động tạo Debt.
+- Với DB mới, `credit_debts.source_statement_id` nullable. Nếu Debt đã tồn tại, Admin tăng trên cùng account kể cả khi đã tất toán; chỉ cho tối đa số Balance ròng âm, không vượt qua phần Reserve. Lãi/deadline và audit giữ nguyên quy tắc Owner; bảng `credit_balance_debt_transfers` bất biến ghi before/after; `money_command_receipts` chống retry trùng.
+- Nếu trước đó Payment còn dư vào Balance, dư này được khóa khỏi phân bổ Debt hồi tố trong `credit_settlement_wallet_freezes` trước khi chuyển, để chuyển đúng số tiền một lần. Payment mới tiếp tục tự trả Debt (lãi rồi gốc), dư còn lại vào Balance. **Không tự động/manual phân bổ Payment vào Statement mới**; form Admin hiện chỉ cho chọn Debt. Statement quá hạn không còn tự khóa mua; Debt quá hạn mới khóa.
+- `purchasing_balance_cents` dùng phần dương Balance ròng. `receivable_cents` tổng nghĩa vụ đang mở (`max(0,-Balance ròng)` cộng Debt chưa trả), **không cộng các dòng Statement lần nữa**. Các dòng/tình trạng PAID/UNPAID của bảng Statement cũ chỉ phục vụ tương thích, chưa phải snapshot tài chính cuối kỳ chuẩn mới.
+- **Giới hạn:** UI Statement kỳ vẫn sử dụng materialization legacy, chưa có snapshot Finalized bất biến đủ Balance/Debt/Refund Balance đầu/cuối kỳ và chưa đồng bộ BOD tổng hợp; isolated `fc_*` chưa được kích hoạt. DB cũ có cột Debt `source_statement_id NOT NULL` cần migration hoặc reset demo được xác minh trước khi tạo Debt độc lập mới. **Không tự migrate bất kỳ DB chưa xác minh**. Kiểm chứng chi tiết xem `VERIFICATION-DEBT-STATEMENT-CUTOVER-2026-10-20.md`.
+
 ## Payment Adjustment application continuation — 20/10/2026
 
 Finance can now append linked actual-receipt adjustments through the Payment Reconciliation UI/API. Original Payment and adjustment ledger/history are immutable; reductions consume the Payment's Balance portion, then reverse principal and interest; increases settle current Debt interest/principal before surplus. Client/Sales notifications, optimistic versions and atomic actor-scoped receipts are implemented. Existing Payment allocations into Statements are **blocked pending reviewed migration**; the global legacy FIFO and Statement-dependent Debt conversion remain. This is a verified partial delivery, not completion of the Owner financial cutover. See [Payment feature](15-payment-reconciliation.md) and [current evidence](VERIFICATION-PAYMENT-ADJUSTMENTS-2026-10-20.md).
@@ -65,6 +72,11 @@ Phụ phí cân đo tự động đã có cho ePacket có giá khóa: WEIGHT_ADJ
 
 ## 18/10 — tổng quan kiểm soát Client và review giao dịch
 Admin/Sales có tổng quan trong phạm vi quyền, gồm Wallet, Credit Limit, AR, overdue, reserves, room mua, lý do khóa và warning allocations lịch sử; tìm/lọc rủi ro rồi drill-down. Mobile dùng thẻ Client. GET overview dùng accountFinancials hiện có (có thể materialize FIFO/interest như màn chi tiết), không đổi công thức tiền. Form chi tiết có review và kết quả trước/sau trong cùng transaction; sheet Balance có review từng dòng và snapshot trước/sau batch, không dự đoán phân bổ. Import Excel chưa có preflight mới. Xem [UAT mới và giới hạn](UAT-BULK-LEDGER-2026-10-18.md).
+
+## Thay đổi tiếp theo — Payment không phân bổ Statement (20/10/2026)
+- Luồng `allocateFIFO` chỉ tự phân bổ Payment vào Debt (lãi/gốc). Phần còn lại tác động Balance; Statement chỉ là dữ liệu đối soát, không nhận Payment allocation mới.
+- Statement quá hạn không tự chặn mua; chỉ Debt quá hạn và lệnh khóa độc lập chặn mua. `purchasing_balance_cents` là phần dương của Balance ròng sau tái phân loại Debt.
+- Phân bổ Statement lịch sử không bị xóa; UI chuyển Balance→Debt và tự động phân bổ Debt đã dùng rule mới. 24/24 domain suites PASS trên DB kiểm thử cô lập; cần HTTP, Owner UAT và migration trước production.
 
 ## Owner chốt 19/10/2026 — Balance ròng / Debt
 - `balance_cents` giữ nguyên số dư ledger lịch sử. `net_balance_cents` = ledger balance + phần Debt được loại khỏi sức mua theo công thức hiện hành (outstanding Debt trừ tổng lãi đã ghi nhận). Giữ semantics trả lãi đã kiểm chứng: tiền trả Debt/lãi không tăng room lần hai. Không ghi bút toán credit/Payment khi chuyển Debt.

@@ -13,7 +13,7 @@ const credit=require('../src/lib/credit.ts'),cases=require('../src/lib/cases.ts'
 const {purchaseService}=require('../src/lib/route-pricing.ts');
 require('../src/lib/order-cancellation.ts');
 const manifest=require('../src/lib/manifest-cartons.ts');
-const tables=['refund_notification_reads','refund_notifications','refund_receipts','refund_events','lot_reconciliation_versions','lot_cost_adjustments','lot_reconciliation_settings','claim_refund_allocations','debt_daily_interest','debt_interest_events','credit_debt_sources','money_command_receipts','supplier_recovery_receipts','supplier_recoveries','claim_decisions','operation_case_events','operation_case_orders','operation_cases','weight_adjustments','inbound_measurements','inbound_parcels','cancellation_requests','credit_statement_notes','credit_manual_allocations','credit_allocations','credit_items','credit_debts','credit_statements','rejected_payments','purchase_reserves','financial_audit','manifest_carton_items','manifest_carton_events','manifest_cartons','warehouse_order_holds','order_events','supplier_costs','carton_items','order_trackings','order_cartons','order_items','order_lots','ledger_entries','orders','service_costs','import_batches'];
+const tables=['refund_notification_reads','refund_notifications','refund_receipts','refund_events','lot_reconciliation_versions','lot_cost_adjustments','lot_reconciliation_settings','claim_refund_allocations','debt_daily_interest','debt_interest_events','credit_balance_debt_transfers','credit_settlement_wallet_freezes','credit_debt_sources','money_command_receipts','supplier_recovery_receipts','supplier_recoveries','claim_decisions','operation_case_events','operation_case_orders','operation_cases','weight_adjustments','inbound_measurements','inbound_parcels','cancellation_requests','credit_statement_notes','credit_manual_allocations','credit_allocations','credit_items','credit_debts','credit_statements','rejected_payments','purchase_reserves','financial_audit','manifest_carton_items','manifest_carton_events','manifest_cartons','warehouse_order_holds','order_events','supplier_costs','carton_items','order_trackings','order_cartons','order_items','order_lots','ledger_entries','orders','service_costs','import_batches'];
 const backup=path.join(path.dirname(process.env.DMD_DB_PATH), 'demo-backup-'+Date.now()+'.db');
 db.exec("VACUUM INTO '"+backup.replace(/'/g,"''")+"'");
 try{
@@ -42,9 +42,8 @@ const result=db.transaction(()=>{
  if(i===1){const first=credit.receivables(c.id).statements[0];
  const pay=Number(db.prepare("INSERT INTO ledger_entries(client_user_id,occurred_at,entry_type,direction,amount,customer,note,created_by_user_id) VALUES (?,?,'PAYMENT','CREDIT',?,?, 'Demo bank payment / FIFO',?)").run(c.id,today,(first.amount_cents+100)/100,c.display_name,admin.id).lastInsertRowid);
  credit.allocateFIFO(c.id);
- const statements=credit.receivables(c.id).statements;
- // Explicit Admin override, audited through production action.
- credit.financialAction(admin,c.id,{action:'allocate',ledger_id:pay,reason:'Demo explicit payment allocation',allocations:[{statement_id:statements[0].id,amount:first.amount_cents/100},{statement_id:statements[1].id,amount:1}]});
+ // Statements now report charges only: this Payment remains in Balance unless Debt exists.
+ if(db.prepare('SELECT id FROM credit_allocations WHERE ledger_id=? AND statement_id IS NOT NULL').get(pay))throw Error('Statement received Payment allocation.');
  }
  if(i===2){const first=credit.receivables(c.id).statements[0];credit.financialAction(admin,c.id,{action:'debt',statement_id:first.id,amount:Math.min(5,first.outstanding_cents/100),deadline:day(2),reason:'Demo debt installment'});db.prepare('UPDATE credit_debts SET deadline=? WHERE client_id=?').run(day(-2),c.id);credit.financialAction(admin,c.id,{action:'configure',credit_limit:500,credit_term_days:14,purchase_locked:true,reason:'Demo manual lock: review overdue account'});}
  }
@@ -74,9 +73,8 @@ const result=db.transaction(()=>{
  credit.financialAction(sales,clients[1].id,{action:'additional_fee',occurred_at:day(-70),quantity:1,unit_price:3,note:'Demo late packing fee: current-period adjustment to issued statement'});
  const creditClient=clients[1];
  const creditEntry=Number(db.prepare("INSERT INTO ledger_entries(client_user_id,occurred_at,entry_type,direction,amount,customer,reference_type,reference_id,note,created_by_user_id) VALUES (?,?,'MANUAL_CREDIT','CREDIT',2,?,'DEMO_CREDIT','SPLIT','Demo manual credit with explicit destination',?)").run(creditClient.id,today,creditClient.display_name,admin.id).lastInsertRowid);
- const target=credit.accountFinancials(creditClient.id).statements.find(s=>s.outstanding_cents>=100);
- if(!target)throw Error('Demo partial credit requires receivable fixture');
- credit.financialAction(admin,creditClient.id,{action:'apply_credit',ledger_id:creditEntry,allocations:[{statement_id:target.id,amount:1}],reason:'Demo credit split: $1 AR, $1 Wallet',request_key:'demo-credit-split'});
+ credit.accountFinancials(creditClient.id);
+ if(db.prepare('SELECT id FROM credit_allocations WHERE ledger_id=?').get(creditEntry))throw Error('Refund/manual credit should remain in Balance.');
  const unknown=inbound.inboundAction(warehouse,{action:'scan',scan_key:'DEMO-UNKNOWN-BOX',note:'No readable client reference'});
  db.prepare('UPDATE inbound_parcels SET received_at=? WHERE id=?').run(new Date(Date.now()-25*3600000).toISOString(),unknown.id);
  for(const [i,o] of purchased.slice(3,5).entries()){

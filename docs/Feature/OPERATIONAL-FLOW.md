@@ -1,5 +1,7 @@
 # DMD Report — Luồng vận hành và business rules
 
+> **Cutover Finance 20/10/2026:** Payment mới chỉ trả Debt (lãi rồi gốc) rồi Balance, không phân bổ vào Statement; Statement hết hạn không chặn mua. Admin chuyển Balance âm sang một Debt Account trong tab Điều khiển, không chọn Statement và không tạo Payment; audit/receipt và phần Payment dư trước đó được bảo toàn khỏi phân bổ hồi tố. Đây là logic đã chạy domain tests, **chưa** hoàn thiện snapshot Finalized Statement và BOD parity; xem `08-finance-balance.md`, `OWNER-FINANCE-2026-10-20.md`.
+
 ## Payment Adjustment application continuation — 20/10/2026
 
 Finance can now append linked actual-receipt adjustments through the Payment Reconciliation UI/API. Original Payment and adjustment ledger/history are immutable; reductions consume the Payment's Balance portion, then reverse principal and interest; increases settle current Debt interest/principal before surplus. Client/Sales notifications, optimistic versions and atomic actor-scoped receipts are implemented. Existing Payment allocations into Statements are **blocked pending reviewed migration**; the global legacy FIFO and Statement-dependent Debt conversion remain. This is a verified partial delivery, not completion of the Owner financial cutover. See [Payment feature](15-payment-reconciliation.md) and [current evidence](VERIFICATION-PAYMENT-ADJUSTMENTS-2026-10-20.md).

@@ -1,5 +1,8 @@
 # Feature documentation — DMD Report
 
+## Tiếp tục tài chính 20/10/2026 — Debt/Statement dependency (Partial)
+Ứng dụng hiện cho Admin chuyển Balance âm sang một Debt Account **không cần Statement**, Payment mới chỉ tự phân bổ vào Debt rồi Balance, và Statement quá hạn không khóa mua. Claim/Refund và Payment Reconciliation/Adjustment đã nối app từ các đợt trước. **Chưa hoàn tất** snapshot Statement cuối kỳ, migration legacy DB và BOD financial parity. Xem [Feature 08](08-finance-balance.md) và [Verification 20/10](VERIFICATION-DEBT-STATEMENT-CUTOVER-2026-10-20.md). Nội dung lịch sử phía dưới thể hiện trạng thái của từng đợt trước.
+
 ## Payment Adjustment application continuation — 20/10/2026
 
 Finance can now append linked actual-receipt adjustments through the Payment Reconciliation UI/API. Original Payment and adjustment ledger/history are immutable; reductions consume the Payment's Balance portion, then reverse principal and interest; increases settle current Debt interest/principal before surplus. Client/Sales notifications, optimistic versions and atomic actor-scoped receipts are implemented. Existing Payment allocations into Statements are **blocked pending reviewed migration**; the global legacy FIFO and Statement-dependent Debt conversion remain. This is a verified partial delivery, not completion of the Owner financial cutover. See [Payment feature](15-payment-reconciliation.md) and [current evidence](VERIFICATION-PAYMENT-ADJUSTMENTS-2026-10-20.md).

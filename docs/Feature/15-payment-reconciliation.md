@@ -1,5 +1,8 @@
 # Payment reconciliation
 
+## Cutover ứng dụng 20/10/2026 (từng phần)
+`credit.ts` đã ngừng tự phân bổ Payment vào Statement; auto allocation chỉ đến Debt (lãi/gốc) rồi số dư phần còn lại vào Balance. Statement quá hạn không chặn mua. Payment Adjustment áp dụng cho Payment mới không có legacy Statement allocation; các khoản lịch sử từng phân bổ Statement vẫn fail-closed đến khi migration. `credit_settlement_wallet_freezes` bảo toàn phần Payment dư từ trước khi Admin chuyển Balance sang Debt. **Chưa có** Statement snapshot đầy đủ hoặc migration dữ liệu cũ; không phải xác nhận production.
+
 **Status:** confirmation/discrepancy implemented locally; linked Payment Adjustment implemented with a legacy Statement-allocation migration guard. Full Owner financial scope remains incomplete.
 
 ## Workflow and permissions

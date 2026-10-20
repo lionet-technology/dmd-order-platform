@@ -7,10 +7,9 @@ async function call(path,cookie,body){const r=await fetch(base+path,{method:body
  const cookies={};for(const role of ['admin','sales','finance','client']){const r=await call('/api/auth/login',null,{username:'owner.'+role,password:'TestPass123!'});check(r.status===200,'Login '+role);cookies[role]=r.cookie;}
  const users=(await call('/api/users',cookies.admin)).data,id=users.find(u=>u.username==='owner.client').id;
  const stamp=Date.now();
- const fee=await call('/api/financials',cookies.sales,{client_id:id,action:'additional_fee',unit_price:100,quantity:1,request_key:'owner-http-fee-'+stamp});check(fee.status===200,'Sales records operational charge');
+ const fee=await call('/api/financials',cookies.sales,{client_id:id,action:'additional_fee',unit_price:300,quantity:1,request_key:'owner-http-fee-'+stamp});check(fee.status===200,'Sales records operational charge');
  let f=(await call('/api/financials?client_id='+id,cookies.admin)).data;
- const statement=f.statements.find(s=>s.outstanding_cents>=10000);
- const transfer={client_id:id,action:'debt',statement_id:statement.id,amount:50,deadline:'2026-12-31',reason:'Synthetic concurrent transfer',request_key:'owner-http-transfer-'+stamp};
+ const transfer={client_id:id,action:'debt',amount:50,deadline:'2026-12-31',reason:'Synthetic concurrent transfer independent of Statement',request_key:'owner-http-transfer-'+stamp};
  for(const role of ['sales','finance','client'])check((await call('/api/financials',cookies[role],transfer)).status>=400,'Deny transfer '+role);
  const parallel=await Promise.all([call('/api/financials',cookies.admin,transfer),call('/api/financials',cookies.admin,transfer)]);
  check(parallel.every(r=>r.status===200),'Concurrent Admin transfers succeed');

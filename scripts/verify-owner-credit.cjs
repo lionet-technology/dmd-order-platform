@@ -76,7 +76,7 @@ const payment=entry('PAYMENT','CREDIT',800);f=credit.accountFinancials(client.id
 assert(f.available_to_buy_cents===50000&&f.net_balance_cents===-40000,'Debt repayment restores no purchasing room twice');
 assert(db.prepare('SELECT debt_id FROM credit_allocations WHERE ledger_id=?').get(payment).debt_id===debt,'Payment allocates Debt first');
 entry('PAYMENT','CREDIT',450);f=credit.accountFinancials(client.id);
-assert(f.statements.every(s=>s.outstanding_cents===0)&&f.purchasing_balance_cents===5000&&f.net_balance_cents===5000,'Payment pays remaining AR before Wallet surplus');
+assert(f.statements.some(s=>s.original_total_cents>0)&&f.purchasing_balance_cents===5000&&f.net_balance_cents===5000&&!(db.prepare('SELECT COUNT(*) n FROM credit_allocations WHERE statement_id IS NOT NULL').get().n),'Payment repays Debt, remainder affects Balance; Statement retains historical charges');
 assert(f.available_to_buy_cents===95000,'Only AR payment and actual surplus change available room');
 // Unallocated credit can leave AR outstanding: only real negative Balance may be transferred.
 const c2=createUser({username:'owner.wallet',display_name:'Wallet support',password:'TestPass123!',role:'CLIENT',sales_user_id:sales.id});
@@ -93,6 +93,44 @@ assert(rejection.previous_allocations.some(a=>a.debt_id===debt)&&rejection.rever
 assert(JSON.stringify(originalPayment)===JSON.stringify(db.prepare('SELECT * FROM ledger_entries WHERE id=?').get(payment)),'Original Payment remains unchanged');
 assert(db.prepare("SELECT COUNT(*) n FROM ledger_entries WHERE entry_type='PAYMENT_REVERSAL'").get().n===1,'Full rejection retry posts once');
 assert(credit.accountFinancials(client.id).debts.length===beforeReject.debts.length,'Rejection never creates new Debt');
+// Owner cutover: do not link Debt to Statement, reallocate old Wallet, or create a second Debt Account.
+const unlinked=createUser({username:'owner.unlinked',display_name:'Statement-free Debt',password:'TestPass123!',role:'CLIENT',sales_user_id:sales.id});
+credit.financialAction(admin,unlinked.id,{action:'configure',credit_limit:100,credit_term_days:14});
+const priorPayment=Number(db.prepare("INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount,occurred_at) VALUES (?,'PAYMENT','CREDIT',300,?)").run(unlinked.id,credit.localDay()).lastInsertRowid);
+db.prepare("INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount,occurred_at) VALUES (?,'ORDER_CHARGE','DEBIT',1000,?)").run(unlinked.id,credit.localDay());
+let unlinkedState=credit.accountFinancials(unlinked.id);
+assert(unlinkedState.net_balance_cents===-70000,'Historical Payment and service charge make signed Balance -700');
+const beforeConversionLedger=db.prepare('SELECT COUNT(*) n FROM ledger_entries').get().n;
+const transfer={action:'debt',amount:500,deadline:'2026-10-25',reason:'Approved without Statement',request_key:'unlinked-first'};
+unlinkedState=credit.financialAction(admin,unlinked.id,transfer);
+assert(unlinkedState.balance_cents===-70000&&unlinkedState.net_balance_cents===-20000&&unlinkedState.debts[0].principal_cents===50000,'Debt transfer conserves raw Ledger and releases exactly 500 room');
+assert(unlinkedState.debts[0].source_statement_id===null&&db.prepare('SELECT COUNT(*) n FROM credit_debt_sources WHERE debt_id=?').get(unlinkedState.debts[0].id).n===0,'No Statement source or fake Statement link required');
+assert(db.prepare('SELECT ledger_id FROM credit_settlement_wallet_freezes WHERE ledger_id=?').get(priorPayment),'Prior Payment surplus is frozen into Wallet, not retroactively allocated to new Debt');
+assert(db.prepare('SELECT COUNT(*) n FROM ledger_entries').get().n===beforeConversionLedger,'No fake Payment or other Ledger posting on conversion');
+const originalDebtId=unlinkedState.debts[0].id;
+unlinkedState=credit.financialAction(admin,unlinked.id,{...transfer,amount:200,request_key:'unlinked-topup'});
+assert(unlinkedState.net_balance_cents===0&&unlinkedState.debts[0].principal_cents===70000&&unlinkedState.debts[0].id===originalDebtId,'Independent top-up increases the one existing Debt Account');
+credit.financialAction(admin,unlinked.id,{...transfer,amount:200,request_key:'unlinked-topup'});
+assert(credit.accountFinancials(unlinked.id).debts[0].principal_cents===70000,'Top-up request key cannot apply twice');
+const afterTopupStatements=credit.accountFinancials(unlinked.id).statements.map(s=>s.original_total_cents);
+assert(afterTopupStatements.includes(100000),'Statement retains original service charge after multiple Debt transfers');
+db.prepare("INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount,occurred_at) VALUES (?,'PAYMENT','CREDIT',200,?)").run(unlinked.id,credit.localDay());
+unlinkedState=credit.accountFinancials(unlinked.id);
+assert(unlinkedState.net_balance_cents===0&&unlinkedState.debts[0].outstanding_cents===50000,'New Payment settles Debt, without releasing Credit room twice');
+db.prepare("INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount,occurred_at) VALUES (?,'PAYMENT','CREDIT',500,?)").run(unlinked.id,credit.localDay());
+unlinkedState=credit.accountFinancials(unlinked.id);
+assert(unlinkedState.net_balance_cents===0&&unlinkedState.debts[0].outstanding_cents===0,'Debt is repaid; no phantom Wallet credit');
+db.prepare("INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount,occurred_at) VALUES (?,'ADDITIONAL_FEE','DEBIT',100,?)").run(unlinked.id,credit.localDay());
+unlinkedState=credit.financialAction(admin,unlinked.id,{action:'debt',amount:100,deadline:'2026-10-26',reason:'Reuse fully paid account',request_key:'unlinked-reuse'});
+assert(unlinkedState.debts.length===1&&unlinkedState.debts[0].id===originalDebtId&&unlinkedState.net_balance_cents===0,'Reopen same Debt Account after payoff, not a second account');
+// Refund-recovery adjustment is excluded from Statement charge items, yet can be converted manually.
+const pure=createUser({username:'owner.pure',display_name:'Balance-only adjustment',password:'TestPass123!',role:'CLIENT',sales_user_id:sales.id});
+db.prepare("INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount,occurred_at,reference_type) VALUES (?,'ADJUSTMENT_DEBIT','DEBIT',200,?,'REFUND_ACTUAL')").run(pure.id,credit.localDay());
+let pureState=credit.accountFinancials(pure.id);
+assert(pureState.statements.length===0&&pureState.net_balance_cents===-20000,'Balance adjustment can create negative Balance with no Statement');
+pureState=credit.financialAction(admin,pure.id,{action:'debt',amount:150,deadline:'2026-10-27',reason:'Manual support after refund recovery',request_key:'pure-balance-debt'});
+assert(pureState.statements.length===0&&pureState.balance_cents===-20000&&pureState.net_balance_cents===-5000&&pureState.debts[0].principal_cents===15000,'Manual Debt transfer works even when no Statement exists');
+assert(pureState.debts[0].source_statement_id===null&&db.prepare('SELECT COUNT(*) n FROM credit_balance_debt_transfers WHERE client_id=?').get(pure.id).n===1,'Immutable Balance-to-Debt event with no Statement dependency');
 global.Date=RealDate;
 console.log('OWNER CREDIT RULES PASS ('+checks+' assertions); isolated DB '+dbPath);
 db.close();

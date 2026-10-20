@@ -34,9 +34,9 @@ const client=createUser({username:"fin.client",display_name:"Client",password:"T
 const today=credit.localDay();
 const entry=(type,direction,amount,date=today)=>Number(db.prepare("INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount,occurred_at) VALUES (?,?,?,?,?)").run(client.id,type,direction,amount,date).lastInsertRowid);
 entry("ORDER_CHARGE","DEBIT",100,credit.shiftDay(today,-30));
-let f=credit.accountFinancials(client.id);assert(f.purchase_blocked,"Oldest unpaid period blocks");assert(f.statements[0].outstanding_cents===10000,"Statement amount");
+let f=credit.accountFinancials(client.id);assert(f.purchase_blocked,"Unfunded negative Balance blocks");assert(f.statements[0].original_total_cents===10000,"Statement reports charged amount");
 credit.financialAction(admin,client.id,{action:"configure",credit_limit:200,credit_term_days:14});
-rejects(()=>credit.assertPurchasing(client.id,1),"Credit limit does not bypass overdue");
+credit.assertPurchasing(client.id,1);assert(credit.accountFinancials(client.id).available_to_buy_cents===10000,"Statement deadline is informational: Credit Limit supports negative Balance");
 credit.financialAction(admin,client.id,{action:"debt",statement_id:f.statements[0].id,amount:100,deadline:credit.shiftDay(today,2),exclude_room:true,reason:"Deferred"});
 f=credit.accountFinancials(client.id);assert(!f.purchase_blocked&&f.available_to_buy_cents===20000,"Debt excluded from room and deadline independent");
 const payment=entry("PAYMENT","CREDIT",60);f=credit.accountFinancials(client.id);assert(f.debts[0].outstanding_cents===4000,"FIFO debt first");
@@ -51,7 +51,7 @@ const id=Number(db.prepare("INSERT INTO orders(client_user_id,order_id,total_due
 db.transaction(()=>credit.reservePurchase(id,client.id,20,admin.id)).immediate();f=credit.accountFinancials(client.id);assert(f.reserved_cents===2000&&f.balance_cents===-11000,"Reserve is not charge");
 db.transaction(()=>credit.completeReserve(id,admin.id)).immediate();f=credit.accountFinancials(client.id);assert(f.reserved_cents===0&&f.balance_cents===-13000,"Success converts reserve to charge");
 credit.completeReserve(id,admin.id);assert(credit.accountFinancials(client.id).balance_cents===-13000,"Completion idempotent");
-const p2=entry("PAYMENT","CREDIT",150);f=credit.accountFinancials(client.id);assert(f.debts[0].outstanding_cents===0&&f.statements.every(s=>s.outstanding_cents===0),"FIFO settles old debts and fees, leaves prepaid");
+const p2=entry("PAYMENT","CREDIT",150);f=credit.accountFinancials(client.id);assert(f.debts[0].outstanding_cents===0&&f.net_balance_cents===2000&&!db.prepare('SELECT id FROM credit_allocations WHERE statement_id IS NOT NULL AND ledger_id=?').get(p2),"Payment settles Debt then Balance without Statement allocation");
 rejects(()=>credit.financialAction(admin,client.id,{action:"allocate",ledger_id:p2,reason:"Override audit",allocations:[{debt_id:f.debts[0].id,amount:151}]}),"Override cannot exceed payment");
 assert(credit.accountFinancials(client.id).balance_cents===2000,"Invalid override rolled back");
 const job=Number(db.prepare("INSERT INTO orders(client_user_id,order_id) VALUES (?, 'FAIL-RETRY')").run(client.id).lastInsertRowid);
@@ -75,12 +75,10 @@ assert(item.item_type==='PRIOR_PERIOD_ADJUSTMENT'&&item.original_statement_id===
 assert(current.lifecycle==='OPEN'&&current.deadline>today&&current.period_start<=today&&current.period_end>=today,'Late charge uses current period deadline');
 assert(g.statements.find(s=>s.id===issued.id).amount_cents===10000,'Issued content unchanged');
 const refund=led('REFUND','CREDIT',40);led('COMPENSATION','CREDIT',10);led('MANUAL_CREDIT','CREDIT',5);g=credit.accountFinancials(c2.id);
-assert(g.receivable_cents===11000&&g.purchasing_balance_cents===5500,'Refund credits wallet without reducing AR');
+assert(g.receivable_cents===5500&&g.purchasing_balance_cents===0,'Refund reduces negative Balance and AR exposure without touching Statement');
 rejects(()=>credit.financialAction(sales,c2.id,{action:'apply_credit',ledger_id:refund,allocations:[{statement_id:issued.id,amount:20}],reason:'Not allowed'}),'Sales cannot apply credit');
-const netBefore=g.balance_cents;credit.financialAction(admin,c2.id,{action:'apply_credit',ledger_id:refund,allocations:[{statement_id:issued.id,amount:20}],reason:'Approved refund application'});g=credit.accountFinancials(c2.id);
-assert(g.receivable_cents===9000&&g.purchasing_balance_cents===3500&&g.balance_cents===netBefore,'Manual credit moves wallet to AR without new money');
-rejects(()=>credit.financialAction(admin,c2.id,{action:'apply_credit',ledger_id:refund,allocations:[{statement_id:issued.id,amount:41}],reason:'Too much'}),'Apply credit cannot exceed source');
-assert(credit.accountFinancials(c2.id).receivable_cents===9000,'Failed credit application rolls back');
+const netBefore=g.balance_cents;rejects(()=>credit.financialAction(admin,c2.id,{action:'apply_credit',ledger_id:refund,allocations:[{statement_id:issued.id,amount:20}],reason:'Legacy statement application'}),'Statement is not a payment target');g=credit.accountFinancials(c2.id);
+assert(g.receivable_cents===5500&&g.balance_cents===netBefore&&!db.prepare('SELECT id FROM credit_allocations WHERE ledger_id=?').get(refund),'Rejected Statement allocation cannot change Ledger or AR');
 const paymentManual=led('PAYMENT','CREDIT',1);credit.financialAction(admin,c2.id,{action:'allocate',ledger_id:paymentManual,allocations:[],reason:'Keep in wallet'});credit.accountFinancials(c2.id);assert(!db.prepare('SELECT id FROM credit_allocations WHERE ledger_id=?').get(paymentManual),'Explicit keep-balance persists across FIFO refresh');
 credit.financialAction(admin,c2.id,{action:'debt',statement_id:issued.id,amount:30,deadline:credit.shiftDay(today,7),reason:'Split oldest debt'});
 led('OFFSET','CREDIT',5);g=credit.accountFinancials(c2.id);assert(g.debts[0].outstanding_cents===2500,'OFFSET settles oldest source debt first');

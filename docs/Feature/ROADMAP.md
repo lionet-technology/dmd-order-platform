@@ -1,5 +1,10 @@
 # Roadmap triển khai — đã được Product chốt 13/10/2026
 
+## Cutover tài chính 20/10/2026 — tiến độ mới nhất
+- Implemented/tested trên DB sạch: Payment không tự vào Statement, Statement overdue không chặn mua; Admin chuyển Balance ròng âm→Debt độc lập Statement, một Debt Account/Client, audit và tránh phân bổ ngược các Payment cũ. UI Admin Controls đã nối. Chưa gọi đây là toàn bộ Finance release.
+- Tiếp theo P1: Statement snapshot bất biến và opening/closing Balance/Debt/Refund Balance, late adjustments và Claim dispute; loại bỏ màn PAID/UNPAID legacy của Statement và chứng minh BOD Balance/Refund reconciliation parity.
+- P1 migration: cột `credit_debts.source_statement_id` cũ `NOT NULL` cần migration tường minh hoặc reset dữ liệu TEST đã xác minh, không tác động tự động tới DB không rõ nguồn; test HTTP/browser bổ sung.
+
 ## Payment Adjustment application continuation — 20/10/2026
 
 Finance can now append linked actual-receipt adjustments through the Payment Reconciliation UI/API. Original Payment and adjustment ledger/history are immutable; reductions consume the Payment's Balance portion, then reverse principal and interest; increases settle current Debt interest/principal before surplus. Client/Sales notifications, optimistic versions and atomic actor-scoped receipts are implemented. Existing Payment allocations into Statements are **blocked pending reviewed migration**; the global legacy FIFO and Statement-dependent Debt conversion remain. This is a verified partial delivery, not completion of the Owner financial cutover. See [Payment feature](15-payment-reconciliation.md) and [current evidence](VERIFICATION-PAYMENT-ADJUSTMENTS-2026-10-20.md).
