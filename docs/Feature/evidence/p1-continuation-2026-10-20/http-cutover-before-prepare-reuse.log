@@ -1,0 +1,63 @@
+{
+  "synthetic_only": true,
+  "target": "/var/folders/x6/q7g3prc91cng1tjxqpd64yvc0000gn/T/dmd-http-cutover-OnTN9H/synthetic.db",
+  "backup": "/var/folders/x6/q7g3prc91cng1tjxqpd64yvc0000gn/T/dmd-http-cutover-OnTN9H/before.db",
+  "restore": {
+    "file": "/var/folders/x6/q7g3prc91cng1tjxqpd64yvc0000gn/T/dmd-http-cutover-OnTN9H/restored.db",
+    "integrity": "ok",
+    "foreign_key_violations": 0,
+    "all_table_digest_equal": true,
+    "statement_identical": true,
+    "financial_balance_cents": -3700
+  },
+  "day": "2026-10-20",
+  "clients": 100,
+  "entries_per_client": 100,
+  "phases": [
+    {
+      "concurrency": 1,
+      "requests": 200,
+      "errors": 0,
+      "error_examples": [],
+      "p50_ms": 11.93,
+      "p95_ms": 20.23,
+      "max_ms": 28.24,
+      "wall_ms": 2248
+    },
+    {
+      "concurrency": 8,
+      "requests": 200,
+      "errors": 0,
+      "error_examples": [],
+      "p50_ms": 48.78,
+      "p95_ms": 106.7,
+      "max_ms": 226.75,
+      "wall_ms": 1577
+    },
+    {
+      "concurrency": 24,
+      "requests": 200,
+      "errors": 0,
+      "error_examples": [],
+      "p50_ms": 120.55,
+      "p95_ms": 668.59,
+      "max_ms": 1611.83,
+      "wall_ms": 1614
+    }
+  ],
+  "before_digest": "20bf9b34d3d4a203fade5a1e6eedf059de7d281c046ec054f79568ee84a738d9",
+  "financial_http": {
+    "closing": {
+      "balance_cents": -3700,
+      "debt_cents": 0,
+      "refund_cents": -200
+    },
+    "bank_outflow_cents": 1100,
+    "debt_accounts": 1
+  },
+  "concurrent_finalizations": 12,
+  "after_digest": "d9a24c58f908803037574f589cc04f0b2c37bbaeeffc7b38d84310ed57df277c",
+  "server_peak_sampled_rss_mb": 300.56,
+  "runner_rss_mb": 233.31
+}
+Synthetic evidence retained at /var/folders/x6/q7g3prc91cng1tjxqpd64yvc0000gn/T/dmd-http-cutover-OnTN9H

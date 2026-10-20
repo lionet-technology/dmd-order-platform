@@ -1,0 +1,129 @@
+- alert
+- main:
+  - text: FINANCE
+  - heading "Tài chính Supplier" [level=1]
+  - paragraph: UAT finance
+  - button "Đăng xuất"
+  - navigation "Tài chính Supplier":
+    - button "Supplier Cost"
+    - button "Reconciliation"
+    - button "Supplier Payables"
+    - button "Refund Management"
+    - button "Payment Reconciliation"
+    - button "BOD Finance"
+    - button "Statement V2"
+  - heading "Statement V2" [level=2]
+  - paragraph: Chứng từ báo cáo Balance, Debt và Refund Balance. Finalize giữ nguyên số liệu đã chốt; không thu phí hoặc phân bổ Payment. Khoản ghi sau khi chốt chuyển sang kỳ tiếp theo.
+  - text: Client
+  - combobox "Client":
+    - option "Chọn Client"
+    - option "UAT client" [selected]
+  - text: Từ ngày
+  - textbox "Từ ngày": 2026-10-21
+  - text: Đến ngày
+  - textbox "Đến ngày": 2026-10-21
+  - button "Xem trước"
+  - button "Đã Finalized"
+  - button "Finalize kỳ đã xem" [disabled]
+  - paragraph:
+    - text: Kỳ chưa chốt tiếp theo bắt đầu 2026-10-21.
+    - button "Chọn kỳ tiếp theo"
+    - text: Chưa thể Finalize kỳ tương lai.
+  - button "2026-10-20 → 2026-10-20 · Finalized" [active]
+  - heading "2026-10-20 → 2026-10-20 · FINALIZED" [level=3]
+  - table:
+    - rowgroup:
+      - row "Tài khoản Đầu kỳ Cuối kỳ":
+        - columnheader "Tài khoản"
+        - columnheader "Đầu kỳ"
+        - columnheader "Cuối kỳ"
+    - rowgroup:
+      - row "Balance $0.00 -$37.00":
+        - cell "Balance"
+        - cell "$0.00"
+        - cell "-$37.00"
+      - row "Debt $0.00 $0.00":
+        - cell "Debt"
+        - cell "$0.00"
+        - cell "$0.00"
+      - row "Refund Balance $0.00 $7.00":
+        - cell "Refund Balance"
+        - cell "$0.00"
+        - cell "$7.00"
+  - paragraph: "Bank Refund ghi nhận trong kỳ: $2.00"
+  - paragraph: "Tham khảo tại lúc chốt: Credit Limit $0.00 · Reserve $0.00. Các khoản này không cộng vào số dư."
+  - table:
+    - rowgroup:
+      - row "Ghi nhận / kỳ báo cáo Nguồn Balance Δ Debt Δ Refund Δ Payment gốc / lãi Chi tiết":
+        - columnheader "Ghi nhận / kỳ báo cáo"
+        - columnheader "Nguồn"
+        - columnheader "Balance Δ"
+        - columnheader "Debt Δ"
+        - columnheader "Refund Δ"
+        - columnheader "Payment gốc / lãi"
+        - columnheader "Chi tiết"
+    - rowgroup:
+      - 'row "Ghi nhận / kỳ báo cáo 2026-10-20T05:17:21.616Z / 2026-10-20 Nguồn CLAIM_DECISION Balance Δ $0.00 Debt Δ $0.00 Refund Δ $12.00 Payment gốc / lãi — Chi tiết CLAIM_DECISION #1 · Synthetic approved obligation"':
+        - cell "Ghi nhận / kỳ báo cáo 2026-10-20T05:17:21.616Z / 2026-10-20"
+        - cell "Nguồn CLAIM_DECISION"
+        - cell "Balance Δ $0.00"
+        - cell "Debt Δ $0.00"
+        - cell "Refund Δ $12.00"
+        - cell "Payment gốc / lãi —"
+        - 'cell "Chi tiết CLAIM_DECISION #1 · Synthetic approved obligation"'
+      - 'row "Ghi nhận / kỳ báo cáo 2026-10-20T05:17:34.468Z / 2026-10-20 Nguồn ADDITIONAL_FEE Balance Δ -$100.00 Debt Δ $0.00 Refund Δ $0.00 Payment gốc / lãi — Chi tiết ADDITIONAL_FEE #1 · · 1 × 100 USD · Phát sinh 2026-10-20"':
+        - cell "Ghi nhận / kỳ báo cáo 2026-10-20T05:17:34.468Z / 2026-10-20"
+        - cell "Nguồn ADDITIONAL_FEE"
+        - cell "Balance Δ -$100.00"
+        - cell "Debt Δ $0.00"
+        - cell "Refund Δ $0.00"
+        - cell "Payment gốc / lãi —"
+        - 'cell "Chi tiết ADDITIONAL_FEE #1 · · 1 × 100 USD · Phát sinh 2026-10-20"'
+      - 'row "Ghi nhận / kỳ báo cáo 2026-10-20T05:17:34.479Z / 2026-10-20 Nguồn Chuyển Balance → Debt Balance Δ $50.00 Debt Δ $50.00 Refund Δ $0.00 Payment gốc / lãi — Chi tiết #1 · Synthetic HTTP"':
+        - cell "Ghi nhận / kỳ báo cáo 2026-10-20T05:17:34.479Z / 2026-10-20"
+        - cell "Nguồn Chuyển Balance → Debt"
+        - cell "Balance Δ $50.00"
+        - cell "Debt Δ $50.00"
+        - cell "Refund Δ $0.00"
+        - cell "Payment gốc / lãi —"
+        - 'cell "Chi tiết #1 · Synthetic HTTP"'
+      - 'row "Ghi nhận / kỳ báo cáo 2026-10-20T05:17:34.508Z / 2026-10-20 Nguồn PAYMENT Balance Δ $60.00 Debt Δ $0.00 Refund Δ $0.00 Payment gốc / lãi — Chi tiết PAYMENT #2 · · Phát sinh 2026-10-01"':
+        - cell "Ghi nhận / kỳ báo cáo 2026-10-20T05:17:34.508Z / 2026-10-20"
+        - cell "Nguồn PAYMENT"
+        - cell "Balance Δ $60.00"
+        - cell "Debt Δ $0.00"
+        - cell "Refund Δ $0.00"
+        - cell "Payment gốc / lãi —"
+        - 'cell "Chi tiết PAYMENT #2 · · Phát sinh 2026-10-01"'
+      - 'row "Ghi nhận / kỳ báo cáo 2026-10-20T05:17:34.510Z / 2026-10-20 Nguồn Payment → Debt Balance Δ -$50.00 Debt Δ -$50.00 Refund Δ $0.00 Payment gốc / lãi $50.00 / $0.00 Chi tiết #2 ·"':
+        - cell "Ghi nhận / kỳ báo cáo 2026-10-20T05:17:34.510Z / 2026-10-20"
+        - cell "Nguồn Payment → Debt"
+        - cell "Balance Δ -$50.00"
+        - cell "Debt Δ -$50.00"
+        - cell "Refund Δ $0.00"
+        - cell "Payment gốc / lãi $50.00 / $0.00"
+        - 'cell "Chi tiết #2 ·"'
+      - 'row "Ghi nhận / kỳ báo cáo 2026-10-20T05:17:34.528Z / 2026-10-20 Nguồn REFUND Balance Δ $3.00 Debt Δ $0.00 Refund Δ $0.00 Payment gốc / lãi — Chi tiết REFUND #3 · HTTP synthetic · Phát sinh 2026-10-20"':
+        - cell "Ghi nhận / kỳ báo cáo 2026-10-20T05:17:34.528Z / 2026-10-20"
+        - cell "Nguồn REFUND"
+        - cell "Balance Δ $3.00"
+        - cell "Debt Δ $0.00"
+        - cell "Refund Δ $0.00"
+        - cell "Payment gốc / lãi —"
+        - 'cell "Chi tiết REFUND #3 · HTTP synthetic · Phát sinh 2026-10-20"'
+      - 'row "Ghi nhận / kỳ báo cáo 2026-10-20T05:17:34.528Z / 2026-10-20 Nguồn TO_BALANCE Balance Δ $0.00 Debt Δ $0.00 Refund Δ -$3.00 Payment gốc / lãi — Chi tiết TO_BALANCE #3 · HTTP synthetic"':
+        - cell "Ghi nhận / kỳ báo cáo 2026-10-20T05:17:34.528Z / 2026-10-20"
+        - cell "Nguồn TO_BALANCE"
+        - cell "Balance Δ $0.00"
+        - cell "Debt Δ $0.00"
+        - cell "Refund Δ -$3.00"
+        - cell "Payment gốc / lãi —"
+        - 'cell "Chi tiết TO_BALANCE #3 · HTTP synthetic"'
+      - 'row "Ghi nhận / kỳ báo cáo 2026-10-20T05:17:34.535Z / 2026-10-20 Nguồn TO_BANK Balance Δ $0.00 Debt Δ $0.00 Refund Δ -$2.00 Payment gốc / lãi — Chi tiết TO_BANK #3 · HTTP synthetic"':
+        - cell "Ghi nhận / kỳ báo cáo 2026-10-20T05:17:34.535Z / 2026-10-20"
+        - cell "Nguồn TO_BANK"
+        - cell "Balance Δ $0.00"
+        - cell "Debt Δ $0.00"
+        - cell "Refund Δ -$2.00"
+        - cell "Payment gốc / lãi —"
+        - 'cell "Chi tiết TO_BANK #3 · HTTP synthetic"'

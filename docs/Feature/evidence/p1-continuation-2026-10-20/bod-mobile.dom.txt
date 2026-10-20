@@ -1,0 +1,21 @@
+- alert
+- main:
+  - text: BOD
+  - heading "Tài chính Supplier" [level=1]
+  - paragraph: E2E BOD
+  - button "Đăng xuất"
+  - navigation "Tài chính Supplier":
+    - button "Supplier Cost"
+    - button "Reconciliation"
+    - button "Supplier Payables"
+    - button "Refund Management"
+    - button "Payment Reconciliation"
+    - button "BOD Finance" [active]
+    - button "Statement V2"
+  - heading "BOD · Tổng hợp tài chính Client" [level=2]
+  - paragraph: Báo cáo chỉ đọc; Refund nghĩa vụ và dòng tiền thực hiện là hai số liệu khác nhau. Không gộp các Client nợ và thừa Refund với nhau.
+  - text: Từ ngày
+  - textbox "Từ ngày": 2026-10-20
+  - text: Đến ngày
+  - textbox "Đến ngày": 2026-10-20
+  - button "Xem báo cáo"

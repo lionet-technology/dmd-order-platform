@@ -1,0 +1,79 @@
+- alert
+- complementary:
+  - navigation:
+    - button "Orders":
+      - generic: ▤
+      - generic: Orders
+    - button "Control Tower":
+      - generic: ◎
+      - generic: Control Tower
+    - button "Balance Ledger":
+      - generic: ≋
+      - generic: Balance Ledger
+- button "DMD"
+- generic: CLIENT
+- generic: E2E Client
+- button "Đăng xuất": ↪
+- text: OPERATIONS
+- heading "Orders" [level=1]
+- paragraph: Theo dõi Orders của tài khoản Client này.
+- button "＋ Tạo / Import & Đặt mua dịch vụ"
+- generic: ⌕
+- textbox "Tìm Order ID, Tracking, khách hàng, dịch vụ… Dán nhiều Tracking / Client Order ID bằng dòng hoặc dấu phẩy."
+- textbox "Chọn hoặc nhập": Mọi trạng thái
+- button "⌄"
+- textbox "Chọn hoặc nhập": Mọi dịch vụ
+- button "⌄"
+- generic: 1 records
+- table:
+  - rowgroup:
+    - row "Thao tác Trạng thái Ngày DMD ID Client Order ID Khách Sản phẩm Dịch vụ Sub-service Hạng cân (kg) Tracking / Label Giá bán Phụ phí Giá tổng":
+      - columnheader "Thao tác"
+      - columnheader "Trạng thái"
+      - columnheader "Ngày"
+      - columnheader "DMD ID"
+      - columnheader "Client Order ID"
+      - columnheader "Khách"
+      - columnheader "Sản phẩm"
+      - columnheader "Dịch vụ"
+      - columnheader "Sub-service"
+      - columnheader "Hạng cân (kg)"
+      - columnheader "Tracking / Label"
+      - columnheader "Giá bán"
+      - columnheader "Phụ phí"
+      - columnheader "Giá tổng"
+  - rowgroup:
+    - row "View PURCHASED 20/10/2026 DMD-20261020-000001 E2E-ORDER-001 E2E Client Ecommerce shirts UPS T11 12 $0.00 $0.00 $0.00":
+      - cell "View":
+        - button "View"
+      - cell "PURCHASED":
+        - generic: PURCHASED
+      - cell "20/10/2026"
+      - cell "DMD-20261020-000001"
+      - cell "E2E-ORDER-001"
+      - cell "E2E Client"
+      - cell "Ecommerce shirts"
+      - cell "UPS"
+      - cell "T11"
+      - cell "12"
+      - cell:
+        - generic "E2E-A1-FINAL +2" [active]
+        - generic: Lô 1
+        - text: E2E-A1-FINAL
+        - link "Label ↗":
+          - /url: https://labels.test/a1-final.pdf
+        - generic: Lô 1
+        - text: E2E-A2
+        - link "Label ↗":
+          - /url: https://labels.test/a2.pdf
+        - generic: Lô 2
+        - text: E2E-B1
+        - link "Label ↗":
+          - /url: https://labels.test/b1.pdf
+      - cell "$0.00"
+      - cell "$0.00"
+      - cell "$0.00"
+- generic: 1-1 / 1
+- button "← Trước" [disabled]
+- generic: 1 / 1
+- button "Sau →" [disabled]

@@ -77,8 +77,9 @@ export function syncStatements(clientId:number, today=localDay()){
  const issue=()=>issueEndedStatements(today,clientId);
  issue();
  const entries=db.prepare("SELECT * FROM ledger_entries WHERE client_user_id=? AND direction='DEBIT' AND entry_type NOT IN ('PAYMENT_REVERSAL','SERVICE_COST','PAYMENT_ADJUSTMENT') AND NOT (entry_type='ADJUSTMENT_DEBIT' AND COALESCE(reference_type,'')='REFUND_ACTUAL') ORDER BY id").all(clientId) as Row[];
+ const existingItem=db.prepare("SELECT i.*,s.lifecycle FROM credit_items i JOIN credit_statements s ON s.id=i.statement_id WHERE ledger_id=?");
  for(const e of entries){
- const existing=db.prepare("SELECT i.*,s.lifecycle FROM credit_items i JOIN credit_statements s ON s.id=i.statement_id WHERE ledger_id=?").get(e.id) as Row|undefined;
+ const existing=existingItem.get(e.id) as Row|undefined;
  if(existing){const next=cents(e.amount);if(next!==Number(existing.amount_cents)){if(existing.lifecycle==='ISSUED')throw Error('Issued statement disputed; open Claim.');audit(clientId,0,'STATEMENT_ITEM_RECONCILED',{ledger_id:e.id,previous_cents:existing.amount_cents,next_cents:next});db.prepare("UPDATE credit_items SET amount_cents=? WHERE id=?").run(next,existing.id);}continue;}
  const original=period(String(e.occurred_at||e.created_at).slice(0,10));
  const old=db.prepare("SELECT * FROM credit_statements WHERE client_id=? AND period_start=?").get(clientId,original.start) as Row|undefined;

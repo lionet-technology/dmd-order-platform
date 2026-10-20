@@ -162,7 +162,8 @@ async function handlePOST(req:NextRequest){
         if(!order)throw new Error("Order không tồn tại.");
         const first=group[0];
         const supplier=text(first.supplier)?canonicalEnumValue("SUPPLIER",first.supplier):String(order.supplier||"");
-        const subService=text(first.sub_service)?canonicalEnumValue("SUB_SERVICE",first.sub_service,String(order.service||"")):"";
+        const subService=first.sub_service===undefined?String(order.sub_service||""):
+          text(first.sub_service)?canonicalEnumValue("SUB_SERVICE",first.sub_service,String(order.service||"")):"";
         if(order.pricing_snapshot_json&&(supplier!==order.supplier||subService!==order.sub_service))throw new Error("Route đã khóa khi đặt mua.");
         const expectedLots=Math.max(1,Math.trunc(Number(first.expected_lot_count||order.expected_lot_count||1)));
         db.prepare("UPDATE orders SET sub_service=?,supplier=?,expected_lot_count=?,updated_by_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")

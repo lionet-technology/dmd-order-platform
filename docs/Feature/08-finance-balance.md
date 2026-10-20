@@ -1,5 +1,9 @@
 # Balance, Credit & Statement
 
+## P1 continuation — 20/10/2026 (latest)
+
+Bulk Tracking retry now preserves an omitted sub-service instead of clearing the locked route. New 19-assertion recovery regression covers second-group transaction rollback, exact retry and explicit failed-Draft reselection; no automatic Balance Adjustment. Statement synchronization reuses its prepared lookup. Final test/lint/typecheck/build pass; 27 domain suites. New HTTP runner verifies 10k-entry concurrency (600 requests, zero errors), signed financial writes, 12 concurrent finalizations and application restart from a verified backup restored into a new synthetic DB. Five-role desktop/mobile browser smoke is recorded separately from full workflow acceptance. Priced UPS/Yun multi-carton reserve-to-Statement integration, full workflow UAT, deployment-target rehearsal and real pilot remain open. See [verification and limits](VERIFICATION-P1-CONTINUATION-2026-10-20.md) and [pilot checklist](PILOT-CHECKLIST-2026-10-20.md).
+
 ## Audit remediation — 20/10/2026
 
 Statement movement drilldown now uses labelled stacked rows at widths ≤640px, retaining signed Balance/Debt/Refund deltas, posting/reporting dates, source, Payment principal/interest and detail. Desktop retains the comparison table. Empty periods explicitly say there are no movements. Browser mobile verified on rebuilt candidate for Admin and Finance; complete role/device acceptance remains open. HTTP harnesses now use a multi-carton UPS fixture and the explicit Issues queue; Finance checks the approved Claim→Refund obligation rule and rejects retired Statement allocation, replacing obsolete auto-wallet expectations.

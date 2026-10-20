@@ -1,0 +1,29 @@
+- alert
+- main:
+  - text: FINANCE
+  - heading "Tài chính Supplier" [level=1]
+  - paragraph: E2E Finance
+  - button "Đăng xuất"
+  - navigation "Tài chính Supplier":
+    - button "Supplier Cost"
+    - button "Reconciliation"
+    - button "Supplier Payables"
+    - button "Refund Management"
+    - button "Payment Reconciliation"
+    - button "BOD Finance"
+    - button "Statement V2" [active]
+  - heading "Statement V2" [level=2]
+  - paragraph: Chứng từ báo cáo Balance, Debt và Refund Balance. Finalize giữ nguyên số liệu đã chốt; không thu phí hoặc phân bổ Payment. Khoản ghi sau khi chốt chuyển sang kỳ tiếp theo.
+  - text: Client
+  - combobox "Client":
+    - option "Chọn Client" [selected]
+    - option "E2E Client"
+    - option "qa.mvg8add0 clienta"
+    - option "qa.mvg8add0 clientb"
+  - text: Từ ngày
+  - textbox "Từ ngày": 2026-10-20
+  - text: Đến ngày
+  - textbox "Đến ngày": 2026-10-20
+  - button "Xem trước" [disabled]
+  - button "Đã Finalized" [disabled]
+  - button "Finalize kỳ đã xem" [disabled]

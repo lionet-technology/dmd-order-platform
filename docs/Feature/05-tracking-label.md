@@ -1,5 +1,9 @@
 # Tracking, Label & trạng thái vận chuyển
 
+## P1 continuation — 20/10/2026 (latest)
+
+Bulk Tracking retry now preserves an omitted sub-service instead of clearing the locked route. New 19-assertion recovery regression covers second-group transaction rollback, exact retry and explicit failed-Draft reselection; no automatic Balance Adjustment. Statement synchronization reuses its prepared lookup. Final test/lint/typecheck/build pass; 27 domain suites. New HTTP runner verifies 10k-entry concurrency (600 requests, zero errors), signed financial writes, 12 concurrent finalizations and application restart from a verified backup restored into a new synthetic DB. Five-role desktop/mobile browser smoke is recorded separately from full workflow acceptance. Priced UPS/Yun multi-carton reserve-to-Statement integration, full workflow UAT, deployment-target rehearsal and real pilot remain open. See [verification and limits](VERIFICATION-P1-CONTINUATION-2026-10-20.md) and [pilot checklist](PILOT-CHECKLIST-2026-10-20.md).
+
 **Trạng thái:** Có triển khai trong repository, không đồng nghĩa đã được nghiệm thu production. **Rà soát:** 2026-10-13 (đọc code và tài liệu; chưa chạy E2E). **Quy tắc:** code + automated tests là bằng chứng hành vi hiện tại; yêu cầu chưa triển khai ghi riêng, không mô tả như đã chạy.
 
 ## Hành vi

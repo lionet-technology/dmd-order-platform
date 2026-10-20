@@ -1,5 +1,9 @@
 # Roadmap triển khai — đã được Product chốt 13/10/2026
 
+## P1 continuation — 20/10/2026 (latest)
+
+Bulk Tracking retry now preserves an omitted sub-service instead of clearing the locked route. New 19-assertion recovery regression covers second-group transaction rollback, exact retry and explicit failed-Draft reselection; no automatic Balance Adjustment. Statement synchronization reuses its prepared lookup. Final test/lint/typecheck/build pass; 27 domain suites. New HTTP runner verifies 10k-entry concurrency (600 requests, zero errors), signed financial writes, 12 concurrent finalizations and application restart from a verified backup restored into a new synthetic DB. Five-role desktop/mobile browser smoke is recorded separately from full workflow acceptance. Priced UPS/Yun multi-carton reserve-to-Statement integration, full workflow UAT, deployment-target rehearsal and real pilot remain open. See [verification and limits](VERIFICATION-P1-CONTINUATION-2026-10-20.md) and [pilot checklist](PILOT-CHECKLIST-2026-10-20.md).
+
 ## Benchmark Statement V2 bổ sung 20/10/2026
 Đã chạy baseline synthetic-only 100 Client × 100 Ledger = 10.000 dòng; p50 8,21 ms, p95 29,54 ms cho lần preview + history, SQLite integrity OK. Đây không phải HTTP stress test hay tải production. Tiếp theo vẫn cần browser UAT đủ năm role, multi-carton/partial bulk/recovery xuyên luồng, HTTP concurrent load, diễn tập cutover trên đúng DB đích đã xác minh, pilot có phê duyệt. Xem `VERIFICATION-STATEMENT-LOAD-2026-10-20.md`.
 
