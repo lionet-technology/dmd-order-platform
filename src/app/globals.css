@@ -1092,3 +1092,12 @@ td{padding:12px;line-height:1.45}
  .statementMovements tbody td{display:grid;grid-template-columns:minmax(95px,40%) minmax(0,1fr);gap:8px;white-space:normal;overflow-wrap:anywhere;padding:7px 0;border:0}
  .statementMovements tbody td::before{content:attr(data-label);font-weight:600;color:#64748b}
 }
+
+/* Balance Ledger: summary first, secondary tasks on demand. */
+.ledgerSection{margin:16px 0;min-width:0}.ledgerSection>summary{cursor:pointer;font-weight:700;padding:14px 4px;color:var(--text,#17243b)}
+.ledgerSection[open]>summary{border-bottom:1px solid #e1e6ef;margin-bottom:16px}.ledgerHint{color:#526178;font-size:14px;line-height:1.6}
+.financialWorkspace>.ledgerSnapshot{grid-template-columns:repeat(3,minmax(0,1fr));margin:20px 0}.ledgerSnapshot .metricCard{min-width:0;cursor:default}.ledgerSnapshot b{overflow-wrap:anywhere}.financialWorkspace .opsTabs{flex-wrap:wrap;margin:20px 0}
+.financialActivity small{display:block;white-space:normal;overflow-wrap:anywhere}
+@media(max-width:640px){.financialWorkspace>.ledgerSnapshot{grid-template-columns:repeat(2,minmax(0,1fr))}.ledgerSnapshot .metricCard{padding:12px}.ledgerSnapshot b{font-size:20px}.financialWorkspace .financeFilters{display:grid;grid-template-columns:1fr}.ledgerSection>summary{line-height:1.5}}
+
+.ledgerExplanation{margin:12px 0;color:#526178;font-size:13px}.ledgerExplanation summary{cursor:pointer}

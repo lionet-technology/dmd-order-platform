@@ -986,7 +986,6 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
     if(target==="shipping")return "/api/shipment-status";
     if(target==="costs")return "/api/costs";
     if(target==="recon")return "/api/reconciliation";
-    if(target==="ledger")return "/api/ledger";
     return "";
   };
 
@@ -1016,12 +1015,13 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   },[role]);
 
   useEffect(()=>{void loadSummary();void loadUsers();void loadEnums();void loadRecent()},[loadSummary,loadUsers,loadEnums,loadRecent]);
-  useEffect(()=>{const refresh=()=>{void loadSummary();if(section==='ledger')void loadSection('ledger')};window.addEventListener('dmd-financial-updated',refresh);return ()=>window.removeEventListener('dmd-financial-updated',refresh)},[loadSummary,loadSection,section]);
-  useEffect(()=>{if(["orders","shipping","costs","recon","ledger"].includes(section))void loadSection(section,page,debouncedSearch)},[section,page,debouncedSearch,loadSection]);
+  useEffect(()=>{const refresh=()=>{void loadSummary()};window.addEventListener('dmd-financial-updated',refresh);return ()=>window.removeEventListener('dmd-financial-updated',refresh)},[loadSummary]);
+  useEffect(()=>{if(["orders","shipping","costs","recon"].includes(section))void loadSection(section,page,debouncedSearch)},[section,page,debouncedSearch,loadSection]);
 
   const refresh=useCallback(async()=>{
     await Promise.all([loadSummary(),loadUsers(),loadEnums(),loadRecent()]);
-    if(["orders","shipping","costs","recon","ledger"].includes(section))await loadSection(section,page,debouncedSearch);
+    if(section==="ledger")window.dispatchEvent(new Event("dmd-financial-updated"));
+    if(["orders","shipping","costs","recon"].includes(section))await loadSection(section,page,debouncedSearch);
   },[loadSummary,loadUsers,loadEnums,loadRecent,loadSection,section,page,debouncedSearch]);
 
   useEffect(()=>{window.scrollTo(0,0)},[section]);
@@ -1170,14 +1170,11 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
 
         {section==="operations"&&<OperationsWorkspace role={role}/>}
         {section==="ledger"&&<>
-          <><FinancialWorkspace role={role} clients={clients}/><PaymentReconciliationWorkspace role={role}/><RefundWorkspace role={role}/></>
-          <PageHeader eyebrow="FINANCE" title="Balance Ledger" description={role==="ADMIN"?"Dòng tiền Credit / Debit và các order charge tự động.":role==="SALES"?"Balance Ledger của các Client được phân công.":"Balance Ledger của tài khoản Client này."}
-            actions={role==="ADMIN"?<><button className="secondaryBtn" onClick={()=>setImportKind("balance")}>⇩ Import</button><button className="primaryBtn" onClick={()=>openEntry("balance")}>＋ Ghi Balance</button></>:role==="SALES"?<button className="primaryBtn" onClick={()=>openEntry("balance")}>＋ Ghi Balance</button>:undefined}/>
-          <div className="panel dataPanel">
-            <div className="dataToolbar"><SearchBar value={search} onChange={setSearch} placeholder="Tìm loại giao dịch, khách, reference, note..."/><span>{data.total} records</span></div>
-            {loading?<div className="loadingState">Đang tải dữ liệu…</div>:<Table rows={data.items} cols={["occurred_at","entry_type","direction","amount","customer","reference_type","reference_id","note"]}/>}
-            <Pager data={data} onPage={setPage}/>
-          </div>
+          <PageHeader eyebrow="FINANCE" title="Balance Ledger" description={role==="CLIENT"?"Theo dõi Balance, sức mua, Debt và hoàn tiền của bạn.":"Chọn Client để xem số dư và giao dịch; mở từng nghiệp vụ khi cần xử lý."}
+            actions={role==="ADMIN"?<><button className="secondaryBtn" onClick={()=>setImportKind("balance")}>⇩ Import giao dịch</button><button className="primaryBtn" onClick={()=>openEntry("balance")}>＋ Ghi giao dịch</button></>:role==="SALES"?<button className="primaryBtn" onClick={()=>openEntry("balance")}>＋ Ghi Payment / phí</button>:undefined}/>
+          <FinancialWorkspace role={role} clients={clients}/>
+          <details className="panel ledgerSection"><summary>Payment · Đối soát thực nhận</summary><p>Sales ghi Payment; Finance xác nhận hoặc ghi điều chỉnh có liên kết. Đối soát không tự thay đổi Balance.</p><PaymentReconciliationWorkspace role={role}/></details>
+          <details className="panel ledgerSection"><summary>Refund · Nghĩa vụ và hoàn thực tế</summary><p>Claim tạo nghĩa vụ hoàn. Finance ghi hoàn vào Balance hoặc ra Bank; Admin xử lý thu hồi khoản hoàn vượt.</p><RefundWorkspace role={role}/></details>
         </>}
 
         {role==="ADMIN"&&section==="masterdata"&&<>

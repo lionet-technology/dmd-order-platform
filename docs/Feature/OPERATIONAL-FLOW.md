@@ -1,5 +1,16 @@
 # DMD Report — Luồng vận hành và business rules
 
+## Balance Ledger task flow — 20/10/2026 (current)
+
+Balance Ledger now starts with its title and permitted entry actions, followed by a selected Client's signed Balance, available purchasing headroom (including Credit), Credit Limit, Reserved, outstanding Debt principal/interest and signed Refund Balance. Admin/Sales choose only accessible Clients; their portfolio collapses after selection. Client sees self. Unknown/legacy Refund Balance is explicitly unavailable, never displayed as zero. A refresh action retries the snapshot.
+
+The selected Client has one searchable Ledger with type/status filters, 25-row pages, signed movements, references, allocation amounts and explicit reversed-Payment status. Debt and permitted account controls are adjacent actions. Payment reconciliation, Refund operations, financial command history and immutable Statement reporting are collapsed task sections. Finance retains its separate reconciliation/adjustment workspace; it receives no operational Ledger write permission. Removed the duplicated global Ledger table and its redundant background request. Refresh after entry/import updates the selected account.
+
+Financial action receipts now project signed `before_summary.purchasing_balance_cents` from `net_balance_cents`, matching GET and the resulting account view. Previously a negative opening Balance appeared as zero in before/after notices. Ledger calculations and posting rules are unchanged. Account changes invalidate pending reads; deselection clears loading; account selection is disabled during financial writes.
+
+Verification and limits: [Ledger UX and concurrency evidence](VERIFICATION-LEDGER-UX-2026-10-20.md). Full Owner workflow acceptance and production pilot remain open.
+
+
 ## Manual UPS/Chuyên tuyến — 20/10/2026
 Client tạo Single/Multiple Carton Order (Excel/mẫu nhập tay; API đặc thù hoãn) → lưu Draft → submit mua/chờ Admin **chưa có giá, chưa Reserve/Charge** → Admin nhập giá bán USD **toàn Order** trước khi cấp Tracking/Label → gate chính xác Balance/Credit/Hold/Debt → Reserve một lần → Label đầu tiên ghi Charge một lần và hủy Reserve, thông tin tài chính đi vào Statement V2. Thiếu giá/thiếu sức mua/nhập tiền không hợp lệ thì rollback cả giá/Tracking/Ledger. Khóa giá sau cấp Tracking; không nhân giá theo Carton. ePacket/Yun chỉ 1 Carton, quy tắc giá cũ không đổi. Manual Tracking không đồng nghĩa đã có file Purchase Template hợp lệ để export Supplier. Xem `VERIFICATION-MANUAL-UPS-CARTON-2026-10-20.md`.
 

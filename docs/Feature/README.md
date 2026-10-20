@@ -1,5 +1,10 @@
 # Feature documentation — DMD Report
 
+## Balance Ledger UX — 20/10/2026
+
+Snapshot-first financial workspace, scoped filterable Ledger, separated reconciliation/refund/reporting tasks and signed action receipts. See [verification and remaining acceptance](VERIFICATION-LEDGER-UX-2026-10-20.md). Production remains unaccepted.
+
+
 ## Audit remediation — 20/10/2026
 
 Statement movement drilldown now uses labelled stacked rows at widths ≤640px, retaining signed Balance/Debt/Refund deltas, posting/reporting dates, source, Payment principal/interest and detail. Desktop retains the comparison table. Empty periods explicitly say there are no movements. Browser mobile verified on rebuilt candidate for Admin and Finance; complete role/device acceptance remains open. HTTP harnesses now use a multi-carton UPS fixture and the explicit Issues queue; Finance checks the approved Claim→Refund obligation rule and rejects retired Statement allocation, replacing obsolete auto-wallet expectations.

@@ -1,0 +1,18 @@
+PASS owned synthetic server ready
+PASS Admin and Client login
+PASS save multi-Carton Draft RACE-A
+PASS save multi-Carton Draft RACE-B
+PASS submit both unpriced Orders
+PASS no pre-price reserves
+PASS concurrent distinct Orders cannot overspend 100 USD
+PASS one total Order charge, not per Carton
+PASS loser rolls back price, reserve and Trackings
+PASS eight concurrent retries charge once
+PASS Client cannot price or issue Tracking
+PASS missing price fails closed
+PASS invalid price rejected 0
+PASS invalid price rejected -1
+PASS invalid price rejected 1.001
+PASS invalid price rejected NaN
+PASS synthetic DB integrity
+MANUAL PRICE HTTP RACE PASS (17 assertions); evidence /var/folders/x6/q7g3prc91cng1tjxqpd64yvc0000gn/T/dmd-manual-race-oILKhY

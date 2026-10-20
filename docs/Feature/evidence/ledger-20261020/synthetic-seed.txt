@@ -1,0 +1,58 @@
+{
+  "database": "/Users/quan/.codex/.chatgpt-projects/g-p-6abc85a7200881919c54f058c96b91bf/dmd-work/.smoke/internal-uat-test-ledger-20261020-run1.db",
+  "users": [
+    {
+      "role": "ADMIN",
+      "count": 1
+    },
+    {
+      "role": "BOD",
+      "count": 1
+    },
+    {
+      "role": "CLIENT",
+      "count": 15
+    },
+    {
+      "role": "FINANCE",
+      "count": 2
+    },
+    {
+      "role": "SALES",
+      "count": 3
+    },
+    {
+      "role": "WAREHOUSE",
+      "count": 1
+    }
+  ],
+  "orders": [
+    {
+      "workflow_status": "CANCELLED",
+      "count": 1
+    },
+    {
+      "workflow_status": "PENDING_PURCHASE",
+      "count": 32
+    },
+    {
+      "workflow_status": "PURCHASED",
+      "count": 354
+    },
+    {
+      "workflow_status": "SALES_DRAFT",
+      "count": 157
+    }
+  ],
+  "costs": {
+    "count": 300
+  },
+  "multiLot": {
+    "count": 40
+  },
+  "integrity": [
+    {
+      "integrity_check": "ok"
+    }
+  ]
+}

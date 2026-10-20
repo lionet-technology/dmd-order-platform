@@ -1,0 +1,45 @@
+PASS: client six-metric snapshot
+PASS: client Statement collapsed below snapshot
+PASS: client controls permission
+PASS: client ledger search empty-state recovery
+PASS: client clearing search restores ledger
+PASS: client transaction type filter
+PASS: client posted status filter
+PASS: client Debt click-through
+PASS: client Statement reporting purpose
+PASS: client mobile no page overflow
+PASS: client mobile ledger stacked labels
+PASS: admin six-metric snapshot
+PASS: admin Statement collapsed below snapshot
+PASS: admin controls permission
+PASS: admin ledger search empty-state recovery
+PASS: admin clearing search restores ledger
+PASS: admin transaction type filter
+PASS: admin posted status filter
+PASS: admin Debt click-through
+PASS: admin Statement reporting purpose
+PASS: admin fee review before mutation
+PASS: admin actual UI fee debits exactly 1 USD
+PASS: admin Ledger refresh shows posted UI fee
+PASS: admin mobile no page overflow
+PASS: admin mobile ledger stacked labels
+PASS: admin deselect clears loading and snapshot
+PASS: sales six-metric snapshot
+PASS: sales Statement collapsed below snapshot
+PASS: sales controls permission
+PASS: sales ledger search empty-state recovery
+PASS: sales clearing search restores ledger
+PASS: sales transaction type filter
+PASS: sales posted status filter
+PASS: sales Debt click-through
+PASS: sales Statement reporting purpose
+PASS: sales fee review before mutation
+PASS: sales actual UI fee debits exactly 1 USD
+PASS: sales Ledger refresh shows posted UI fee
+PASS: sales mobile no page overflow
+PASS: sales mobile ledger stacked labels
+PASS: sales deselect clears loading and snapshot
+PASS: warehouse no operational ledger write action
+PASS: finance no operational ledger write action
+PASS: bod no operational ledger write action
+LEDGER CHROME PASS (44 assertions); real DOM clicks/search/selection; no full workflow acceptance

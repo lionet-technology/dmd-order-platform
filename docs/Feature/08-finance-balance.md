@@ -1,5 +1,16 @@
 # Balance, Credit & Statement
 
+## Balance Ledger task flow — 20/10/2026 (current)
+
+Balance Ledger now starts with its title and permitted entry actions, followed by a selected Client's signed Balance, available purchasing headroom (including Credit), Credit Limit, Reserved, outstanding Debt principal/interest and signed Refund Balance. Admin/Sales choose only accessible Clients; their portfolio collapses after selection. Client sees self. Unknown/legacy Refund Balance is explicitly unavailable, never displayed as zero. A refresh action retries the snapshot.
+
+The selected Client has one searchable Ledger with type/status filters, 25-row pages, signed movements, references, allocation amounts and explicit reversed-Payment status. Debt and permitted account controls are adjacent actions. Payment reconciliation, Refund operations, financial command history and immutable Statement reporting are collapsed task sections. Finance retains its separate reconciliation/adjustment workspace; it receives no operational Ledger write permission. Removed the duplicated global Ledger table and its redundant background request. Refresh after entry/import updates the selected account.
+
+Financial action receipts now project signed `before_summary.purchasing_balance_cents` from `net_balance_cents`, matching GET and the resulting account view. Previously a negative opening Balance appeared as zero in before/after notices. Ledger calculations and posting rules are unchanged. Account changes invalidate pending reads; deselection clears loading; account selection is disabled during financial writes.
+
+Verification and limits: [Ledger UX and concurrency evidence](VERIFICATION-LEDGER-UX-2026-10-20.md). Full Owner workflow acceptance and production pilot remain open.
+
+
 ## P1 continuation — 20/10/2026 (latest)
 
 Bulk Tracking retry now preserves an omitted sub-service instead of clearing the locked route. New 19-assertion recovery regression covers second-group transaction rollback, exact retry and explicit failed-Draft reselection; no automatic Balance Adjustment. Statement synchronization reuses its prepared lookup. Final test/lint/typecheck/build pass; 27 domain suites. New HTTP runner verifies 10k-entry concurrency (600 requests, zero errors), signed financial writes, 12 concurrent finalizations and application restart from a verified backup restored into a new synthetic DB. Five-role desktop/mobile browser smoke is recorded separately from full workflow acceptance. Priced UPS/Yun multi-carton reserve-to-Statement integration, full workflow UAT, deployment-target rehearsal and real pilot remain open. See [verification and limits](VERIFICATION-P1-CONTINUATION-2026-10-20.md) and [pilot checklist](PILOT-CHECKLIST-2026-10-20.md).

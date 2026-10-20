@@ -1,5 +1,10 @@
 # Roadmap triển khai — đã được Product chốt 13/10/2026
 
+## Ledger UX / concurrency continuation — 20/10/2026
+
+Implemented snapshot-first Ledger, one filterable scoped transaction table, task-based Payment/Refund/Statement access, refresh recovery and signed before/after receipts. New owned-DB HTTP race test proves two distinct manual-priced Orders cannot overspend and concurrent retries cannot charge twice. See [evidence and untested cases](VERIFICATION-LEDGER-UX-2026-10-20.md). This is substantial pre-UAT delivery; the remaining full browser cross-module matrix, real carrier/policy evidence and Owner acceptance are still release gates.
+
+
 ## Chrome UI UAT follow-up — 20/10/2026
 Đã điều khiển Chrome headless thật trên **database synthetic riêng**: Client mở form UPS, chọn Multiple Cartons, thêm Carton 2/3, Carton Quantity tự tăng và khóa, xóa Carton giữa; Admin đăng nhập, vào Orders và quan sát header `Giá bán USD (Order)` tại bulk Tracking. Sửa UX chuyển Single→Multiple để giữ dữ liệu đã nhập và xác nhận khi quay về Single có mất Carton bổ sung. Test domain 29/29 PASS, TypeScript/lint/build PASS. **Chưa full browser end-to-end 5 role**, chưa thực nghiệm Admin nhập giá/Tracking rồi Statement ngay từ click UI. Xem `VERIFICATION-BROWSER-CARTON-2026-10-20.md` và bằng chứng ảnh Client.
 
