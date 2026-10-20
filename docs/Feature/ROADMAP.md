@@ -1,5 +1,9 @@
 # Roadmap triển khai — đã được Product chốt 13/10/2026
 
+## Chrome UI UAT follow-up — 20/10/2026
+Đã điều khiển Chrome headless thật trên **database synthetic riêng**: Client mở form UPS, chọn Multiple Cartons, thêm Carton 2/3, Carton Quantity tự tăng và khóa, xóa Carton giữa; Admin đăng nhập, vào Orders và quan sát header `Giá bán USD (Order)` tại bulk Tracking. Sửa UX chuyển Single→Multiple để giữ dữ liệu đã nhập và xác nhận khi quay về Single có mất Carton bổ sung. Test domain 29/29 PASS, TypeScript/lint/build PASS. **Chưa full browser end-to-end 5 role**, chưa thực nghiệm Admin nhập giá/Tracking rồi Statement ngay từ click UI. Xem `VERIFICATION-BROWSER-CARTON-2026-10-20.md` và bằng chứng ảnh Client.
+
+
 ## UPS/Chuyên tuyến manual GĐ1 — 20/10/2026
 Bổ sung hardening trước UAT: Admin chỉ được nhập giá khi Order đã gửi mua và không đang Hold (cấp Order/Case/Kho/Route); Client không sửa Carton Quantity dẫn tới sai số Carton khi chọn Multiple, và file import phân nhóm phải sửa từ file gốc thay vì thay đổi cục bộ một dòng. Đã bổ sung regression tương ứng; full browser click-through vẫn mở vì browser companion chưa paired.
 
