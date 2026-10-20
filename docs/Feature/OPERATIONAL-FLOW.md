@@ -1,5 +1,7 @@
 # DMD Report — Luồng vận hành và business rules
 
+> BOD Finance read-only (20/10/2026): tài khoản Client báo cáo Balance ròng, Debt và Refund Balance hiện tại riêng biệt; Refund Bank là outflow thực chi độc lập Client Balance. Theo kỳ dùng posting date của Ledger và refund bank paid date. Snapshot Statement đầu/cuối kỳ **chưa** được tích hợp, không diễn giải Balance hiện tại là cuối kỳ đã chốt. Xem `16-bod-finance-report.md`.
+
 > **Cutover Finance 20/10/2026:** Payment mới chỉ trả Debt (lãi rồi gốc) rồi Balance, không phân bổ vào Statement; Statement hết hạn không chặn mua. Admin chuyển Balance âm sang một Debt Account trong tab Điều khiển, không chọn Statement và không tạo Payment; audit/receipt và phần Payment dư trước đó được bảo toàn khỏi phân bổ hồi tố. Đây là logic đã chạy domain tests, **chưa** hoàn thiện snapshot Finalized Statement và BOD parity; xem `08-finance-balance.md`, `OWNER-FINANCE-2026-10-20.md`.
 
 ## Payment Adjustment application continuation — 20/10/2026

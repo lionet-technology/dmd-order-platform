@@ -1,0 +1,23 @@
+"use client";
+import {useState,type FormEvent} from 'react';
+type Client={client_id:number;display_name:string;balance_cents:number;debt_outstanding_cents:number;refund_balance_cents:number;reserve_cents:number};
+type Category={category:string;obligation_change_cents:number};
+type Report={period_start:string;period_end:string;accounts:Client[];balances:{negative_clients_cents:number;positive_clients_cents:number;debt_outstanding_cents:number;reserve_cents:number};refunds:{owes_clients_cents:number;overpaid_clients_cents:number;bank_outflow_cents:number;balance_refund_cents:number;categories:Category[]};ledger_flows:{net_balance_change_cents:number;payment_net_cents:number;refund_balance_net_cents:number;service_and_adjustment_net_cents:number;postings_count:number};limitations:string[]};
+const usd=(c:number)=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(c/100);
+const vnDay=()=>new Date(Date.now()+7*3600000).toISOString().slice(0,10);
+export function BodFinanceWorkspace(){
+ const [start,setStart]=useState(vnDay()),[end,setEnd]=useState(vnDay()),[report,setReport]=useState<Report|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
+ async function load(e:FormEvent<HTMLFormElement>){e.preventDefault();setBusy(true);setError('');
+  try{const r=await fetch('/api/bod-finance-report?'+new URLSearchParams({start,end}),{cache:'no-store'}),data=await r.json();if(!r.ok)throw Error(data.error);setReport(data);}
+  catch(e){setError((e as Error).message);setReport(null);}finally{setBusy(false)}
+ }
+ return <section className="panel"><h2>BOD · Tổng hợp tài chính Client</h2><p>Báo cáo chỉ đọc; Refund nghĩa vụ và dòng tiền thực hiện là hai số liệu khác nhau. Không gộp các Client nợ và thừa Refund với nhau.</p>
+ <form className="settingsActions" onSubmit={load}><label className="field">Từ ngày<input type="date" value={start} onChange={e=>setStart(e.target.value)} required/></label><label className="field">Đến ngày<input type="date" value={end} onChange={e=>setEnd(e.target.value)} required/></label><button className="primaryBtn" disabled={busy}>{busy?'Đang tải…':'Xem báo cáo'}</button></form>
+ {error&&<p role="alert">{error}</p>}
+ {report&&<><div className="metricGrid">{[['DMD còn phải Refund',report.refunds.owes_clients_cents],['Đã Refund vượt',report.refunds.overpaid_clients_cents],['Refund qua Bank trong kỳ',report.refunds.bank_outflow_cents],['Refund vào Balance trong kỳ',report.refunds.balance_refund_cents],['Debt còn tồn',report.balances.debt_outstanding_cents]].map(([label,value])=><article className="metricCard" key={String(label)}><span>{String(label)}</span><b>{usd(Number(value))}</b></article>)}</div>
+ <h3>Biến động Ledger trong kỳ</h3><div className="tableWrap"><table><tbody>{[['Payment ròng',report.ledger_flows.payment_net_cents],['Refund vào Balance / thu hồi',report.ledger_flows.refund_balance_net_cents],['Phí và điều chỉnh còn lại',report.ledger_flows.service_and_adjustment_net_cents],['Tổng biến động Balance Ledger',report.ledger_flows.net_balance_change_cents]].map(([label,value])=><tr key={String(label)}><th>{String(label)}</th><td>{usd(Number(value))}</td></tr>)}</tbody></table></div>
+ <h3>Claim theo nhóm trong kỳ</h3><div className="tableWrap"><table><thead><tr><th>Loại sự cố</th><th>Biến động nghĩa vụ Refund</th></tr></thead><tbody>{report.refunds.categories.map(c=><tr key={c.category}><td>{c.category}</td><td>{usd(c.obligation_change_cents)}</td></tr>)}</tbody></table></div>
+ <h3>Client Balance / Debt / Refund Balance hiện tại</h3><div className="tableWrap"><table><thead><tr><th>Client</th><th>Balance</th><th>Debt còn tồn</th><th>Refund Balance</th><th>Reserve</th></tr></thead><tbody>{report.accounts.map(c=><tr key={c.client_id}><td>{c.display_name}</td><td>{usd(c.balance_cents)}</td><td>{usd(c.debt_outstanding_cents)}</td><td>{usd(c.refund_balance_cents)}</td><td>{usd(c.reserve_cents)}</td></tr>)}</tbody></table></div>
+ <p><small>Chỉ số Balance/Debt/Refund Balance trong bảng Client là số dư tại thời điểm truy vấn, không phải snapshot cuối kỳ đã chốt. Báo cáo không tự phát sinh bút toán tài chính.</small></p></>}
+ </section>;
+}

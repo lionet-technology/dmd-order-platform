@@ -1,0 +1,34 @@
+const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),Module=require('node:module'),ts=require('typescript'),assert=require('node:assert/strict');
+const dir=fs.mkdtempSync(path.join(os.tmpdir(),'dmd-bod-finance-')),root=path.resolve(__dirname,'..');
+process.env.DMD_DB_PATH=path.join(dir,'test.db');process.env.NODE_ENV='test';
+const resolver=Module._resolveFilename;Module._resolveFilename=function(r,p,m,o){if(r.startsWith('@/'))r=path.join(root,'src',r.slice(2));return resolver.call(this,r,p,m,o)};
+require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true}}).outputText,f);
+const {db}=require('../src/lib/db.ts'),auth=require('../src/lib/auth.ts'),{RefundService}=require('../src/lib/refunds.ts'),{bodFinanceReport}=require('../src/lib/bod-finance-report.ts');
+let checks=0;const eq=(a,b,msg)=>{checks++;assert.deepEqual(a,b,msg)},reject=(fn,msg)=>{checks++;assert.throws(fn,undefined,msg)};
+const create=(name,role,sales_user_id)=>auth.createUser({username:'bod.'+name,display_name:name,password:'TestPass123!',role,sales_user_id});
+const admin=create('admin','ADMIN'),sales=create('sales','SALES'),client=create('client','CLIENT',sales.id),finance=create('finance','FINANCE'),bod=create('owner','BOD');
+const refund=new RefundService(db),day=new Date(Date.now()+7*3600000).toISOString().slice(0,10);
+const ledger=(type,dir,amount)=>db.prepare('INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount,occurred_at) VALUES (?,?,?,?,?)').run(client.id,type,dir,amount,day);
+try{
+ ledger('ORDER_CHARGE','DEBIT',100);ledger('PAYMENT','CREDIT',40);
+ const r0=bodFinanceReport(bod,day,day);eq(r0.balances.negative_clients_cents,6000,'Negative Balance exposed separately');
+ eq([r0.ledger_flows.net_balance_change_cents,r0.ledger_flows.payment_net_cents,r0.ledger_flows.service_and_adjustment_net_cents],[-6000,4000,-10000],'Ledger flow classification');
+ reject(()=>bodFinanceReport(admin,day,day),'Admin cannot view restricted BOD report');
+ reject(()=>bodFinanceReport(sales,day,day),'Sales cannot see cross-client finance');
+ reject(()=>bodFinanceReport(bod,'not-date',day),'Reject malformed range');
+ reject(()=>bodFinanceReport(bod,'2026-10-21','2026-10-20'),'Reject reverse range');
+ const payout={action:'to_balance',client_id:client.id,amount_cents:2500,reason:'Recorded refund',reference:'refund-1',request_key:'bod-wallet-1'};
+ refund.execute(finance,payout);
+ const bank={action:'to_bank',client_id:client.id,amount_cents:1000,reason:'Bank executed',reference:'bank-1',from_account:'DMD A',to_account:'Client A',paid_date:day,proof:'TX-1',request_key:'bod-bank-1'};
+ refund.execute(finance,bank);
+ let r=bodFinanceReport(finance,day,day);
+ eq([r.refunds.balance_refund_cents,r.refunds.bank_outflow_cents],[2500,1000],'Bank and Wallet refund channels separate');
+ eq(r.ledger_flows.net_balance_change_cents,-3500,'Only Wallet refund changes Ledger');
+ eq(r.ledger_flows.refund_balance_net_cents,2500,'Wallet refund included exactly once in Ledger flow');
+ eq(r.ledger_flows.payment_net_cents+r.ledger_flows.refund_balance_net_cents+r.ledger_flows.service_and_adjustment_net_cents,r.ledger_flows.net_balance_change_cents,'Classification reconciliation');
+ eq([r.refunds.owes_clients_cents,r.refunds.overpaid_clients_cents],[0,3500],'Over-refund stays signed and never offsets other Clients');
+ refund.execute(finance,bank);r=bodFinanceReport(bod,day,day);
+ eq([r.refunds.bank_outflow_cents,r.ledger_flows.net_balance_change_cents],[1000,-3500],'Idempotent bank refund never doubles financial report');
+ eq(r.accounts.find(a=>a.client_id===client.id).balance_cents,-3500,'Client signed current Balance reflects only wallet transactions');
+ console.log('BOD FINANCE REPORT PASS ('+checks+' assertions)');
+} finally{db.close();fs.rmSync(dir,{recursive:true,force:true});}

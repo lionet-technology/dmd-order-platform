@@ -1,5 +1,8 @@
 # Roadmap triển khai — đã được Product chốt 13/10/2026
 
+## BOD Finance Report — cập nhật 20/10/2026
+Đã bổ sung một BOD Finance read-only projection lấy số dư từ `accountFinancials` và số Refund từ `RefundService`, tách dòng bank outflow và wallet; màn hình cho BOD/Finance, endpoint riêng kiểm soát quyền. **Chưa triển khai Statement V2 Finalized snapshot; số dư trong BOD là tại thời điểm truy vấn, không phải số dư cuối kỳ**. Xem `16-bod-finance-report.md` và `verify-bod-finance-report.cjs`.
+
 ## Cutover tài chính 20/10/2026 — tiến độ mới nhất
 - Implemented/tested trên DB sạch: Payment không tự vào Statement, Statement overdue không chặn mua; Admin chuyển Balance ròng âm→Debt độc lập Statement, một Debt Account/Client, audit và tránh phân bổ ngược các Payment cũ. UI Admin Controls đã nối. Chưa gọi đây là toàn bộ Finance release.
 - Tiếp theo P1: Statement snapshot bất biến và opening/closing Balance/Debt/Refund Balance, late adjustments và Claim dispute; loại bỏ màn PAID/UNPAID legacy của Statement và chứng minh BOD Balance/Refund reconciliation parity.
