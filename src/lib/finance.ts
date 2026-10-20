@@ -1,5 +1,7 @@
 import { refreshDraft,activePricing,routeFor } from "./route-pricing";
 import { db } from "./db";
+import {allocateFIFO} from "./credit";
+import {isAutoAllocatable} from "./transaction-taxonomy";
 import { reconcileLots } from "./reconciliation";
 import {defaultDirection} from "./transaction-taxonomy";
 import {moneyCommand} from "./money-command";
@@ -540,6 +542,7 @@ export function addLedgerEntry(input: LedgerInput): unknown {
     text(input.reference_type) || null, text(input.reference_id) || null, text(input.bill_url) || null,
     text(input.note) || null, input.batch_id || null, input.created_by_user_id||null
   );
+  if(input.client_user_id&&direction==='CREDIT'&&isAutoAllocatable(type))allocateFIFO(Number(input.client_user_id));
   return db.prepare("SELECT * FROM ledger_entries WHERE id=?").get(result.lastInsertRowid);
  });
 }

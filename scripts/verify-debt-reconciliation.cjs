@@ -72,8 +72,8 @@ rejects(()=>credit.financialAction(admin,client.id,{action:'allocate',ledger_id:
 f=credit.accountFinancials(client.id);assert(f.statements[1].original_total_cents===5000&&f.statements[1].outstanding_cents===5000,'Statement report not changed by Payment');
 assert(!db.prepare('SELECT id FROM credit_allocations WHERE ledger_id=? AND statement_id IS NOT NULL').get(payment),'Rejected override preserves Debt allocation');
 const pOverride=entry('PAYMENT','CREDIT',1);credit.accountFinancials(client.id);
-credit.financialAction(admin,client.id,{action:'allocate',ledger_id:pOverride,reason:'Approved principal-first exception',allocations:[{debt_id:debt,amount:1,debt_order:'PRINCIPAL_FIRST'}]});
-assert(db.prepare('SELECT interest_cents FROM credit_allocations WHERE ledger_id=?').get(pOverride).interest_cents===0,'Admin can override interest-first with audit');
+rejects(()=>credit.financialAction(admin,client.id,{action:'allocate',ledger_id:pOverride,reason:'Legacy principal-first exception',allocations:[{debt_id:debt,amount:1,debt_order:'PRINCIPAL_FIRST'}]}),'Owner requires interest-first even for Admin override');
+assert(db.prepare('SELECT interest_cents FROM credit_allocations WHERE ledger_id=?').get(pOverride).interest_cents===0,'Rejected legacy override retains original allocation');
 assert(credit.accountFinancials(client.id).purchasing_balance_cents===0,'Unpaid accrued interest cannot appear as wallet money');
 
 db.prepare('UPDATE credit_debts SET deadline=? WHERE id=?').run(credit.shiftDay(today,-1),debt);

@@ -1,5 +1,14 @@
 # BOD Finance report — Client Wallet, Debt and Refund
 
+## Statement V2 operational integration — 20/10/2026 (current implementation)
+
+This section supersedes earlier delivery-status notes below; approved business rules are unchanged. Statement V2 is connected to the active operational Ledger, Debt/allocations, daily interest and Refund events, with API and UI. `fc_*` remains inactive. See [implementation, evidence and remaining gates](VERIFICATION-STATEMENT-V2-2026-10-20.md).
+
+`statement_periods` now reports each Client's signed opening/closing Balance, Debt and Refund Balance from the operational audit projection, plus the exact issued snapshot when the requested interval matches it. Projection totals are checked against current operational balances and cumulative actual Bank refund records before reporting availability. The entire report runs in one immediate transaction to avoid mixing concurrent account states. Unsupported pre-checkpoint/legacy periods are explicitly unavailable with a reason, rather than reported as reconciled zero.
+
+The UI compares period balances and Finalized status separately from current exposure. Raw Ledger flow is still raw Ledger (Payment includes Debt-paid amounts); the Statement projection includes the Debt reclassification/allocation deltas needed to reconcile net Wallet. Never add raw flow to net opening without those deltas. Actual Bank Refund uses `paid_date`; Statement Bank movement uses recorded posting period, with the difference explicitly labelled. Supplier payments/physical bank-statement matching and complete company cash reconciliation are **not** certified by this Client-finance report.
+
+
 **Trạng thái:** Partial implementation 20/10/2026; not Owner-accepted or production certified.
 
 ## User-facing implementation

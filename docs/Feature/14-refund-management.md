@@ -1,5 +1,14 @@
 # Claims, signed Refund Balance and actual refunds
 
+## Statement V2 operational integration — 20/10/2026 (current implementation)
+
+This section supersedes earlier delivery-status notes below; approved business rules are unchanged. Statement V2 is connected to the active operational Ledger, Debt/allocations, daily interest and Refund events, with API and UI. `fc_*` remains inactive. See [implementation, evidence and remaining gates](VERIFICATION-STATEMENT-V2-2026-10-20.md).
+
+New-format Claim decisions, actual Balance/Bank refunds and partial recoveries are now included in Statement V2 signed movements and opening/closing Refund Balance. Wallet effects continue to come only from the linked authoritative Ledger row; the Refund event does not credit Balance a second time. Bank rows contribute cash outflow and Refund delta, never Wallet credit. Snapshot details omit bank account/proof fields.
+
+V2 Claim creation uses `statement_v2_id` (separate from legacy `statement_id`) and validates the Orders captured in the issued snapshot. Open linked Order Claims derive Disputed; resolution clears that live flag without editing issued money. Existing legacy `claim_decisions` cause Statement preview/finalization to fail closed because their opening obligations have not been reconciled. No historical Claim reinterpretation was performed.
+
+
 **Status: implemented locally, partial financial release; not production accepted. Reviewed 20/10/2026.**
 
 This document supersedes the historical automatic Claim credit and per-Order payout allocation in feature 10. Payment/Debt/Statement cutover remains incomplete. Do not interpret the local Refund implementation as completion of the full financial build.

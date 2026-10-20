@@ -1,5 +1,14 @@
 # Roadmap triển khai — đã được Product chốt 13/10/2026
 
+## Statement V2 operational integration — 20/10/2026 (current implementation)
+
+This section supersedes earlier delivery-status notes below; approved business rules are unchanged. Statement V2 is connected to the active operational Ledger, Debt/allocations, daily interest and Refund events, with API and UI. `fc_*` remains inactive. See [implementation, evidence and remaining gates](VERIFICATION-STATEMENT-V2-2026-10-20.md).
+
+Implemented in active application: Statement V2 API/UI, immutable fees/financial movements and signed three-account openings/closings, late-posting carry-forward, linked Claims/dispute, immediate chronological Payment allocation and BOD period reconciliation. Isolated `fc_*` is not activated.
+
+Remaining release gates: reviewed legacy schema/allocation/Claim migration or verified synthetic reset, complete Admin/Sales/Finance/Client/BOD desktop/mobile acceptance, high-volume performance, operational backup/restore rehearsal, real pilot rates/carrier/evidence and deployment acceptance. Client Bank Refund parity does not certify Supplier/company bank reconciliation. Test success is not production approval.
+
+
 ## BOD Finance Report — cập nhật 20/10/2026
 Đã bổ sung một BOD Finance read-only projection lấy số dư từ `accountFinancials` và số Refund từ `RefundService`, tách dòng bank outflow và wallet; màn hình cho BOD/Finance, endpoint riêng kiểm soát quyền. **Chưa triển khai Statement V2 Finalized snapshot; số dư trong BOD là tại thời điểm truy vấn, không phải số dư cuối kỳ**. Xem `16-bod-finance-report.md` và `verify-bod-finance-report.cjs`.
 

@@ -1,5 +1,18 @@
 # Balance, Credit & Statement
 
+## Statement V2 operational integration — 20/10/2026 (current implementation)
+
+This section supersedes earlier delivery-status notes below; approved business rules are unchanged. Statement V2 is connected to the active operational Ledger, Debt/allocations, daily interest and Refund events, with API and UI. `fc_*` remains inactive. See [implementation, evidence and remaining gates](VERIFICATION-STATEMENT-V2-2026-10-20.md).
+
+`GET /api/statements-v2` lists immutable issued snapshots, or previews `client_id/start/end`; `?clients=1` scopes the Client selector. `POST` Finalizes for ADMIN/FINANCE only. Sales sees assigned Clients, Client sees self, BOD reads, Warehouse is denied. UI uses Draft/Finalized plus a derived Disputed flag; the legacy Paid/Unpaid Statement table is removed from the operational financial screen (historical backend rows remain).
+
+Periods must form a non-overlapping consecutive chain from the recorded checkpoint; future periods cannot Finalize. First-period opening is the captured operational Balance/Debt/Refund exposure, not inferred zero. Credit Limit/Reserve are references captured at finalization time, not reconstructed historical movements. Finalization is serialized with writers and uniquely keyed by Client/start; identical retries return the original snapshot, a changed end is rejected. Financial snapshots and projection events have immutable DB triggers. Reading finance can still materialize prospective Debt interest through the existing application accrual routine.
+
+Payment receipt now settles Debt in its own atomic transaction before returning. Allocation uses posting order, freezes every remaining wallet surplus and preserves original issued allocation details after Finance corrections. Manual `allocate`/`apply_credit` is retired entirely, including principal-first bypass. Tests cover the regression where a restored Debt incorrectly consumed an older Payment surplus.
+
+Existing `source_statement_id NOT NULL`, legacy Claim decisions, multiple Debt accounts and historical Statement allocations are not silently repaired. See the verification note for exact guards and remaining migration gates.
+
+
 ## Cutover từng phần 20/10/2026 — đã triển khai trong app, chưa release production
 - Admin **chuyển Balance âm sang một Debt Account/Client trực tiếp tại tab Điều khiển Client**, nhập tổng tiền, deadline, lãi suất tùy chọn và lý do; **không chọn Statement hoặc Order**. Chuyển đổi chỉ tăng Balance ròng khả dụng và Debt tương ứng trong nghiệp vụ, không ghi Payment hay charge giả. Không tự động tạo Debt.
 - Với DB mới, `credit_debts.source_statement_id` nullable. Nếu Debt đã tồn tại, Admin tăng trên cùng account kể cả khi đã tất toán; chỉ cho tối đa số Balance ròng âm, không vượt qua phần Reserve. Lãi/deadline và audit giữ nguyên quy tắc Owner; bảng `credit_balance_debt_transfers` bất biến ghi before/after; `money_command_receipts` chống retry trùng.

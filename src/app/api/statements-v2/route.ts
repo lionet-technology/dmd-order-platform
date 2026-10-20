@@ -1,0 +1,8 @@
+import {NextRequest,NextResponse} from 'next/server';
+import {db} from '@/lib/db';
+import {requireAnyRole} from '@/lib/auth';
+import {withFinancialPrivacy} from '@/lib/financial-privacy';
+import {statementPreview,finalizeStatement,listStatements} from '@/lib/statements-v2';
+export const runtime='nodejs';
+export const GET=withFinancialPrivacy(async(req:NextRequest)=>{const a=requireAnyRole(req,['ADMIN','FINANCE','BOD','SALES','CLIENT']);if(a.error)return a.error;try{const q=req.nextUrl.searchParams;if(q.get('clients')==='1'){if(a.user.role==='WAREHOUSE')return NextResponse.json({error:'Forbidden'},{status:403});const items=db.prepare("SELECT id,display_name FROM users WHERE role='CLIENT' AND (? IN ('ADMIN','FINANCE','BOD') OR (?='CLIENT' AND id=?) OR (?='SALES' AND sales_user_id=?)) ORDER BY display_name,id").all(a.user.role,a.user.role,a.user.id,a.user.role,a.user.id);return NextResponse.json({items});}const client=a.user.role==='CLIENT'?a.user.id:Number(q.get('client_id'));return NextResponse.json(q.get('start')?statementPreview(a.user,client,String(q.get('start')),String(q.get('end'))):listStatements(a.user,client));}catch(e){return NextResponse.json({error:(e as Error).message},{status:400});}});
+export const POST=withFinancialPrivacy(async(req:NextRequest)=>{const a=requireAnyRole(req,['ADMIN','FINANCE']);if(a.error)return a.error;if(!['ADMIN','FINANCE'].includes(a.user.role))return NextResponse.json({error:'Forbidden'},{status:403});try{const b=await req.json();return NextResponse.json(finalizeStatement(a.user,Number(b.client_id),String(b.start),String(b.end)));}catch(e){return NextResponse.json({error:(e as Error).message},{status:400});}});

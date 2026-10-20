@@ -1,6 +1,8 @@
 import { db } from "./db";
+import {RefundService} from "./refunds";
+import {statementJournalSchema} from "./statement-journal";
 import { debtInterestSchema, accrueDebtInterest, snapshotDebt, debtInterestTotal, debtInterestRemaining } from "./debt-interest";
-import {AUTO_ALLOCATABLE_TYPES,canApplyToReceivable} from "./transaction-taxonomy";
+import {AUTO_ALLOCATABLE_TYPES} from "./transaction-taxonomy";
 import {moneyCommand} from "./money-command";
 import type { AuthUser } from "./auth";
 type Row = Record<string, unknown>;
@@ -54,6 +56,8 @@ CREATE TRIGGER IF NOT EXISTS immutable_issued_ledger_delete BEFORE DELETE ON led
 }
 statementSchema();
 debtInterestSchema();
+new RefundService(db);
+statementJournalSchema(db);
 export function audit(clientId:number,actorId:number,event:string,data:unknown){db.prepare("INSERT INTO financial_audit(client_id,actor_id,event,data_json) VALUES (?,?,?,?)").run(clientId,actorId||null,event,JSON.stringify(data));}
 export function assertClientAccess(user:AuthUser,clientId:number){
  const c=db.prepare("SELECT * FROM users WHERE id=? AND role='CLIENT'").get(clientId) as Row|undefined;
@@ -106,19 +110,22 @@ export function receivables(clientId:number){
  const state=(r:Row):Row & {outstanding_cents:number;status:string}=>({...r,outstanding_cents:Math.max(0,Number(r.amount_cents)-Number(r.paid_cents)),status:Number(r.amount_cents)<=Number(r.paid_cents)?"PAID":String(r.deadline)<localDay()?"OVERDUE":Number(r.paid_cents)>0?"PARTIALLY_PAID":"OPEN"});
  return {debts:debts.map(d=>{const interest=debtInterestTotal(Number(d.id));return {...state({...d,amount_cents:Number(d.amount_cents)+interest}),id:d.id,deadline:d.deadline,amount_cents:Number(d.amount_cents)+interest,principal_cents:Number(d.amount_cents),interest_cents:interest,interest_outstanding_cents:debtInterestRemaining(Number(d.id))};}),statements:statements.map(r=>Object.assign(state(r),{order_ids:statementOrderIds(Number(r.id))}))};
 }
-export function allocateFIFO(clientId:number){
+export function allocateFIFO(clientId:number){return db.transaction(()=>{
  syncStatements(clientId);
  accrueDebtInterest(clientId);
  for(const debt of receivables(clientId).debts)snapshotDebt(Number(debt.id));
  // Preserve explicit overrides; allocate only unallocated portions of live credits.
- const credits=db.prepare(`SELECT e.*,COALESCE((SELECT SUM(amount_cents) FROM credit_allocations WHERE ledger_id=e.id),0) allocated FROM ledger_entries e WHERE client_user_id=? AND direction='CREDIT' AND entry_type IN (${settlementSql}) AND id NOT IN (SELECT ledger_id FROM credit_manual_allocations) AND id NOT IN (SELECT ledger_id FROM credit_settlement_wallet_freezes) AND id NOT IN (SELECT CAST(json_extract(data_json,'$.ledger_id') AS INTEGER) FROM financial_audit WHERE event IN ('allocate','apply_credit') AND json_valid(data_json) AND json_extract(data_json,'$.ledger_id') IS NOT NULL) AND id NOT IN (SELECT ledger_id FROM rejected_payments) ORDER BY COALESCE(occurred_at,created_at),id`).all(clientId) as Row[];
+ const credits=db.prepare(`SELECT e.*,COALESCE((SELECT SUM(amount_cents) FROM credit_allocations WHERE ledger_id=e.id),0) allocated FROM ledger_entries e WHERE client_user_id=? AND direction='CREDIT' AND entry_type IN (${settlementSql}) AND id NOT IN (SELECT ledger_id FROM credit_manual_allocations) AND id NOT IN (SELECT ledger_id FROM credit_settlement_wallet_freezes) AND id NOT IN (SELECT CAST(json_extract(data_json,'$.ledger_id') AS INTEGER) FROM financial_audit WHERE event IN ('allocate','apply_credit') AND json_valid(data_json) AND json_extract(data_json,'$.ledger_id') IS NOT NULL) AND id NOT IN (SELECT ledger_id FROM rejected_payments) ORDER BY id`).all(clientId) as Row[];
  for(const e of credits){let left=cents(e.amount)-Number(e.allocated);if(left<=0)continue;
  // Statements are periodic reports, never payment targets; only Debt receives allocations.
  const debts=receivables(clientId).debts.sort((a,b)=>String(a.deadline).localeCompare(String(b.deadline))||Number(a.id)-Number(b.id));
  for(const debt of debts){const amount=Math.min(left,debt.outstanding_cents);if(amount<=0)continue;
  db.prepare("INSERT INTO credit_allocations(ledger_id,statement_id,debt_id,amount_cents,interest_cents) VALUES (?,NULL,?,?,?)").run(e.id,debt.id,amount,Math.min(amount,debtInterestRemaining(Number(debt.id))));snapshotDebt(Number(debt.id));left-=amount;if(!left)break;}
+ // A receipt surplus is Balance from this posting onward. Restoring Debt later
+ // (e.g. an actual-receipt reduction) must not consume older wallet surplus.
+ if(left>0)db.prepare('INSERT OR IGNORE INTO credit_settlement_wallet_freezes(ledger_id,client_id,reason) VALUES (?,?,?)').run(e.id,clientId,'Posted Payment surplus retained in Balance');
  }
-}
+ }).immediate();}
 export function accountFinancials(clientId:number){return db.transaction(()=>{
  allocateFIFO(clientId);const r=receivables(clientId),c=db.prepare("SELECT credit_limit_cents,credit_term_days,purchase_locked,purchase_lock_reason FROM users WHERE id=?").get(clientId) as Row;
  const balance=Number((db.prepare("SELECT COALESCE(SUM(CASE WHEN direction='CREDIT' THEN ROUND(amount*100) ELSE -ROUND(amount*100) END),0) n FROM ledger_entries WHERE client_user_id=? AND entry_type!='SERVICE_COST'").get(clientId) as {n:number}).n);
@@ -153,6 +160,7 @@ export function completeReserve(orderId:number,actorId:number){return db.transac
 export function financialAction(user:AuthUser,clientId:number,b:Row){
  assertClientAccess(user,clientId);if(!["ADMIN","SALES"].includes(user.role))throw Error("Chỉ có quyền xem tài chính.");
  if(String(b.action)!=="additional_fee")requireAdmin(user);
+ if(["allocate","apply_credit"].includes(String(b.action)))throw Error("Phân bổ thủ công đã ngừng: Payment tự trả Debt lãi rồi gốc, dư vào Balance; Finance dùng Payment Adjustment.");
  if(b.action==="balance_credit"&&!String(b.request_key||"").trim())throw Error("Balance Adjustment cần request key.");
  return moneyCommand("financial:"+user.id+":"+clientId,b.request_key,b,()=>financialActionOnce(user,clientId,b));
 }
@@ -176,12 +184,6 @@ function financialActionOnce(user:AuthUser,clientId:number,b:Row){return db.tran
  else if(action==="debt_rate"){requireAdmin(user);allocateFIFO(clientId);const debt=receivables(clientId).debts.find(d=>d.id===Number(b.debt_id)&&d.outstanding_cents>0);if(!debt||b.daily_rate_pct===undefined||!String(b.reason||'').trim())throw Error("Cần Debt đang mở, lãi suất và lý do.");const previousRate=db.prepare('SELECT daily_rate_pct FROM debt_interest_events WHERE debt_id=? ORDER BY effective_day DESC,id DESC LIMIT 1').get(debt.id) as Row|undefined;snapshotDebt(Number(debt.id),b.daily_rate_pct,user.id,String(b.reason));auditData={...b,previous_daily_rate_pct:Number(previousRate?.daily_rate_pct||0),daily_rate_pct:Number(b.daily_rate_pct),effective_day:localDay()};}
  else if(action==="reject_payment"){requireAdmin(user);const e=db.prepare("SELECT * FROM ledger_entries WHERE id=? AND client_user_id=? AND entry_type='PAYMENT' AND direction='CREDIT'").get(Number(b.ledger_id),clientId) as Row|undefined;if(!e)throw Error("Payment không tồn tại.");if(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='payment_adjustment_events'").get()&&db.prepare("SELECT id FROM payment_adjustment_events WHERE ledger_id=?").get(e.id))throw Error("Payment đã điều chỉnh; Finance phải sửa thực nhận qua Payment Adjustment.");if(db.prepare("SELECT ledger_id FROM rejected_payments WHERE ledger_id=?").get(e.id))return accountFinancials(clientId);if(!String(b.reason||"").trim())throw Error("Cần lý do reject.");const previousAllocations=db.prepare("SELECT * FROM credit_allocations WHERE ledger_id=?").all(e.id);
  const reverse=db.prepare("INSERT INTO ledger_entries(client_user_id,occurred_at,entry_type,direction,amount,customer,reference_type,reference_id,note,created_by_user_id) VALUES (?,?,'PAYMENT_REVERSAL','DEBIT',?,?,'PAYMENT',?,?,?)").run(clientId,localDay(),e.amount,e.customer,String(e.id),String(b.reason),user.id);db.prepare("INSERT INTO rejected_payments VALUES (?,?,?)").run(e.id,reverse.lastInsertRowid,String(b.reason));db.prepare("DELETE FROM credit_allocations WHERE ledger_id=?").run(e.id);auditData={...b,previous_allocations:previousAllocations,reversal_id:Number(reverse.lastInsertRowid),reversed_cents:cents(e.amount)};}
- else if(action==="allocate"||action==="apply_credit"){requireAdmin(user);allocateFIFO(clientId);const e=db.prepare("SELECT * FROM ledger_entries WHERE id=? AND client_user_id=? AND direction='CREDIT' AND id NOT IN (SELECT ledger_id FROM rejected_payments)").get(Number(b.ledger_id),clientId) as Row|undefined;if(!e||!Array.isArray(b.allocations))throw Error("Payment / allocation không hợp lệ.");if(!canApplyToReceivable(String(e.entry_type)))throw Error('Credit không đủ điều kiện.');
- if(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='payment_adjustment_events'").get()&&db.prepare('SELECT id FROM payment_adjustment_events WHERE ledger_id=?').get(e.id))throw Error('Payment đã điều chỉnh; không được override allocation.');
- if(!String(b.reason||'').trim())throw Error('Cần lý do phân bổ để audit.');
- db.prepare("INSERT OR IGNORE INTO credit_manual_allocations(ledger_id) VALUES (?)").run(e.id);
- const previousAllocated=Number((db.prepare("SELECT COALESCE(SUM(amount_cents),0) n FROM credit_allocations WHERE ledger_id=?").get(e.id) as {n:number}).n);
- db.prepare("DELETE FROM credit_allocations WHERE ledger_id=?").run(e.id);const r=receivables(clientId);let sum=0;const seen=new Set<string>();for(const a of b.allocations as Row[]){if(!a.debt_id||a.statement_id)throw Error("Payment chỉ có thể phân bổ vào Debt; Statement là báo cáo đối soát.");const debt=!!a.debt_id,target=(debt?r.debts:r.statements).find(t=>t.id===Number(debt?a.debt_id:a.statement_id)),n=cents(a.amount),key=(debt?"D":"S")+target?.id;if(!target||seen.has(key)||n<=0||n>target.outstanding_cents)throw Error("Allocation vượt khoản còn nợ hoặc bị trùng.");seen.add(key);sum+=n;if(sum>cents(e.amount))throw Error("Allocation vượt Payment.");db.prepare("INSERT INTO credit_allocations(ledger_id,statement_id,debt_id,amount_cents,interest_cents) VALUES (?,?,?,?,?)").run(e.id,debt?null:target.id,debt?target.id:null,n,debt?(a.debt_order==='PRINCIPAL_FIRST'?Math.max(0,n-(target.outstanding_cents-debtInterestRemaining(Number(target.id)))):Math.min(n,debtInterestRemaining(Number(target.id)))):0);}auditData={...b,allocation_before_cents:previousAllocated,allocation_after_cents:sum,allocation_delta_cents:sum-previousAllocated};}
  else if(action==="balance_credit"){requireAdmin(user);const amount=cents(b.amount),reason=String(b.reason||"").trim();if(amount<=0||!reason)throw Error("Balance Credit cần số tiền dương và lý do.");db.prepare("INSERT INTO ledger_entries(client_user_id,occurred_at,entry_type,direction,amount,customer,note,created_by_user_id) VALUES (?,?,'ADJUSTMENT_CREDIT','CREDIT',?,(SELECT display_name FROM users WHERE id=?),?,?)").run(clientId,localDay(),amount/100,clientId,reason,user.id);}
  else if(action==="additional_fee"){const amount=cents(b.unit_price)*Number(b.quantity??1);if(!Number.isFinite(amount)||amount<=0||!Number.isInteger(amount)||Number(b.quantity??1)<=0)throw Error("Số lượng / giá không hợp lệ.");if(b.currency&&b.currency!=="USD")throw Error("Hiện dùng USD.");db.prepare("INSERT INTO ledger_entries(client_user_id,occurred_at,entry_type,direction,amount,customer,note,created_by_user_id) VALUES (?,?,'ADDITIONAL_FEE','DEBIT',?,(SELECT display_name FROM users WHERE id=?),?,?)").run(clientId,validDay(b.occurred_at||localDay()),amount/100,clientId,String(b.note||"")+" · "+String(b.quantity??1)+" × "+String(b.unit_price)+" USD",user.id);}
  else throw Error("Action không được hỗ trợ.");audit(clientId,user.id,action,auditData);return accountFinancials(clientId);

@@ -1,5 +1,14 @@
 # Payment reconciliation
 
+## Statement V2 operational integration — 20/10/2026 (current implementation)
+
+This section supersedes earlier delivery-status notes below; approved business rules are unchanged. Statement V2 is connected to the active operational Ledger, Debt/allocations, daily interest and Refund events, with API and UI. `fc_*` remains inactive. See [implementation, evidence and remaining gates](VERIFICATION-STATEMENT-V2-2026-10-20.md).
+
+Payment allocation now runs inside `addLedgerEntry`'s money-command transaction, so Sales/Admin receipt immediately settles accrued interest, then principal, then Balance surplus. Backdated `occurred_at` remains economic metadata; ascending Ledger IDs determine allocation sequence. Each first-posting surplus is frozen to Balance. A later Finance reduction can restore Debt without a subsequent financial read consuming a different older Payment's wallet surplus. Admin principal-first requests are rejected.
+
+Statement V2 captures immutable allocation movements (Payment ID, Debt ID, amount and interest cents). A later Payment Adjustment appends projection deltas in the subsequent/current reporting period and never rewrites the issued allocation snapshot. Reconciliation still moves no money; no new Payment allocation targets Statement. Historical Statement-allocation adjustment guards remain. New Admin `allocate`/`apply_credit` commands are retired and denied before receipts/mutations; the UI no longer offers reallocation. Existing historical allocations are retained. Admin rejection remains an audited compensating reversal; Finance partial corrections use Payment Adjustment.
+
+
 ## Cutover ứng dụng 20/10/2026 (từng phần)
 `credit.ts` đã ngừng tự phân bổ Payment vào Statement; auto allocation chỉ đến Debt (lãi/gốc) rồi số dư phần còn lại vào Balance. Statement quá hạn không chặn mua. Payment Adjustment áp dụng cho Payment mới không có legacy Statement allocation; các khoản lịch sử từng phân bổ Statement vẫn fail-closed đến khi migration. `credit_settlement_wallet_freezes` bảo toàn phần Payment dư từ trước khi Admin chuyển Balance sang Debt. **Chưa có** Statement snapshot đầy đủ hoặc migration dữ liệu cũ; không phải xác nhận production.
 

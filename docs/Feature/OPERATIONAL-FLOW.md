@@ -1,5 +1,14 @@
 # DMD Report — Luồng vận hành và business rules
 
+## Statement V2 operational integration — 20/10/2026 (current implementation)
+
+This section supersedes earlier delivery-status notes below; approved business rules are unchanged. Statement V2 is connected to the active operational Ledger, Debt/allocations, daily interest and Refund events, with API and UI. `fc_*` remains inactive. See [implementation, evidence and remaining gates](VERIFICATION-STATEMENT-V2-2026-10-20.md).
+
+Active flow: service trigger → operational Ledger charge once → Payment receipt immediately settles Debt interest/principal and fixes surplus in Balance → Finance reconciliation/linked correction → Statement V2 immutable reporting snapshot → BOD period/current exposure comparison. Claims change only Refund obligations; actual Balance/Bank execution and Admin recovery are separate movements. Statement never debits or becomes a Payment target. Open Claim state is projected alongside issued financial bytes.
+
+Late financial postings after Finalized go to the next reporting period, even when economic dates are backdated. Period history begins at an explicit operational checkpoint; unverified legacy Claim/allocations/source schemas require reconciliation/reset under the existing provenance/backup rules. The previous pending-Statement/BOD notices below are historical. Full production/Owner acceptance remains open as detailed in the verification note.
+
+
 > BOD Finance read-only (20/10/2026): tài khoản Client báo cáo Balance ròng, Debt và Refund Balance hiện tại riêng biệt; Refund Bank là outflow thực chi độc lập Client Balance. Theo kỳ dùng posting date của Ledger và refund bank paid date. Snapshot Statement đầu/cuối kỳ **chưa** được tích hợp, không diễn giải Balance hiện tại là cuối kỳ đã chốt. Xem `16-bod-finance-report.md`.
 
 > **Cutover Finance 20/10/2026:** Payment mới chỉ trả Debt (lãi rồi gốc) rồi Balance, không phân bổ vào Statement; Statement hết hạn không chặn mua. Admin chuyển Balance âm sang một Debt Account trong tab Điều khiển, không chọn Statement và không tạo Payment; audit/receipt và phần Payment dư trước đó được bảo toàn khỏi phân bổ hồi tố. Đây là logic đã chạy domain tests, **chưa** hoàn thiện snapshot Finalized Statement và BOD parity; xem `08-finance-balance.md`, `OWNER-FINANCE-2026-10-20.md`.

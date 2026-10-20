@@ -1,5 +1,12 @@
 # Feature documentation — DMD Report
 
+## Statement V2 operational integration — 20/10/2026 (current implementation)
+
+This section supersedes earlier delivery-status notes below; approved business rules are unchanged. Statement V2 is connected to the active operational Ledger, Debt/allocations, daily interest and Refund events, with API and UI. `fc_*` remains inactive. See [implementation, evidence and remaining gates](VERIFICATION-STATEMENT-V2-2026-10-20.md).
+
+The active application now provides immutable financial Statements and BOD period reconciliation using operational tables, without activating the isolated replacement core. Payment posting also settles Debt atomically and protects wallet surplus against retroactive reuse. See [verification](VERIFICATION-STATEMENT-V2-2026-10-20.md) for reproducible checks, scope and explicit migration/acceptance limitations.
+
+
 ## BOD Finance report (20/10/2026)
 Đã nối báo cáo BOD Client Balance/Debt/Refund theo từng tài khoản, tổng hợp dòng Payment và Refund Bank/Wallet theo kỳ; không dùng `fc_*` song song. Xem [Feature 16](16-bod-finance-report.md). Statement V2 snapshot đầu/cuối kỳ và migration vẫn chưa hoàn tất.
 

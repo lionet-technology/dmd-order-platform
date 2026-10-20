@@ -2,12 +2,14 @@ import {db} from './db';
 import './cases'; // Initialize legacy Claim schema used by refund compatibility checks.
 import {accountFinancials,validDay} from './credit';
 import {RefundService} from './refunds';
+import {statementPreview,listStatements} from './statements-v2';
 import type {AuthUser} from './auth';
 
 /** Read-only cross-module BOD projection. Refund obligation is NOT added to wallet or Debt. */
 export function bodFinanceReport(actor:Pick<AuthUser,'role'|'id'>,start:string,end:string){
  if(!['BOD','FINANCE'].includes(actor.role))throw Error('Forbidden');
  validDay(start);validDay(end);if(start>end)throw Error('Khoảng ngày không hợp lệ.');
+ return db.transaction(()=>{
  const refunds=new RefundService(db).report(actor,start,end);
  const clients=db.prepare("SELECT id,display_name FROM users WHERE role='CLIENT' ORDER BY display_name,id").all() as {id:number;display_name:string}[];
  const accounts=clients.map(c=>{
@@ -26,7 +28,13 @@ export function bodFinanceReport(actor:Pick<AuthUser,'role'|'id'>,start:string,e
  {entry_type:string;direction:string;amount_cents:number;client_user_id:number;id:number;created_at:string}[];
  const sum=(predicate:(x:typeof postings[number])=>boolean)=>postings.filter(predicate).reduce((s,e)=>s+(e.direction==='CREDIT'?1:-1)*e.amount_cents,0);
  const refundWalletIds=new Set((refunds.events as {ledger_id?:number;kind:string}[]).filter(e=>e.kind==='TO_BALANCE'||e.kind==='RECOVERY').map(e=>e.ledger_id).filter((v):v is number=>typeof v==='number'));
+ const statement_periods=clients.map(c=>{
+  try{const p=statementPreview(actor as AuthUser,c.id,start,end);const issued=listStatements(actor as AuthUser,c.id).items.filter(s=>s.period_start===start&&s.period_end===end);
+   return {client_id:c.id,available:true,opening:p.opening,closing:p.closing,bank_posted_cents:p.bank_outflow_cents,finalized:issued[0]??null};
+  }catch(e){return {client_id:c.id,available:false,error:(e as Error).message};}
+ });
  const report={
+  statement_periods,
   period_start:start,period_end:end,accounts,
   balances:{negative_clients_cents:accounts.reduce((s,c)=>s+Math.max(0,-c.balance_cents),0),
    positive_clients_cents:accounts.reduce((s,c)=>s+Math.max(0,c.balance_cents),0),
@@ -47,4 +55,5 @@ export function bodFinanceReport(actor:Pick<AuthUser,'role'|'id'>,start:string,e
  if(report.ledger_flows.payment_net_cents+report.ledger_flows.refund_balance_net_cents+
    report.ledger_flows.service_and_adjustment_net_cents!==report.ledger_flows.net_balance_change_cents)throw Error('BOD Ledger report invariant failed');
  return report;
+ }).immediate();
 }

@@ -1,5 +1,16 @@
 # Owner financial refactor — 20/10/2026
 
+## Statement V2 operational integration — 20/10/2026 (current implementation)
+
+This section supersedes earlier delivery-status notes below; approved business rules are unchanged. Statement V2 is connected to the active operational Ledger, Debt/allocations, daily interest and Refund events, with API and UI. `fc_*` remains inactive. See [implementation, evidence and remaining gates](VERIFICATION-STATEMENT-V2-2026-10-20.md).
+
+- Immutable Finalized financial snapshots and a transaction-bound audit projection now capture fees/adjustments, Payment/Debt breakdown, refunds and signed opening/closing Balance/Debt/Refund Balance. They do not execute charges or allocate to Statements. Claims derive the live disputed flag; financial bytes stay unchanged.
+- Late postings, including backdated economic dates and subsequent corrections, enter the next unclosed reporting period. Opening checkpoint is explicit; periods before it cannot be issued. Legacy Claim balances and multiple Debt accounts fail closed rather than inventing opening obligations.
+- Sales Payment allocation now occurs inside its original receipt transaction; receipt order uses Ledger ID, not economic date. Wallet surplus is fixed at first allocation and cannot silently repay Debt restored by a later correction. Admin principal-first override is rejected.
+- BOD period balances reconcile against the same projection and issued snapshots. Current exposures, raw Ledger flows, Bank execution-date outflow and Statement posting-period flows remain separately labelled.
+- **Still not full Finance release:** historical Statement allocations/NOT NULL Debt-source schema need verified migration or synthetic reset; carrier/pilot configuration, full role desktop/mobile acceptance, high-volume performance and operational backup/restore rehearsal remain release gates. No operational database was reset or migrated in this change.
+
+
 ## Application cutover tiếp theo: Balance → một Debt và Payment không vào Statement
 Code `src/lib/credit.ts` và UI Admin Controls đã chuyển sang nghiệp vụ Admin **nhập số Balance âm tổng** để tăng một Debt Account mà không chọn Statement, không tạo Ledger Payment/charge, có event/audit/receipt và bảo toàn sức mua. Dữ liệu Payment còn dư trước thao tác được đóng băng khỏi phân bổ hồi tố; Payment mới chỉ phân bổ vào Debt, rồi Balance. Statement hết hạn không khóa mua; chỉ Debt chưa trả quá hạn và Hold độc lập có hiệu lực. AR tổng hợp không tính trùng phí đã debit Balance. Thêm regression trên DB sạch và các kiểm tra idempotency/conservation.
 
