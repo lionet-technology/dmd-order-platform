@@ -1,5 +1,6 @@
 import { orderQuote,clientDraftAwaitingPurchase } from "./route-pricing";
 import { db } from "./db";
+import {assertRouteCartons} from './carton-policy';
 
 const text=(value:unknown)=>String(value??"").trim();
 const positive=(value:unknown)=>Number(value||0)>0;
@@ -80,12 +81,14 @@ function cartonComplete(carton:ShipmentCartonInput){
 }
 
 export function saveOrderShipmentStructure(orderId:number,input:{lot_count?:number;cartons:ShipmentCartonInput[]}){
-  const order=db.prepare("SELECT id,workflow_status,pricing_snapshot_json FROM orders WHERE id=?").get(orderId) as {id:number;workflow_status:string;pricing_snapshot_json?:string}|undefined;
+  const order=db.prepare("SELECT id,workflow_status,pricing_snapshot_json,service,sub_service,supplier FROM orders WHERE id=?").get(orderId) as {id:number;workflow_status:string;pricing_snapshot_json?:string;service:string;sub_service:string;supplier:string}|undefined;
   if(!order)throw new Error("Order không tồn tại.");
   if(order.pricing_snapshot_json)throw new Error("Dữ liệu kiện đã khóa khi đặt mua dịch vụ.");
   if(order.workflow_status==="CANCELLED")throw new Error("Đơn đã huỷ; không thể sửa khai báo kiện hàng.");
   const cartons=Array.isArray(input.cartons)?input.cartons:[];
   if(!cartons.length)throw new Error("Order phải có ít nhất một carton.");
+  const configured=db.prepare("SELECT max_cartons_per_order FROM service_route_configs WHERE lower(service)=lower(?) AND lower(sub_service)=lower(?) AND lower(supplier)=lower(?)").get(order.service,order.sub_service,order.supplier) as {max_cartons_per_order:number}|undefined;
+  assertRouteCartons(order.service,configured?.max_cartons_per_order,cartons.length);
   const lotCount=Math.max(1,Math.trunc(Number(input.lot_count||Math.max(...cartons.map(row=>Number(row.lot_number||1))))));
   const numbers=new Set<number>();
   for(const carton of cartons){

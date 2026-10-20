@@ -1,5 +1,9 @@
 # Roadmap triển khai — đã được Product chốt 13/10/2026
 
+## P1 đơn giản hóa Client Order/Carton Import — 20/10/2026
+Thống nhất mỗi dòng Client Excel là một Carton, ID bắt buộc và trùng liền nhau, Carton Quantity chỉ dòng đầu; cấu hình giới hạn 1 tham số per Route; không thêm cờ multi-carton riêng. Đã nối nhóm Excel vào Draft/Carton/Lot, thêm domain/API regression và UI cấu hình; giới hạn Carton dùng chung được chặn ở cả lúc lưu Carton và Purchase. Đã tạo fixture UAT mới 500 Order, gồm 40 multi-carton UPS/chuyên tuyến (Yun luôn 1), integrity OK. **Chưa chốt RC1:** API multi-carton nested/nhập tay, báo giá đúng cho UPS/chuyên tuyến, E2E xuyên Charge/Statement và browser UAT vẫn là release blockers. Xem `11-import-templates.md`.
+
+
 ## P1 continuation — 20/10/2026 (latest)
 
 Bulk Tracking retry now preserves an omitted sub-service instead of clearing the locked route. New 19-assertion recovery regression covers second-group transaction rollback, exact retry and explicit failed-Draft reselection; no automatic Balance Adjustment. Statement synchronization reuses its prepared lookup. Final test/lint/typecheck/build pass; 27 domain suites. New HTTP runner verifies 10k-entry concurrency (600 requests, zero errors), signed financial writes, 12 concurrent finalizations and application restart from a verified backup restored into a new synthetic DB. Five-role desktop/mobile browser smoke is recorded separately from full workflow acceptance. Priced UPS/Yun multi-carton reserve-to-Statement integration, full workflow UAT, deployment-target rehearsal and real pilot remain open. See [verification and limits](VERIFICATION-P1-CONTINUATION-2026-10-20.md) and [pilot checklist](PILOT-CHECKLIST-2026-10-20.md).

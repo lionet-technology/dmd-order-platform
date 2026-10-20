@@ -3,6 +3,7 @@ import { NextRequest,NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { canonicalEnumValue } from "@/lib/enums";
+import {maxCartonsForService} from '@/lib/carton-policy';
 
 import {parseCancellationRules,readCancellationRules,saveCancellationRules} from "@/lib/cancellation-config";
 import { parseSegmentation, readSegmentation, saveSegmentation } from "@/lib/route-segmentation";
@@ -54,6 +55,10 @@ async function handlePOST(req:NextRequest){
     const subService=body.sub_service?canonicalEnumValue("SUB_SERVICE",body.sub_service,service):"";
     const supplier=canonicalEnumValue("SUPPLIER",body.supplier);
     const active=body.active===false||body.active===0?0:1;
+    const hasMax=Object.prototype.hasOwnProperty.call(body,'max_cartons_per_order');
+    const maxCartons=Number(body.max_cartons_per_order);
+    if(hasMax&&(!Number.isSafeInteger(maxCartons)||maxCartons<1||maxCartons>1000))throw Error('Carton tối đa phải là số nguyên từ 1 đến 1000.');
+    if(hasMax&&maxCartonsForService(service,maxCartons)!==maxCartons)throw Error('ePacket và Yun chỉ cho phép 1 carton/Order.');
     const hasVariables=Object.prototype.hasOwnProperty.call(body,"route_variables")||Object.prototype.hasOwnProperty.call(body,"variables");
     const variables=hasVariables?routeVariables(body.route_variables??body.variables):null;
     const existing=body.id
@@ -77,6 +82,7 @@ async function handlePOST(req:NextRequest){
           .run(service,subService,supplier,JSON.stringify(variables||{}),active,auth.user.id,auth.user.id);
         id=Number(result.lastInsertRowid);
       }
+      if(hasMax)db.prepare('UPDATE service_route_configs SET max_cartons_per_order=? WHERE id=?').run(maxCartons,id);
       if(cancellation)saveCancellationRules(id,cancellation,body.cancellation_reason,auth.user.id);
       if(segmentation)saveSegmentation(id,segmentation);
       return id;

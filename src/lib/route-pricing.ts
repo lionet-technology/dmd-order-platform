@@ -2,6 +2,7 @@ import {canPurchase} from "./order-transition-guards";
 import {hasCaseHold} from "./cases";
 import { assertPurchasing, reservePurchase, accountFinancials } from "./credit";
 import { db } from "./db";
+import {assertRouteCartons} from './carton-policy';
 import { DEFAULT_SURCHARGES,isEPacket,quote,usd,validateRules,validateTiers } from "./epacket-pricing";
 import { logOrderEvent,publishPublicNote } from "./order-audit";
 type Row=Record<string,unknown>;
@@ -79,6 +80,9 @@ export function purchaseService(id:number,actor:{id:number;role:string},requireB
  if(o.pricing_snapshot_json)return o; // Idempotent retries do not debit twice.
  const guard=canPurchase(o);if(!guard.allowed)throw Error(guard.reason);
  const q=orderQuote(o),route=routeFor(o);
+ assertRouteCartons(o.service,route?.max_cartons_per_order,o.carton_count);
+ const declared=db.prepare('SELECT count(*) n FROM order_cartons WHERE order_id=?').get(id) as {n:number};
+ if(declared.n!==Number(o.carton_count))throw Error('Số Carton khai báo không khớp cấu trúc Order.');
  if(!q)throw Error("Route chưa có bảng giá active.");
  if(actor.role==="CLIENT"&&!route?.client_self_purchase)throw Error("Route chưa cho phép Client tự đặt mua.");
  if(!q.eligible)throw Error("Không đủ điều kiện mua dịch vụ: "+q.reasons.join(" "));

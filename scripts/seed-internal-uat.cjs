@@ -21,10 +21,11 @@ for(const [i,c] of clients.entries()){
  db.prepare("INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount,customer,note) VALUES (?,'PAYMENT','CREDIT',10000,?,'UAT synthetic opening balance')").run(c.id,c.display_name);
 }
 for(const c of clients)for(const [service,sub] of [['UPS','Saver'],['Yun Express',''],['Chuyên tuyến','']])db.prepare("INSERT OR IGNORE INTO client_service_settings(client_user_id,service,sub_service,is_enabled,discount_percent,updated_by_user_id) VALUES (?,?,?,1,0,?)").run(c.id,service,sub,admin.id);
+for(const [service,sub] of [['UPS','Saver'],['Chuyên tuyến','']])db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier,max_cartons_per_order) VALUES (?,?,?,3) ON CONFLICT(service,sub_service,supplier) DO UPDATE SET max_cartons_per_order=3").run(service,sub,'KILOSHIP');
 const summary=db.transaction(()=>{
  for(let n=0;n<500;n++){
  const c=clients[n<360?3+n%12:n%15],s=sales[n%3],sub=n%2?'Eco':'Standard',multi=n>=460;
- const service=multi?['UPS','Yun Express','Chuyên tuyến'][n%3]:'ePacket';
+ const service=multi?['UPS','Chuyên tuyến'][n%2]:'ePacket';
  const o=upsertOrder({client_user_id:c.id,customer:c.display_name,sales:s.display_name,order_id:'UAT-'+String(n+1).padStart(4,'0'),service,sub_service:multi?(service==='UPS'?'Saver':''):sub,supplier:multi?'KILOSHIP':'DMD',country:'US',carton_count:multi?3:1,weight:[.1,.2,.42,.8,1.01][n%5],length:15,width:10,height:5,item:['Cotton shirt','Canvas bag','Phone case'][n%3],material:'Cotton',declared_value:20,recipient_name:'UAT Recipient '+n,address1:(100+n)+' Market Street',city:'Los Angeles',state:'CA',zip:'90012',phone:'2025550100'});
  db.prepare('UPDATE orders SET sales_user_id=?,created_by_user_id=? WHERE id=?').run(s.id,c.id,o.id);
  if(n>=360)db.prepare("UPDATE orders SET workflow_status='SALES_DRAFT' WHERE id=?").run(o.id);

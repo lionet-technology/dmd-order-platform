@@ -1,5 +1,9 @@
 # DMD Report — Luồng vận hành và business rules
 
+## Client Carton import rule — chốt 20/10/2026
+Client Excel: một dòng = một Carton; Client Order ID bắt buộc từng dòng, chỉ nhóm các dòng liên tiếp; Carton Quantity nhập đúng một lần ở dòng đầu, số dòng phải khớp; số Carton nội bộ tự tăng, không bắt khách nhập Carton No. ePacket/Yun 1 Carton, UPS/chuyên tuyến có thể nhiều khi Route cấu hình giới hạn >1. Mặc định Lot 1; Admin có thể tách. Khi nhóm import phải lưu nguyên Order/Carton trong một transaction, không phát sinh phí theo số dòng, và chưa có giá active thì không cho mua. Quy tắc này ưu tiên các cách nhập Excel cũ; xem `11-import-templates.md` để biết giới hạn triển khai API/manual và UAT còn mở.
+
+
 ## P1 continuation — 20/10/2026 (latest)
 
 Bulk Tracking retry now preserves an omitted sub-service instead of clearing the locked route. New 19-assertion recovery regression covers second-group transaction rollback, exact retry and explicit failed-Draft reselection; no automatic Balance Adjustment. Statement synchronization reuses its prepared lookup. Final test/lint/typecheck/build pass; 27 domain suites. New HTTP runner verifies 10k-entry concurrency (600 requests, zero errors), signed financial writes, 12 concurrent finalizations and application restart from a verified backup restored into a new synthetic DB. Five-role desktop/mobile browser smoke is recorded separately from full workflow acceptance. Priced UPS/Yun multi-carton reserve-to-Statement integration, full workflow UAT, deployment-target rehearsal and real pilot remain open. See [verification and limits](VERIFICATION-P1-CONTINUATION-2026-10-20.md) and [pilot checklist](PILOT-CHECKLIST-2026-10-20.md).

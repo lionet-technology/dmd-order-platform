@@ -1,5 +1,14 @@
 # Import, mẫu mua & export
 
+## Client Excel multi-carton — 20/10/2026 (implementation slice)
+
+Owner chốt: **một dòng Excel = một Carton**, mọi dòng bắt buộc `Client Order ID`, các mã trùng chỉ được liền nhau, không gom ngược qua Order khác. `Carton Quantity` **bắt buộc ở dòng đầu Order, để trống ở mọi dòng sau**, phải bằng đúng số dòng Carton; không yêu cầu Carton No. Hệ thống tự đánh số Carton theo thứ tự; nhiều Carton mặc định chung Lot 1. Các dòng sau có thể bỏ trống trường người nhận/địa chỉ nhưng dữ liệu được lặp không được mâu thuẫn với dòng đầu. Dòng nào nhập sai thì cả Order bị chặn lưu; không tạo một phần Carton. Để sửa, khách sửa workbook và upload lại.
+
+`client-carton-groups.ts` nhóm tuần tự, Client file upload của `/api/client-orders` gọi normalizer trước khi preview; `save` tái kiểm nhóm Carton chống can thiệp payload và ghi cấu trúc Order/Carton/Lot trong một transaction. Không nhân bản Order/Ledger theo dòng Carton. Route có đúng một tham số `max_cartons_per_order` mặc định 1; `carton-policy.ts` kiểm cả Client Import, lưu Carton và Purchase; ePacket và Yun buộc 1 kể cả cấu hình cũ bị sai. UPS/chuyên tuyến chỉ multi khi Admin tăng giới hạn. Giá tự động cho UPS/chuyên tuyến chưa có rule được duyệt vẫn **fail closed**, không suy tính từ carton đầu hay ePacket. `Carton Quantity` trong API/nhập tay trước mắt chỉ hợp lệ khi có đúng danh sách carton khớp; API nested/carton editor hoàn thiện tiếp. Supplier template vẫn được xuất riêng sau khi Order chuẩn được ghi.
+
+**Verification:** `scripts/verify-client-carton-groups.cjs` và `scripts/verify-client-carton-api.cjs` là regression độc lập trên DB synthetic; xem `VERIFICATION-CLIENT-CARTON-IMPORT-2026-10-20.md`, không phải browser UAT toàn luồng hay giá UPS thực tế.
+
+
 ## Delta 18/10/2026
 Supplier Cost Excel chỉ BOD/FINANCE. Không cấp họ import Orders/Balance/Tracking. File tối đa 10 MB. Net Cost không được xuất qua lot.net_cost hoặc placeholder ngoài allowlist trong template vận hành. API JSON có projection bảo vệ cost cả list/detail/mutation và chuỗi JSON lồng.
 

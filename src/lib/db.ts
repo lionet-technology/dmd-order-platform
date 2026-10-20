@@ -470,6 +470,7 @@ ensureColumn("orders", "recipient_email", "recipient_email TEXT");
 ensureColumn("client_service_settings", "default_sub_service", "default_sub_service TEXT NOT NULL DEFAULT ''");
 ensureColumn("client_service_settings", "default_supplier", "default_supplier TEXT NOT NULL DEFAULT ''");
 ensureColumn("service_route_configs", "route_variables_json", "route_variables_json TEXT NOT NULL DEFAULT '{}'");
+ensureColumn("service_route_configs", "max_cartons_per_order", "max_cartons_per_order INTEGER NOT NULL DEFAULT 1 CHECK(max_cartons_per_order>=1)");
 ensureColumn("purchase_templates", "template_kind", "template_kind TEXT NOT NULL DEFAULT 'PURCHASE'");
 ensureColumn("supplier_costs", "created_by_user_id", "created_by_user_id INTEGER");
 ensureColumn("supplier_costs", "normalized_tracking", "normalized_tracking TEXT");

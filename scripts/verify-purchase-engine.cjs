@@ -52,11 +52,13 @@ async function main(){
   const client=createUser({display_name:"Client",username:"purchase.client",password:"TestPass123!",role:"CLIENT",sales_user_id:sales.id,created_by_user_id:admin.id});
   db.prepare("UPDATE users SET credit_limit_cents=1000000,credit_term_days=365 WHERE id=?").run(client.id); // Explicit purchasing room for legacy fixtures.
   db.prepare("INSERT INTO client_service_settings(client_user_id,service,sub_service,is_enabled,discount_percent,default_sub_service,default_supplier) VALUES (?,?,?,?,?,?,?)")
-    .run(client.id,"ePacket","",1,0,"T11","KILOSHIP");
+    .run(client.id,"UPS","",1,0,"Express","KILOSHIP");
+  const routeVariables={service_code:"EP_T11",sender_address:"DMD Warehouse, Hanoi"};
+  const routeId=Number(db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier,route_variables_json,max_cartons_per_order,created_by_user_id) VALUES (?,?,?,?,?,?)").run("UPS","Express","KILOSHIP",JSON.stringify(routeVariables),2,admin.id).lastInsertRowid);
 
   const order=upsertOrder({
     client_user_id:client.id,created_at:"03/10/2026",order_id:"PURCHASE-001",customer:"Client",sales:"Sales",
-    service:"ePacket",sub_service:"T11",supplier:"KILOSHIP",item:"Legacy summary",material:"Mixed",carton_count:2,
+    service:"UPS",sub_service:"Express",supplier:"KILOSHIP",item:"Legacy summary",material:"Mixed",carton_count:2,
     weight:5,length:30,width:20,height:10,declared_value:16,sales_price:100,recipient_name:"Jane Doe",
     address1:"1 Main St",address2:"Apt 2",city:"Austin",state:"TX",zip:"78701",country:"US",phone:"+1 555 0100",recipient_email:"jane@example.com",
   });
@@ -77,8 +79,8 @@ async function main(){
   assert(validateManifestReadiness(order.id).ready,"manifest should be ready once every carton has an active Tracking");
   const {reconciliationAction}=require(path.join(root,'src/lib/reconciliation.ts'));
   reconciliationAction(admin,{items:[{order_id:order.id,lot_number:1,action:'estimate',amount:10,reason:'Lot estimate'},{order_id:order.id,lot_number:2,action:'estimate',amount:20,reason:'Lot estimate'}]});
-  addSupplierCost({supplier:"KILOSHIP",service:"ePacket",sub_service:"T11",tracking:"LOT-1-TRACK",total_net_cost:10,source_key:"purchase-cost-1"});
-  addSupplierCost({supplier:"KILOSHIP",service:"ePacket",sub_service:"T11",tracking:"LOT-2-TRACK",total_net_cost:20,extra_surcharge:5,import_tax:7,surcharge_type:"Remote area",source_key:"purchase-cost-2"});
+  addSupplierCost({supplier:"KILOSHIP",service:"UPS",sub_service:"Express",tracking:"LOT-1-TRACK",total_net_cost:10,source_key:"purchase-cost-1"});
+  addSupplierCost({supplier:"KILOSHIP",service:"UPS",sub_service:"Express",tracking:"LOT-2-TRACK",total_net_cost:20,extra_surcharge:5,import_tax:7,surcharge_type:"Remote area",source_key:"purchase-cost-2"});
 
   const current=db.prepare("SELECT * FROM orders WHERE id=?").get(order.id);
   const lots=db.prepare("SELECT * FROM order_lots WHERE order_id=? ORDER BY lot_number").all(order.id);
@@ -110,8 +112,6 @@ async function main(){
   const manifestScan=await scanPurchaseWorkbook(fs.readFileSync(manifestPath));
   assert(manifestScan.unknown.length===0&&manifestScan.placeholders.length===11,"manifest scanner should accept row index, email and gram placeholders");
 
-  const routeVariables={service_code:"EP_T11",sender_address:"DMD Warehouse, Hanoi"};
-  const routeId=Number(db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier,route_variables_json,created_by_user_id) VALUES (?,?,?,?,?)").run("ePacket","T11","KILOSHIP",JSON.stringify(routeVariables),admin.id).lastInsertRowid);
   const templateId=Number(db.prepare("INSERT INTO purchase_templates(route_config_id,name,output_mode,repeat_sections_json,created_by_user_id) VALUES (?,?,?,?,?)")
     .run(routeId,"Invoice per Lot","PER_LOT",JSON.stringify([{sheet:"Invoice",row:2,scope:"CARTON_ITEM"}]),admin.id).lastInsertRowid);
   db.prepare("INSERT INTO purchase_template_versions(template_id,version_number,original_filename,stored_path,status,placeholder_map_json,validation_json,created_by_user_id,activated_at) VALUES (?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)")
