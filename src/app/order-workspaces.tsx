@@ -179,7 +179,7 @@ export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderI
 type QueueRow={
   order_pk:number;system_order_code:string;client_order_id:string;customer:string;recipient_name:string;
   service:string;sub_service:string;carton_count:number;carton_slot:number;carton_id:number|null;supplier:string;
-  expected_lot_count:number;tracking_id:number|null;tracking:string;label_url:string;
+  expected_lot_count:number;manual_total_price:number|null;tracking_id:number|null;tracking:string;label_url:string;
   purchase_status:string;purchase_issue:string;purchase_error_type?:string;manifest_status:string;manifest_issue:string;
 };
 
@@ -220,10 +220,10 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
 
   function update(index:number,key:keyof QueueRow,value:string){
     setRows(prev=>prev.map((row,i)=>i===index?{
-      ...row,[key]:key==="expected_lot_count"?Number(value||1):value,
+      ...row,[key]:key==="expected_lot_count"?Number(value||1):key==="manual_total_price"?(value===''?null:Number(value)):value,
     }:row));
   }
-  function updateOrder(orderPk:number,key:"sub_service"|"supplier"|"expected_lot_count",value:string){
+  function updateOrder(orderPk:number,key:"sub_service"|"supplier"|"expected_lot_count"|"manual_total_price",value:string){
     setRows(prev=>prev.map(row=>row.order_pk===orderPk?{
       ...row,[key]:key==="expected_lot_count"?Number(value||1):value,
       purchase_status:key==="expected_lot_count"?row.purchase_status:"CHECK_AFTER_SAVE",
@@ -363,7 +363,7 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
       <textarea value={quickPaste} onChange={e=>setQuickPaste(e.target.value)} placeholder={"TRACKING-001\thttps://.../label-001.pdf\nTRACKING-002\thttps://.../label-002.pdf"}/>
       <button className="secondaryBtn" disabled={!quickPaste.trim()||!rows.length} onClick={applyQuickPaste}>Áp dụng vào sheet</button>
     </div>}
-    <div className="bulkSheetScroll"><table><thead><tr><th>Chọn</th><th>DMD ID</th><th>Client Order ID</th><th>Client</th><th>Người nhận</th><th>Template</th><th>Carton</th><th>Service</th><th>Sub-Service (Order)</th><th>Supplier (Order)</th><th>Số lô (Order)</th><th>Tracking</th><th>URL Label</th></tr></thead>
+    <div className="bulkSheetScroll"><table><thead><tr><th>Chọn</th><th>DMD ID</th><th>Client Order ID</th><th>Client</th><th>Người nhận</th><th>Template</th><th>Carton</th><th>Service</th><th>Sub-Service (Order)</th><th>Supplier (Order)</th><th>Số lô (Order)</th><th>Giá bán USD (Order)</th><th>Tracking</th><th>URL Label</th></tr></thead>
       <tbody>{orderGroups.map((group,groupIndex)=>group.map((row,rowIndex)=>{
         const index=rows.indexOf(row);
         const rowClass=(groupIndex%2?"orderGroupAlt":"orderGroupBase")+" "+(rowIndex===0?"orderGroupStart":"");
@@ -379,6 +379,7 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
             <td rowSpan={group.length} className="orderLevelField"><label><span>Áp dụng toàn Order</span><select disabled={mode==="MANIFEST"} value={row.supplier} onChange={e=>updateOrder(row.order_pk,"supplier",e.target.value)}><option value="">Chọn Supplier</option>{suppliers.map(item=><option key={item.id}>{item.value}</option>)}</select></label></td>
             <td rowSpan={group.length} className="orderLevelField"><label><span>Áp dụng toàn Order</span><input disabled={mode==="MANIFEST"} type="number" min="1" value={row.expected_lot_count} onChange={e=>updateOrder(row.order_pk,"expected_lot_count",e.target.value)}/></label></td>
           </>}
+          {rowIndex===0&&<td rowSpan={group.length} className="orderLevelField">{/^(UPS|Chuyên tuyến)$/i.test(row.service)?<label><span>Nhập một lần cho toàn Order</span><input type="number" min="0.01" step="0.01" disabled={mode==='MANIFEST'||Boolean(row.tracking_id)} value={row.manual_total_price??''} onChange={e=>updateOrder(row.order_pk,'manual_total_price',e.target.value)} placeholder="USD"/></label>:<span>Giá tự động</span>}</td>}
           <td><input value={row.tracking} disabled={mode==='MANIFEST'||view==='ISSUES'||Boolean(row.tracking_id)} onPaste={e=>pasteTracking(e,index)} onChange={e=>update(index,"tracking",e.target.value)}/></td>
           <td><input value={row.label_url} disabled={mode==='MANIFEST'||view==='ISSUES'} onChange={e=>update(index,"label_url",e.target.value)}/></td>
         </tr>;

@@ -841,6 +841,9 @@ function PurchaseOrderPanel({order,enums,onClose,onDone}:{order:RowData;enums:En
   const [supplier,setSupplier]=useState(String(order.supplier||""));
   const [internalNote,setInternalNote]=useState(String(order.internal_note||""));
   const [expectedLotCount,setExpectedLotCount]=useState(String(order.expected_lot_count||1));
+  const [manualTotalPrice,setManualTotalPrice]=useState('');
+  const [manualPriceLocked,setManualPriceLocked]=useState(false);
+  const manualRoute=/^(UPS|Chuyên tuyến)$/i.test(String(order.service||''));
   const [trackings,setTrackings]=useState<TrackingDraft[]>([]);
   const [busy,setBusy]=useState(true);const [msg,setMsg]=useState("");
   const [replaceId,setReplaceId]=useState<number|null>(null);
@@ -851,7 +854,7 @@ function PurchaseOrderPanel({order,enums,onClose,onDone}:{order:RowData;enums:En
     setBusy(true);setMsg("");
     const res=await fetch(`/api/orders/${orderId}/trackings`);const body=await res.json();
     if(!res.ok){setMsg("Lỗi: "+body.error);setBusy(false);return;}
-    setSupplier(String(body.order?.supplier||""));setInternalNote(String(body.order?.internal_note||""));setExpectedLotCount(String(body.order?.expected_lot_count||1));
+    setSupplier(String(body.order?.supplier||""));setInternalNote(String(body.order?.internal_note||""));setExpectedLotCount(String(body.order?.expected_lot_count||1));setManualPriceLocked(Boolean(body.order?.pricing_snapshot_json));setManualTotalPrice(body.order?.pricing_snapshot_json?String(body.order?.total_due||''):'');
     const rows=(body.trackings||[]).map((row:Record<string,unknown>)=>({
       id:Number(row.id),tracking:String(row.tracking||""),label_url:String(row.label_url||""),lot_number:Number(row.lot_number||1),status:String(row.status||"ACTIVE"),is_primary:Number(row.is_primary||0),cost_match_type:String(row.cost_match_type||"UNKNOWN"),cost_parent_tracking_id:row.cost_parent_tracking_id?Number(row.cost_parent_tracking_id):null,replaced_by_tracking_id:row.replaced_by_tracking_id?Number(row.replaced_by_tracking_id):null,
     }));
@@ -872,7 +875,7 @@ function PurchaseOrderPanel({order,enums,onClose,onDone}:{order:RowData;enums:En
     for(const row of active){const key=row.tracking.replace(/[\s-]+/g,"").toUpperCase();if(!key)continue;if(seen.has(key)){setMsg("Lỗi: Tracking bị trùng trong Order.");return;}seen.add(key)}
     setBusy(true);setMsg("");
     try{
-      await postJson(`/api/orders/${orderId}/trackings`,{action:"save",supplier,internal_note:internalNote,expected_lot_count:Number(expectedLotCount||1),complete,trackings:active});
+      await postJson(`/api/orders/${orderId}/trackings`,{action:"save",supplier,internal_note:internalNote,expected_lot_count:Number(expectedLotCount||1),manual_total_price:manualRoute?manualTotalPrice:undefined,complete,trackings:active});
       setMsg(complete?"Đã hoàn tất mua đơn.":"Đã lưu nháp.");await load();await onDone();
     }catch(error){setMsg("Lỗi: "+(error instanceof Error?error.message:"Không thể lưu"));setBusy(false)}
   }
@@ -889,6 +892,7 @@ function PurchaseOrderPanel({order,enums,onClose,onDone}:{order:RowData;enums:En
     <div className="purchaseSummary"><div><span>ORDER</span><b>{String(order.order_id||order.id||"—")}</b></div><div><span>CLIENT</span><b>{String(order.customer||"—")}</b></div><div><span>TRẠNG THÁI</span><b>{String(order.workflow_status||"PENDING_PURCHASE")}</b></div></div>
     <div className="purchaseFields">
       <SelectField label="Supplier" name="supplier" value={supplier} onChange={(_,value)=>setSupplier(value)} allowCustom={false} requireOption options={supplierOptions}/>
+      {manualRoute&&<label className="field"><span>Giá bán thủ công toàn Order (USD) — bắt buộc trước Tracking/Label</span><input type="number" min="0.01" step="0.01" value={manualTotalPrice} disabled={manualPriceLocked} onChange={e=>setManualTotalPrice(e.target.value)} placeholder="VD: 38.75"/><small>Một giá cho toàn bộ Carton; Admin chỉ nhập một lần. Khi cấp Label hệ thống ghi nhận Charge.</small></label>}
       <Field label="Số lượng Lô" name="expected_lot_count" type="number" value={expectedLotCount} onChange={(_,value)=>setExpectedLotCount(value)}/>
       <TextAreaField label="Note nội bộ (chỉ Admin)" name="internal_note" value={internalNote} onChange={(_,value)=>setInternalNote(value)}/>
     </div>

@@ -1,5 +1,9 @@
 # Import, mẫu mua & export
 
+## Cập nhật 20/10 — Manual UPS/chuyên tuyến
+File Client vẫn 1 dòng = 1 Carton và Quantity chỉ dòng đầu. UPS/chuyên tuyến cho tạo Draft khi chưa có bảng giá, Admin nhập giá bán tổng Order lúc cấp Tracking/Label. Export/Import sheet Tracking có thêm cột **Giá bán thủ công (USD/Order)**, chỉ đặt giá ở dòng đầu Order. Client nhập tay chọn Single/Multiple Cartons nếu Route cho phép; API public mới hoãn. File Supplier Purchase Template vẫn là cấu hình riêng, không giả lập template generic khi thiếu. Xem `VERIFICATION-MANUAL-UPS-CARTON-2026-10-20.md`.
+
+
 ## Client Excel multi-carton — 20/10/2026 (implementation slice)
 
 Owner chốt: **một dòng Excel = một Carton**, mọi dòng bắt buộc `Client Order ID`, các mã trùng chỉ được liền nhau, không gom ngược qua Order khác. `Carton Quantity` **bắt buộc ở dòng đầu Order, để trống ở mọi dòng sau**, phải bằng đúng số dòng Carton; không yêu cầu Carton No. Hệ thống tự đánh số Carton theo thứ tự; nhiều Carton mặc định chung Lot 1. Các dòng sau có thể bỏ trống trường người nhận/địa chỉ nhưng dữ liệu được lặp không được mâu thuẫn với dòng đầu. Dòng nào nhập sai thì cả Order bị chặn lưu; không tạo một phần Carton. Để sửa, khách sửa workbook và upload lại.

@@ -1,5 +1,9 @@
 # Tracking, Label & trạng thái vận chuyển
 
+## UPS/chuyên tuyến manual charge gate 20/10/2026
+Admin trong cả màn Tracking/Label hàng loạt và Order detail phải nhập **giá bán USD cho cả Order**, không phải theo từng Carton. Thiếu giá, giá cents sai hoặc Credit/Balance không đủ thì chặn trước khi tạo Tracking, rollback. Khi đủ giá, Reserve một lần; Label ghi Charge một lần; các Carton còn lại/retry không charge thêm. Manual Route chưa có Supplier Template vẫn có thể nhập Tracking thủ công; export file mua vẫn đòi Template thật. Xem `VERIFICATION-MANUAL-UPS-CARTON-2026-10-20.md`.
+
+
 ## P1 continuation — 20/10/2026 (latest)
 
 Bulk Tracking retry now preserves an omitted sub-service instead of clearing the locked route. New 19-assertion recovery regression covers second-group transaction rollback, exact retry and explicit failed-Draft reselection; no automatic Balance Adjustment. Statement synchronization reuses its prepared lookup. Final test/lint/typecheck/build pass; 27 domain suites. New HTTP runner verifies 10k-entry concurrency (600 requests, zero errors), signed financial writes, 12 concurrent finalizations and application restart from a verified backup restored into a new synthetic DB. Five-role desktop/mobile browser smoke is recorded separately from full workflow acceptance. Priced UPS/Yun multi-carton reserve-to-Statement integration, full workflow UAT, deployment-target rehearsal and real pilot remain open. See [verification and limits](VERIFICATION-P1-CONTINUATION-2026-10-20.md) and [pilot checklist](PILOT-CHECKLIST-2026-10-20.md).

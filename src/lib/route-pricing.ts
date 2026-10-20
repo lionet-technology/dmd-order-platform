@@ -3,6 +3,7 @@ import {hasCaseHold} from "./cases";
 import { assertPurchasing, reservePurchase, accountFinancials } from "./credit";
 import { db } from "./db";
 import {assertRouteCartons} from './carton-policy';
+import {isManualPriceRoute} from './manual-route-price';
 import { DEFAULT_SURCHARGES,isEPacket,quote,usd,validateRules,validateTiers } from "./epacket-pricing";
 import { logOrderEvent,publishPublicNote } from "./order-audit";
 type Row=Record<string,unknown>;
@@ -77,12 +78,21 @@ export function purchaseService(id:number,actor:{id:number;role:string},requireB
  if((actor.role==="CLIENT"&&Number(o.client_user_id)!==actor.id)||(actor.role==="SALES"&&!db.prepare("SELECT id FROM users WHERE id=? AND sales_user_id=?").get(Number(o.client_user_id),actor.id)))throw Error("Không có quyền mua Order này.");
  if(!["CLIENT","ADMIN","SALES"].includes(actor.role))throw Error("Không có quyền mua dịch vụ.");
  if(o.workflow_status==="CANCELLED")throw Error("Đơn đã huỷ.");
- if(o.pricing_snapshot_json)return o; // Idempotent retries do not debit twice.
+ if(o.pricing_snapshot_json||isManualPriceRoute(o.service)&&o.service_purchased_at)return o; // Idempotent retries never duplicate customer request/charge.
  const guard=canPurchase(o);if(!guard.allowed)throw Error(guard.reason);
  const q=orderQuote(o),route=routeFor(o);
  assertRouteCartons(o.service,route?.max_cartons_per_order,o.carton_count);
  const declared=db.prepare('SELECT count(*) n FROM order_cartons WHERE order_id=?').get(id) as {n:number};
  if(declared.n!==Number(o.carton_count))throw Error('Số Carton khai báo không khớp cấu trúc Order.');
+ if(!q&&isManualPriceRoute(o.service)){
+  if(!route||!route.active)throw Error('Route chưa active.');
+  if(actor.role==='CLIENT'&&!route.client_self_purchase)throw Error('Route chưa cho phép Client lên đơn.');
+  if(o.client_user_id)assertPurchasing(Number(o.client_user_id),0);
+  const stamp=new Date().toISOString();
+  db.prepare("UPDATE orders SET service_purchased_at=COALESCE(service_purchased_at,?),workflow_status='PENDING_PURCHASE',updated_at=CURRENT_TIMESTAMP WHERE id=?").run(stamp,id);
+  logOrderEvent({orderId:id,eventType:'SERVICE_PURCHASED',summary:'Đã lên đơn; chờ Admin nhập giá thủ công trước khi cấp Tracking/Label.',actorId:actor.id});
+  return db.prepare('SELECT * FROM orders WHERE id=?').get(id) as Row;
+ }
  if(!q)throw Error("Route chưa có bảng giá active.");
  if(actor.role==="CLIENT"&&!route?.client_self_purchase)throw Error("Route chưa cho phép Client tự đặt mua.");
  if(!q.eligible)throw Error("Không đủ điều kiện mua dịch vụ: "+q.reasons.join(" "));
@@ -99,7 +109,7 @@ export function purchaseService(id:number,actor:{id:number;role:string},requireB
 }
 export function safePricing(o:Row,role:string){
  const q=o.pricing_snapshot_json?JSON.parse(String(o.pricing_snapshot_json)):orderQuote(o);
- if(!q)return null;
+ if(!q){if(isManualPriceRoute(o.service))return {eligible:true,reasons:[],notice:'Admin sẽ nhập giá bán khi cấp Tracking/Label.',currency:'USD',total_charge:0,manual_price_pending:true};return null;}
  if(o.workflow_status==="CANCELLED"){q.eligible=false;q.reasons=["Đơn đã huỷ."]}
  if(role==="ADMIN")return q;
  if(role==="CLIENT"&&!o.pricing_snapshot_json){
@@ -118,6 +128,7 @@ export function clientDraftAwaitingPurchase(o:Row){
  return !o.service_purchased_at&&db.prepare("SELECT id FROM users WHERE id=? AND role='CLIENT'").get(Number(o.created_by_user_id||0));
 }
 export function assertConfiguredPurchase(o:Row){
+ if(isManualPriceRoute(o.service)&&!o.pricing_snapshot_json)throw Error('Admin phải nhập giá bán thủ công trước khi cấp Tracking/Label.');
  if(o.client_user_id&&!o.pricing_snapshot_json&&!o.tracking&&!o.purchase_completed_at)assertPurchasing(Number(o.client_user_id),0);
  if(clientDraftAwaitingPurchase(o))throw Error("Client chưa đặt mua dịch vụ cho Draft này.");
  if(isEPacket(o)&&!o.pricing_snapshot_json&&!activePricing(Number(routeFor(o)?.id||0)))throw Error("Route chưa có bảng Base Rate được Owner duyệt.");

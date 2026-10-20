@@ -74,6 +74,7 @@ async function main(){
   assert(validatePurchaseReadiness(order.id).ready,"fully declared cartons should be purchase-ready");
 
   const cartons=structure.cartons;
+  require(path.join(root,'src/lib/manual-route-price.ts')).setManualOrderPrice(order.id,100,admin.id);
   addOrderTracking({orderId:order.id,tracking:"LOT-1-TRACK",labelUrl:"https://labels.test/1.pdf",cartonId:Number(cartons[0].id),actorId:admin.id});
   addOrderTracking({orderId:order.id,tracking:"LOT-2-TRACK",labelUrl:"https://labels.test/2.pdf",cartonId:Number(cartons[1].id),actorId:admin.id});
   assert(validateManifestReadiness(order.id).ready,"manifest should be ready once every carton has an active Tracking");

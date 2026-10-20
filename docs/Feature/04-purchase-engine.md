@@ -1,5 +1,9 @@
 # Mua đơn & xử lý thất bại
 
+## UPS/chuyên tuyến không có giá tự động — Owner 20/10/2026
+Client chỉ **gửi yêu cầu mua/đặt dịch vụ** chưa biết giá và không phát sinh Reserve/Charge. Khi Admin cấp Tracking/Label, phải ghi giá bán tổng Order (USD, chính xác cents). Gate Balance/Credit/Hold/overdue Debt áp dụng khi biết giá trước bất kỳ Tracking nào; nếu không đủ tiền, rollback toàn bộ Order update/Tracking/Reserve. Admin ghi Reserve một lần; Label đầu tiên chuyển thành Charge qua `completeReserve` (không nhân Carton, retry không charge lại). Đơn chưa có giá không được dùng Tracking insertion từ endpoint khác để vượt gate. Supplier Net Cost và Purchase Template tách biệt. Đây là phương án manual GĐ1, không phải giá UPS auto. Evidence và giới hạn: `VERIFICATION-MANUAL-UPS-CARTON-2026-10-20.md`.
+
+
 ## Owner financial update — 20/10/2026
 
 Approved target: Client partial-success bulk purchase, explicit failed-Draft reselection, no auto retry; READY requires purchased/reserved, complete data/template and no Hold, without another balance check. Only overdue Debt and independent locks block; Statement paid/unpaid does not. Current application integration remains pending. See [approved rules](OWNER-FINANCE-2026-10-20.md) and [verification/migration/UAT](VERIFICATION-FINANCIAL-CORE-2026-10-20.md).

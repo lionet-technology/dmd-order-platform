@@ -1,5 +1,9 @@
 # Roadmap triển khai — đã được Product chốt 13/10/2026
 
+## UPS/Chuyên tuyến manual GĐ1 — 20/10/2026
+Thực hiện request Owner: cho submit Order chưa có giá, Admin nhập tổng giá bán khi cấp Tracking/Label (Reserve/Charge idempotent), Client nhập tay có Single/Multiple Cartons, API multi-carton public để sau; mở rộng regression E2E từ XLSX→Draft→Client submit→Admin price/Tracking→Manifest/Statement và single-Order detail. Chưa hoàn tất Owner browser UAT, real UPS prices/Supplier templates, triển khai database đích/pilot. Xem `VERIFICATION-MANUAL-UPS-CARTON-2026-10-20.md`.
+
+
 ## P1 đơn giản hóa Client Order/Carton Import — 20/10/2026
 Thống nhất mỗi dòng Client Excel là một Carton, ID bắt buộc và trùng liền nhau, Carton Quantity chỉ dòng đầu; cấu hình giới hạn 1 tham số per Route; không thêm cờ multi-carton riêng. Đã nối nhóm Excel vào Draft/Carton/Lot, thêm domain/API regression và UI cấu hình; giới hạn Carton dùng chung được chặn ở cả lúc lưu Carton và Purchase. Đã tạo fixture UAT mới 500 Order, gồm 40 multi-carton UPS/chuyên tuyến (Yun luôn 1), integrity OK. **Chưa chốt RC1:** API multi-carton nested/nhập tay, báo giá đúng cho UPS/chuyên tuyến, E2E xuyên Charge/Statement và browser UAT vẫn là release blockers. Xem `11-import-templates.md`.
 

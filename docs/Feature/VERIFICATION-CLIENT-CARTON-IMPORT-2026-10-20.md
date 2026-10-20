@@ -1,5 +1,8 @@
 # Client Carton grouping — Implementation and verification, 20/10/2026
 
+**Historical snapshot at commit 6a8f9a8.** The later approved temporary UPS/Chuyên tuyến price-on-Tracking flow and manual Single/Multiple Carton UI supersede earlier statements here that UPS was still blocked without approved automatic Base Rate. See latest `VERIFICATION-MANUAL-UPS-CARTON-2026-10-20.md`.
+
+
 ## Implemented
 - Excel/CSV file Client Orders is normalized strictly by *adjacent* Client Order ID groups. Every physical row is one Carton. Each row needs its ID; the first row alone must contain integer Carton Quantity, which must equal the number of rows in its group; subsequent Quantity must be blank. IDs appearing after another group are errors. Carton No. is generated internally in source order.
 - Group conflicts are detected before Draft persistence. The save path **revalidates** Carton rows instead of trusting errors or groups posted from the browser; malicious nested internal fields are excluded from Client preview/error responses.

@@ -1,5 +1,6 @@
 import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import { orderQuote,purchaseService } from "@/lib/route-pricing";
+import {isManualPriceRoute,setManualOrderPrice} from '@/lib/manual-route-price';
 import { NextRequest, NextResponse } from "next/server";
 import { canAccessClient, getClientAccount, requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -11,7 +12,7 @@ import { ensureOrderShipmentStructure } from "@/lib/order-shipments";
 export const runtime="nodejs";
 
 function accessible(user:{id:number;role:string},orderId:number){
-  const order=db.prepare("SELECT id,client_user_id,supplier,internal_note,workflow_status,purchase_completed_at,expected_lot_count,carton_count FROM orders WHERE id=?").get(orderId) as {id:number;client_user_id:number|null;supplier:string|null;internal_note:string|null;workflow_status:string;purchase_completed_at:string|null;expected_lot_count:number;carton_count:number}|undefined;
+  const order=db.prepare("SELECT id,client_user_id,supplier,internal_note,workflow_status,purchase_completed_at,expected_lot_count,carton_count,service,total_due,pricing_snapshot_json FROM orders WHERE id=?").get(orderId) as {id:number;client_user_id:number|null;supplier:string|null;internal_note:string|null;workflow_status:string;purchase_completed_at:string|null;expected_lot_count:number;carton_count:number;service:string;total_due:number;pricing_snapshot_json:string|null}|undefined;
   if(!order)return {error:NextResponse.json({error:"Order không tồn tại."},{status:404})};
   if(user.role!=="ADMIN"){
     const client=order.client_user_id?getClientAccount(order.client_user_id):undefined;
@@ -41,6 +42,7 @@ async function handlePOST(req:NextRequest,{params}:{params:Promise<{id:string}>}
     if(quote&&!quote.eligible)throw new Error(quote.reasons.join(" "));
     if(current.pricing_snapshot_json&&body.supplier&&body.supplier!==current.supplier)throw new Error("Route đã khóa khi đặt mua.");
     if(quote&&!current.pricing_snapshot_json){purchaseService(id,auth.user,false)}
+    if(action==='save'&&isManualPriceRoute(current.service)&&!current.pricing_snapshot_json&&Array.isArray(body.trackings)&&body.trackings.some((r:{tracking?:string})=>String(r.tracking||'').trim()))setManualOrderPrice(id,body.manual_total_price,auth.user.id);
     if(action==="replace"){
       const old=db.prepare("SELECT tracking,label_url FROM order_trackings WHERE id=? AND order_id=?").get(Number(body.old_tracking_id),id) as {tracking:string;label_url:string|null}|undefined;
       const replacement=replaceOrderTracking({orderId:id,oldTrackingId:Number(body.old_tracking_id),newTracking:body.new_tracking,newLabelUrl:body.new_label_url,reason:body.reason,actorId:auth.user.id});

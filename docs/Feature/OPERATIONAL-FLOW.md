@@ -1,5 +1,9 @@
 # DMD Report — Luồng vận hành và business rules
 
+## Manual UPS/Chuyên tuyến — 20/10/2026
+Client tạo Single/Multiple Carton Order (Excel/mẫu nhập tay; API đặc thù hoãn) → lưu Draft → submit mua/chờ Admin **chưa có giá, chưa Reserve/Charge** → Admin nhập giá bán USD **toàn Order** trước khi cấp Tracking/Label → gate chính xác Balance/Credit/Hold/Debt → Reserve một lần → Label đầu tiên ghi Charge một lần và hủy Reserve, thông tin tài chính đi vào Statement V2. Thiếu giá/thiếu sức mua/nhập tiền không hợp lệ thì rollback cả giá/Tracking/Ledger. Khóa giá sau cấp Tracking; không nhân giá theo Carton. ePacket/Yun chỉ 1 Carton, quy tắc giá cũ không đổi. Manual Tracking không đồng nghĩa đã có file Purchase Template hợp lệ để export Supplier. Xem `VERIFICATION-MANUAL-UPS-CARTON-2026-10-20.md`.
+
+
 ## Client Carton import rule — chốt 20/10/2026
 Client Excel: một dòng = một Carton; Client Order ID bắt buộc từng dòng, chỉ nhóm các dòng liên tiếp; Carton Quantity nhập đúng một lần ở dòng đầu, số dòng phải khớp; số Carton nội bộ tự tăng, không bắt khách nhập Carton No. ePacket/Yun 1 Carton, UPS/chuyên tuyến có thể nhiều khi Route cấu hình giới hạn >1. Mặc định Lot 1; Admin có thể tách. Khi nhóm import phải lưu nguyên Order/Carton trong một transaction, không phát sinh phí theo số dòng, và chưa có giá active thì không cho mua. Quy tắc này ưu tiên các cách nhập Excel cũ; xem `11-import-templates.md` để biết giới hạn triển khai API/manual và UAT còn mở.
 

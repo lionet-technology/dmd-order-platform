@@ -1,5 +1,9 @@
 # Orders, Draft & cấu trúc kiện
 
+## Client nhập tay 20/10/2026 — tạm thời UPS/chuyên tuyến
+Chỉ với Route được phép nhiều Carton, màn Client hiển thị chọn **Single Carton** (mặc định) / **Multiple Cartons**. Nhập Order recipient/address một lần, khai Carton 1 trên sheet và bổ sung từng Carton bằng form chi tiết; tự tăng `Carton Quantity`, không bắt Carton No. ePacket/Yun không hiện chế độ nhiều Carton. Định dạng Excel vẫn yêu cầu ID từng dòng, Quantity chỉ dòng đầu. Client được lưu Draft và gửi Order chờ Admin nhập tổng giá bán; lúc đó chưa tạo Reserve/Charge. Preview có trạng thái riêng **Chờ Admin nhập giá**, không hiển thị 0 USD như đã chốt giá. Sau khi Client xác nhận gửi, không cho sửa dữ liệu Order/Carton nữa trừ khi xử lý nghiệp vụ bằng Admin. Chưa phát hành API multi-carton công khai (deferred theo Owner). Test source/API ghi ở `VERIFICATION-MANUAL-UPS-CARTON-2026-10-20.md`.
+
+
 ## Chốt nghiệp vụ 13/10/2026
 - Một Order có **duy nhất một địa chỉ giao**. Không mở rộng thành nhiều điểm đến hoặc triển khai lịch giao riêng cho từng Lot.
 - Giữ hỗ trợ nhiều Lot/Carton nếu có trong domain, nhưng luồng mặc định 1 Order = 1 Lot = 1 Carton phải ít thao tác nhất.
