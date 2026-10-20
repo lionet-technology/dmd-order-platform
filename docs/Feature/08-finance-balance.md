@@ -1,5 +1,10 @@
 # Balance, Credit & Statement
 
+## Consecutive period UI continuation — 20/10/2026
+
+The Statement history API returns `next_period_start` from the checkpoint or last issued end in the same serialized read as history. Selecting a Client automatically loads history and selects that unissued period; a next-period button restores its dates. A future period is labelled as unavailable for Finalize. Captured Credit Limit/Reserve appear separately as references, never added to balances. Client-switch/unmount invalidates pending Statement and Claim responses. Existing role, immutable snapshot, late-posting and Debt-first rules remain unchanged. See [current as-is audit and rerun evidence](STATUS-AS-IS-2026-10-20.md). Legacy migration and complete production acceptance remain open. Older progress sections below are historical.
+
+
 ## Statement V2 operational integration — 20/10/2026 (current implementation)
 
 This section supersedes earlier delivery-status notes below; approved business rules are unchanged. Statement V2 is connected to the active operational Ledger, Debt/allocations, daily interest and Refund events, with API and UI. `fc_*` remains inactive. See [implementation, evidence and remaining gates](VERIFICATION-STATEMENT-V2-2026-10-20.md).

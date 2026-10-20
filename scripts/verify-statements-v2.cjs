@@ -35,7 +35,9 @@ const ledger=(type,dir,amount,occurred='2026-10-20',referenceType=null,reference
  reject(()=>statements.finalizeStatement(admin,client.id,'2026-10-19',day),'No inferred pre-checkpoint history');
  reject(()=>statements.finalizeStatement(admin,client.id,day,'2026-10-21'),'No future finalization');
  const before=db.prepare('SELECT count(*) n FROM ledger_entries').get().n;
+ eq(statements.listStatements(finance,client.id).next_period_start,day,'First suggested period begins at checkpoint');
  const issued=statements.finalizeStatement(finance,client.id,day,day),bytes=JSON.stringify(issued);
+ eq(statements.listStatements(finance,client.id).next_period_start,'2026-10-21','Next boundary follows issued end');
  eq(statements.finalizeStatement(admin,client.id,day,day),issued,'Finalize replay identical financial snapshot');
  eq(db.prepare('SELECT count(*) n FROM ledger_entries').get().n,before,'Finalize never debits again');
  const {caseAction}=require('../src/lib/cases.ts'),snapshotId=statements.listStatements(client,client.id).items[0].id;
@@ -73,6 +75,8 @@ const ledger=(type,dir,amount,occurred='2026-10-20',referenceType=null,reference
  eq(db.prepare('SELECT count(*) n FROM statement_v2_events').get().n,eventsBefore,'No orphan journal on rollback');
  now='2026-10-21T03:00:00.000Z';
  const second=statements.finalizeStatement(admin,client.id,'2026-10-21','2026-10-21');
+ eq(statements.listStatements(finance,client.id).next_period_start,'2026-10-22','Consecutive chain advances next period');
+ reject(()=>statements.finalizeStatement(finance,client.id,'2026-10-23','2026-10-23'),'Cannot skip a period');
  eq(second.opening,issued.closing,'Continuous issued chain');
  eq(second.closing.balance_cents,-2700,'Second Finalized closing reconciled');
  const {PaymentAdjustments}=require('../src/lib/payment-adjustments.ts'),{snapshotDebt}=require('../src/lib/debt-interest.ts');
@@ -114,6 +118,8 @@ const ledger=(type,dir,amount,occurred='2026-10-20',referenceType=null,reference
  for(const actor of [admin,finance,bod,sales,client]){const r=await route.GET(request(actor));eq(r.status,200,'HTTP role list '+actor.role);eq(r.headers.get('cache-control'),'private, no-store','Private financial response');}
  eq((await route.GET(request(warehouse))).status,403,'HTTP Warehouse denied');
  eq((await route.GET(request(null))).status,401,'HTTP anonymous denied');
+ const foreignSales=create('foreign-sales','SALES');
+ const deniedSales=await route.GET(request(foreignSales,null,'/api/statements-v2?client_id='+client.id));eq(deniedSales.status,400,'Unassigned Sales cannot read Client history or period boundary');
  const selfResponse=await route.GET(request(other,null,'/api/statements-v2?client_id='+client.id));eq(selfResponse.status,200,'Client request is scoped to self');eq((await selfResponse.json()).items.every(s=>s.client_id===other.id),true,'Client cannot select another account through query');
  for(const actor of [sales,client,bod,warehouse])eq((await route.POST(request(actor,{client_id:client.id,start:day,end:day}))).status,403,'HTTP finalize denied '+actor.role);
  eq((await route.POST(request(finance,{client_id:client.id,start:day,end:day}))).status,200,'Finance route can finalize/replay independently of Admin');

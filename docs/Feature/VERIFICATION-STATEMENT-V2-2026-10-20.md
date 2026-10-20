@@ -43,3 +43,7 @@ Before any deployment on a populated DB: stop/serialize writers; verify exact DB
 - Final production server `127.0.0.1:3130`, `E2E_BASE_URL=http://127.0.0.1:3130 node scripts/e2e-statements-v2.cjs`: **32 HTTP assertions PASS**. Includes Finance authorization, authentication/client scoping, exact three-account totals, Payment allocation before subsequent Refund (not deferred to preview), denied Admin bypass, 10 concurrent Finalizes with identical snapshot, no double charge, late-fee immutability, removal of Paid/Unpaid operational fields and BOD current/issued parity.
 - Final build rechecked in browser as Finance: issued snapshot has Balance −$37 / Debt $0 / Refund $7, Payment allocation precedes refunds, BOD snapshot remains −$37 and current exposure −$38. Saved screenshot is from this final fixture/build. Earlier Client browser check verified own history and no Finalize button; the full role/device matrix remains open.
 - Final full regression: **26 suites PASS**, Statement V2 **73 assertions**. ESLint, non-incremental TypeScript and whitespace checks PASS. Local test server is stopped after verification; no deployment performed.
+
+## Continuation rerun after bf32ec8
+
+See [current as-is audit](STATUS-AS-IS-2026-10-20.md) for the new consecutive-period UI/API change, 26-suite/78-assertion regression, 39 HTTP assertions on a restored synthetic backup, five-role focused desktop checks and remaining production/migration gates. Prior-run numbers above are retained as historical evidence.

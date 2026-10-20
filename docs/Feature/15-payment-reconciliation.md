@@ -1,5 +1,9 @@
 # Payment reconciliation
 
+## UI clarification — 20/10/2026
+
+Admin credit detail is labelled **Xem Payment / Debt / Balance**, removing the obsolete reallocation wording. It remains a detail view with audited full rejection where allowed; partial actual-receipt correction belongs in Finance Payment Adjustment. No manual allocation action was reintroduced. See [current audit](STATUS-AS-IS-2026-10-20.md).
+
 ## Statement V2 operational integration — 20/10/2026 (current implementation)
 
 This section supersedes earlier delivery-status notes below; approved business rules are unchanged. Statement V2 is connected to the active operational Ledger, Debt/allocations, daily interest and Refund events, with API and UI. `fc_*` remains inactive. See [implementation, evidence and remaining gates](VERIFICATION-STATEMENT-V2-2026-10-20.md).

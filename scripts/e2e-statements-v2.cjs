@@ -23,6 +23,11 @@ async function call(path,cookie,body){const r=await fetch(base+path,{method:body
  check(results.every(r=>r.status===200),'Concurrent HTTP finalization succeeds');
  check(new Set(results.map(r=>JSON.stringify(r.data))).size===1,'Concurrent replay returns identical snapshot');
  const history=await call('/api/statements-v2?client_id='+id,cookies.client);check(history.data.items.length===1&&history.data.items[0].status==='FINALIZED','One issued snapshot; no Paid/Unpaid');
+ const nextDay=new Date(new Date(day+'T00:00:00Z').getTime()+86400000).toISOString().slice(0,10);
+ check(history.data.next_period_start===nextDay,'Client sees exact next unissued period');
+ for(const role of ['admin','sales','finance','bod']){const view=await call('/api/statements-v2?client_id='+id,cookies[role]);check(view.status===200&&view.data.next_period_start===nextDay&&view.data.items[0].closing.balance_cents===-3700,'History and next period role '+role);}
+ check(Number.isSafeInteger(history.data.items[0].reference.credit_limit_cents)&&Number.isSafeInteger(history.data.items[0].reference.reserve_cents),'Captured credit and reserve references use exact cents');
+ check((await call('/api/statements-v2',cookies.finance,{client_id:id,start:nextDay,end:nextDay})).status===400,'Next future period cannot finalize');
  const balanceBefore=(await call('/api/financials?client_id='+id,cookies.admin)).data.net_balance_cents;check(balanceBefore===-3700,'Finalization does not charge again');
  const projection=(await call('/api/financials?client_id='+id,cookies.admin)).data;check(projection.statements.every(s=>!('status' in s)&&!('paid_cents' in s)),'No Paid/Unpaid operational Statement workflow');
  check((await call('/api/financials',cookies.sales,{client_id:id,action:'additional_fee',unit_price:1,quantity:1,occurred_at:'2026-10-01',request_key:'v2-late-'+stamp})).status===200,'Late fee after issue');
