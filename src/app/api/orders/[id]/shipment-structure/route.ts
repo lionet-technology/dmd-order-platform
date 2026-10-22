@@ -1,3 +1,4 @@
+import {amendShipmentBeforeTracking} from "@/lib/order-amendment";
 import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import { NextRequest,NextResponse } from "next/server";
 import { canAccessClient,getClientAccount,requireUser,type AuthUser } from "@/lib/auth";
@@ -38,7 +39,7 @@ async function handlePATCH(req:NextRequest,{params}:{params:Promise<{id:string}>
   try{
     const before=getOrderShipmentStructure(id);
     const body=await req.json();
-    const after=saveOrderShipmentStructure(id,body);
+    const after=auth.user.role==='ADMIN'?amendShipmentBeforeTracking(id,body,auth.user):saveOrderShipmentStructure(id,body);
     logInternalEvent({orderId:id,eventType:"SHIPMENT_STRUCTURE_UPDATED",summary:"Cập nhật khai báo Lot, Carton và SKU.",actorId:auth.user.id,before,after});
     return NextResponse.json(after);
   }catch(error){

@@ -1,5 +1,5 @@
 import {db} from './db';
-import {accountFinancials,assertClientAccess,localDay,validDay,shiftDay} from './credit';
+import {allocateFIFO,accountFinancials,assertClientAccess,localDay,validDay,shiftDay} from './credit';
 import './cases';
 import {statementOrderIdsV2} from './statement-orders-v2';
 import type {AuthUser} from './auth';
@@ -28,7 +28,7 @@ function disputes(client:number,events:Movement[],capturedOrderIds?:number[]){
 export function statementPreview(actor:AuthUser,client:number,start:string,end:string){access(actor,client);range(start,end);return db.transaction(()=>{
  if((db.prepare('SELECT count(*) n FROM credit_debts WHERE client_id=?').get(client) as {n:number}).n>1)throw Error('Nhiều Debt legacy; cần đối chiếu trước Statement V2.');
  if(db.prepare('SELECT c.id FROM claim_decisions c JOIN operation_case_orders co ON co.case_id=c.case_id JOIN orders o ON o.id=co.order_id WHERE o.client_user_id=? LIMIT 1').get(client))throw Error('Claim legacy chưa đối chiếu; chưa chứng minh được Refund Balance đầu kỳ.');
- const f=accountFinancials(client),events=statementEvents(client);
+ const f=accountFinancials(client,{readOnly:true}),events=statementEvents(client);
  const opening=total(events.filter(e=>e.source==='OPENING'||e.statement_day<start));
  const movements=events.filter(e=>e.source!=='OPENING'&&e.statement_day>=start&&e.statement_day<=end);
  const delta=total(movements),closing={balance_cents:opening.balance_cents+delta.balance_cents,debt_cents:opening.debt_cents+delta.debt_cents,refund_cents:opening.refund_cents+delta.refund_cents};
@@ -40,7 +40,7 @@ export function statementPreview(actor:AuthUser,client:number,start:string,end:s
  return {version:2 as const,client_id:client,period_start:start,period_end:end,status:'DRAFT' as const,opening,closing,movements,
  bank_outflow_cents:movements.reduce((s,e)=>s+e.bank_cents,0),reference:{credit_limit_cents:Number((db.prepare('SELECT credit_limit_cents FROM users WHERE id=?').get(client) as {credit_limit_cents:number}).credit_limit_cents),reserve_cents:f.reserved_cents},
  last_event_id:events.at(-1)?.id??0,checkpoint_at:epoch(),...disputes(client,movements)};
- }).immediate();}
+ }).deferred();}
 export function finalizeStatement(actor:AuthUser,client:number,start:string,end:string){
  access(actor,client);if(!['ADMIN','FINANCE'].includes(actor.role))throw Error('Forbidden');range(start,end);if(end>localDay())throw Error('Không đóng kỳ tương lai.');
  return db.transaction(()=>{
@@ -50,6 +50,9 @@ export function finalizeStatement(actor:AuthUser,client:number,start:string,end:
  const last=db.prepare('SELECT period_end FROM statement_v2_snapshots WHERE client_id=? ORDER BY period_end DESC LIMIT 1').get(client) as {period_end:string}|undefined;
  const first=(db.prepare("SELECT date(?,'+7 hours') day").get(epoch()) as {day:string}).day;
  if(start!==(last?shiftDay(last.period_end,1):first))throw Error('Phải đóng kỳ liên tục từ checkpoint hoặc Statement trước.');
+ const unpriced=db.prepare("SELECT id FROM orders WHERE client_user_id=? AND service_purchased_at IS NOT NULL AND lower(trim(service)) IN ('ups','chuyên tuyến') AND (COALESCE(pricing_snapshot_json,'')='' OR json_valid(pricing_snapshot_json)=0 OR total_due<=0) AND workflow_status<>'CANCELLED' AND (date(service_purchased_at,'+7 hours') IS NULL OR date(service_purchased_at,'+7 hours')<=?)").all(client,end) as {id:number}[];
+ if(unpriced.length)throw Error('Chưa chốt giá bán Orders: '+unpriced.map(o=>o.id).join(', '));
+ allocateFIFO(client); // Explicit financial command: reads never materialize settlement or interest.
  const p=statementPreview(actor,client,start,end);
  // Claim state remains a live projection, not a mutable field in the financial snapshot.
  const {disputed:_disputed,claim_ids:_claims,...financial}=p;
@@ -58,4 +61,4 @@ export function finalizeStatement(actor:AuthUser,client:number,start:string,end:
  db.prepare("INSERT INTO financial_audit(client_id,actor_id,event,data_json) VALUES (?,?,'STATEMENT_V2_FINALIZED',?)").run(client,actor.id,JSON.stringify({start,end,last_event_id:snapshot.last_event_id}));return snapshot;
  }).immediate();
 }
-export function listStatements(actor:AuthUser,client:number){access(actor,client);return db.transaction(()=>{const checkpoint_at=epoch();const last=db.prepare('SELECT period_end FROM statement_v2_snapshots WHERE client_id=? ORDER BY period_end DESC LIMIT 1').get(client) as {period_end:string}|undefined;return {checkpoint_at,next_period_start:last?shiftDay(last.period_end,1):(db.prepare("SELECT date(?,'+7 hours') day").get(checkpoint_at) as {day:string}).day,items:(db.prepare('SELECT id,actor_id,finalized_at,snapshot_json FROM statement_v2_snapshots WHERE client_id=? ORDER BY period_start DESC').all(client) as Row[]).map(r=>{const s=JSON.parse(String(r.snapshot_json)) as StatementSnapshot;return {id:r.id,actor_id:r.actor_id,finalized_at:r.finalized_at,...s,...disputes(client,s.movements,s.order_ids)};})};}).immediate();}
+export function listStatements(actor:AuthUser,client:number){access(actor,client);return db.transaction(()=>{const checkpoint_at=epoch();const last=db.prepare('SELECT period_end FROM statement_v2_snapshots WHERE client_id=? ORDER BY period_end DESC LIMIT 1').get(client) as {period_end:string}|undefined;return {checkpoint_at,next_period_start:last?shiftDay(last.period_end,1):(db.prepare("SELECT date(?,'+7 hours') day").get(checkpoint_at) as {day:string}).day,items:(db.prepare('SELECT id,actor_id,finalized_at,snapshot_json FROM statement_v2_snapshots WHERE client_id=? ORDER BY period_start DESC').all(client) as Row[]).map(r=>{const s=JSON.parse(String(r.snapshot_json)) as StatementSnapshot;return {id:r.id,actor_id:r.actor_id,finalized_at:r.finalized_at,...s,...disputes(client,s.movements,s.order_ids)};})};}).deferred();}

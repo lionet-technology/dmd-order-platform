@@ -1,5 +1,10 @@
 # Orders, Draft & cấu trúc kiện
 
+## Owner continuation — 22/10/2026 (current delta)
+
+See [implementation, debt-age assumptions, test evidence and explicit remaining gates](OWNER-EXECUTION-2026-10-22.md). Five horizontal financial task tabs; read-only financial GETs; deterministic frozen-period debt aging; Tracking/Label before manual price; price/finalization gate; auditable partial-label override; server Ledger pagination. This delta supersedes contrary historical behavior below. No deployment or full production acceptance.
+
+
 ## Client nhập tay 20/10/2026 — tạm thời UPS/chuyên tuyến
 Chỉ với Route được phép nhiều Carton, màn Client hiển thị chọn **Single Carton** (mặc định) / **Multiple Cartons**. Nhập Order recipient/address một lần, khai Carton 1 trên sheet và bổ sung từng Carton bằng form chi tiết; tự tăng `Carton Quantity`, không bắt Carton No. ePacket/Yun không hiện chế độ nhiều Carton. Định dạng Excel vẫn yêu cầu ID từng dòng, Quantity chỉ dòng đầu. Client được lưu Draft và gửi Order chờ Admin nhập tổng giá bán; lúc đó chưa tạo Reserve/Charge. Preview có trạng thái riêng **Chờ Admin nhập giá**, không hiển thị 0 USD như đã chốt giá. Sau khi Client xác nhận gửi, không cho sửa dữ liệu Order/Carton nữa trừ khi xử lý nghiệp vụ bằng Admin. Chưa phát hành API multi-carton công khai (deferred theo Owner). Test source/API ghi ở `VERIFICATION-MANUAL-UPS-CARTON-2026-10-20.md`.
 

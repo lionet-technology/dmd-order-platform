@@ -83,6 +83,7 @@ function cartonComplete(carton:ShipmentCartonInput){
 export function saveOrderShipmentStructure(orderId:number,input:{lot_count?:number;cartons:ShipmentCartonInput[]}){
   const order=db.prepare("SELECT id,workflow_status,pricing_snapshot_json,service,sub_service,supplier FROM orders WHERE id=?").get(orderId) as {id:number;workflow_status:string;pricing_snapshot_json?:string;service:string;sub_service:string;supplier:string}|undefined;
   if(!order)throw new Error("Order không tồn tại.");
+  if(db.prepare("SELECT id FROM order_trackings WHERE order_id=? LIMIT 1").get(orderId))throw new Error("Dữ liệu kiện đã khóa sau Tracking.");
   if(order.pricing_snapshot_json)throw new Error("Dữ liệu kiện đã khóa khi đặt mua dịch vụ.");
   if(order.workflow_status==="CANCELLED")throw new Error("Đơn đã huỷ; không thể sửa khai báo kiện hàng.");
   const cartons=Array.isArray(input.cartons)?input.cartons:[];
@@ -140,7 +141,7 @@ export function saveOrderShipmentStructure(orderId:number,input:{lot_count?:numb
     }
     db.prepare("DELETE FROM order_lots WHERE order_id=? AND lot_number>? AND id NOT IN (SELECT order_lot_id FROM order_cartons WHERE order_id=? AND order_lot_id IS NOT NULL)").run(orderId,lotCount,orderId);
     db.prepare("DELETE FROM order_items WHERE order_id=? AND id NOT IN (SELECT ci.order_item_id FROM carton_items ci JOIN order_cartons c ON c.id=ci.carton_id WHERE c.order_id=?)").run(orderId,orderId);
-    db.prepare("UPDATE orders SET carton_count=?,expected_lot_count=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(cartons.length,lotCount,orderId);
+    db.prepare("UPDATE orders SET carton_count=?,expected_lot_count=?,measurement_mode='CARTON',weight=(SELECT COALESCE(SUM(weight),0) FROM order_cartons WHERE order_id=?),volume=(SELECT COALESCE(SUM(COALESCE(volume,length*width*height,0)),0) FROM order_cartons WHERE order_id=?),updated_at=CURRENT_TIMESTAMP WHERE id=?").run(cartons.length,lotCount,orderId,orderId,orderId);
     return getOrderShipmentStructure(orderId,false);
   }).immediate();
 }

@@ -1,5 +1,10 @@
 # Balance, Credit & Statement
 
+## Owner continuation — 22/10/2026 (current delta)
+
+See [implementation, debt-age assumptions, test evidence and explicit remaining gates](OWNER-EXECUTION-2026-10-22.md). Five horizontal financial task tabs; read-only financial GETs; deterministic frozen-period debt aging; Tracking/Label before manual price; price/finalization gate; auditable partial-label override; server Ledger pagination. This delta supersedes contrary historical behavior below. No deployment or full production acceptance.
+
+
 ## Balance Ledger task flow — 20/10/2026 (current)
 
 Balance Ledger now starts with its title and permitted entry actions, followed by a selected Client's signed Balance, available purchasing headroom (including Credit), Credit Limit, Reserved, outstanding Debt principal/interest and signed Refund Balance. Admin/Sales choose only accessible Clients; their portfolio collapses after selection. Client sees self. Unknown/legacy Refund Balance is explicitly unavailable, never displayed as zero. A refresh action retries the snapshot.

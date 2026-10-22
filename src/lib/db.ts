@@ -745,7 +745,7 @@ ensureColumn("orders","pricing_config_version_id","pricing_config_version_id INT
 ensureColumn("orders","service_purchased_at","service_purchased_at TEXT");
 ensureColumn("orders","pricing_eligibility_json","pricing_eligibility_json TEXT");
 ensureColumn("orders","commission_amount","commission_amount REAL NOT NULL DEFAULT 0");
-db.exec(`
+db.transaction(()=>{db.exec(`
 CREATE TABLE IF NOT EXISTS route_price_versions(
  id INTEGER PRIMARY KEY,route_id INTEGER NOT NULL REFERENCES service_route_configs(id),
  version_number INTEGER NOT NULL,tiers_json TEXT NOT NULL,created_by_user_id INTEGER,
@@ -766,12 +766,20 @@ CREATE TRIGGER IF NOT EXISTS immutable_config_update BEFORE UPDATE ON route_pric
 CREATE TRIGGER IF NOT EXISTS immutable_config_delete BEFORE DELETE ON route_pricing_configs BEGIN SELECT RAISE(ABORT,'Immutable pricing config'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_activation_update BEFORE UPDATE ON route_pricing_activations BEGIN SELECT RAISE(ABORT,'Immutable activation'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_activation_delete BEFORE DELETE ON route_pricing_activations BEGIN SELECT RAISE(ABORT,'Immutable activation'); END;
-CREATE TRIGGER IF NOT EXISTS immutable_order_price BEFORE UPDATE OF pricing_snapshot_json,pricing_version_id,pricing_config_version_id,service_purchased_at ON orders
- WHEN OLD.pricing_snapshot_json IS NOT NULL AND (
+CREATE TABLE IF NOT EXISTS order_amendment_context(order_id INTEGER PRIMARY KEY REFERENCES orders(id),actor_id INTEGER NOT NULL REFERENCES users(id));
+DROP TRIGGER IF EXISTS immutable_order_price;
+CREATE TRIGGER immutable_order_price BEFORE UPDATE OF pricing_snapshot_json,pricing_version_id,pricing_config_version_id,service_purchased_at ON orders
+ WHEN OLD.pricing_snapshot_json IS NOT NULL AND NOT (
+ EXISTS(SELECT 1 FROM order_amendment_context c JOIN users u ON u.id=c.actor_id WHERE c.order_id=OLD.id AND u.role='ADMIN')
+ AND NOT EXISTS(SELECT 1 FROM order_trackings t WHERE t.order_id=OLD.id)
+ AND NOT EXISTS(SELECT 1 FROM ledger_entries e WHERE e.reference_type='ORDER' AND e.reference_id=CAST(OLD.id AS TEXT) AND e.entry_type IN ('ORDER_CHARGE','PURCHASE_DELTA'))
+ AND OLD.purchase_completed_at IS NULL AND OLD.fulfillment_started_at IS NULL
+ AND NEW.client_user_id IS OLD.client_user_id
+ ) AND (
  NEW.pricing_snapshot_json IS NOT OLD.pricing_snapshot_json OR NEW.pricing_version_id IS NOT OLD.pricing_version_id
  OR NEW.pricing_config_version_id IS NOT OLD.pricing_config_version_id OR NEW.service_purchased_at IS NOT OLD.service_purchased_at)
  BEGIN SELECT RAISE(ABORT,'Purchased pricing is immutable'); END;
-`);
+`);}).immediate();
 
 db.exec(`CREATE TABLE IF NOT EXISTS route_pricing_audit(
  id INTEGER PRIMARY KEY,route_id INTEGER NOT NULL REFERENCES service_route_configs(id),

@@ -1,3 +1,4 @@
+import {hasPartialLabelOverride,labelFingerprint} from "@/lib/partial-label";
 import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import { orderQuote,purchaseService } from "@/lib/route-pricing";
 import {isManualPriceRoute,setManualOrderPrice} from '@/lib/manual-route-price';
@@ -6,6 +7,7 @@ import { canAccessClient, getClientAccount, requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { addOrderTracking, assertOrderOpen, listOrderTrackings, replaceOrderTracking, updateOrderTracking } from "@/lib/order-operations";
 import { canonicalEnumValue } from "@/lib/enums";
+import {normalizeTracking} from "@/lib/order-operations";
 import { logOrderEvent } from "@/lib/order-audit";
 import { ensureOrderShipmentStructure } from "@/lib/order-shipments";
 
@@ -42,7 +44,7 @@ async function handlePOST(req:NextRequest,{params}:{params:Promise<{id:string}>}
     if(quote&&!quote.eligible)throw new Error(quote.reasons.join(" "));
     if(current.pricing_snapshot_json&&body.supplier&&body.supplier!==current.supplier)throw new Error("Route đã khóa khi đặt mua.");
     if(quote&&!current.pricing_snapshot_json){purchaseService(id,auth.user,false)}
-    if(action==='save'&&isManualPriceRoute(current.service)&&!current.pricing_snapshot_json&&Array.isArray(body.trackings)&&body.trackings.some((r:{tracking?:string})=>String(r.tracking||'').trim()))setManualOrderPrice(id,body.manual_total_price,auth.user.id);
+    if(action==='save'&&isManualPriceRoute(current.service)&&body.manual_total_price!==undefined&&body.manual_total_price!==null&&String(body.manual_total_price).trim()!=='')setManualOrderPrice(id,body.manual_total_price,auth.user.id);
     if(action==="replace"){
       const old=db.prepare("SELECT tracking,label_url FROM order_trackings WHERE id=? AND order_id=?").get(Number(body.old_tracking_id),id) as {tracking:string;label_url:string|null}|undefined;
       const replacement=replaceOrderTracking({orderId:id,oldTrackingId:Number(body.old_tracking_id),newTracking:body.new_tracking,newLabelUrl:body.new_label_url,reason:body.reason,actorId:auth.user.id});
@@ -63,14 +65,19 @@ async function handlePOST(req:NextRequest,{params}:{params:Promise<{id:string}>}
           const cartonLot=db.prepare('SELECT l.lot_number FROM order_cartons c JOIN order_lots l ON l.id=c.order_lot_id WHERE c.id=? AND c.order_id=?').get(cartonId,id) as {lot_number:number}|undefined;
           if(cartonLot&&Number(raw.lot_number)!==cartonLot.lot_number)throw new Error('Lot của Tracking không khớp Carton. Cập nhật khai báo kiện hàng trước khi cấp Tracking.');
         }
-        if(raw.id)updateOrderTracking({orderId:id,id:Number(raw.id),labelUrl:raw.label_url,lotNumber:raw.lot_number,cartonId,costMatchType:raw.cost_match_type,costParentTrackingId:raw.cost_parent_tracking_id,isPrimary:Boolean(raw.is_primary)});
+        const previous=raw.id?Number(raw.id):(db.prepare("SELECT id FROM order_trackings WHERE order_id=? AND normalized_tracking=? AND status='ACTIVE'").get(id,normalizeTracking(String(raw.tracking))) as {id:number}|undefined)?.id;
+        if(previous)updateOrderTracking({orderId:id,id:previous,labelUrl:raw.label_url,lotNumber:raw.lot_number,cartonId,costMatchType:raw.cost_match_type,costParentTrackingId:raw.cost_parent_tracking_id,isPrimary:Boolean(raw.is_primary)});
         else addOrderTracking({orderId:id,tracking:raw.tracking,labelUrl:raw.label_url,lotNumber:raw.lot_number,cartonId,actorId:auth.user.id,costMatchType:raw.cost_match_type,costParentTrackingId:raw.cost_parent_tracking_id});
       }
       const active=(db.prepare("SELECT COUNT(*) c FROM order_trackings WHERE order_id=? AND status='ACTIVE'").get(id) as {c:number}).c;
       const complete=Boolean(body.complete);
-      const labelled=(db.prepare("SELECT COUNT(*) c FROM order_trackings WHERE order_id=? AND status='ACTIVE' AND TRIM(COALESCE(label_url,''))<>''").get(id) as {c:number}).c;
+      const labelled=(db.prepare("SELECT COUNT(DISTINCT carton_id) c FROM order_trackings WHERE order_id=? AND status='ACTIVE' AND TRIM(COALESCE(label_url,''))<>'' ").get(id) as {c:number}).c;
+      const coverage=(db.prepare("SELECT COUNT(DISTINCT carton_id) c FROM order_trackings WHERE order_id=? AND status='ACTIVE'").get(id) as {c:number}).c;
       const cartonCount=Math.max(1,Number(access.order?.carton_count||1));
-      if(complete&&(active<cartonCount||labelled<cartonCount))throw new Error("Cần đủ Tracking và Label cho tất cả carton trước khi hoàn tất mua đơn.");
+      if(complete&&(coverage<cartonCount||labelled<cartonCount)&&!hasPartialLabelOverride(id)){
+        if(!body.partial_label_override||!String(body.override_reason||'').trim()||!active||!labelled)throw new Error("INCOMPLETE: cần đủ Tracking/Label hoặc Admin xác nhận ngoại lệ có lý do.");
+        logOrderEvent({orderId:id,eventType:'PARTIAL_LABEL_OVERRIDE',summary:String(body.override_reason),actorId:auth.user.id,after:{active,labelled,cartonCount,fingerprint:labelFingerprint(id)}});
+      }
       db.prepare("UPDATE orders SET workflow_status=?,purchase_completed_at=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
         .run(complete&&active?"PURCHASED":active?"PURCHASING":"PENDING_PURCHASE",complete&&active?new Date().toISOString():null,id);
       logOrderEvent({orderId:id,eventType:"TRACKINGS_UPDATED",summary:"Cập nhật Tracking/Label: "+active+" Tracking active.",actorId:auth.user.id,after:{supplier,active,complete}});

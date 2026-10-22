@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { canAccessClient, getClientAccount, requireUser } from "@/lib/auth";
 import { db, queryAll, queryOne } from "@/lib/db";
 import { pageParams, paged } from "@/lib/pagination";
+import {amendOrderBeforeTracking} from "@/lib/order-amendment";
 import { upsertOrder } from "@/lib/finance";
 import { listOrderTrackings,publicOrderTracking } from "@/lib/order-operations";
 import { logOrderEvent,publicNoteText,sanitizePrivateNoteForSales } from "@/lib/order-audit";
@@ -156,7 +157,7 @@ async function handlePOST(req: NextRequest) {
       }
     }
 
-    const saved=upsertOrder({...body,client_user_id:clientUserId??body.client_user_id,sales:salesName}) as {id:number};
+    const saved=amendOrderBeforeTracking({...body,client_user_id:clientUserId??body.client_user_id,sales:salesName},auth.user) as {id:number};
     db.prepare("UPDATE orders SET client_user_id=COALESCE(?,client_user_id),sales_user_id=COALESCE(?,sales_user_id),created_by_user_id=COALESCE(created_by_user_id,?),updated_by_user_id=? WHERE id=?")
       .run(clientUserId,salesUserId,auth.user.id,auth.user.id,saved.id);
     const after=db.prepare("SELECT * FROM orders WHERE id=?").get(saved.id);

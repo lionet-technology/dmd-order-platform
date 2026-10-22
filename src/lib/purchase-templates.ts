@@ -1,5 +1,6 @@
 import { orderQuote,assertConfiguredPurchase } from "./route-pricing";
 import ExcelJS from "exceljs";
+import {hasPartialLabelOverride} from "./partial-label";
 import { db } from "./db";
 import { validatePurchaseReadiness } from "./order-shipments";
 
@@ -249,6 +250,7 @@ export async function generatePreview(versionId:number,orderId:number){
 export function validateManifestReadiness(orderId:number){
   const base=validatePurchaseReadiness(orderId);if(!base.ready)return base;
   const cartons=db.prepare("SELECT id,carton_number FROM order_cartons WHERE order_id=? ORDER BY carton_number").all(orderId) as Array<{id:number;carton_number:number}>;
+  if(hasPartialLabelOverride(orderId))return {ready:true,issues:[]};
   const missing=cartons.filter(carton=>!db.prepare("SELECT id FROM order_trackings WHERE order_id=? AND carton_id=? AND status='ACTIVE' LIMIT 1").get(orderId,carton.id));
   return missing.length?{ready:false,issues:missing.map(carton=>({message:"Carton "+carton.carton_number+" chưa có Tracking"}))}:{ready:true,issues:[]};
 }

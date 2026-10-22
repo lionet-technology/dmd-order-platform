@@ -1,5 +1,10 @@
 # Tracking, Label & trạng thái vận chuyển
 
+## Owner continuation — 22/10/2026 (current delta)
+
+See [implementation, debt-age assumptions, test evidence and explicit remaining gates](OWNER-EXECUTION-2026-10-22.md). Five horizontal financial task tabs; read-only financial GETs; deterministic frozen-period debt aging; Tracking/Label before manual price; price/finalization gate; auditable partial-label override; server Ledger pagination. This delta supersedes contrary historical behavior below. No deployment or full production acceptance.
+
+
 ## UPS/chuyên tuyến manual charge gate 20/10/2026
 Admin trong cả màn Tracking/Label hàng loạt và Order detail phải nhập **giá bán USD cho cả Order**, không phải theo từng Carton. Thiếu giá, giá cents sai hoặc Credit/Balance không đủ thì chặn trước khi tạo Tracking, rollback. Khi đủ giá, Reserve một lần; Label ghi Charge một lần; các Carton còn lại/retry không charge thêm. Manual Route chưa có Supplier Template vẫn có thể nhập Tracking thủ công; export file mua vẫn đòi Template thật. Xem `VERIFICATION-MANUAL-UPS-CARTON-2026-10-20.md`.
 

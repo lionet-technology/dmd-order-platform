@@ -1,3 +1,4 @@
+import {isManualPriceRoute} from "./manual-route-price";
 import { completeReserve, localDay, audit, syncStatements } from "./credit";
 import { assertConfiguredPurchase,orderQuote,purchaseService } from "./route-pricing";
 import { db } from "./db";
@@ -141,6 +142,8 @@ export function findTrackingOwner(tracking:unknown){
 export function recomputeOrderFinancials(orderId:number){
   const order=db.prepare("SELECT * FROM orders WHERE id=?").get(orderId) as Record<string,unknown>|undefined;
   if(!order)return null;
+  // Pending manual quotes and an authorized pre-tracking amendment cannot invoke legacy auto-charge.
+  if((isManualPriceRoute(order.service)&&!order.pricing_snapshot_json)||db.prepare('SELECT order_id FROM order_amendment_context WHERE order_id=?').get(orderId))return order;
   // Reconciliation for versioned purchases is deferred; keep their snapshot/charge intact.
   if(order.pricing_snapshot_json || (order.pricing_eligibility_json && !order.service_purchased_at)){reconcileLots(orderId);return db.prepare("SELECT * FROM orders WHERE id=?").get(orderId);}
   if(order.client_user_id)syncStatements(Number(order.client_user_id));

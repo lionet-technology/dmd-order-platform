@@ -1,5 +1,10 @@
 # Feature documentation — DMD Report
 
+## Owner continuation — 22/10/2026 (current delta)
+
+See [implementation, debt-age assumptions, test evidence and explicit remaining gates](OWNER-EXECUTION-2026-10-22.md). Five horizontal financial task tabs; read-only financial GETs; deterministic frozen-period debt aging; Tracking/Label before manual price; price/finalization gate; auditable partial-label override; server Ledger pagination. This delta supersedes contrary historical behavior below. No deployment or full production acceptance.
+
+
 ## Balance Ledger UX — 20/10/2026
 
 Snapshot-first financial workspace, scoped filterable Ledger, separated reconciliation/refund/reporting tasks and signed action receipts. See [verification and remaining acceptance](VERIFICATION-LEDGER-UX-2026-10-20.md). Production remains unaccepted.
@@ -52,6 +57,7 @@ Cập nhật: 2026-10-16. Tài liệu này mô tả hành vi từ code, nguồn 
 - [Quy trình cập nhật](./CONTRIBUTING.md).
 
 ## Danh mục
+- [Debt Management](17-debt-management.md)
 - [Claims & Refund Management](14-refund-management.md)
 - [Tài khoản & phân quyền](./01-auth-rbac.md)
 - [Orders, Draft & cấu trúc kiện](./02-orders-drafts.md)
@@ -109,3 +115,5 @@ Cập nhật: 2026-10-16. Tài liệu này mô tả hành vi từ code, nguồn 
 - [Bulk & Balance Ledger UAT sau 4a836ea](UAT-BULK-LEDGER-2026-10-18.md): tổng quan Client, kiểm soát trước ghi tiền, mobile cards; phân biệt browser, HTTP và acceptance còn mở.
 
 - [Owner Credit 19/10](VERIFICATION-OWNER-CREDIT-2026-10-19.md): semantics Balance ròng, giới hạn chuyển Debt, regression quyền/concurrency và blockers Finance Reconciliation.
+
+Final recorded checks and limits: [Owner verification 22/10](VERIFICATION-OWNER-2026-10-22.md).

@@ -1,0 +1,92 @@
+{
+  "scope": "Admin final UI; five tabs at desktop/mobile. Confirmed synthetic Debt transfer preserves AR and Statement anchor. Populated finalized Statement verified on mobile. Not full interactive acceptance of every role/device.",
+  "tabs": [
+    {
+      "width": 1280,
+      "tab": "Danh sách Client / Ledger",
+      "emptyVisibleTables": 0,
+      "headings": [],
+      "pageOverflow": false
+    },
+    {
+      "width": 1280,
+      "tab": "Debt Management",
+      "emptyVisibleTables": 0,
+      "headings": [],
+      "pageOverflow": false
+    },
+    {
+      "width": 1280,
+      "tab": "Payment Reconciliation",
+      "emptyVisibleTables": 0,
+      "headings": [
+        "Payment Reconciliation"
+      ],
+      "pageOverflow": false
+    },
+    {
+      "width": 1280,
+      "tab": "Refund Balance",
+      "emptyVisibleTables": 0,
+      "headings": [
+        "Refund Balance"
+      ],
+      "pageOverflow": false
+    },
+    {
+      "width": 1280,
+      "tab": "Statement",
+      "emptyVisibleTables": 0,
+      "headings": [
+        "Statement V2"
+      ],
+      "pageOverflow": false
+    },
+    {
+      "width": 390,
+      "tab": "Danh sách Client / Ledger",
+      "emptyVisibleTables": 0,
+      "headings": [],
+      "pageOverflow": false
+    },
+    {
+      "width": 390,
+      "tab": "Debt Management",
+      "emptyVisibleTables": 0,
+      "headings": [],
+      "pageOverflow": false
+    },
+    {
+      "width": 390,
+      "tab": "Payment Reconciliation",
+      "emptyVisibleTables": 0,
+      "headings": [
+        "Payment Reconciliation"
+      ],
+      "pageOverflow": false
+    },
+    {
+      "width": 390,
+      "tab": "Refund Balance",
+      "emptyVisibleTables": 0,
+      "headings": [
+        "Refund Balance"
+      ],
+      "pageOverflow": false
+    },
+    {
+      "width": 390,
+      "tab": "Statement",
+      "emptyVisibleTables": 0,
+      "headings": [
+        "Statement V2"
+      ],
+      "pageOverflow": false
+    }
+  ],
+  "debtMobile": {
+    "width": 390,
+    "columns": 2,
+    "pageOverflow": false
+  }
+}

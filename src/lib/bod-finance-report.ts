@@ -13,7 +13,7 @@ export function bodFinanceReport(actor:Pick<AuthUser,'role'|'id'>,start:string,e
  const refunds=new RefundService(db).report(actor,start,end);
  const clients=db.prepare("SELECT id,display_name FROM users WHERE role='CLIENT' ORDER BY display_name,id").all() as {id:number;display_name:string}[];
  const accounts=clients.map(c=>{
-  const f=accountFinancials(c.id);
+  const f=accountFinancials(c.id,{readOnly:true});
   const refund=refunds.clients.find(x=>x.client_id===c.id);
   return {client_id:c.id,display_name:c.display_name,balance_cents:f.net_balance_cents,
    debt_outstanding_cents:f.debts.reduce((s,d)=>s+d.outstanding_cents,0),

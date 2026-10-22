@@ -175,7 +175,7 @@ async function handlePOST(req:NextRequest){
           logAdminEvent({orderId,eventType:"PURCHASE_ROUTE_OVERRIDDEN",summary:"Admin điều chỉnh route mua đơn.",actorId:auth.user.id,source:"BULK",before:{sub_service:order.sub_service,supplier:order.supplier},after:{sub_service:subService,supplier}});
         }
         const current:Record<string,unknown>={...order,sub_service:subService,supplier};
-        if(isManualPriceRoute(order.service)&&!current.pricing_snapshot_json&&group.some(row=>text(row.tracking)))setManualOrderPrice(orderId,first.manual_total_price,auth.user.id);
+        if(isManualPriceRoute(order.service)&&first.manual_total_price!==undefined&&first.manual_total_price!==null&&String(first.manual_total_price).trim()!=='')setManualOrderPrice(orderId,first.manual_total_price,auth.user.id);
         if(!isManualPriceRoute(order.service)||group.some(row=>text(row.tracking)))assertConfiguredPurchase(db.prepare('SELECT * FROM orders WHERE id=?').get(orderId) as Record<string,unknown>);
         if(!current.pricing_snapshot_json&&orderQuote(current))purchaseService(orderId,auth.user,false);
         ensureOrderShipmentStructure(orderId);
@@ -192,7 +192,7 @@ async function handlePOST(req:NextRequest){
           else addOrderTracking({orderId,tracking,labelUrl:label,cartonId,actorId:auth.user.id});
           saved++;
         }
-        const progress=db.prepare("SELECT COUNT(*) active_count,SUM(CASE WHEN COALESCE(label_url,'')<>'' THEN 1 ELSE 0 END) label_count FROM order_trackings WHERE order_id=? AND status='ACTIVE'").get(orderId) as {active_count:number;label_count:number};
+        const progress=db.prepare("SELECT COUNT(DISTINCT carton_id) active_count,COUNT(DISTINCT CASE WHEN COALESCE(label_url,'')<>'' THEN carton_id END) label_count FROM order_trackings WHERE order_id=? AND status='ACTIVE'").get(orderId) as {active_count:number;label_count:number};
         const cartonCount=Math.max(1,Number(order.carton_count||1));
         const complete=progress.active_count>=cartonCount&&Number(progress.label_count||0)>=cartonCount;
         db.prepare("UPDATE orders SET workflow_status=?,purchase_completed_at=CASE WHEN ? THEN COALESCE(purchase_completed_at,CURRENT_TIMESTAMP) ELSE purchase_completed_at END,updated_at=CURRENT_TIMESTAMP WHERE id=?")

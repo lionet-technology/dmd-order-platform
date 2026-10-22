@@ -266,6 +266,7 @@ export function upsertOrder(input: OrderInput) {
     input.recipient_name,
   ]);
   const existing = findOrder(input, initialTracking, initialOrderId, preliminaryKey);
+  if(existing&&db.prepare("SELECT id FROM order_trackings WHERE order_id=? LIMIT 1").get(existing.id))throw new Error("Order đã có Tracking; dữ liệu nhạy cảm đã khóa.");
   if(existing?.pricing_snapshot_json)throw new Error("Đơn đã đặt mua; giá và dữ liệu kiện đã khóa.");
   if(existing?.workflow_status==="CANCELLED")throw new Error("Đơn đã huỷ; không thể sửa hoặc tạo lại trên cùng record.");
   const clientUserId = input.client_user_id !== undefined && input.client_user_id !== null && input.client_user_id !== ""

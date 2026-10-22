@@ -10,7 +10,7 @@ type Row=Record<string,unknown>;
 export function controlTower(user:AuthUser){
  const today=localDay(),cases=casesFor(user),open=cases.filter(c=>!['RESOLVED','CLOSED'].includes(String(c.status)));
  const clientIds=(db.prepare("SELECT id FROM users WHERE role='CLIENT' AND (?='ADMIN' OR (?='SALES' AND sales_user_id=?) OR (?='CLIENT' AND id=?))").all(user.role,user.role,user.id,user.role,user.id) as {id:number}[]).map(c=>c.id);
- const accounts=clientIds.map(id=>({client_id:id,...accountFinancials(id)}));
+ const accounts=clientIds.map(id=>({client_id:id,...accountFinancials(id,{readOnly:true})}));
  const inbound=user.role==='CLIENT'?{parcels:[],adjustments:[]}:inboundFor(user);
  const recoveries=user.role==='ADMIN'?recoveriesFor(user) as Row[]:[];
  const failed=db.prepare("SELECT r.order_id,r.updated_at,o.system_order_code,o.customer AS client_name,o.workflow_status FROM purchase_reserves r JOIN orders o ON o.id=r.order_id WHERE r.status='FAILED' AND (?='ADMIN' OR o.client_user_id=? OR (?='SALES' AND o.client_user_id IN (SELECT id FROM users WHERE sales_user_id=?)))").all(user.role,user.id,user.role,user.id).map(row=>{const r=row as Row;const due=deadline('PURCHASE_FAILED',r.updated_at);return {...r,due_date:due,sla_status:slaState(due)};});

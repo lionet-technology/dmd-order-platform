@@ -1,5 +1,10 @@
 # Roadmap triển khai — đã được Product chốt 13/10/2026
 
+## Owner continuation — 22/10/2026 (current delta)
+
+See [implementation, debt-age assumptions, test evidence and explicit remaining gates](OWNER-EXECUTION-2026-10-22.md). Five horizontal financial task tabs; read-only financial GETs; deterministic frozen-period debt aging; Tracking/Label before manual price; price/finalization gate; auditable partial-label override; server Ledger pagination. This delta supersedes contrary historical behavior below. No deployment or full production acceptance.
+
+
 ## Ledger UX / concurrency continuation — 20/10/2026
 
 Implemented snapshot-first Ledger, one filterable scoped transaction table, task-based Payment/Refund/Statement access, refresh recovery and signed before/after receipts. New owned-DB HTTP race test proves two distinct manual-priced Orders cannot overspend and concurrent retries cannot charge twice. See [evidence and untested cases](VERIFICATION-LEDGER-UX-2026-10-20.md). This is substantial pre-UAT delivery; the remaining full browser cross-module matrix, real carrier/policy evidence and Owner acceptance are still release gates.
@@ -120,3 +125,5 @@ Claims/Refund API/UI and dedicated refund report are now implemented locally and
 1. ePacket US pilot: giá Base/retail và cancellation policy thật được duyệt, carrier credentials/label/tracking, cost coverage/FX/chứng từ thật, migration/backup rehearsal và Owner acceptance.
 2. Finance Reconciliation: bulk verify/report discrepancy, durable notification Client/Sales, preview adjustment; chốt thứ tự partial reversal và nguồn chuyển Balance âm ngoài Statement trước khi triển khai ghi tiền.
 3. Xem [bằng chứng và blockers 19/10](VERIFICATION-OWNER-CREDIT-2026-10-19.md); test xanh không đồng nghĩa production-ready.
+
+Final recorded checks and limits: [Owner verification 22/10](VERIFICATION-OWNER-2026-10-22.md).

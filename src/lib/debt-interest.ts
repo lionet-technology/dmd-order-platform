@@ -20,6 +20,19 @@ export function snapshotDebt(id:number,rate?:unknown,actorId=0,reason='Principal
  if(previous&&Number(previous.principal_cents)===principal&&Number(previous.daily_rate_pct)===dailyRate)return;
  db.prepare('INSERT INTO debt_interest_events(debt_id,effective_day,principal_cents,daily_rate_pct,actor_id,reason) VALUES (?,?,?,?,?,?)').run(id,today,principal,dailyRate,actorId||null,reason);
 }
+/** Same completed-day rounding as accrual, without inserting rows or legacy events. */
+export function projectedUnpostedInterest(id:number,today=day()){
+ const events=db.prepare('SELECT effective_day,principal_cents,daily_rate_pct FROM debt_interest_events WHERE debt_id=? ORDER BY effective_day,id').all(id) as {effective_day:string;principal_cents:number;daily_rate_pct:number}[];
+ if(!events.length)return 0;
+ const posted=new Set((db.prepare('SELECT day FROM debt_daily_interest WHERE debt_id=?').all(id) as {day:string}[]).map(r=>r.day));
+ let total=0,index=0;
+ for(let date=events[0].effective_day;date<today;date=new Date(Date.parse(date+'T00:00:00Z')+86400000).toISOString().slice(0,10)){
+  while(index+1<events.length&&events[index+1].effective_day<=date)index++;
+  if(!posted.has(date))total+=Math.round(events[index].principal_cents*events[index].daily_rate_pct/100);
+ }
+ if(!Number.isSafeInteger(total))throw Error('Interest projection exceeds exact cents range');
+ return total;
+}
 export function accrueDebtInterest(clientId:number,today=day()){
  const debts=db.prepare('SELECT id FROM credit_debts WHERE client_id=?').all(clientId) as {id:number}[];
  for(const debt of debts){

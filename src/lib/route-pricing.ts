@@ -115,7 +115,7 @@ export function safePricing(o:Row,role:string){
  if(role==="CLIENT"&&!o.pricing_snapshot_json){
    const route=routeFor(o);
    if(!route?.client_self_purchase)q.reasons.push("Route chưa cho phép Client tự đặt mua.");
-   const financial=accountFinancials(Number(o.client_user_id));
+   const financial=accountFinancials(Number(o.client_user_id),{readOnly:true});
    if(financial.purchase_blocked)q.reasons.push(...financial.reasons);
    if(financial.available_to_buy_cents<Math.round(q.total_charge*100))q.reasons.push("Balance / credit không đủ.");
    q.eligible=!q.reasons.length;
@@ -128,7 +128,7 @@ export function clientDraftAwaitingPurchase(o:Row){
  return !o.service_purchased_at&&db.prepare("SELECT id FROM users WHERE id=? AND role='CLIENT'").get(Number(o.created_by_user_id||0));
 }
 export function assertConfiguredPurchase(o:Row){
- if(isManualPriceRoute(o.service)&&!o.pricing_snapshot_json)throw Error('Admin phải nhập giá bán thủ công trước khi cấp Tracking/Label.');
+ if(isManualPriceRoute(o.service)&&!o.pricing_snapshot_json){if(!o.service_purchased_at)throw Error('Client chưa đặt mua dịch vụ.');const route=routeFor(o);if(!route?.active||route.warehouse_hold||o.workflow_status==='HOLD'||hasCaseHold(Number(o.id))||db.prepare('SELECT id FROM warehouse_order_holds WHERE order_id=? AND released_at IS NULL').get(Number(o.id)))throw Error('Order / route chưa active hoặc đang Hold.');assertRouteCartons(o.service,route.max_cartons_per_order,o.carton_count);return;}
  if(o.client_user_id&&!o.pricing_snapshot_json&&!o.tracking&&!o.purchase_completed_at)assertPurchasing(Number(o.client_user_id),0);
  if(clientDraftAwaitingPurchase(o))throw Error("Client chưa đặt mua dịch vụ cho Draft này.");
  if(isEPacket(o)&&!o.pricing_snapshot_json&&!activePricing(Number(routeFor(o)?.id||0)))throw Error("Route chưa có bảng Base Rate được Owner duyệt.");

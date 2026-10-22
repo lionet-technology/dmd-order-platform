@@ -4,9 +4,7 @@ import { normalizeCountry } from "@/lib/epacket-pricing";
 import { OperationsWorkspace } from "./operations-workspace";
 import { SupplierPayablesWorkspace } from "./supplier-payables-workspace";
 import { ReconciliationWorkspace } from "./reconciliation-workspace";
-import {RefundWorkspace} from "./refund-workspace";
-import {PaymentReconciliationWorkspace} from "./payment-reconciliation-workspace";
-import { FinancialWorkspace } from "./financial-workspace";
+import { FinanceHub } from "./finance-hub";
 import { ClientPurchasePanel } from "./client-purchase-panel";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
@@ -842,6 +840,7 @@ function PurchaseOrderPanel({order,enums,onClose,onDone}:{order:RowData;enums:En
   const [internalNote,setInternalNote]=useState(String(order.internal_note||""));
   const [expectedLotCount,setExpectedLotCount]=useState(String(order.expected_lot_count||1));
   const [manualTotalPrice,setManualTotalPrice]=useState('');
+  const [partialOverride,setPartialOverride]=useState(false),[overrideReason,setOverrideReason]=useState('');
   const [manualPriceLocked,setManualPriceLocked]=useState(false);
   const manualRoute=/^(UPS|Chuyên tuyến)$/i.test(String(order.service||''));
   const [trackings,setTrackings]=useState<TrackingDraft[]>([]);
@@ -875,7 +874,7 @@ function PurchaseOrderPanel({order,enums,onClose,onDone}:{order:RowData;enums:En
     for(const row of active){const key=row.tracking.replace(/[\s-]+/g,"").toUpperCase();if(!key)continue;if(seen.has(key)){setMsg("Lỗi: Tracking bị trùng trong Order.");return;}seen.add(key)}
     setBusy(true);setMsg("");
     try{
-      await postJson(`/api/orders/${orderId}/trackings`,{action:"save",supplier,internal_note:internalNote,expected_lot_count:Number(expectedLotCount||1),manual_total_price:manualRoute?manualTotalPrice:undefined,complete,trackings:active});
+      await postJson(`/api/orders/${orderId}/trackings`,{action:"save",supplier,internal_note:internalNote,expected_lot_count:Number(expectedLotCount||1),manual_total_price:manualRoute?manualTotalPrice:undefined,complete,partial_label_override:partialOverride,override_reason:overrideReason,trackings:active});
       setMsg(complete?"Đã hoàn tất mua đơn.":"Đã lưu nháp.");await load();await onDone();
     }catch(error){setMsg("Lỗi: "+(error instanceof Error?error.message:"Không thể lưu"));setBusy(false)}
   }
@@ -892,10 +891,12 @@ function PurchaseOrderPanel({order,enums,onClose,onDone}:{order:RowData;enums:En
     <div className="purchaseSummary"><div><span>ORDER</span><b>{String(order.order_id||order.id||"—")}</b></div><div><span>CLIENT</span><b>{String(order.customer||"—")}</b></div><div><span>TRẠNG THÁI</span><b>{String(order.workflow_status||"PENDING_PURCHASE")}</b></div></div>
     <div className="purchaseFields">
       <SelectField label="Supplier" name="supplier" value={supplier} onChange={(_,value)=>setSupplier(value)} allowCustom={false} requireOption options={supplierOptions}/>
-      {manualRoute&&<label className="field"><span>Giá bán thủ công toàn Order (USD) — bắt buộc trước Tracking/Label</span><input type="number" min="0.01" step="0.01" value={manualTotalPrice} disabled={manualPriceLocked} onChange={e=>setManualTotalPrice(e.target.value)} placeholder="VD: 38.75"/><small>Một giá cho toàn bộ Carton; Admin chỉ nhập một lần. Khi cấp Label hệ thống ghi nhận Charge.</small></label>}
+      {manualRoute&&<label className="field"><span>Giá bán thủ công toàn Order (USD) — có thể bổ sung sau Tracking/Label</span><input type="number" min="0.01" step="0.01" value={manualTotalPrice} disabled={manualPriceLocked} onChange={e=>setManualTotalPrice(e.target.value)} placeholder="VD: 38.75"/><small>Một giá cho toàn bộ Carton. Thiếu giá sẽ chặn chốt Statement; giá vượt sức mua vẫn ghi nhận đơn hiện tại và chặn mua tiếp theo policy.</small></label>}
       <Field label="Số lượng Lô" name="expected_lot_count" type="number" value={expectedLotCount} onChange={(_,value)=>setExpectedLotCount(value)}/>
       <TextAreaField label="Note nội bộ (chỉ Admin)" name="internal_note" value={internalNote} onChange={(_,value)=>setInternalNote(value)}/>
     </div>
+    {active.filter(r=>r.tracking.trim()&&r.label_url.trim()).length<Number(order.carton_count||1)&&<div role="status"><p>INCOMPLETE: chưa đủ Tracking/Label cho tất cả Carton.</p><label><input type="checkbox" checked={partialOverride} onChange={e=>setPartialOverride(e.target.checked)}/>Admin xác nhận tracking chính / PDF nhiều trang</label>{partialOverride&&<label className="field">Lý do / chứng từ<input value={overrideReason} onChange={e=>setOverrideReason(e.target.value)} required/></label>}</div>}
+    {manualRoute&&!manualPriceLocked&&<p role="alert">Chưa chốt giá bán: cần bổ sung trước khi chốt Statement.</p>}
     {busy&&trackings.length===0?<div className="loadingState">Đang tải Tracking…</div>:<div className="lotList">
       <section className="lotCard"><div className="lotHead"><div><span>TRACKING & LABEL</span><b>{active.length}/{String(order.carton_count||"?")} carton</b></div><button className="textBtn" onClick={addTracking}>＋ Thêm Tracking</button></div>
         <div className="trackingRows">{active.map((row,index)=><div className="trackingRow" key={row.id||`new-${index}`}>
@@ -1172,9 +1173,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
         {section==="ledger"&&<>
           <PageHeader eyebrow="FINANCE" title="Balance Ledger" description={role==="CLIENT"?"Theo dõi Balance, sức mua, Debt và hoàn tiền của bạn.":"Chọn Client để xem số dư và giao dịch; mở từng nghiệp vụ khi cần xử lý."}
             actions={role==="ADMIN"?<><button className="secondaryBtn" onClick={()=>setImportKind("balance")}>⇩ Import giao dịch</button><button className="primaryBtn" onClick={()=>openEntry("balance")}>＋ Ghi giao dịch</button></>:role==="SALES"?<button className="primaryBtn" onClick={()=>openEntry("balance")}>＋ Ghi Payment / phí</button>:undefined}/>
-          <FinancialWorkspace role={role} clients={clients}/>
-          <details className="panel ledgerSection"><summary>Payment · Đối soát thực nhận</summary><p>Sales ghi Payment; Finance xác nhận hoặc ghi điều chỉnh có liên kết. Đối soát không tự thay đổi Balance.</p><PaymentReconciliationWorkspace role={role}/></details>
-          <details className="panel ledgerSection"><summary>Refund · Nghĩa vụ và hoàn thực tế</summary><p>Claim tạo nghĩa vụ hoàn. Finance ghi hoàn vào Balance hoặc ra Bank; Admin xử lý thu hồi khoản hoàn vượt.</p><RefundWorkspace role={role}/></details>
+          <FinanceHub role={role} clients={clients}/>
         </>}
 
         {role==="ADMIN"&&section==="masterdata"&&<>
