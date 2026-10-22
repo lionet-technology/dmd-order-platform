@@ -23,6 +23,9 @@ export function creditSchema(){
  CREATE TABLE IF NOT EXISTS credit_allocations(id INTEGER PRIMARY KEY,ledger_id INTEGER NOT NULL REFERENCES ledger_entries(id),statement_id INTEGER REFERENCES credit_statements(id),debt_id INTEGER REFERENCES credit_debts(id),amount_cents INTEGER NOT NULL CHECK(amount_cents>0),CHECK((statement_id IS NULL)!=(debt_id IS NULL)));
  CREATE TABLE IF NOT EXISTS purchase_reserves(order_id INTEGER PRIMARY KEY REFERENCES orders(id),client_id INTEGER NOT NULL REFERENCES users(id),amount_cents INTEGER NOT NULL CHECK(amount_cents>=0),status TEXT NOT NULL CHECK(status IN ('RESERVED','CHARGED','FAILED','CANCELLED')),actor_id INTEGER,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
  CREATE TABLE IF NOT EXISTS rejected_payments(ledger_id INTEGER PRIMARY KEY REFERENCES ledger_entries(id),reversal_id INTEGER NOT NULL UNIQUE REFERENCES ledger_entries(id),reason TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS debt_aging_openings(client_id INTEGER PRIMARY KEY REFERENCES users(id),amount_cents INTEGER NOT NULL CHECK(amount_cents>0),reference_day TEXT NOT NULL,reason TEXT NOT NULL,actor_id INTEGER NOT NULL REFERENCES users(id),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+ CREATE TRIGGER IF NOT EXISTS immutable_debt_aging_opening_update BEFORE UPDATE ON debt_aging_openings BEGIN SELECT RAISE(ABORT,'Debt aging opening is immutable'); END;
+ CREATE TRIGGER IF NOT EXISTS immutable_debt_aging_opening_delete BEFORE DELETE ON debt_aging_openings BEGIN SELECT RAISE(ABORT,'Debt aging opening is immutable'); END;
  CREATE INDEX IF NOT EXISTS idx_credit_items_client ON credit_items(client_id);
  CREATE INDEX IF NOT EXISTS idx_credit_allocations_ledger ON credit_allocations(ledger_id);`);
 }
@@ -137,14 +140,18 @@ export function accountFinancials(clientId:number,options:{readOnly?:boolean;inc
  const netBalance=balance+excluded;
  const available=netBalance+Number(c.credit_limit_cents)-reserved;
  const inactive=!(db.prepare("SELECT active FROM users WHERE id=?").get(clientId) as {active:number})?.active;
- const frozen=db.prepare('SELECT id,finalized_at,snapshot_json FROM statement_v2_snapshots WHERE client_id=? ORDER BY period_end').all(clientId) as {id:number;finalized_at:string;snapshot_json:string}[];
- const buckets:AgeBucket[]=frozen.map(s=>({id:s.id,finalized_day:localDay(new Date(s.finalized_at)),movements:JSON.parse(s.snapshot_json).movements}));
- const lastEvent=frozen.length?Number(JSON.parse(frozen.at(-1)!.snapshot_json).last_event_id):0;
+ const frozen=db.prepare('SELECT s.id,s.period_end,CASE WHEN b.snapshot_id IS NULL THEN s.snapshot_json ELSE NULL END snapshot_json,b.aging_basis_cents,b.last_event_id FROM statement_v2_snapshots s LEFT JOIN statement_v2_aging_basis b ON b.snapshot_id=s.id WHERE s.client_id=? ORDER BY s.period_end').all(clientId) as {id:number;period_end:string;snapshot_json:string|null;aging_basis_cents:number|null;last_event_id:number|null}[];
+ const buckets:AgeBucket[]=frozen.map(s=>{if(s.aging_basis_cents!==null)return {id:s.id,finalized_day:s.period_end,aging_basis_cents:s.aging_basis_cents,movements:[]};
+ const legacy=JSON.parse(String(s.snapshot_json));return {id:s.id,finalized_day:s.period_end,aging_basis_cents:legacy.aging_basis_cents,movements:legacy.aging_basis_cents===undefined?legacy.movements:[]};});
+ const latest=frozen.at(-1);const lastEvent=latest?Number(latest.last_event_id??JSON.parse(String(latest.snapshot_json)).last_event_id):0;
  const pending=(db.prepare('SELECT * FROM statement_v2_events WHERE client_id=? AND id>?').all(clientId,lastEvent) as Row[]).map(e=>({...e,detail:JSON.parse(String(e.detail_json))})) as unknown as AgeEvent[];
  const opening=Number((db.prepare("SELECT COALESCE(SUM(debt_cents-balance_cents),0) n FROM statement_v2_events WHERE client_id=? AND source='OPENING'").get(clientId) as {n:number}).n);
- const projectedInterest=r.debts.reduce((s,d)=>s+d.unposted_interest_cents,0);
- if(projectedInterest)pending.push({source:'debt_daily_interest',operation:'PROJECTED',balance_cents:0,debt_cents:projectedInterest,detail:{}});
- const debt_age=deriveDebtAge(-netBalance+r.debts.reduce((s,d)=>s+d.outstanding_cents,0)+projectedInterest,buckets,pending,opening,Number(c.credit_term_days),localDay());
+ // Unposted interest remains visible as an estimate, but must not extend the age of principal.
+ const agingOpening=db.prepare('SELECT amount_cents,reference_day FROM debt_aging_openings WHERE client_id=?').get(clientId) as {amount_cents:number;reference_day:string}|undefined;
+ // Principal aging is independent of unpaid posted interest; payment/interest
+ // settlement and buying room continue using the full accounting balances.
+ const unpaidInterest=r.debts.reduce((s,d)=>s+d.interest_outstanding_cents,0);
+ const debt_age=deriveDebtAge(-netBalance+r.debts.reduce((s,d)=>s+d.outstanding_cents,0)-unpaidInterest,buckets,pending,opening,Number(c.credit_term_days),localDay(),agingOpening);
  const reasons=[...(r.debts.length>1?['Nhiều Debt legacy; cần đối chiếu']:[]),...(debt_age.status==='OVERDUE'?['Công nợ quá hạn theo Statement']:[]),...(debt_age.status==='REVIEW'?['Tuổi công nợ cần đối chiếu']:[]),...(inactive?["Client đã ngừng hoạt động"]:[]),...(available<0?["Balance / credit không đủ"]:[]),...(c.purchase_locked?[String(c.purchase_lock_reason||"Account bị khóa mua")]:[]),...(r.debts.some(d=>d.status==="OVERDUE")?["Debt quá hạn"]:[])];
  // Statement totals already hit the ledger at the service charge event; do not count them as a second AR.
  const receivable=Math.max(0,-netBalance)+r.debts.reduce((n,d)=>n+d.outstanding_cents,0);

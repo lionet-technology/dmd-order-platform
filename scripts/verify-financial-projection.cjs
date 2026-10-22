@@ -9,11 +9,20 @@ const admin=createUser({username:'projection.admin',display_name:'Admin',role:'A
 const cookie=user=>'dmd_session='+createSession(user.id).token;
 async function post(user,body){const r=await api.POST(new NextRequest('http://localhost/api/financials',{method:'POST',headers:{cookie:cookie(user),'content-type':'application/json'},body:JSON.stringify({client_id:client.id,...body})}));return {status:r.status,data:await r.json()}}
 const adminReadCookie=cookie(admin);
+const ageSetup=require('../src/app/api/admin-debt-aging/route.ts');
+const ageRequest=(actor,body)=>new NextRequest('http://localhost/api/admin-debt-aging',{method:'POST',headers:{cookie:cookie(actor),'content-type':'application/json'},body:JSON.stringify(body)});
 async function get(){const r=await api.GET(new NextRequest('http://localhost/api/financials?client_id='+client.id,{headers:{cookie:adminReadCookie}}));eq(r.status,200,'GET');return r.json()}
 (async()=>{try{
 const fee={action:'additional_fee',quantity:1,unit_price:100,occurred_at:'2026-10-20',note:'Synthetic fee',request_key:'projection-fee'};
 let r=await post(sales,fee);eq(r.status,200,'first fee');eq(r.data.before_summary.purchasing_balance_cents,0,'zero opening');eq(r.data.purchasing_balance_cents,-10000,'signed closing');
 const dump=()=>db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().map(t=>[t.name,db.prepare('SELECT * FROM "'+t.name+'"').all()]);
+const beforeAging=JSON.stringify(dump());
+const opening={client_id:client.id,amount:100,reference_day:'2026-10-01',reason:'Synthetic unsupported manual setup'};
+let setup=await ageSetup.POST(ageRequest(client,opening));eq(setup.status,403,'Client cannot set aging opening');
+setup=await ageSetup.POST(ageRequest(admin,opening));eq(setup.status,400,'Admin cannot invent opening while current period already covers exposure');
+const afterAging=dump(),earlier=JSON.parse(beforeAging);
+ const mutated=afterAging.filter(([name,rows])=>name!=='sessions'&&JSON.stringify(rows)!==JSON.stringify(earlier.find(x=>x[0]===name)?.[1])).map(x=>x[0]);
+ eq(mutated,[],'Rejected aging opening has zero database effects');
 const frozen=JSON.stringify(dump());await get();await get();eq(JSON.stringify(dump()),frozen,'Repeated financial GET leaves every application table untouched');
 const pageResponse=await api.GET(new NextRequest('http://localhost/api/financials?client_id='+client.id+'&ledger_page=1&q=Synthetic&type=ADDITIONAL_FEE',{headers:{cookie:adminReadCookie}}));
 eq(pageResponse.status,200,'Server pagination');const paged=await pageResponse.json();eq(paged.ledger_pagination.total,1,'Server filter exact total');eq(paged.transactions.length,1,'Server bounded rows');

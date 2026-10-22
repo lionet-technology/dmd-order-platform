@@ -37,6 +37,10 @@ const ledger=(type,dir,amount,occurred='2026-10-20',referenceType=null,reference
  const before=db.prepare('SELECT count(*) n FROM ledger_entries').get().n;
  eq(statements.listStatements(finance,client.id).next_period_start,day,'First suggested period begins at checkpoint');
  const issued=statements.finalizeStatement(finance,client.id,day,day),bytes=JSON.stringify(issued);
+ const frozenBasis=db.prepare('SELECT aging_basis_cents,last_event_id,period_end FROM statement_v2_aging_basis WHERE client_id=?').get(client.id);
+ eq(frozenBasis.aging_basis_cents,issued.aging_basis_cents,'Frozen aging index agrees with immutable Statement snapshot');
+ eq(frozenBasis.last_event_id,issued.last_event_id,'Frozen aging index stores captured event checkpoint');
+ reject(()=>db.prepare('UPDATE statement_v2_aging_basis SET aging_basis_cents=0 WHERE client_id=?').run(client.id),'Aging basis cannot be edited independently');
  eq(statements.listStatements(finance,client.id).next_period_start,'2026-10-21','Next boundary follows issued end');
  eq(statements.finalizeStatement(admin,client.id,day,day),issued,'Finalize replay identical financial snapshot');
  eq(db.prepare('SELECT count(*) n FROM ledger_entries').get().n,before,'Finalize never debits again');

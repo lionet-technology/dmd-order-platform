@@ -162,7 +162,18 @@ async function main(){try{
  const priced=await detailAPI.POST(request({...partialPayload,manual_total_price:99999999},admin),partialParams);test(priced.status===200,'Current submitted Order price above purchasing power still accepted after Tracking: '+await priced.clone().text());
  test(require('../src/lib/credit.ts').accountFinancials(clients[0].id,{readOnly:true}).purchase_blocked,'Future purchasing blocked after over-budget charge');
  test(db.prepare("SELECT COUNT(*) n FROM ledger_entries WHERE entry_type='ORDER_CHARGE' AND reference_id=?").get(String(partialId)).n===1,'Over-budget late price charges once');
+ const dashboardAPI=require('../src/app/api/admin-action-queue/route.ts');
+ const dashboardRequest=user=>new NextRequest('http://localhost/api/admin-action-queue',{headers:{cookie:'dmd_session='+createSession(user.id).token}});
+ test((await dashboardAPI.GET(dashboardRequest(clients[0]))).status===403,'Client cannot access Admin work queue');
+ const beforeChange=await dashboardAPI.GET(dashboardRequest(admin));test(beforeChange.status===200,'Admin queue loads');
+ const prior=await beforeChange.json();test(!prior.partial_labels.some(r=>r.id===partialId),'Confirmed multi-page PDF hides resolved partial alert');
  db.prepare("UPDATE order_trackings SET label_url='https://labels.test/revised.pdf' WHERE order_id=?").run(partialId);test(!hasPartialLabelOverride(partialId),'Changed label invalidates prior override');
+ const afterChange=await dashboardAPI.GET(dashboardRequest(admin));const later=await afterChange.json();test(later.partial_labels.some(r=>r.id===partialId),'Admin queue revives partial Label alert after evidence changes');
+ db.prepare("INSERT INTO client_service_settings(client_user_id,service,sub_service,is_enabled,discount_percent) VALUES (?,'UPS','Express',1,0) ON CONFLICT(client_user_id,service,sub_service) DO UPDATE SET is_enabled=1").run(clients[1].id);
+ const workQueuePending=await post(clientAPI,clients[1],ups,[{...base,order_id:'UPS-ADMIN-WORK-QUEUE',carton_count:1}],'save');test(workQueuePending.status===201,'Queue fixture UPS Draft');
+ const workQueueId=workQueuePending.data.orders[0].id;
+ const workQueueSubmit=await clientAPI.POST(request({action:'purchase',order_ids:[workQueueId]},clients[1]));test(workQueueSubmit.status===200&&(await workQueueSubmit.json()).succeeded===1,'Queue fixture submitted unpriced');
+ const workQueueResult=await dashboardAPI.GET(dashboardRequest(admin));test((await workQueueResult.json()).unpriced.some(r=>r.id===workQueueId),'Admin queue surfaces submitted UPS Order without selling price');
  console.log('CLIENT CARTON API PASS ('+assertions+' assertions)');
 }finally{db.close();fs.rmSync(dir,{recursive:true,force:true});}}
 main().catch(e=>{console.error(e.stack||e);process.exitCode=1});

@@ -5,6 +5,7 @@ import { OperationsWorkspace } from "./operations-workspace";
 import { SupplierPayablesWorkspace } from "./supplier-payables-workspace";
 import { ReconciliationWorkspace } from "./reconciliation-workspace";
 import { FinanceHub } from "./finance-hub";
+import { AdminActionDashboard } from './admin-action-dashboard';
 import { ClientPurchasePanel } from "./client-purchase-panel";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
@@ -933,6 +934,8 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   const [clientDraft,setClientDraft]=useState<RowData|null>(null);
   const [purchaseOrder,setPurchaseOrder]=useState<RowData|null>(null);
   const [viewOrder,setViewOrder]=useState<RowData|null>(null);
+  const [financeLanding,setFinanceLanding]=useState<'transactions'|'debts'|'statements'>('transactions');
+  const [financeTarget,setFinanceTarget]=useState<number|null>(null);
   const [bulkTracking,setBulkTracking]=useState(false);
   const [bulkReplacement,setBulkReplacement]=useState(false);
   const [importKind,setImportKind]=useState<ImportKind|null>(null);
@@ -1104,6 +1107,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
             </>}
           </section>
 
+          <AdminActionDashboard openOrder={id=>setViewOrder({id} as RowData)} openDebt={clientId=>{setFinanceTarget(clientId);setFinanceLanding('debts');navigate('ledger')}} openStatement={()=>{setFinanceLanding('statements');navigate('ledger')}}/>
           <section className="dashboardGrid">
             <div className="panel">
               <div className="panelHead"><div><h3>Order gần đây</h3><p>10 order mới nhất</p></div><button className="textBtn" onClick={()=>navigate("orders")}>Xem tất cả →</button></div>
@@ -1173,7 +1177,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
         {section==="ledger"&&<>
           <PageHeader eyebrow="FINANCE" title="Balance Ledger" description={role==="CLIENT"?"Theo dõi Balance, sức mua, Debt và hoàn tiền của bạn.":"Chọn Client để xem số dư và giao dịch; mở từng nghiệp vụ khi cần xử lý."}
             actions={role==="ADMIN"?<><button className="secondaryBtn" onClick={()=>setImportKind("balance")}>⇩ Import giao dịch</button><button className="primaryBtn" onClick={()=>openEntry("balance")}>＋ Ghi giao dịch</button></>:role==="SALES"?<button className="primaryBtn" onClick={()=>openEntry("balance")}>＋ Ghi Payment / phí</button>:undefined}/>
-          <FinanceHub role={role} clients={clients}/>
+          <FinanceHub key={financeLanding+':'+String(financeTarget||'')} role={role} clients={clients} initialTab={financeLanding} initialClientId={financeTarget}/>
         </>}
 
         {role==="ADMIN"&&section==="masterdata"&&<>

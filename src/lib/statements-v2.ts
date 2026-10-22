@@ -1,4 +1,5 @@
 import {db} from './db';
+import {statementAgingBasis} from './statement-aging-basis';
 import {allocateFIFO,accountFinancials,assertClientAccess,localDay,validDay,shiftDay} from './credit';
 import './cases';
 import {statementOrderIdsV2} from './statement-orders-v2';
@@ -6,7 +7,7 @@ import type {AuthUser} from './auth';
 type Row=Record<string,unknown>;
 type Totals={balance_cents:number;debt_cents:number;refund_cents:number};
 type Movement=Totals&{id:number;source:string;source_id:string;operation:string;bank_cents:number;detail:Row;posted_at:string;statement_day:string};
-export type StatementSnapshot={version:2;client_id:number;period_start:string;period_end:string;status:'FINALIZED';opening:Totals;closing:Totals;movements:Movement[];bank_outflow_cents:number;reference:{credit_limit_cents:number;reserve_cents:number};order_ids:number[];last_event_id:number;checkpoint_at:string};
+export type StatementSnapshot={aging_basis_cents?:number;version:2;client_id:number;period_start:string;period_end:string;status:'FINALIZED';opening:Totals;closing:Totals;movements:Movement[];bank_outflow_cents:number;reference:{credit_limit_cents:number;reserve_cents:number};order_ids:number[];last_event_id:number;checkpoint_at:string};
 function access(actor:AuthUser,client:number){if(['FINANCE','BOD'].includes(actor.role)){if(!db.prepare("SELECT id FROM users WHERE id=? AND role='CLIENT'").get(client))throw Error('Client không tồn tại.');}else assertClientAccess(actor,client);}
 function total(events:Movement[]):Totals {return events.reduce((s,e)=>({balance_cents:s.balance_cents+e.balance_cents,debt_cents:s.debt_cents+e.debt_cents,refund_cents:s.refund_cents+e.refund_cents}),{balance_cents:0,debt_cents:0,refund_cents:0});}
 export function statementEvents(client:number):Movement[]{
@@ -56,8 +57,9 @@ export function finalizeStatement(actor:AuthUser,client:number,start:string,end:
  const p=statementPreview(actor,client,start,end);
  // Claim state remains a live projection, not a mutable field in the financial snapshot.
  const {disputed:_disputed,claim_ids:_claims,...financial}=p;
- const snapshot:StatementSnapshot={...financial,status:'FINALIZED'};
- db.prepare('INSERT INTO statement_v2_snapshots(client_id,period_start,period_end,actor_id,snapshot_json) VALUES (?,?,?,?,?)').run(client,start,end,actor.id,JSON.stringify(snapshot));
+ const snapshot:StatementSnapshot={...financial,aging_basis_cents:statementAgingBasis(p.movements),status:'FINALIZED'};
+ const inserted=db.prepare('INSERT INTO statement_v2_snapshots(client_id,period_start,period_end,actor_id,snapshot_json) VALUES (?,?,?,?,?)').run(client,start,end,actor.id,JSON.stringify(snapshot));
+ db.prepare('INSERT INTO statement_v2_aging_basis(snapshot_id,client_id,period_end,aging_basis_cents,last_event_id) VALUES (?,?,?,?,?)').run(inserted.lastInsertRowid,client,end,snapshot.aging_basis_cents,snapshot.last_event_id);
  db.prepare("INSERT INTO financial_audit(client_id,actor_id,event,data_json) VALUES (?,?,'STATEMENT_V2_FINALIZED',?)").run(client,actor.id,JSON.stringify({start,end,last_event_id:snapshot.last_event_id}));return snapshot;
  }).immediate();
 }

@@ -1,5 +1,9 @@
 # Roadmap triển khai — đã được Product chốt 13/10/2026
 
+## 23/10 — Debt Aging/Action Dashboard
+Đã bổ sung immutable per-Statement aging index, lấy hạn từ period_end, tách lãi dự phóng, tuần đã sử dụng/credit term, Admin one-time legacy aging opening có audit, Action Dashboard cho thiếu giá/Label/tuổi nợ. Không tự backfill Statement lịch sử; cần cutover reconciliation. Các gate còn mở: browser end-to-end Admin/Finance/Client mới, legacy cutover có chứng từ thật (happy path synthetic 17 assertions PASS), quy mô Dashboard nhiều Client và pilot thực. Xem `VERIFICATION-DEBT-AGING-2026-10-23.md`.
+
+
 ## Owner continuation — 22/10/2026 (current delta)
 
 See [implementation, debt-age assumptions, test evidence and explicit remaining gates](OWNER-EXECUTION-2026-10-22.md). Five horizontal financial task tabs; read-only financial GETs; deterministic frozen-period debt aging; Tracking/Label before manual price; price/finalization gate; auditable partial-label override; server Ledger pagination. This delta supersedes contrary historical behavior below. No deployment or full production acceptance.

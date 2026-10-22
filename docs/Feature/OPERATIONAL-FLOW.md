@@ -1,5 +1,9 @@
 # DMD Report — Luồng vận hành và business rules
 
+## Owner 23/10 — tuổi nợ và ưu tiên công việc
+Tuổi nợ gốc lấy từ Statement Finalized cũ nhất còn bị nghĩa vụ hiện tại bao phủ; khoản tăng mới theo kỳ được chốt thành immutable aging index, không phân bổ Payment vào từng Statement và không ghi gì khi GET Balance. Credit Term tính từ cuối kỳ; kỳ mở giảm sức mua nhưng không tự tạo quá hạn; lãi chưa ghi sổ không làm tuổi nợ gốc dài hơn. Thiếu lịch sử: Admin xác nhận mốc opening/cents có audit một lần, không thay Balance/Debt. Dashboard Admin có hàng chờ giá thủ công UPS/chuyên tuyến (ưu tiên kỳ đã kết thúc), Label một phần và Client thiếu tuổi nợ. Finalize Statement vẫn phải tuần tự, không bỏ qua đơn thiếu giá. Xem `VERIFICATION-DEBT-AGING-2026-10-23.md`.
+
+
 ## Owner continuation — 22/10/2026 (current delta)
 
 See [implementation, debt-age assumptions, test evidence and explicit remaining gates](OWNER-EXECUTION-2026-10-22.md). Five horizontal financial task tabs; read-only financial GETs; deterministic frozen-period debt aging; Tracking/Label before manual price; price/finalization gate; auditable partial-label override; server Ledger pagination. This delta supersedes contrary historical behavior below. No deployment or full production acceptance.

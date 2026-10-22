@@ -8,6 +8,10 @@ export function statementJournalSchema(db:Database.Database){
  balance_cents INTEGER NOT NULL DEFAULT 0,debt_cents INTEGER NOT NULL DEFAULT 0,refund_cents INTEGER NOT NULL DEFAULT 0,bank_cents INTEGER NOT NULL DEFAULT 0,
  detail_json TEXT NOT NULL,posted_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')));
  CREATE INDEX IF NOT EXISTS statement_v2_client_events ON statement_v2_events(client_id,id);
+ CREATE TABLE IF NOT EXISTS statement_v2_aging_basis(snapshot_id INTEGER PRIMARY KEY REFERENCES statement_v2_snapshots(id),client_id INTEGER NOT NULL,period_end TEXT NOT NULL,aging_basis_cents INTEGER NOT NULL,last_event_id INTEGER NOT NULL);
+ CREATE INDEX IF NOT EXISTS idx_statement_v2_aging_client ON statement_v2_aging_basis(client_id,period_end);
+ CREATE TRIGGER IF NOT EXISTS immutable_statement_aging_update BEFORE UPDATE ON statement_v2_aging_basis BEGIN SELECT RAISE(ABORT,'Statement aging basis immutable'); END;
+ CREATE TRIGGER IF NOT EXISTS immutable_statement_aging_delete BEFORE DELETE ON statement_v2_aging_basis BEGIN SELECT RAISE(ABORT,'Statement aging basis immutable'); END;
  CREATE TABLE IF NOT EXISTS statement_v2_snapshots(id INTEGER PRIMARY KEY,client_id INTEGER NOT NULL,period_start TEXT NOT NULL,period_end TEXT NOT NULL,
  actor_id INTEGER NOT NULL,finalized_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),snapshot_json TEXT NOT NULL,UNIQUE(client_id,period_start),CHECK(period_start<=period_end));`);
  const first=!db.prepare('SELECT id FROM statement_v2_epoch').get();
