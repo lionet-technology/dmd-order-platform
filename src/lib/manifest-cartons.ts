@@ -200,6 +200,10 @@ export function manifestCartonTrackings(cartonId:number){
   return {detail,trackings:detail.items.map(row=>String((row as DataRow).tracking))};
 }
 
-export function markManifestCartonExported(cartonId:number){
-  db.prepare("UPDATE manifest_cartons SET exported_at=CURRENT_TIMESTAMP WHERE id=?").run(cartonId);
+export function markManifestCartonExported(cartonId:number,userId:number){
+  // Retain handoff evidence even if a carton is subsequently reopened.
+  // Existing exported_at is still respected for historical records.
+  const result=db.prepare("UPDATE manifest_cartons SET exported_at=COALESCE(exported_at,CURRENT_TIMESTAMP) WHERE id=?").run(cartonId);
+  if(result.changes)db.prepare("INSERT INTO manifest_carton_events(manifest_carton_id,action,actor_user_id,details_json) VALUES (?,'EXPORT',?,?)")
+    .run(cartonId,userId,JSON.stringify({handoff_evidence:true}));
 }

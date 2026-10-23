@@ -9,7 +9,7 @@ type SegmentRule={rule_type:string;segments:string[];priority:number;active:bool
 type Segmentation={enabled:boolean;rules:SegmentRule[]};
 type EnumRow={id:number;enum_type:string;value:string;parent_value:string;active:number;sort_order:number};
 type RouteRow={
-  id:number;service:string;sub_service:string;supplier:string;active:number;segmentation?:Segmentation;max_cartons_per_order?:number;
+  id:number;service:string;sub_service:string;supplier:string;active:number;lifecycle_state?:'ACTIVE'|'INACTIVE'|'ARCHIVED'|'DELETED';segmentation?:Segmentation;max_cartons_per_order?:number;
   template_id?:number;template_name?:string;output_mode?:string;active_version_id?:number;version_number?:number;
   purchase_template_id?:number;purchase_template_name?:string;purchase_output_mode?:string;purchase_active_version_id?:number;purchase_version_number?:number;
   manifest_template_id?:number;manifest_template_name?:string;manifest_output_mode?:string;manifest_active_version_id?:number;manifest_version_number?:number;
@@ -41,6 +41,8 @@ function ActiveTemplateDownload({versionId,kind}:{versionId?:number;kind:"Purcha
 
 export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
   const [routeSearch,setRouteSearch]=useState("");
+  const [lifecycleFilter,setLifecycleFilter]=useState("ACTIVE");
+  const [lifecycleReason,setLifecycleReason]=useState("");
   const [routeTab,setRouteTab]=useState("pricing");
   const editorRef=useRef<HTMLDivElement>(null);
   const [routes,setRoutes]=useState<RouteRow[]>([]);
@@ -68,6 +70,15 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
   },[]);
   useEffect(()=>{void load()},[load]);
 
+  async function changeLifecycle(state:"ACTIVE"|"INACTIVE"|"ARCHIVED"|"DELETED"){
+    if(!selected||!lifecycleReason.trim()){setMessage("Cần nhập lý do thay đổi Route.");return;}
+    setBusy(true);setMessage("");
+    try{
+      await responseJson(await fetch("/api/service-routes/"+selected.id+"/lifecycle",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({state,reason:lifecycleReason})}));
+      setSelected({...selected,lifecycle_state:state,active:state==="ACTIVE"?1:0});
+      setLifecycleReason("");setLifecycleFilter(state);await load();setMessage("Đã chuyển Route sang "+state+".");
+    }catch(e){setMessage("Lỗi: "+(e as Error).message)}finally{setBusy(false)}
+  }
   async function createRoute(){
     setBusy(true);setMessage("");
     try{
@@ -151,7 +162,7 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
 
   const selectedRouteId=selected?.id;
   useEffect(()=>{if(selectedRouteId)editorRef.current?.scrollIntoView({block:"start"})},[selectedRouteId]);
-  const filteredRoutes=routes.filter(row=>[row.service,row.sub_service,row.supplier].join(" ").toLowerCase().includes(routeSearch.trim().toLowerCase()));
+  const filteredRoutes=routes.filter(row=>(row.lifecycle_state||(row.active?"ACTIVE":"INACTIVE"))===lifecycleFilter&&[row.service,row.sub_service,row.supplier].join(" ").toLowerCase().includes(routeSearch.trim().toLowerCase()));
   const services=options(enums,"SERVICE");
   const subServices=form.service?options(enums,"SUB_SERVICE",form.service):[];
   const suppliers=options(enums,"SUPPLIER");
@@ -165,14 +176,20 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
         <button className="primaryBtn" disabled={busy||!form.service||!form.supplier} onClick={()=>void createRoute()}>＋ Thêm cấu hình</button>
       </div>
       </details>
+      <div className="routeEditorTabs" role="group" aria-label="Trạng thái cấu hình">{(["ACTIVE","INACTIVE","ARCHIVED","DELETED"] as const).map(state=><button key={state} className={lifecycleFilter===state?"active":""} aria-pressed={lifecycleFilter===state} onClick={()=>setLifecycleFilter(state)}>{({ACTIVE:"Đang hoạt động",INACTIVE:"Ngừng sử dụng",ARCHIVED:"Archived",DELETED:"Đã xoá"} as Record<string,string>)[state]} ({routes.filter(r=>(r.lifecycle_state||(r.active?"ACTIVE":"INACTIVE"))===state).length})</button>)}</div>
       <div className="routeListToolbar"><label className="searchBox"><span aria-hidden="true">⌕</span><input aria-label="Tìm cấu hình dịch vụ" placeholder="Tìm Service, Sub-Service, Supplier…" value={routeSearch} onChange={e=>setRouteSearch(e.target.value)}/></label><span>{filteredRoutes.length} / {routes.length} cấu hình · {routes.filter(row=>row.active).length} đang hoạt động</span></div>
       <div className="tableWrap routeTable"><table><thead><tr><th>Service</th><th>Sub-Service</th><th>Supplier</th><th>Purchase Template</th><th>Manifest Template</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
-        {filteredRoutes.length?filteredRoutes.map(row=><tr key={row.id} className={selected?.id===row.id?"selectedRoute":""}><td data-label="Service"><b>{row.service}</b></td><td data-label="Sub-Service">{row.sub_service||"—"}</td><td data-label="Supplier">{row.supplier}</td><td data-label="Purchase Template">{row.purchase_template_name||row.template_name||"Chưa có"}{row.purchase_version_number||row.version_number?<small>Active v{row.purchase_version_number||row.version_number}<ActiveTemplateDownload versionId={row.purchase_active_version_id||row.active_version_id} kind="Purchase"/></small>:null}</td><td data-label="Manifest Template">{row.manifest_template_name||"Chưa có"}{row.manifest_version_number?<small>Active v{row.manifest_version_number}<ActiveTemplateDownload versionId={row.manifest_active_version_id} kind="Manifest"/></small>:null}</td><td data-label="Trạng thái"><span className={row.active?"status goodStatus":"status neutralStatus"}>{row.active?"Active":"Inactive"}</span></td><td data-label="Thao tác"><button className="editBtn" onClick={()=>{setRouteTab("pricing");setSelected(row);setMaxCartons(Number(row.max_cartons_per_order||1));setSegmentation(row.segmentation||{enabled:false,rules:[]});setSegmentDrafts((row.segmentation?.rules||[]).map(rule=>rule.segments.join(", ")));setConfigDrafts((row.segmentation?.rules||[]).map(rule=>JSON.stringify(rule.config,null,2)));chooseTemplateKind("PURCHASE",row);let vars:Record<string,string>={};try{vars=JSON.parse(row.route_variables_json||"{}")}catch{}setRouteVariables(Object.entries(vars).map(([key,value])=>({key,value:String(value)})))}}>Cấu hình</button></td></tr>):<tr><td colSpan={7} className="empty">{routes.length?"Không có cấu hình phù hợp với tìm kiếm.":"Chưa có cấu hình. Thêm dịch vụ để bắt đầu."}</td></tr>}
+        {filteredRoutes.length?filteredRoutes.map(row=><tr key={row.id} className={selected?.id===row.id?"selectedRoute":""}><td data-label="Service"><b>{row.service}</b></td><td data-label="Sub-Service">{row.sub_service||"—"}</td><td data-label="Supplier">{row.supplier}</td><td data-label="Purchase Template">{row.purchase_template_name||row.template_name||"Chưa có"}{row.purchase_version_number||row.version_number?<small>Active v{row.purchase_version_number||row.version_number}<ActiveTemplateDownload versionId={row.purchase_active_version_id||row.active_version_id} kind="Purchase"/></small>:null}</td><td data-label="Manifest Template">{row.manifest_template_name||"Chưa có"}{row.manifest_version_number?<small>Active v{row.manifest_version_number}<ActiveTemplateDownload versionId={row.manifest_active_version_id} kind="Manifest"/></small>:null}</td><td data-label="Trạng thái"><span className={row.active?"status goodStatus":"status neutralStatus"}>{row.lifecycle_state|| (row.active?"ACTIVE":"INACTIVE")}</span></td><td data-label="Thao tác"><button className="editBtn" onClick={()=>{setRouteTab("pricing");setSelected(row);setMaxCartons(Number(row.max_cartons_per_order||1));setSegmentation(row.segmentation||{enabled:false,rules:[]});setSegmentDrafts((row.segmentation?.rules||[]).map(rule=>rule.segments.join(", ")));setConfigDrafts((row.segmentation?.rules||[]).map(rule=>JSON.stringify(rule.config,null,2)));chooseTemplateKind("PURCHASE",row);let vars:Record<string,string>={};try{vars=JSON.parse(row.route_variables_json||"{}")}catch{}setRouteVariables(Object.entries(vars).map(([key,value])=>({key,value:String(value)})))}}>Cấu hình</button></td></tr>):<tr><td colSpan={7} className="empty">{routes.length?"Không có cấu hình phù hợp với tìm kiếm.":"Chưa có cấu hình. Thêm dịch vụ để bắt đầu."}</td></tr>}
       </tbody></table></div>
     </section>
 
     {selected&&<>
       <div className="routeEditorHeader" ref={editorRef}><div><span className="eyebrow">ĐANG CẤU HÌNH</span><h2>{selected.service}{selected.sub_service?" / "+selected.sub_service:""}</h2><p>Supplier: {selected.supplier} · {selected.active?"Đang hoạt động":"Không hoạt động"}</p></div><button className="secondaryBtn" onClick={()=>setSelected(null)}>Đóng cấu hình</button></div>
+      <section className="routeVariablesEditor" style={{padding:'12px 0'}}>
+        <label>Lý do thay đổi trạng thái Route<input value={lifecycleReason} onChange={e=>setLifecycleReason(e.target.value)} placeholder="Bắt buộc khi đổi trạng thái"/></label>
+        {(["ACTIVE","INACTIVE","ARCHIVED","DELETED"] as const).filter(s=>s!==(selected.lifecycle_state||(selected.active?"ACTIVE":"INACTIVE"))).map(state=><button key={state} className="secondaryBtn" disabled={busy||!lifecycleReason.trim()} onClick={()=>void changeLifecycle(state)}>{({ACTIVE:"Kích hoạt",INACTIVE:"Deactivate",ARCHIVED:"Archive",DELETED:"Soft Delete"} as Record<string,string>)[state]}</button>)}
+        <p>Archived/Deleted giữ nguyên Order, Tracking, giá và lịch sử Supplier. Soft Delete chỉ áp dụng khi mọi Order đã hoàn tất và đủ Actual Net Cost.</p>
+      </section>
       <div className="routeVariablesEditor" style={{padding:'12px 0'}}><label><b>Carton tối đa / Order</b> <input aria-label="Carton tối đa / Order" type="number" min={1} max={1000} disabled={busy||/epacket|yun/i.test(selected.service)} value={/epacket|yun/i.test(selected.service)?1:maxCartons} onChange={e=>setMaxCartons(Number(e.target.value))}/></label> <button className="secondaryBtn" disabled={busy||/epacket|yun/i.test(selected.service)||!Number.isSafeInteger(maxCartons)||maxCartons<1} onClick={()=>void saveCartonLimit()}>Lưu giới hạn Carton</button><p>ePacket/Yun luôn 1 Carton. Route khác mặc định 1; chỉ tăng khi dịch vụ được phép nhiều Carton và có giá mua phù hợp.</p></div>
       <div className="routeEditorTabs" role="group" aria-label="Các mục cấu hình dịch vụ">{[["pricing","Giá & phụ phí"],["cancellation","Hoàn / Huỷ"],["templates","Template xuất file"],["segmentation","Phân vùng nâng cao"]].map(([key,label])=><button key={key} className={routeTab===key?"active":""} aria-pressed={routeTab===key} onClick={()=>setRouteTab(key)}>{label}</button>)}</div>
       <div hidden={routeTab!=="cancellation"}><EmergencyHoldPanel key={"emergency-"+selected.id} routeId={selected.id} onSaved={()=>void load()}/><CancellationPolicyPanel key={selected.id} route={selected} onSaved={()=>void load()}/></div>

@@ -20,6 +20,14 @@ export function startEmergencyHold(user:AuthUser,routeId:number,reason:string){
  // makes an order ineligible. Malformed movement evidence fails closed.
  const eligible=orders.filter(o=>{
  if(o.fulfillment_started_at)return false;
+ // A manifest export is the operational handoff boundary. This is an order-level hold:
+ // if any carton was exported, the entire order needs manual exception handling.
+ const manifest=db.prepare(`SELECT mc.id,mc.carton_code,mc.exported_at FROM manifest_carton_items mi
+ JOIN manifest_cartons mc ON mc.id=mi.manifest_carton_id
+ WHERE mi.order_id=? AND (mc.exported_at IS NOT NULL OR EXISTS(
+ SELECT 1 FROM manifest_carton_events me WHERE me.manifest_carton_id=mc.id AND me.action='EXPORT'))
+ LIMIT 1`).get(o.id) as Row|undefined;
+ if(manifest)return false;
  const tracks=db.prepare("SELECT shipment_status,delivered_at FROM order_trackings WHERE order_id=?").all(o.id) as Row[];
  if(tracks.some(t=>t.delivered_at||String(t.shipment_status||"")!=="WAITING_HANDOVER"))return false;
  const events=db.prepare("SELECT after_json FROM order_events WHERE order_id=? AND event_type='SHIPMENT_STATUS_UPDATED'").all(o.id) as Row[];

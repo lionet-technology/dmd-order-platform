@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { canonicalEnumValue } from "@/lib/enums";
 import {maxCartonsForService} from '@/lib/carton-policy';
+import {routeState} from "@/lib/route-lifecycle";
 
 import {parseCancellationRules,readCancellationRules,saveCancellationRules} from "@/lib/cancellation-config";
 import { parseSegmentation, readSegmentation, saveSegmentation } from "@/lib/route-segmentation";
@@ -42,7 +43,7 @@ async function handleGET(req:NextRequest){
     "LEFT JOIN purchase_template_versions mpv ON mpv.template_id=mpt.id AND mpv.status='ACTIVE' "+
     "ORDER BY rc.active DESC,rc.service,rc.sub_service,rc.supplier"
   ).all();
-  return NextResponse.json((rows as Array<{id:number}>).map(row=>({...row,segmentation:readSegmentation(row.id),cancellation_policy:readCancellationRules(row.id)})));
+  return NextResponse.json((rows as Array<{id:number}>).map(row=>({...row,lifecycle_state:routeState(row.id),segmentation:readSegmentation(row.id),cancellation_policy:readCancellationRules(row.id)})));
 }
 
 async function handlePOST(req:NextRequest){
@@ -69,13 +70,26 @@ async function handlePOST(req:NextRequest){
       if(existing){
         id=existing.id;
         const previous=db.prepare("SELECT * FROM service_route_configs WHERE id=?").get(id) as Record<string,unknown>;
-        if([service,subService,supplier].some((value,index)=>value.toLowerCase()!==String(previous[["service","sub_service","supplier"][index]]).toLowerCase())&&db.prepare("SELECT id FROM manifest_cartons WHERE route_config_id=? LIMIT 1").get(id))throw new Error("Route đã gắn với thùng kho. Hãy tạo route mới để giữ lịch sử thùng.");
+        const effectiveActive=Object.prototype.hasOwnProperty.call(body,"active")?active:Number(previous.active);
+        if(Number(previous.active)!==effectiveActive){
+          const before=routeState(id);
+          db.prepare("INSERT INTO route_lifecycle(route_id,state,reason,actor_id) VALUES (?,?,?,?) ON CONFLICT(route_id) DO UPDATE SET state=excluded.state,reason=excluded.reason,actor_id=excluded.actor_id,updated_at=CURRENT_TIMESTAMP")
+            .run(id,effectiveActive?"ACTIVE":"INACTIVE","Chuyển trạng thái qua cấu hình dịch vụ",auth.user.id);
+          db.prepare("INSERT INTO route_lifecycle_events(route_id,from_state,to_state,reason,actor_id) VALUES (?,?,?,?,?)")
+            .run(id,before,effectiveActive?"ACTIVE":"INACTIVE","Chuyển trạng thái qua cấu hình dịch vụ",auth.user.id);
+        }
+        const previousState=routeState(id);
+        if(previousState==="DELETED"||previousState==="ARCHIVED")throw Error("Route đã Archived/Deleted; dùng tác vụ đổi trạng thái trước khi sửa.");
+        // Historic order identities must stay immutable, not merely manifest references.
+        const renaming=[service,subService,supplier].some((value,index)=>value.toLowerCase()!==String(previous[["service","sub_service","supplier"][index]]).toLowerCase());
+        if(renaming&&db.prepare("SELECT id FROM orders WHERE service=? COLLATE NOCASE AND sub_service=? COLLATE NOCASE AND supplier=? COLLATE NOCASE LIMIT 1").get(previous.service,previous.sub_service,previous.supplier))throw Error("Route đã gắn Order; hãy tạo Route mới để bảo toàn lịch sử tài chính.");
+        if(renaming&&db.prepare("SELECT id FROM manifest_cartons WHERE route_config_id=? LIMIT 1").get(id))throw new Error("Route đã gắn với thùng kho. Hãy tạo route mới để giữ lịch sử thùng.");
         if(variables){
           db.prepare("UPDATE service_route_configs SET service=?,sub_service=?,supplier=?,route_variables_json=?,active=?,updated_by_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
-            .run(service,subService,supplier,JSON.stringify(variables),active,auth.user.id,id);
+            .run(service,subService,supplier,JSON.stringify(variables),effectiveActive,auth.user.id,id);
         }else{
           db.prepare("UPDATE service_route_configs SET service=?,sub_service=?,supplier=?,active=?,updated_by_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
-            .run(service,subService,supplier,active,auth.user.id,id);
+            .run(service,subService,supplier,effectiveActive,auth.user.id,id);
         }
       }else{
         const result=db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier,route_variables_json,active,created_by_user_id,updated_by_user_id) VALUES (?,?,?,?,?,?,?)")

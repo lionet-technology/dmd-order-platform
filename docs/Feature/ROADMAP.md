@@ -1,5 +1,8 @@
 # Roadmap triển khai — đã được Product chốt 13/10/2026
 
+## Tiến độ Route lifecycle + Emergency evidence — 23/10/2026
+Đã thêm trạng thái Route Active/Inactive/Archived/Deleted (soft delete với audit), kiểm tra lịch sử Order khi sửa Route, chặn soft delete khi Order còn xử lý/thiếu Actual Net Cost, và loại Order có bằng chứng xuất Manifest khỏi Emergency Hold. Có tải Excel kiểm tra đơn đang Hold. Theo quyết định Owner mới nhất, **không triển khai huỷ/tạo Order thay thế**; chuyển hướng sử dụng Order hiện có để đổi Tracking/Label/Route và giữ nguyên Charge, DMD ID, Client Order ID. **Nhánh thực thi đổi Route khi đang Hold chưa bật**, đợi kiểm tra bảo toàn chi phí Supplier và lịch sử; các module Supplier, Add-on, BOD mới còn backlog. Xem [báo cáo phạm vi đã test](VERIFICATION-ROUTE-LIFECYCLE-EMERGENCY-2026-10-23.md).
+
 ## Emergency Route Switch — 23/10/2026
 Safe first-stage Hold/Undo, status/export and database guards implemented; emergency cancellation/replacement remains disabled pending liability carry-forward and cross-module financial recovery tests. Full Route lifecycle, optional-order Add-on, Statement name and remaining agreed modules remain approved backlog, not completed by this change. [Scope and QA](18-emergency-route-hold.md).
 

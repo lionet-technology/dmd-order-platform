@@ -11,7 +11,13 @@ let checks=0;function eq(a,b,m){assert.deepEqual(a,b,m);checks++}function reject
  const client=createUser({username:'emergency.client',display_name:'Client',role:'CLIENT',password:'Synthetic123!',sales_user_id:sales.id});
  const route=Number(db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier,warehouse_hold) VALUES ('Emergency','Test','Synthetic',1)").run().lastInsertRowid);
  const add=(status,extra={})=>{const id=Number(db.prepare("INSERT INTO orders(service,sub_service,supplier,workflow_status,order_id,total_due,client_user_id) VALUES ('Emergency','Test','Synthetic',?,?,25,?)").run(status,'synthetic-'+status+Math.random(),client.id).lastInsertRowid);for(const [k,v]of Object.entries(extra))db.prepare('UPDATE orders SET '+k+'=? WHERE id=?').run(v,id);return id};
- const pending=add('PENDING_PURCHASE'),purchased=add('PURCHASED'),priorHold=add('HOLD'),moved=add('PURCHASED',{fulfillment_started_at:'2026-10-01'}),history=add('PURCHASED');
+ const pending=add('PENDING_PURCHASE'),purchased=add('PURCHASED'),priorHold=add('HOLD'),moved=add('PURCHASED',{fulfillment_started_at:'2026-10-01'}),history=add('PURCHASED'),manifested=add('PURCHASED');
+ const orderCarton=Number(db.prepare('INSERT INTO order_cartons(order_id,carton_number) VALUES (?,1)').run(manifested).lastInsertRowid);
+ const shipment=Number(db.prepare("INSERT INTO order_trackings(order_id,carton_id,tracking,normalized_tracking) VALUES (?,?,'MANIFEST-EXPORTED-TEST','MANIFESTEXPORTEDTEST')").run(manifested,orderCarton).lastInsertRowid);
+ const warehouseCarton=Number(db.prepare("INSERT INTO manifest_cartons(carton_code,service,manifest_date,daily_sequence,status) VALUES ('EMERGENCY-EXPORTED','Emergency','2026-10-23',1,'CLOSED')").run().lastInsertRowid);
+ db.prepare('INSERT INTO manifest_carton_items(manifest_carton_id,order_id,order_carton_id,tracking_id) VALUES (?,?,?,?)').run(warehouseCarton,manifested,orderCarton,shipment);
+ // Even after an exported carton was reopened, its durable EXPORT audit blocks hold.
+ db.prepare("INSERT INTO manifest_carton_events(manifest_carton_id,action,actor_user_id,details_json) VALUES (?,'EXPORT',?,?)").run(warehouseCarton,admin.id,'{}');
  db.prepare("INSERT INTO order_events(order_id,event_type,summary,after_json) VALUES (?,'SHIPMENT_STATUS_UPDATED','Synthetic',?)").run(history,JSON.stringify({shipment_status:'IN_TRANSIT'}));
  db.prepare("INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount,reference_type,reference_id) VALUES (?,'ORDER_CHARGE','DEBIT',25,'ORDER',?)").run(client.id,String(purchased));
  const {NextRequest}=require('next/server'),api=require('../src/app/api/service-routes/[id]/emergency/route.ts'),{createSession}=require('../src/lib/auth.ts');
@@ -31,7 +37,8 @@ let checks=0;function eq(a,b,m){assert.deepEqual(a,b,m);checks++}function reject
  eq(db.prepare('SELECT workflow_status s FROM orders WHERE id=?').get(pending).s,'PENDING_PURCHASE');
  db.exec('DROP TRIGGER synthetic_start_failure');
  const hold=startEmergencyHold(admin,route,'Synthetic failure');
- eq(hold.affected,3);eq(hold.excluded,2);
+ eq(hold.affected,3);eq(hold.excluded,3);
+ eq(db.prepare('SELECT workflow_status s FROM orders WHERE id=?').get(manifested).s,'PURCHASED','Exported manifest Order not auto-held');
  const apiStatus=await api.GET(req('GET',token),context);
  eq(apiStatus.status,200);eq((await apiStatus.json()).replacement_enabled,false);
  eq((await api.POST(req('POST',token,{action:'undo',hold_id:999999}),context)).status,409);
@@ -45,6 +52,12 @@ let checks=0;function eq(a,b,m){assert.deepEqual(a,b,m);checks++}function reject
  rejects(()=>add('PENDING_PURCHASE'),/Emergency Hold/);
  rejects(()=>db.prepare("INSERT INTO order_trackings(order_id,tracking,normalized_tracking) VALUES (?,'SYNTHETIC','SYNTHETIC')").run(purchased),/Emergency Hold/);
  const exp=exportEmergencyHold(admin,route,hold.id);eq(exp.length,3);eq(exp.find(r=>r.source_dmd_id===purchased).original_selling_price,25);
+ const excelRequest=new NextRequest('http://localhost/api/service-routes/'+route+'/emergency?hold_id='+hold.id+'&format=xlsx',{headers:{cookie:'dmd_session='+token}});
+ const excel=await api.GET(excelRequest,context);
+ eq(excel.status,200,'Excel export successful');
+ eq(excel.headers.get('content-type')?.includes('spreadsheetml.sheet'),true);
+ const excelBook=new (require('exceljs').Workbook)();await excelBook.xlsx.load(Buffer.from(await excel.arrayBuffer()));
+ eq(excelBook.worksheets[0].rowCount,4,'Excel contains three affected orders');
  rejects(()=>exportEmergencyHold(client,route,hold.id),/Admin/);
  // Fresh process must survive bootstrap migrations with a durable active Hold.
  const child=require('node:child_process').spawnSync(process.execPath,['-e',"require('./scripts/seed-epacket.cjs'); const {db}=require('./src/lib/db.ts'); if(!db.prepare('SELECT id FROM emergency_route_holds WHERE undone_at IS NULL').get())process.exit(2);db.close();"],{cwd:path.resolve(__dirname,'..'),env:process.env,encoding:'utf8'});
@@ -64,6 +77,15 @@ let checks=0;function eq(a,b,m){assert.deepEqual(a,b,m);checks++}function reject
  eq(db.prepare('SELECT workflow_status s FROM orders WHERE id=?').get(priorHold).s,'HOLD');
  eq(db.prepare('SELECT warehouse_hold n FROM service_route_configs WHERE id=?').get(route).n,1,'Restore pre-existing warehouse Hold');
  eq(undoEmergencyHold(admin,route,hold.id).already_undone,true);
+ const {setRouteState,routeState}=require('../src/lib/route-lifecycle.ts');
+ rejects(()=>setRouteState(client,route,'INACTIVE','denied'),/Admin/);
+ eq(setRouteState(admin,route,'INACTIVE','Ngừng route').state,'INACTIVE');
+ eq(setRouteState(admin,route,'ARCHIVED','Đã thay route').state,'ARCHIVED');
+ rejects(()=>setRouteState(admin,route,'DELETED','Đã dừng'),/Order vận hành/);
+ eq(routeState(route),'ARCHIVED');
+ eq(setRouteState(admin,route,'ACTIVE','Khôi phục').state,'ACTIVE');
+ eq(setRouteState(admin,route,'ACTIVE','Khôi phục').replayed,true);
+ eq(db.prepare('SELECT count(*) n FROM route_lifecycle_events WHERE route_id=?').get(route).n,3,'Audited transitions');
  eq(db.prepare('SELECT * FROM ledger_entries').all(),before,'Undo/retry preserve liability');
  eq(db.pragma('integrity_check',{simple:true}),'ok');
  console.log('EMERGENCY HOLD PASS ('+checks+' assertions)');

@@ -19,7 +19,7 @@ async function handlePOST(req:NextRequest){
     const skipped=Buffer.from(JSON.stringify(result.missing),"utf8").toString("base64");
     if(result.files.length===1){
       const file=result.files[0];
-      if(manifestCartonId)markManifestCartonExported(manifestCartonId);
+      if(manifestCartonId)markManifestCartonExported(manifestCartonId,auth.user.id);
       const filename=packed?String(packed.detail.carton.carton_code)+".xlsx":file.name;
       return new NextResponse(new Uint8Array(file.buffer),{headers:{
         "content-type":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -37,7 +37,7 @@ async function handlePOST(req:NextRequest){
       used.add(name);zip.file(name,file.buffer);
     }
     const buffer=await zip.generateAsync({type:"nodebuffer",compression:"DEFLATE"});
-    if(manifestCartonId)markManifestCartonExported(manifestCartonId);
+    if(manifestCartonId)markManifestCartonExported(manifestCartonId,auth.user.id);
     return new NextResponse(new Uint8Array(buffer),{headers:{
       "content-type":"application/zip",
       "content-disposition":'attachment; filename="'+(packed?String(packed.detail.carton.carton_code):"Manifest_"+new Date().toISOString().slice(0,10))+'.zip"',
