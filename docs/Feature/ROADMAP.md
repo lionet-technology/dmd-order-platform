@@ -1,5 +1,9 @@
 # Roadmap triển khai — đã được Product chốt 13/10/2026
 
+## Emergency Switch trên cùng Order — cập nhật 23/10/2026
+Đã triển khai bước Admin đổi Route/Tracking/Label/Estimated Net Cost trên DMD Order ID cũ dưới một Emergency Hold có audit, không huỷ/mua lại, không tạo Ledger Charge/Refund, không đổi giá bán. Có Excel xuất/nhập và thao tác từng Order/hàng loạt; khi Supplier cũ và mới cùng tính Actual Cost, hai nguồn được giữ lại và chặn FINALIZED GP đến khi đủ bằng chứng. 34 domain suites PASS, 76 assertions riêng Emergency PASS; cần Chrome UAT, supplier reporting/negative GP filter, các module Supplier/Add-on/BOD ở bước tiếp. Xem [Verification](VERIFICATION-EMERGENCY-SWITCH-2026-10-23.md).
+
+
 ## Tiến độ Route lifecycle + Emergency evidence — 23/10/2026
 Đã thêm trạng thái Route Active/Inactive/Archived/Deleted (soft delete với audit), kiểm tra lịch sử Order khi sửa Route, chặn soft delete khi Order còn xử lý/thiếu Actual Net Cost, và loại Order có bằng chứng xuất Manifest khỏi Emergency Hold. Có tải Excel kiểm tra đơn đang Hold. Theo quyết định Owner mới nhất, **không triển khai huỷ/tạo Order thay thế**; chuyển hướng sử dụng Order hiện có để đổi Tracking/Label/Route và giữ nguyên Charge, DMD ID, Client Order ID. **Nhánh thực thi đổi Route khi đang Hold chưa bật**, đợi kiểm tra bảo toàn chi phí Supplier và lịch sử; các module Supplier, Add-on, BOD mới còn backlog. Xem [báo cáo phạm vi đã test](VERIFICATION-ROUTE-LIFECYCLE-EMERGENCY-2026-10-23.md).
 

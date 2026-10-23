@@ -1,4 +1,6 @@
-# Emergency Route Switch — safe first stage
+# Emergency Route Switch — legacy first-stage notes
+
+**Superseded for Phase 2:** Owner chose to keep the original Order and use audited Route + Tracking/Label replacement instead of cancelling/re-purchasing. The later tested implementation and its limits are described in [VERIFICATION-EMERGENCY-SWITCH-2026-10-23.md](VERIFICATION-EMERGENCY-SWITCH-2026-10-23.md). The historical notes below document the original Hold-only stage.
 Status: Partial implementation, 2026-10-23. Not production acceptance.
 
 ## Owner decision

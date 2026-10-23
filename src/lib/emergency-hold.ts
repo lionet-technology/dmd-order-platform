@@ -49,7 +49,7 @@ export function undoEmergencyHold(user:AuthUser,routeId:number,holdId:number){
  const hold=db.prepare("SELECT * FROM emergency_route_holds WHERE id=? AND route_id=?").get(holdId,routeId) as Row|undefined;
  if(!hold)throw Error("Không tìm thấy Emergency Hold.");
  if(hold.undone_at)return {id:holdId,already_undone:true};
- const rows=db.prepare("SELECT * FROM emergency_hold_orders WHERE hold_id=?").all(holdId) as Row[];
+ const rows=db.prepare("SELECT * FROM emergency_hold_orders WHERE hold_id=? AND resolved_at IS NULL").all(holdId) as Row[];
  db.prepare("UPDATE emergency_route_holds SET undone_at=CURRENT_TIMESTAMP,undone_by=? WHERE id=?").run(user.id,holdId);
  for(const row of rows){
  const original=JSON.parse(String(row.snapshot_json));
@@ -60,11 +60,21 @@ export function undoEmergencyHold(user:AuthUser,routeId:number,holdId:number){
  return {id:holdId,restored:rows.length};
  }).immediate();
 }
+export function emergencyHoldDetails(user:AuthUser,routeId:number,holdId:number){
+ const originals=exportEmergencyHold(user,routeId,holdId);
+ return originals.map(raw=>{
+  const current=db.prepare("SELECT id,system_order_code,order_id,service,sub_service,supplier,workflow_status,est_net_cost,total_due,carton_count FROM orders WHERE id=?").get(raw.source_dmd_id) as Row|undefined;
+  const trackings=db.prepare(`SELECT t.id old_tracking_id,t.tracking old_tracking,t.label_url old_label,t.lot_number,
+     c.carton_number FROM order_trackings t LEFT JOIN order_cartons c ON c.id=t.carton_id
+     WHERE t.order_id=? AND t.status='ACTIVE' ORDER BY t.lot_number,c.carton_number,t.id`).all(raw.source_dmd_id);
+  return {...raw,current,trackings};
+ });
+}
 export function exportEmergencyHold(user:AuthUser,routeId:number,holdId:number){
  admin(user);
  if(!db.prepare("SELECT id FROM emergency_route_holds WHERE id=? AND route_id=?").get(holdId,routeId))throw Error("Không tìm thấy Emergency Hold.");
- return db.prepare("SELECT order_id,snapshot_json FROM emergency_hold_orders WHERE hold_id=? ORDER BY order_id").all(holdId).map(raw=>{
+ return db.prepare("SELECT order_id,snapshot_json,resolved_at FROM emergency_hold_orders WHERE hold_id=? ORDER BY order_id").all(holdId).map(raw=>{
  const row=raw as Row,o=JSON.parse(String(row.snapshot_json));
- return {source_dmd_id:row.order_id,client_order_id:o.order_id,original_status:o.workflow_status,original_selling_price:o.total_due,source_route_id:routeId,tracking:o.tracking,label:o.label,hold_id:holdId,replacement_enabled:false};
+ return {source_dmd_id:row.order_id,client_order_id:o.order_id,original_status:o.workflow_status,original_selling_price:o.total_due,source_route_id:routeId,tracking:o.tracking,label:o.label,hold_id:holdId,resolved_at:row.resolved_at,replacement_enabled:true};
  });
 }

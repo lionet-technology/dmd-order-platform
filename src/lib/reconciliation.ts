@@ -30,16 +30,20 @@ export function reconcileLots(orderId:number){
  const results=lots.map(lot=>{
  const settings=db.prepare('SELECT * FROM lot_reconciliation_settings WHERE lot_id=?').get(lot.id) as Row|undefined;
  const cost=db.prepare('SELECT COUNT(*) n,SUM(ROUND(total_net_cost*100)) actual FROM supplier_costs WHERE order_lot_id=?').get(lot.id) as {n:number;actual:number|null};
+ const pendingNewSupplierCost=(db.prepare(`SELECT COUNT(*) n FROM emergency_switch_cost_pending ep
+  JOIN order_trackings ot ON ot.id=ep.new_tracking_id
+  WHERE ep.order_id=? AND ep.lot_number=? AND ot.cost_match_type NOT IN ('NOT_BILLED','INCLUDED_IN_PARENT')
+  AND NOT EXISTS(SELECT 1 FROM supplier_costs sc WHERE sc.matched_order_tracking_id=ep.new_tracking_id)`).get(orderId,lot.lot_number) as {n:number}).n;
  const estimated=settings?.estimated_cents??(lots.length===1&&order.est_net_cost!=null?cents(order.est_net_cost):null);
  const components=db.prepare('SELECT * FROM lot_cost_components WHERE lot_id=? ORDER BY component').all(lot.id) as Row[];
  if(components.length&&cost.n)throw Error('Aggregate supplier cost không được trộn với component cost.');
  // Explicit components replace the aggregate envelope; never add both representations.
  const baseActual=components.length?components.every(c=>c.actual_cents!==null)?components.reduce((n,c)=>n+Number(c.actual_cents),0):null:cost.n?cost.actual:settings?.replacement_cents??null;
  const epacket=/epacket/i.test([order.service,order.sub_service].join(' '));
- const coverage=components.length?(components.every(c=>c.actual_cents!==null)?'COMPLETE':'PARTIAL'):epacket?'UNKNOWN':baseActual===null?'UNKNOWN':'COMPLETE';
+ const coverage=pendingNewSupplierCost?'PARTIAL':components.length?(components.every(c=>c.actual_cents!==null)?'COMPLETE':'PARTIAL'):epacket?'UNKNOWN':baseActual===null?'UNKNOWN':'COMPLETE';
  const effective=components.length?components.reduce((n,c)=>n+Number(c.actual_cents??c.estimated_cents),0):coverage==='COMPLETE'?baseActual:null;
  const adjustment=Number((db.prepare('SELECT COALESCE(SUM(delta_cents),0) n FROM lot_cost_adjustments WHERE lot_id=?').get(lot.id) as {n:number}).n);
- const actual=baseActual===null?null:Number(baseActual)+adjustment;
+ const actual=baseActual===null||pendingNewSupplierCost?null:Number(baseActual)+adjustment;
  if(actual!==null&&actual<0)throw Error('Cost điều chỉnh không được âm.');
  const previous=db.prepare('SELECT * FROM lot_reconciliation_versions WHERE lot_id=? ORDER BY id DESC LIMIT 1').get(lot.id) as Row|undefined;
  const snapshot=JSON.stringify({coverage,components});
