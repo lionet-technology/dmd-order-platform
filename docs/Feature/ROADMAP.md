@@ -1,5 +1,8 @@
 # Roadmap triển khai — đã được Product chốt 13/10/2026
 
+## Emergency Route Switch — 23/10/2026
+Safe first-stage Hold/Undo, status/export and database guards implemented; emergency cancellation/replacement remains disabled pending liability carry-forward and cross-module financial recovery tests. Full Route lifecycle, optional-order Add-on, Statement name and remaining agreed modules remain approved backlog, not completed by this change. [Scope and QA](18-emergency-route-hold.md).
+
 ## 23/10 — Debt Aging/Action Dashboard
 Đã bổ sung immutable per-Statement aging index, lấy hạn từ period_end, tách lãi dự phóng, tuần đã sử dụng/credit term, Admin one-time legacy aging opening có audit, Action Dashboard cho thiếu giá/Label/tuổi nợ. Không tự backfill Statement lịch sử; cần cutover reconciliation. Các gate còn mở: browser end-to-end Admin/Finance/Client mới, legacy cutover có chứng từ thật (happy path synthetic 17 assertions PASS), quy mô Dashboard nhiều Client và pilot thực. Xem `VERIFICATION-DEBT-AGING-2026-10-23.md`.
 

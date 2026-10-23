@@ -1,4 +1,7 @@
 # Huỷ đơn & hoàn tiền — GĐ1
+
+## Emergency Hold — 23/10/2026
+Ordinary cancellation of an emergency-held order is blocked transactionally, preserving money. Emergency cancellation/replacement is NOT implemented and must not call the normal refund flow. [Safe stage 1 and phase 2 requirements](18-emergency-route-hold.md).
 **Trạng thái:** Implemented local; chưa UAT/production. **Cập nhật:** 2026-10-15.
 
 ## Quyết định được triển khai

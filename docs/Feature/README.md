@@ -1,5 +1,8 @@
 # Feature documentation — DMD Report
 
+## Emergency Route Switch — 23/10/2026
+[Safe first-stage Hold/Undo and explicit phase-2 safety limit](18-emergency-route-hold.md). No emergency cancellation, refund, replacement import or Client Order ID reuse is enabled.
+
 ## Owner correction — 23/10/2026
 Statement aging now covers negative net Balance only; Debt uses its own deadline. Opening age evidence is optional. Admin exceptions use an aggregate Balance candidate query and prefilter incomplete Label coverage. [Verification, UI findings and limits](VERIFICATION-BALANCE-DEBT-SPLIT-2026-10-23.md).
 

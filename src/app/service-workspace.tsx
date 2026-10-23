@@ -1,5 +1,6 @@
 "use client";
 
+import {EmergencyHoldPanel} from "./emergency-hold-panel";
 import {CancellationPolicyPanel} from "./cancellation-policy-panel";
 import { RoutePricingPanel } from "./route-pricing-panel";
 import { useCallback,useEffect,useRef,useState } from "react";
@@ -174,7 +175,7 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
       <div className="routeEditorHeader" ref={editorRef}><div><span className="eyebrow">ĐANG CẤU HÌNH</span><h2>{selected.service}{selected.sub_service?" / "+selected.sub_service:""}</h2><p>Supplier: {selected.supplier} · {selected.active?"Đang hoạt động":"Không hoạt động"}</p></div><button className="secondaryBtn" onClick={()=>setSelected(null)}>Đóng cấu hình</button></div>
       <div className="routeVariablesEditor" style={{padding:'12px 0'}}><label><b>Carton tối đa / Order</b> <input aria-label="Carton tối đa / Order" type="number" min={1} max={1000} disabled={busy||/epacket|yun/i.test(selected.service)} value={/epacket|yun/i.test(selected.service)?1:maxCartons} onChange={e=>setMaxCartons(Number(e.target.value))}/></label> <button className="secondaryBtn" disabled={busy||/epacket|yun/i.test(selected.service)||!Number.isSafeInteger(maxCartons)||maxCartons<1} onClick={()=>void saveCartonLimit()}>Lưu giới hạn Carton</button><p>ePacket/Yun luôn 1 Carton. Route khác mặc định 1; chỉ tăng khi dịch vụ được phép nhiều Carton và có giá mua phù hợp.</p></div>
       <div className="routeEditorTabs" role="group" aria-label="Các mục cấu hình dịch vụ">{[["pricing","Giá & phụ phí"],["cancellation","Hoàn / Huỷ"],["templates","Template xuất file"],["segmentation","Phân vùng nâng cao"]].map(([key,label])=><button key={key} className={routeTab===key?"active":""} aria-pressed={routeTab===key} onClick={()=>setRouteTab(key)}>{label}</button>)}</div>
-      <div hidden={routeTab!=="cancellation"}><CancellationPolicyPanel key={selected.id} route={selected} onSaved={()=>void load()}/></div>
+      <div hidden={routeTab!=="cancellation"}><EmergencyHoldPanel key={"emergency-"+selected.id} routeId={selected.id} onSaved={()=>void load()}/><CancellationPolicyPanel key={selected.id} route={selected} onSaved={()=>void load()}/></div>
       <div hidden={routeTab!=="pricing"}><RoutePricingPanel key={selected.id} routeId={selected.id}/></div>
       <section hidden={routeTab!=="segmentation"} className="templateConfigCard">
       <div className="routeVariablesEditor segmentationEditor">

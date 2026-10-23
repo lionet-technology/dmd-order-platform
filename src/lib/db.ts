@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import {installEmergencySchema} from "./emergency-schema";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -785,3 +786,5 @@ db.exec(`CREATE TABLE IF NOT EXISTS route_pricing_audit(
  id INTEGER PRIMARY KEY,route_id INTEGER NOT NULL REFERENCES service_route_configs(id),
  action TEXT NOT NULL,actor_user_id INTEGER,before_json TEXT,after_json TEXT,
  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);`);
+
+installEmergencySchema(db);

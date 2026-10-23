@@ -1,5 +1,8 @@
 # Service Route & Pricing
 
+## Emergency Hold — 23/10/2026
+Admin reversible Hold freezes affected orders and route configuration; Undo restores prior statuses and prior warehouse Hold. No price/money change or route lifecycle migration. [Scope and deferred replacement](18-emergency-route-hold.md).
+
 ## Tạm thời UPS / Chuyên tuyến — Owner 20/10/2026
 UPS/chuyên tuyến cho Client lên Order trước khi có bảng giá tự động. Khi Admin chuẩn bị cấp Tracking/Label bắt buộc nhập **giá bán tổng toàn Order USD** (không phải Supplier Net Cost, không nhân theo số Carton). Reserve đúng một lần theo giá đó và kiểm tra Balance/Credit; khi Label xuất hiện mới Charge một lần theo `completeReserve`; giữ Snapshot/Statement V2. Giá không được sửa sau khi có Tracking/Reserve/Snapshot; thay giá sau phải theo flow Adjustment/case, không sửa im lặng. ePacket/Yun giữ báo giá tự động và 1 Carton. Khi thiếu Supplier Template vẫn được Admin nhập Tracking thủ công, nhưng export file mua Supplier không có fallback. Xem `VERIFICATION-MANUAL-UPS-CARTON-2026-10-20.md`.
 
