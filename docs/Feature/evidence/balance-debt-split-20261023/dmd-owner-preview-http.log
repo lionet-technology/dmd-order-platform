@@ -1,0 +1,9 @@
+PASS synthetic login epacket.admin
+PASS synthetic login epacket.sales
+PASS synthetic login uat.finance
+PASS synthetic login review.debt
+PASS synthetic login review.manual
+PASS synthetic login uat.bod
+PASS synthetic login demo.warehouse
+Admin queue 20 requests PASS; p50 4.76 ms; p95 8.02 ms; pending price 2; partial labels 0
+PASS preview Debt $100, Balance $0, clear Balance age, purchasing allowed

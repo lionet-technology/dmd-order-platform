@@ -4,7 +4,7 @@ async function call(url,cookie,body){const r=await fetch(base+url,{method:body?'
 const login=async username=>{const r=await call('/api/auth/login',null,{username,password:'TestPass123!'});check(r.status===200,'Login '+username);return r.cookie;};
 const admin=await login('e2e.admin'),sales=await login('e2e.sales'),client=await login('e2e.client');const users=(await call('/api/users',admin)).data,clientId=users.find(u=>u.username==='e2e.client').id;
 await call('/api/users',admin,{username:'e2e.warehouse',display_name:'E2E Warehouse',password:'TestPass123!',role:'WAREHOUSE'});const warehouse=await login('e2e.warehouse');
-let r=await call('/api/financials?client_id='+clientId,client);check(r.status===200&&r.data.statements.length>0,'Client statement view');
+let r=await call('/api/financials?client_id='+clientId,client);check(r.status===200&&!!r.data.debt_age,'Client financial snapshot view');
 const before=r.data.balance_cents;
 r=await call('/api/financials',client,{client_id:clientId,action:'configure',credit_limit:1000,credit_term_days:14});check(r.status===400,'Client cannot change credit');
 r=await call('/api/ledger',sales,{client_user_id:clientId,entry_type:'REFUND',amount:5});check(r.status===400,'Sales cannot issue refund');

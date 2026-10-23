@@ -876,7 +876,7 @@ function PurchaseOrderPanel({order,enums,onClose,onDone}:{order:RowData;enums:En
     setBusy(true);setMsg("");
     try{
       await postJson(`/api/orders/${orderId}/trackings`,{action:"save",supplier,internal_note:internalNote,expected_lot_count:Number(expectedLotCount||1),manual_total_price:manualRoute?manualTotalPrice:undefined,complete,partial_label_override:partialOverride,override_reason:overrideReason,trackings:active});
-      setMsg(complete?"Đã hoàn tất mua đơn.":"Đã lưu nháp.");await load();await onDone();
+      await load();await onDone();setMsg(complete?"Đã hoàn tất mua đơn.":"Đã lưu nháp.");window.dispatchEvent(new Event("dmd-financial-updated"));
     }catch(error){setMsg("Lỗi: "+(error instanceof Error?error.message:"Không thể lưu"));setBusy(false)}
   }
   async function replaceTracking(){
@@ -884,7 +884,7 @@ function PurchaseOrderPanel({order,enums,onClose,onDone}:{order:RowData;enums:En
     setBusy(true);setMsg("");
     try{
       await postJson(`/api/orders/${orderId}/trackings`,{action:"replace",old_tracking_id:replaceId,new_tracking:replacement.tracking,new_label_url:replacement.label_url,reason:replacement.reason});
-      setReplaceId(null);setReplacement({tracking:"",label_url:"",reason:""});await load();await onDone();
+      setReplaceId(null);setReplacement({tracking:"",label_url:"",reason:""});await load();await onDone();window.dispatchEvent(new Event("dmd-financial-updated"));
     }catch(error){setMsg("Lỗi: "+(error instanceof Error?error.message:"Không thể đổi Tracking"));setBusy(false)}
   }
 

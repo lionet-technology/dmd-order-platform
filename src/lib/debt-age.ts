@@ -37,7 +37,9 @@ export function deriveDebtAge(signedRemaining:number,buckets:AgeBucket[],pending
   left=0;
  }
  if(left>0)unresolved.push(opening>0?'Unresolved legacy opening exposure':'Remaining exposure exceeds frozen period coverage');
+ // No Balance exposure remains: historical Debt provenance cannot block buying.
+ if(!amount)unresolved.length=0;
  if(unresolved.length){anchor=null;statementId=null;}
  const due=anchor?new Date(Date.parse(anchor+'T00:00:00Z')+term*86400000).toISOString().slice(0,10):null;
- return {amount_cents:amount,uncovered_cents,legacy_opening_used:uncovered_cents>0&&left===0,signed_remaining_cents:signedRemaining,unfinalized_cents:unfinalized,oldest_unpaid_statement_date:anchor,statement_id:statementId,due_date:due,status:!amount?'CLEAR':unresolved.length?'REVIEW':due?(due<today?'OVERDUE':'OPEN'):'UNFINALIZED',warnings:[...new Set(unresolved)]};
+ return {as_of_day:today,amount_cents:amount,uncovered_cents,legacy_opening_used:uncovered_cents>0&&left===0,signed_remaining_cents:signedRemaining,unfinalized_cents:unfinalized,oldest_unpaid_statement_date:anchor,statement_id:statementId,due_date:due,status:!amount?'CLEAR':unresolved.length?'REVIEW':due?(due<today?'OVERDUE':'OPEN'):'UNFINALIZED',warnings:[...new Set(unresolved)]};
 }

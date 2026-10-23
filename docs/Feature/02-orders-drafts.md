@@ -1,5 +1,8 @@
 # Orders, Draft & cấu trúc kiện
 
+## UI follow-up — 23/10/2026
+Tracking/Label save keeps its success notice after reloading and refreshes the Admin action queue through the shared financial update event. Unpriced and partial-Label actions open the relevant Order directly. Late-price purchasing semantics remain as approved on 22/10. Browser mobile completion and HTTP concurrency evidence: [verification](VERIFICATION-BALANCE-DEBT-SPLIT-2026-10-23.md).
+
 ## Owner continuation — 22/10/2026 (current delta)
 
 See [implementation, debt-age assumptions, test evidence and explicit remaining gates](OWNER-EXECUTION-2026-10-22.md). Five horizontal financial task tabs; read-only financial GETs; deterministic frozen-period debt aging; Tracking/Label before manual price; price/finalization gate; auditable partial-label override; server Ledger pagination. This delta supersedes contrary historical behavior below. No deployment or full production acceptance.

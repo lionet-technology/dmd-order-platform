@@ -1,7 +1,10 @@
 // Additive fixture; hard bound to the independent DB created for this UAT.
-const path=require('node:path');
+const path=require('node:path'),fs=require('node:fs');
 const expected=path.resolve(__dirname,'../.smoke/internal-uat-test-ledger-oct18.db');
-if(process.env.NODE_ENV!=='test'||process.env.DMD_DB_PATH!==expected)throw Error('Dedicated UAT DB only');
+const target=process.env.DMD_DB_PATH||'';
+const ownedSummary=fs.existsSync(target+'.summary.json')?JSON.parse(fs.readFileSync(target+'.summary.json','utf8')):null;
+const freshUat=path.dirname(target)===path.resolve(__dirname,'../.smoke')&&/^internal-uat-test-owner-http-[a-z0-9-]+\.db$/.test(path.basename(target))&&ownedSummary?.database===target;
+if(process.env.NODE_ENV!=='test'||(target!==expected&&!freshUat))throw Error('Dedicated UAT DB only');
 require('./seed-epacket.cjs');
 const {db}=require('../src/lib/db.ts'),{createUser}=require('../src/lib/auth.ts'),{addLedgerEntry}=require('../src/lib/finance.ts');
 const admin=db.prepare("SELECT * FROM users WHERE username='epacket.admin'").get(),sales=db.prepare("SELECT * FROM users WHERE username='epacket.sales'").get();

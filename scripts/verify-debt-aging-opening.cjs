@@ -21,7 +21,7 @@ const run=async(actor,body)=>{const r=await POST(new NextRequest('http://localho
  const before=accountFinancials(client.id,{readOnly:true,includeDetails:false});
  eq(before.debt_age.status,'REVIEW','Legacy fee has no finalized period basis');
  eq(before.debt_age.uncovered_cents,10000,'Historical uncovered principal exactly 100 USD');
- const opening={client_id:client.id,amount:100,reference_day:shiftDay(localDay(),-30),reason:'Verified legacy opening from synthetic ledger'};
+ const opening={client_id:client.id,amount:100,reference_day:shiftDay(localDay(),-30),reason:''};
  let result=await run(client,opening);eq(result.status,403,'Client cannot certify age');
  result=await run(admin,{...opening,amount:99});eq(result.status,400,'Incorrect uncovered amount rejected');
  result=await run(admin,{...opening,reference_day:shiftDay(localDay(),1)});eq(result.status,400,'Future age marker rejected');

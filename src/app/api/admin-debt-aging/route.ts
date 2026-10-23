@@ -9,7 +9,7 @@ export async function POST(req:NextRequest){
  try{
   const b=await req.json(),client=Number(b.client_id),amount=Number(b.amount);
   const day=validDay(b.reference_day),reason=String(b.reason||'').trim();
-  if(!Number.isSafeInteger(client)||client<1||!Number.isFinite(amount)||amount<=0||!Number.isSafeInteger(Math.round(amount*100))||Math.abs(amount*100-Math.round(amount*100))>0.000001||!reason||reason.length<8||day>localDay())throw Error('Ngày, số tiền hoặc chứng từ mở sổ không hợp lệ.');
+  if(!Number.isSafeInteger(client)||client<1||!Number.isFinite(amount)||amount<=0||!Number.isSafeInteger(Math.round(amount*100))||Math.abs(amount*100-Math.round(amount*100))>0.000001||reason.length>2000||day>localDay())throw Error('Ngày, số tiền hoặc chứng từ mở sổ không hợp lệ.');
   const result=db.transaction(()=>{
    const target=db.prepare("SELECT id FROM users WHERE id=? AND role='CLIENT'").get(client);if(!target)throw Error('Client không tồn tại.');
    const previous=db.prepare('SELECT * FROM debt_aging_openings WHERE client_id=?').get(client) as Record<string,unknown>|undefined;

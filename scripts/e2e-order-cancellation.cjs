@@ -12,6 +12,8 @@ async function main(){
  const admin=adminLogin.cookie,client=clientLogin.cookie;
  const users=await call("/api/users",{cookie:admin});const clientId=users.data.find(x=>x.username==="e2e.client").id;
  await call("/api/financials",{method:"POST",cookie:admin,body:{client_id:clientId,action:"configure",credit_limit:10000,credit_term_days:365}});
+ await call('/api/enums',{method:'POST',cookie:admin,body:{enum_type:'SUB_SERVICE',value:'T11',parent_value:'ePacket',sort_order:10}});
+ await call('/api/client-services',{method:'POST',cookie:admin,body:{client_user_id:clientId,service:'ePacket',sub_service:'T11',is_enabled:true,discount_percent:0}});
  const policy=await call('/api/service-routes',{method:'POST',cookie:admin,body:{service:'ePacket',sub_service:'T11',supplier:'KILOSHIP',cancellation_reason:'Explicit HTTP test-only supplier policy fixture',cancellation_policy:{PRE_PURCHASE:{allowed:true,refund_percent:100},PURCHASED:{allowed:true,refund_percent:100},ISSUED:{allowed:true,refund_percent:90},SHIPPED:{allowed:false,refund_percent:0}}}});
  check(policy.status===200||policy.status===201,'Configure explicit test-only cancellation policy');
  async function create(price=100){const result=await call("/api/orders",{method:"POST",cookie:admin,body:{order_id:"HTTP-CANCEL-"+(++seq),client_user_id:clientId,service:"ePacket",sub_service:"T11",supplier:"KILOSHIP",item:"Fixture shirts",material:"Cotton",carton_count:1,weight:1,manual_volume:5000,sales_price:price}});check(result.status===201,"create cancel fixture");return result.data}

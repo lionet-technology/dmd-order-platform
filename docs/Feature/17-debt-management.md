@@ -1,5 +1,12 @@
 # Debt Management
 
+## Owner correction — 23/10/2026 (supersedes combined aging below)
+Statement Credit Term applies only to negative net Balance. Transferred Debt is excluded from this amount, even when the originating Statement is already overdue. Debt retains its own deadline; the existing policy blocks future purchases when that deadline is past. Extension affects that Debt deadline only. Partial transfers retain aging on the residual Balance; full transfers clear Balance aging without fabricating Payment, changing signed ledger Balance or releasing purchasing room twice. Payment priority remains posted interest → Debt principal → Balance.
+
+Immutable Statements keep their issued values. The next reporting period records signed Balance→Debt movements; its UI explains the independent Debt deadline. Historical snapshots are never rewritten into payments. Opening certification requires the exact uncovered Balance amount and a valid date, records the actor/audit, and accepts an empty optional evidence note. No existing DB was reset.
+
+See [verification and UI findings](VERIFICATION-BALANCE-DEBT-SPLIT-2026-10-23.md).
+
 ## Cập nhật Owner 23/10/2026 — tuổi nợ đơn giản theo Statement
 **Nguồn tuổi nợ:** khoản gốc còn phải trả theo Balance + Debt, không đếm trùng chuyển sổ; so với **nghĩa vụ gốc kinh tế tăng thêm theo từng kỳ Statement Finalized**, đọc từ chỉ mục bất biến `statement_v2_aging_basis` khi đã có. Kỳ mở giảm sức mua ngay nhưng chưa tạo ngày quá hạn. Credit Term bắt đầu từ **period_end** chứ không phải finalized_at. Payment chỉ giảm khoản còn phải trả, không lập bảng FIFO Payment→Statement. Phần lãi dự phóng chưa ghi sổ tách khỏi tuổi gốc; UI hiển thị lãi đã ghi sổ và tạm tính riêng, cùng `1/2 tuần`, `3/4 tuần` nếu Credit Term là bội số 7 ngày. Credit Note âm không tự gây REVIEW; thiếu coverage thực sự cần Admin đối chiếu mốc mở sổ, nhập chứng từ và số tiền chính xác một lần (không thay đổi Money Ledger). Chốt kỳ mới vẫn phải theo thứ tự; khi thiếu giá UPS/chuyên tuyến, Alert ưu tiên từ Dashboard. Chi tiết thay đổi, giới hạn kiểm thử và migration fixture kiểm chứng opening: `VERIFICATION-DEBT-AGING-2026-10-23.md`.
 

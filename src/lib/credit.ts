@@ -150,8 +150,9 @@ export function accountFinancials(clientId:number,options:{readOnly?:boolean;inc
  const agingOpening=db.prepare('SELECT amount_cents,reference_day FROM debt_aging_openings WHERE client_id=?').get(clientId) as {amount_cents:number;reference_day:string}|undefined;
  // Principal aging is independent of unpaid posted interest; payment/interest
  // settlement and buying room continue using the full accounting balances.
- const unpaidInterest=r.debts.reduce((s,d)=>s+d.interest_outstanding_cents,0);
- const debt_age=deriveDebtAge(-netBalance+r.debts.reduce((s,d)=>s+d.outstanding_cents,0)-unpaidInterest,buckets,pending,opening,Number(c.credit_term_days),localDay(),agingOpening);
+ // Only negative net Balance is subject to Statement credit terms.
+ // Debt is already excluded in netBalance and has its own independent deadline.
+ const debt_age=deriveDebtAge(-netBalance,buckets,pending,opening,Number(c.credit_term_days),localDay(),agingOpening);
  const reasons=[...(r.debts.length>1?['Nhiều Debt legacy; cần đối chiếu']:[]),...(debt_age.status==='OVERDUE'?['Công nợ quá hạn theo Statement']:[]),...(debt_age.status==='REVIEW'?['Tuổi công nợ cần đối chiếu']:[]),...(inactive?["Client đã ngừng hoạt động"]:[]),...(available<0?["Balance / credit không đủ"]:[]),...(c.purchase_locked?[String(c.purchase_lock_reason||"Account bị khóa mua")]:[]),...(r.debts.some(d=>d.status==="OVERDUE")?["Debt quá hạn"]:[])];
  // Statement totals already hit the ledger at the service charge event; do not count them as a second AR.
  const receivable=Math.max(0,-netBalance)+r.debts.reduce((n,d)=>n+d.outstanding_cents,0);
