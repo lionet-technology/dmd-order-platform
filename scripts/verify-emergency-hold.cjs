@@ -106,6 +106,10 @@ let checks=0;function eq(a,b,m){assert.deepEqual(a,b,m);checks++}function reject
  const reportRows=(await report.json()).items;
  eq(reportRows.length,1,'Combined loss/Emergency filters exclude unrelated Orders');
  eq(reportRows[0].actual_gp,-6,'Report retains actual loss before approval');
+ const oldReport=await reconApi.GET(new NextRequest('http://localhost/api/reconciliation?emergency_only=1&supplier=Synthetic',{headers:{cookie:'dmd_session='+financeToken}}));
+ eq((await oldReport.json()).items.some(r=>r.order_id===db.prepare('SELECT order_id FROM orders WHERE id=?').get(purchased).order_id),true,'Old Supplier can still find rerouted cost');
+ const reviewedLot=reconcileLots(purchased)[0];
+ eq(reviewedLot.review_reasons.includes('MULTIPLE_SUPPLIERS'),true,'Old/new Supplier exception queued for review');
  eq((await reconApi.GET(new NextRequest('http://localhost/api/reconciliation?loss_only=1',{headers:{cookie:'dmd_session='+token}}))).status,403,'Operational Admin cannot access actual GP');
  eq(db.prepare("SELECT supplier s FROM orders WHERE id=?").get(purchased).s,'Replacement');
  eq(db.prepare("SELECT total_due due,est_net_cost est,workflow_status status FROM orders WHERE id=?").get(purchased),{due:25,est:27.5,status:'PURCHASED'});
@@ -259,6 +263,12 @@ let checks=0;function eq(a,b,m){assert.deepEqual(a,b,m);checks++}function reject
  eq(db.prepare('SELECT actual_cost_coverage,true_net_cost FROM orders WHERE id=?').get(routeOnly),{actual_cost_coverage:'COMPLETE',true_net_cost:15},'Old and new costs remain distinct and summed');
  eq(db.prepare('SELECT * FROM ledger_entries').all(),before,'Later supplier invoice cannot create or edit Charge');
  eq(addSupplierCost(incoming).duplicate,true,'Supplier invoice retry is idempotent');
+ const routeOnlyReport=await reconApi.GET(new NextRequest('http://localhost/api/reconciliation?emergency_only=1&supplier=Synthetic',{headers:{cookie:'dmd_session='+financeToken}}));
+ eq((await routeOnlyReport.json()).items.some(r=>r.order_id===db.prepare('SELECT order_id FROM orders WHERE id=?').get(routeOnly).order_id),true,'Route-only Emergency visible for old Supplier');
+ const routeLotReport=await reconApi.GET(new NextRequest('http://localhost/api/reconciliation?granularity=lot',{headers:{cookie:'dmd_session='+financeToken}}));
+ const oldLot=(await routeLotReport.json()).items.find(l=>l.order_id===routeOnly);
+ eq(JSON.parse(oldLot.historical_suppliers_json).includes('Synthetic'),true,'Route-only historical Supplier retained for UI scope');
+ eq(reconcileLots(routeOnly)[0].reconciliation_status,'REVIEW','Multiple Suppliers never auto finalize even when all Actual arrives');
  eq(db.prepare('SELECT * FROM statement_v2_snapshots').all(),statementBefore);
  undoEmergencyHold(admin,route,keepHold.id);
  // Mixed Excel: one success, one bad formula, one partial tracking replacement.

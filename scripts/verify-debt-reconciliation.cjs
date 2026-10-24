@@ -82,7 +82,8 @@ const oid=Number(db.prepare("INSERT INTO orders(client_user_id,order_id,sales_pr
 let lots=recon.reconcileLots(oid);assert(lots.every(l=>l.reconciliation_status==='PENDING'),'Missing lots pending');
 const action=(lot,act,extra={})=>recon.reconciliationAction(admin,{order_id:oid,lot_number:lot,action:act,reason:'Approved test',...extra});
 action(1,'estimate',{amount:30});action(2,'estimate',{amount:30});
-action(1,'replacement_cost',{amount:20});lots=recon.reconcileLots(oid);assert(lots[0].reconciliation_status==='PASS'&&lots[1].reconciliation_status==='PENDING','Under estimate auto pass but incomplete order pending');
+action(1,'replacement_cost',{amount:20});lots=recon.reconcileLots(oid);assert(lots[0].reconciliation_status==='REVIEW'&&lots[1].reconciliation_status==='PENDING','Multiple Lots require explicit review even below estimate');
+action(1,'absorb_loss');
 action(2,'replacement_cost',{amount:40});lots=recon.reconcileLots(oid);assert(lots[1].reconciliation_status==='REVIEW','Any excess requires Review');
 const sale=db.prepare('SELECT sales_price,total_due,finalized_gp FROM orders WHERE id=?').get(oid);assert(sale.sales_price===100&&sale.total_due===100&&sale.finalized_gp===null,'Cost does not reprice or finalize pending GP');
 rejects(()=>action(2,'customer_surcharge',{amount:5,request_key:'no-note'}),'Public note required');
@@ -120,6 +121,18 @@ recon.reconciliationAction(admin,{order_id:directOrder,lot_number:1,action:'cost
 assert(db.prepare('SELECT true_net_cost,reconciliation_status FROM orders WHERE id=?').get(directOrder).true_net_cost===25,'Late negative cost correction appends adjustment, preserves original feed');
 assert(db.prepare('SELECT total_net_cost FROM supplier_costs WHERE id=?').get(direct.id).total_net_cost===20,'Original supplier cost remains unchanged');
 rejects(()=>recon.reconciliationAction(admin,{order_id:directOrder,lot_number:1,action:'cost_adjustment',amount:-100,reason:'Bad correction',request_key:'negative-cost'}),'Cost adjustments cannot make actual negative');
+assert(recon.reconcileLots(directOrder)[0].reconciliation_status==='REVIEW','Late negative adjustment requires fresh review even below estimate');
+const reviewer=createUser({username:'recon.finance',display_name:'Finance',password:'TestPass123!',role:'FINANCE'});
+const review={order_id:directOrder,lot_number:1,action:'absorb_loss',reason:'Verified late credit',request_key:'late-credit-review'};
+rejects(()=>recon.reconciliationAction(reviewer,review),'Exception needs Admin evidence');
+recon.reconciliationAction(reviewer,{...review,review_reference:'ADMIN-REVIEW-1',review_evidence:'Admin confirmed credit note attribution'});
+assert(recon.reconcileLots(directOrder)[0].reconciliation_status==='PASS','Documented review approves current source snapshot');
+const versionBeforeSameTotal=db.prepare('SELECT COUNT(*) n FROM lot_reconciliation_versions WHERE lot_id=?').get(direct.order_lot_id).n;
+db.prepare('UPDATE supplier_costs SET total_net_cost=total_net_cost+1 WHERE id=?').run(direct.id);
+db.prepare("UPDATE supplier_costs SET total_net_cost=total_net_cost-1 WHERE source_key='direct-2'").run();
+assert(recon.reconcileLots(directOrder)[0].reconciliation_status==='REVIEW','Equal aggregate with changed source invalidates approval');
+assert(db.prepare('SELECT COUNT(*) n FROM lot_reconciliation_versions WHERE lot_id=?').get(direct.order_lot_id).n===versionBeforeSameTotal+1,'Changed source creates new immutable version');
+recon.reconciliationAction(reviewer,{...review,request_key:'late-credit-review-2',review_reference:'ADMIN-REVIEW-2',review_evidence:'Reviewed changed documents'});
 const zeroOrder=Number(db.prepare("INSERT INTO orders(client_user_id,order_id,sales_price,total_due,est_net_cost,pricing_snapshot_json) VALUES (?,'ZERO-COST',0,0,0,'{}')").run(client.id).lastInsertRowid);
 finance.addSupplierCost({order_id:zeroOrder,lot_number:1,total_net_cost:0,source_key:'zero-cost'});
 assert(db.prepare('SELECT finalized_margin_pct,reconciliation_status FROM orders WHERE id=?').get(zeroOrder).finalized_margin_pct===null,'Zero revenue margin is N/A');

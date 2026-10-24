@@ -51,12 +51,16 @@ export function reconcileLots(orderId:number){
  const actual=baseActual===null||pendingEmergencyCost?null:Number(baseActual)+adjustment;
  if(actual!==null&&actual<0)throw Error('Cost điều chỉnh không được âm.');
  const previous=db.prepare('SELECT * FROM lot_reconciliation_versions WHERE lot_id=? ORDER BY id DESC LIMIT 1').get(lot.id) as Row|undefined;
- const snapshot=JSON.stringify({coverage,components});
+ const sources=db.prepare('SELECT id,supplier,total_net_cost,matched_order_tracking_id,source_key FROM supplier_costs WHERE order_lot_id=? ORDER BY id').all(lot.id) as Row[];
+ const adjustments=db.prepare('SELECT id,delta_cents FROM lot_cost_adjustments WHERE lot_id=? ORDER BY id').all(lot.id);
+ const suppliers=Array.from(new Set(sources.map(s=>String(s.supplier||'').trim().toLowerCase())));
+ const reviewReasons=[...(suppliers.length>1?['MULTIPLE_SUPPLIERS']:[]),...(lots.length>1?['MULTIPLE_LOTS']:[]),...(adjustments.length?['COST_ADJUSTMENT']:[])];
+ const snapshot=JSON.stringify({coverage,components,sources,adjustments,review_reasons:reviewReasons});
  const same=previous&&previous.actual_cents===actual&&previous.estimated_cents===estimated&&previous.cost_snapshot_json===snapshot;
- const status=same?String(previous.status):actual===null?'PENDING':estimated===null||Number(actual)>Number(estimated)?'REVIEW':'PASS';
+ const status=same?String(previous.status):actual===null?'PENDING':reviewReasons.length||estimated===null||Number(actual)>Number(estimated)?'REVIEW':'PASS';
  if(!same)db.prepare('INSERT INTO lot_reconciliation_versions(lot_id,estimated_cents,actual_cents,status,cost_snapshot_json) VALUES (?,?,?,?,?)').run(lot.id,estimated,actual,status,snapshot);
  db.prepare('UPDATE order_lots SET net_cost=?,cost_status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').run(actual===null?null:Number(actual)/100,status==='PASS'?'MATCHED':status,lot.id);
- return {...lot,id:lot.id,actual_cost_coverage:coverage,effective_cents:effective===null?null:Number(effective)+adjustment,cost_snapshot_json:snapshot,estimated_cents:estimated,actual_cents:actual,reconciliation_status:status,decision:same?previous.decision:null};
+ return {...lot,id:lot.id,actual_cost_coverage:coverage,review_reasons:reviewReasons,cost_suppliers:sources.map(s=>String(s.supplier)),effective_cents:effective===null?null:Number(effective)+adjustment,cost_snapshot_json:snapshot,estimated_cents:estimated,actual_cents:actual,reconciliation_status:status,decision:same?previous.decision:null};
  });
  const clean=results.every(l=>l.reconciliation_status==='PASS');
  const hasReview=results.some(l=>l.reconciliation_status==='REVIEW');
@@ -121,6 +125,7 @@ export function reconciliationAction(user:AuthUser,input:Row){
  const delta=cents(Math.abs(value))*Math.sign(value);if(!delta||Number(before.actual_cents)+delta<0)throw Error('Cost sau điều chỉnh không được âm.');
  db.prepare('INSERT INTO lot_cost_adjustments(lot_id,delta_cents,reason,actor_id) VALUES (?,?,?,?)').run(lot.id,delta,reason,user.id);
  }else if(action==='absorb_loss'||action==='customer_surcharge'){
+ if(before.review_reasons.length&&user.role!=='ADMIN'&&(!String(row.review_reference||'').trim()||!String(row.review_evidence||'').trim()))throw Error('Ngoại lệ nhiều Supplier/Lot hoặc adjustment cần Admin Review; Finance ghi reference và evidence duyệt trước khi chấp nhận.');
  if(before.actual_cents===null)throw Error('Cần cost thực tế hoặc cost thay thế trước khi duyệt.');
  if(action==='customer_surcharge'){
  const amount=cents(row.amount),note=String(row.public_note||'').trim();
@@ -129,7 +134,7 @@ export function reconciliationAction(user:AuthUser,input:Row){
  db.prepare("INSERT INTO ledger_entries(client_user_id,occurred_at,entry_type,direction,amount,customer,reference_type,reference_id,note,created_by_user_id) VALUES (?,?,'ADDITIONAL_FEE','DEBIT',?,?,'LOT_RECONCILIATION',?,?,?)").run(order.client_user_id,localDay(),amount/100,order.customer,String(lot.id),note,user.id);
  publishPublicNote({orderId,eventType:'SURCHARGE_NOTICE',summary:note,actorId:user.id,publicData:{lot_number:number,amount:amount/100,currency:'USD'}});
  }
- db.prepare('INSERT INTO lot_reconciliation_versions(lot_id,estimated_cents,actual_cents,status,decision,reason,actor_id,cost_snapshot_json) VALUES (?,?,?,\'PASS\',?,?,?,?)').run(lot.id,before.estimated_cents,before.actual_cents,action,reason,user.id,before.cost_snapshot_json);
+ db.prepare('INSERT INTO lot_reconciliation_versions(lot_id,estimated_cents,actual_cents,status,decision,reason,actor_id,cost_snapshot_json) VALUES (?,?,?,\'PASS\',?,?,?,?)').run(lot.id,before.estimated_cents,before.actual_cents,action,reason+(before.review_reasons.length?' · Admin Review: '+String(row.review_reference||'Admin #'+user.id)+' · '+String(row.review_evidence||reason):''),user.id,before.cost_snapshot_json);
  }else throw Error('Action không hỗ trợ.');
  const after=reconcileLots(orderId).find(l=>Number(l.id)===lot.id);
  logAdminEvent({orderId,eventType:'LOT_RECONCILIATION',summary:'Lot '+number+': '+action,actorId:user.id,before,after:{...after,reason}});

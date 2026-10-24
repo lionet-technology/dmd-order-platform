@@ -12,18 +12,18 @@ async function handleGET(req:NextRequest) {
     return NextResponse.json({items:db.prepare("SELECT * FROM lot_reconciliation_versions WHERE lot_id=? ORDER BY id DESC").all(id)});
   }
   if(req.nextUrl.searchParams.get("granularity")==="lot"){
-    return NextResponse.json({items:db.prepare(`SELECT l.*,o.order_id order_reference,o.system_order_code,o.service,o.sub_service,o.supplier,o.customer,o.actual_cost_coverage,o.effective_net_cost,v.cost_snapshot_json,v.estimated_cents,v.actual_cents,v.status reconciliation_status,v.decision,v.reason,v.id reconciliation_version FROM order_lots l JOIN orders o ON o.id=l.order_id LEFT JOIN lot_reconciliation_versions v ON v.id=(SELECT MAX(id) FROM lot_reconciliation_versions WHERE lot_id=l.id) ORDER BY o.id,l.lot_number`).all()});
+    return NextResponse.json({items:db.prepare(`SELECT l.*,o.order_id order_reference,o.system_order_code,o.service,o.sub_service,o.supplier,o.customer,o.actual_cost_coverage,o.effective_net_cost,v.cost_snapshot_json,v.estimated_cents,v.actual_cents,v.status reconciliation_status,v.decision,v.reason,v.id reconciliation_version,(SELECT json_group_array(DISTINCT sc.supplier) FROM supplier_costs sc WHERE sc.order_lot_id=l.id) cost_suppliers_json,(SELECT json_group_array(DISTINCT ep.old_supplier) FROM emergency_switch_cost_pending ep WHERE ep.order_id=o.id AND ep.lot_number=l.lot_number) old_suppliers_json,(SELECT json_group_array(DISTINCT json_extract(eh.snapshot_json,'$.supplier')) FROM emergency_hold_orders eh WHERE eh.order_id=o.id AND eh.resolved_at IS NOT NULL) historical_suppliers_json FROM order_lots l JOIN orders o ON o.id=l.order_id LEFT JOIN lot_reconciliation_versions v ON v.id=(SELECT MAX(id) FROM lot_reconciliation_versions WHERE lot_id=l.id) ORDER BY o.id,l.lot_number`).all()});
   }
   const {page,pageSize,q,offset}=pageParams(req);
-  const where=["(true_net_cost IS NOT NULL OR reconciliation_status='REVIEW')"];
+  const where=["(true_net_cost IS NOT NULL OR reconciliation_status='REVIEW' OR EXISTS(SELECT 1 FROM emergency_switch_cost_pending ep WHERE ep.order_id=orders.id) OR EXISTS(SELECT 1 FROM emergency_route_only_cost_pending ep WHERE ep.order_id=orders.id))"];
   const params:unknown[]=[];
   if(q){
     where.push("(tracking LIKE ? OR order_id LIKE ? OR customer LIKE ? OR supplier LIKE ? OR service LIKE ? OR reconciliation_status LIKE ?)");
     const like="%"+q+"%"; params.push(like,like,like,like,like,like);
   }
-  if(req.nextUrl.searchParams.get("supplier")){where.push("supplier=?");params.push(req.nextUrl.searchParams.get("supplier"));}
+  if(req.nextUrl.searchParams.get("supplier")){where.push("(supplier=? COLLATE NOCASE OR EXISTS(SELECT 1 FROM supplier_costs sc JOIN order_lots sl ON sl.id=sc.order_lot_id WHERE sl.order_id=orders.id AND sc.supplier=? COLLATE NOCASE) OR EXISTS(SELECT 1 FROM emergency_switch_cost_pending ep WHERE ep.order_id=orders.id AND ep.old_supplier=? COLLATE NOCASE) OR EXISTS(SELECT 1 FROM emergency_hold_orders eh WHERE eh.order_id=orders.id AND json_extract(eh.snapshot_json,'$.supplier')=? COLLATE NOCASE))");const supplier=req.nextUrl.searchParams.get("supplier");params.push(supplier,supplier,supplier,supplier);}
   if(req.nextUrl.searchParams.get("loss_only")==="1")where.push("actual_gp<0");
-  if(req.nextUrl.searchParams.get("emergency_only")==="1")where.push("EXISTS(SELECT 1 FROM emergency_switch_cost_pending ep WHERE ep.order_id=orders.id)");
+  if(req.nextUrl.searchParams.get("emergency_only")==="1")where.push("(EXISTS(SELECT 1 FROM emergency_switch_cost_pending ep WHERE ep.order_id=orders.id) OR EXISTS(SELECT 1 FROM emergency_route_only_cost_pending ep WHERE ep.order_id=orders.id))");
   const whereSql=" WHERE "+where.join(" AND ");
   const total=queryOne<{c:number}>("SELECT COUNT(*) c FROM orders"+whereSql,params)?.c||0;
   const items=queryAll(

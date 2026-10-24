@@ -38,6 +38,9 @@ Finance/BOD only; Admin, Sales, Client, Warehouse and anonymous callers cannot r
 `moneyCommand` wraps business validation, append-only history, postings and actor-scoped receipts in one immediate transaction. A receipt cannot bypass authorization. Global unique source constraints protect against a second request/actor. Failed commands leave no success receipt. Supplier rename is blocked once account/request/claim history exists.
 Additive CREATE TABLE migrations preserve old data. No destructive migration, automatic opening calculation, `fc_*` activation, real DB access or carrier integration is part of this work.
 
+## Reconciliation continuation — 25/10/2026
+Old/new Emergency Suppliers remain visible in scoped reconciliation, including route-only switches. Multi-Supplier/Lot and late adjustment exceptions require documented Admin Review; cost-source snapshots invalidate old approvals even when totals match. [Rules and explicit account-allocation limit](09-supplier-reconciliation.md#emergency--late-source-audit--25102026).
+
 ## Pending / limits
 - Invoice-to-cost matching and opening reconciliation wizard; no automatic historical cutover. Do not add invoice outstanding to signed Balance.
 - Supplier-specific add-on catalogue/rate mapping, third-party Supplier-to-Supplier counterparty allocation and company-wide BOD GP integration. Current explicit BUY/SELL represents DMD's side with each selected Supplier.
