@@ -1,3 +1,6 @@
+## Supplier correction / reversal — 25/10/2026
+Supplier Account decisions now support immutable delta corrections and full linked settlement reversals, with compensating Balance entries only for Offset. Historical Payables invoices/payments remain separate. [Details](19-supplier-accounts.md#correction--reversal--25102026).
+
 ## Supplier Refund Receivable — Owner option A, 24/10/2026
 [Supplier accounts](19-supplier-accounts.md): final approved amount (possibly below requested) creates a separate receivable once. Partial actual receipts and/or explicit Balance offsets reduce it; only Offset increases Balance. Status/evidence remain linked and immutable; no revenue/GP or second posting on close. Legacy posted claims require REVIEW. [Verification and remaining limits](VERIFICATION-SUPPLIER-RECEIVABLES-2026-10-24.md).
 

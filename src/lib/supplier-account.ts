@@ -16,8 +16,10 @@ export function supplierAccountSchema(){
  CREATE TABLE IF NOT EXISTS supplier_claim_events(id INTEGER PRIMARY KEY,claim_id INTEGER NOT NULL REFERENCES supplier_claims(id),status TEXT NOT NULL,reason TEXT NOT NULL,actor_id INTEGER NOT NULL REFERENCES users(id),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);`);
  db.exec(`CREATE TABLE IF NOT EXISTS supplier_claim_approvals(claim_id INTEGER PRIMARY KEY REFERENCES supplier_claims(id),amount_cents INTEGER NOT NULL CHECK(amount_cents>=0),evidence TEXT NOT NULL,reference TEXT NOT NULL,reason TEXT NOT NULL,actor_id INTEGER NOT NULL REFERENCES users(id),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
  CREATE TABLE IF NOT EXISTS supplier_claim_settlements(id INTEGER PRIMARY KEY,claim_id INTEGER NOT NULL REFERENCES supplier_claim_approvals(claim_id),supplier TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('OFFSET','REFUND_RECEIVED')),amount_cents INTEGER NOT NULL CHECK(amount_cents>0),reference TEXT NOT NULL COLLATE NOCASE,evidence TEXT NOT NULL,reason TEXT NOT NULL,actor_id INTEGER NOT NULL REFERENCES users(id),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(supplier,reference));
- CREATE INDEX IF NOT EXISTS supplier_claim_settlements_claim ON supplier_claim_settlements(claim_id);`);
- for(const table of ['supplier_claim_approvals','supplier_claim_settlements','supplier_account_entries','supplier_refund_requests','supplier_claims','supplier_claim_trackings','supplier_claim_events'])for(const op of ['UPDATE','DELETE'])db.exec(`CREATE TRIGGER IF NOT EXISTS immutable_${table}_${op.toLowerCase()} BEFORE ${op} ON ${table} BEGIN SELECT RAISE(ABORT,'Supplier account history is immutable'); END;`);
+ CREATE INDEX IF NOT EXISTS supplier_claim_settlements_claim ON supplier_claim_settlements(claim_id);
+ CREATE TABLE IF NOT EXISTS supplier_claim_corrections(id INTEGER PRIMARY KEY,claim_id INTEGER NOT NULL REFERENCES supplier_claim_approvals(claim_id),delta_cents INTEGER NOT NULL,previous_cents INTEGER NOT NULL,amount_cents INTEGER NOT NULL CHECK(amount_cents>=0),evidence TEXT NOT NULL,reference TEXT NOT NULL COLLATE NOCASE,reason TEXT NOT NULL,actor_id INTEGER NOT NULL REFERENCES users(id),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(claim_id,reference));
+ CREATE TABLE IF NOT EXISTS supplier_settlement_reversals(id INTEGER PRIMARY KEY,settlement_id INTEGER NOT NULL UNIQUE REFERENCES supplier_claim_settlements(id),evidence TEXT NOT NULL,reference TEXT NOT NULL,reason TEXT NOT NULL,actor_id INTEGER NOT NULL REFERENCES users(id),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);`);
+ for(const table of ['supplier_claim_corrections','supplier_settlement_reversals','supplier_claim_approvals','supplier_claim_settlements','supplier_account_entries','supplier_refund_requests','supplier_claims','supplier_claim_trackings','supplier_claim_events'])for(const op of ['UPDATE','DELETE'])db.exec(`CREATE TRIGGER IF NOT EXISTS immutable_${table}_${op.toLowerCase()} BEFORE ${op} ON ${table} BEGIN SELECT RAISE(ABORT,'Supplier account history is immutable'); END;`);
 }
 supplierAccountSchema();
 function access(u:AuthUser){if(!['FINANCE','BOD'].includes(u.role))throw Error('Chỉ Finance/BOD được quản lý tài chính Supplier.');}
@@ -32,9 +34,13 @@ export function supplierAccounts(u:AuthUser){
  COALESCE((SELECT SUM(delta_cents) FROM supplier_account_entries e WHERE e.source='CLAIM:'||c.id),0) legacy_credited_cents
  FROM supplier_claims c LEFT JOIN supplier_claim_approvals a ON a.claim_id=c.id ORDER BY c.id DESC`).all() as Row[]).map(c=>{
  const settlements=db.prepare('SELECT * FROM supplier_claim_settlements WHERE claim_id=? ORDER BY id').all(c.id) as Row[];
- const received=settlements.filter(s=>s.kind==='REFUND_RECEIVED').reduce((n,s)=>n+Number(s.amount_cents),0);
- const offset=settlements.filter(s=>s.kind==='OFFSET').reduce((n,s)=>n+Number(s.amount_cents),0);
- return {...c,received_cents:received,offset_cents:offset,outstanding_cents:c.approved_cents===null?null:Number(c.approved_cents)-received-offset,settlements,
+ const corrections=db.prepare('SELECT * FROM supplier_claim_corrections WHERE claim_id=? ORDER BY id').all(c.id) as Row[];
+ const reversals=db.prepare('SELECT r.* FROM supplier_settlement_reversals r JOIN supplier_claim_settlements s ON s.id=r.settlement_id WHERE s.claim_id=? ORDER BY r.id').all(c.id) as Row[];
+ const active=settlements.filter(s=>!reversals.some(r=>r.settlement_id===s.id));
+ const approved=c.approved_cents===null?null:Number(c.approved_cents)+corrections.reduce((n,r)=>n+Number(r.delta_cents),0);
+ const received=active.filter(s=>s.kind==='REFUND_RECEIVED').reduce((n,s)=>n+Number(s.amount_cents),0);
+ const offset=active.filter(s=>s.kind==='OFFSET').reduce((n,s)=>n+Number(s.amount_cents),0);
+ return {...c,original_approved_cents:c.approved_cents,approved_cents:approved,corrections,reversals,received_cents:received,offset_cents:offset,outstanding_cents:approved===null?null:approved-received-offset,settlements,
  events:db.prepare('SELECT * FROM supplier_claim_events WHERE claim_id=? ORDER BY id').all(c.id),
  recovery_conflicts:recoveryConflicts(Number(c.id)),recovery_link:db.prepare('SELECT * FROM supplier_claim_recovery_links WHERE claim_id=?').get(c.id)||null,
  requires_review:Number(c.legacy_credited_cents)!==0||recoveryConflicts(Number(c.id)).length>0};
@@ -99,25 +105,45 @@ export function supplierAccountAction(u:AuthUser,b:Row){
  db.prepare('INSERT INTO supplier_claim_recovery_links(recovery_id,claim_id,evidence,reference,reason,actor_id) VALUES (?,?,?,?,?,?)').run(r.id,c.id,text(b.evidence),reference,reason,u.id);
  return {id:Number(c.id),recovery_id:Number(r.id)};
  }
- if(['claim_status','claim_credit','claim_settle'].includes(String(b.action))){
+ if(['claim_status','claim_credit','claim_settle','claim_correct','settlement_reverse'].includes(String(b.action))){
  const c=db.prepare("SELECT c.*,COALESCE((SELECT status FROM supplier_claim_events e WHERE e.claim_id=c.id ORDER BY e.id DESC LIMIT 1),'OPEN') status FROM supplier_claims c WHERE c.id=? AND c.supplier=?").get(Number(b.claim_id),supplier) as Row|undefined;
  if(!c)throw Error('Claim không tồn tại.');
  if(recoveryConflicts(Number(c.id)).length)throw Error('Recovery vận hành chồng lấn: cần REVIEW / liên kết nguồn trước khi ghi tài chính.');
  if(db.prepare("SELECT id FROM supplier_account_entries WHERE source=?").get('CLAIM:'+c.id))throw Error('Claim đã ghi theo luồng cũ; cần REVIEW đối chiếu, không tạo receivable lần hai.');
  const approval=db.prepare('SELECT * FROM supplier_claim_approvals WHERE claim_id=?').get(c.id) as Row|undefined;
+ const effectiveApproval=approval?Number(approval.amount_cents)+Number((db.prepare('SELECT COALESCE(SUM(delta_cents),0) n FROM supplier_claim_corrections WHERE claim_id=?').get(c.id) as {n:number}).n):null;
+ const netSettled=()=>Number((db.prepare('SELECT COALESCE(SUM(s.amount_cents),0) n FROM supplier_claim_settlements s WHERE s.claim_id=? AND NOT EXISTS(SELECT 1 FROM supplier_settlement_reversals r WHERE r.settlement_id=s.id)').get(c.id) as {n:number}).n);
  const event=(status:string)=>db.prepare('INSERT INTO supplier_claim_events(claim_id,status,reason,actor_id) VALUES (?,?,?,?)').run(c.id,status,reason,u.id);
+ if(b.action==='claim_correct'||b.action==='settlement_reverse'){
+ text(b.reference);text(b.evidence);
+ if(!approval||effectiveApproval===null)throw Error('Cần quyết định đã duyệt để correction/reversal.');
+ const status=(approved:number,settled:number)=>settled===approved?'CLOSED':settled>0?'PARTIALLY_SETTLED':'APPROVED';
+ if(b.action==='claim_correct'){
+ if(!Number.isSafeInteger(b.expected_approved_cents)||Number(b.expected_approved_cents)!==effectiveApproval)throw Error('Quyết định đã thay đổi; tải lại trước khi correction.');
+ const amount=cents(b.final_approved_amount,true),settled=netSettled();
+ if(amount>Number(c.amount_cents)||amount<settled||amount===effectiveApproval)throw Error('Correction phải khác hiện tại, không vượt requested hoặc thấp hơn đã tất toán; reverse chứng từ sai trước.');
+ const id=Number(db.prepare('INSERT INTO supplier_claim_corrections(claim_id,delta_cents,previous_cents,amount_cents,evidence,reference,reason,actor_id) VALUES (?,?,?,?,?,?,?,?)').run(c.id,amount-effectiveApproval,effectiveApproval,amount,text(b.evidence),reference,reason,u.id).lastInsertRowid);
+ event(status(amount,settled));return {id,claim_id:Number(c.id)};
+ }
+ const s=db.prepare('SELECT * FROM supplier_claim_settlements WHERE id=? AND claim_id=?').get(Number(b.settlement_id),c.id) as Row|undefined;
+ if(!s)throw Error('Settlement không thuộc Claim.');
+ const id=Number(db.prepare('INSERT INTO supplier_settlement_reversals(settlement_id,evidence,reference,reason,actor_id) VALUES (?,?,?,?,?)').run(s.id,text(b.evidence),reference,reason,u.id).lastInsertRowid);
+ if(s.kind==='OFFSET')post('CLAIM_OFFSET_REVERSAL','CLAIM_OFFSET_REVERSAL:'+s.id,-Number(s.amount_cents));
+ event(status(effectiveApproval,netSettled()));
+ return {id,claim_id:Number(c.id)};
+ }
  if(b.action==='claim_credit')throw Error('Dùng claim_settle với số tiền, OFFSET hoặc REFUND_RECEIVED và evidence.');
  if(b.action==='claim_settle'){
  if(!approval||!['APPROVED','PARTIALLY_SETTLED'].includes(String(c.status)))throw Error('Cần claim đã chốt Final Approved Amount còn phải thu.');
  if(!['OFFSET','REFUND_RECEIVED'].includes(String(b.settlement)))throw Error('Chọn OFFSET hoặc REFUND_RECEIVED.');
  const amount=cents(b.amount);
  if(db.prepare('SELECT 1 FROM supplier_recovery_receipts x JOIN supplier_recoveries r ON r.id=x.recovery_id WHERE r.supplier=? COLLATE NOCASE AND x.reference=? COLLATE NOCASE').get(supplier,reference))throw Error('Chứng từ đã ghi ở Recovery vận hành; cần REVIEW, không ghi lần hai.');
- const settled=Number((db.prepare('SELECT COALESCE(SUM(amount_cents),0) n FROM supplier_claim_settlements WHERE claim_id=?').get(c.id) as {n:number}).n);
- if(amount>Number(approval.amount_cents)-settled)throw Error('Số tiền vượt khoản phải thu còn lại.');
+ const settled=netSettled();
+ if(amount>Number(effectiveApproval)-settled)throw Error('Số tiền vượt khoản phải thu còn lại.');
  const id=Number(db.prepare('INSERT INTO supplier_claim_settlements(claim_id,supplier,kind,amount_cents,reference,evidence,reason,actor_id) VALUES (?,?,?,?,?,?,?,?)').run(c.id,supplier,b.settlement,amount,reference,text(b.evidence),reason,u.id).lastInsertRowid);
  // Receipt reduces receivable only. Offset is the sole Balance posting; neither changes GP.
  if(b.settlement==='OFFSET')post('CLAIM_OFFSET','CLAIM_OFFSET:'+id,amount);
- event(settled+amount===Number(approval.amount_cents)?'CLOSED':'PARTIALLY_SETTLED');
+ event(settled+amount===Number(effectiveApproval)?'CLOSED':'PARTIALLY_SETTLED');
  return {id,claim_id:Number(c.id)};
  }
  if(b.status==='APPROVED'){

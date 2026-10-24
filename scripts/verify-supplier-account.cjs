@@ -176,6 +176,48 @@ for(const u of [undefined,admin,sales,client,warehouse,finance,bod]){
 const response=await api.POST(new NextRequest('http://local/api/supplier-accounts',{method:'POST',headers:{cookie:'dmd_session='+createSession(finance.id).token,'content-type':'application/json'},body:JSON.stringify({supplier,action:'adjustment',amount:1,direction:'POSITIVE',reason:'Synthetic API',reference:'api-actor',request_key:'api-actor',actor_id:admin.id})}));
 assert(response.status===200,'Finance API mutation');
 const created=await response.json();assert(db.prepare('SELECT actor_id FROM supplier_account_entries WHERE id=?').get(created.id).actor_id===finance.id,'Actor from session');
+// Append-only decision correction and compensating settlement reversal.
+const originalApproval=db.prepare('SELECT * FROM supplier_claim_approvals WHERE claim_id=?').get(claim.id);
+const originalSettlement=db.prepare('SELECT * FROM supplier_claim_settlements WHERE claim_id=? AND kind=\'OFFSET\' ORDER BY id LIMIT 1').get(claim.id);
+const correctedRow=()=>report(finance).claims.find(c=>c.id===claim.id);
+const correction={action:'claim_correct',claim_id:claim.id,expected_approved_cents:2000,final_approved_amount:19,evidence:'Revised supplier decision',reference:'correction-1',request_key:'correction-1'};
+rejects(()=>command(correction),'Cannot reduce below net settlement');
+const reverse={action:'settlement_reverse',claim_id:claim.id,settlement_id:originalSettlement.id,evidence:'Offset was recorded in error',reference:'reverse-offset',request_key:'reverse-offset'};
+const b0=balance();
+command(reverse);command(reverse);
+assert(balance()===b0-1000&&correctedRow().outstanding_cents===1000&&correctedRow().status==='PARTIALLY_SETTLED','Offset reversal compensates Balance and reopens receivable once');
+rejects(()=>command({...reverse,request_key:'another-reverse'}),'Settlement reversal unique across request keys');
+command(correction);command(correction);
+assert(correctedRow().approved_cents===1900&&correctedRow().outstanding_cents===900,'Effective approval from compensating delta');
+rejects(()=>command({...correction,final_approved_amount:18,reference:'stale',request_key:'stale'}),'Stale correction rejected');
+rejects(()=>command({...correction,expected_approved_cents:1900,final_approved_amount:21,reference:'over-request',request_key:'over-request'}),'Correction cannot exceed requested');
+rejects(()=>command({...correction,expected_approved_cents:1900,final_approved_amount:18,evidence:'',reference:'no-proof',request_key:'no-proof'}),'Correction evidence required');
+assert(JSON.stringify(db.prepare('SELECT * FROM supplier_claim_approvals WHERE claim_id=?').get(claim.id))===JSON.stringify(originalApproval),'Original approval byte for byte preserved');
+assert(JSON.stringify(db.prepare('SELECT * FROM supplier_claim_settlements WHERE id=?').get(originalSettlement.id))===JSON.stringify(originalSettlement),'Original settlement preserved');
+const bankSettlement=correctedRow().settlements.find(s=>s.kind==='REFUND_RECEIVED');
+const beforeBankReverse=balance();
+command({...reverse,settlement_id:bankSettlement.id,reference:'reverse-bank',request_key:'reverse-bank'});
+assert(balance()===beforeBankReverse&&correctedRow().received_cents===0&&correctedRow().outstanding_cents===1400,'Receipt reversal has no Balance movement');
+const beforeCorrection=correctedRow();
+db.exec("CREATE TRIGGER synthetic_correction_fail BEFORE INSERT ON supplier_claim_events BEGIN SELECT RAISE(ABORT,'Synthetic correction failure'); END");
+const failCorrection={...correction,expected_approved_cents:1900,final_approved_amount:15,reference:'correction-fail',request_key:'correction-fail'};
+rejects(()=>command(failCorrection),'Correction audit failure');
+assert(correctedRow().corrections.length===beforeCorrection.corrections.length&&correctedRow().approved_cents===1900,'Correction rollback preserves projection');
+assert(!db.prepare("SELECT 1 FROM money_command_receipts WHERE request_key='correction-fail'").get(),'Correction rollback no receipt');
+db.exec('DROP TRIGGER synthetic_correction_fail');
+const remainingOffset=correctedRow().settlements.find(s=>s.kind==='OFFSET'&&s.id!==originalSettlement.id);
+const beforeReversalFailure=balance();
+db.exec("CREATE TRIGGER synthetic_reverse_fail BEFORE INSERT ON supplier_account_entries BEGIN SELECT RAISE(ABORT,'Synthetic reversal failure'); END");
+const failReverse={...reverse,settlement_id:remainingOffset.id,reference:'reverse-fail',request_key:'reverse-fail'};
+rejects(()=>command(failReverse),'Reversal posting failure');
+assert(balance()===beforeReversalFailure&&!correctedRow().reversals.some(r=>r.settlement_id===remainingOffset.id),'Reversal and posting rollback together');
+db.exec('DROP TRIGGER synthetic_reverse_fail');
+command(failReverse);
+command({...correction,expected_approved_cents:1900,final_approved_amount:0,reference:'void-decision',request_key:'void-decision'});
+assert(correctedRow().approved_cents===0&&correctedRow().status==='CLOSED'&&correctedRow().outstanding_cents===0,'Zero correction cancels decision only after all settlements reversed');
+command({...correction,expected_approved_cents:0,final_approved_amount:15,reference:'reopen-decision',request_key:'reopen-decision'});
+assert(correctedRow().approved_cents===1500&&correctedRow().status==='APPROVED','Corrected closed decision can reopen with evidence');
+for(const table of ['supplier_claim_corrections','supplier_settlement_reversals'])for(const op of ['UPDATE','DELETE'])rejects(()=>db.prepare(op==='UPDATE'?'UPDATE '+table+' SET reason=?':'DELETE FROM '+table).run(...(op==='UPDATE'?['rewrite']:[])),'Compensations immutable '+table+op);
 // Operational recovery and account claim must share one explicit financial owner.
 const {caseAction}=require('../src/lib/cases.ts'),{claimAction,recoveriesFor}=require('../src/lib/claims.ts');
 function sourceFixture(key,received=false){
