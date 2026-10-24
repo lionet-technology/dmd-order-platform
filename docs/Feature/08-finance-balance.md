@@ -1,5 +1,8 @@
 # Balance, Credit & Statement
 
+## Visible name — 24/10/2026
+The Finance navigation, Statement workspace heading and BOD period comparison now display **Statement**. Internal module/API names and immutable Statement logic are unchanged. This is a wording-only change.
+
 ## Owner correction — 23/10/2026
 Statement Credit Term applies only to negative net Balance. Debt is excluded after transfer and ages only by its own deadline; the current overdue-Debt purchase block remains. Partial Payment priority is unchanged: interest → principal → Balance. No fake Payment, duplicate receivable or second purchasing-power release. Opening age evidence is optional; amount/date/actor remain exact and auditable. See [verification](VERIFICATION-BALANCE-DEBT-SPLIT-2026-10-23.md). This rule supersedes combined Balance+Debt aging in earlier notes.
 
