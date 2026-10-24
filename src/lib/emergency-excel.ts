@@ -6,8 +6,9 @@ import {recordEmergencyError,emergencyHoldDetails} from "./emergency-hold";
 type Entry={order_id:number;client_order_id:string;route_id:number;estimate:string;hold_id:number;tracking_id:number;new_tracking:string;new_label_url:string;parse_error?:string};
 const headers=["DMD ID gốc","Client Order ID","Giá bán gốc (USD)","Route ID cũ","Tracking ID cũ","Tracking cũ","Tracking mới","URL Label mới","Route ID mới","Estimated Net Cost mới (USD)","Hold ID","Trạng thái"];
 export const EMERGENCY_EXCEL_HEADERS=headers;
-export async function importEmergencyWorkbook(user:AuthUser,oldRouteId:number,holdId:number,file:ArrayBuffer){
+export async function importEmergencyWorkbook(user:AuthUser,oldRouteId:number,holdId:number,file:ArrayBuffer,reviewConfirmed=false){
  if(user.role!=="ADMIN")throw Error("Chỉ Admin được import Emergency.");
+ if(reviewConfirmed!==true)throw Error("Admin cần xác minh Route, Tracking, Label và Estimated Net Cost trong file rồi xác nhận để tiếp tục.");
  if(file.byteLength>5_000_000)throw Error("Excel vượt quá 5 MB.");
  const workbook=new ExcelJS.Workbook();
  await workbook.xlsx.load(Buffer.from(file) as unknown as Parameters<typeof workbook.xlsx.load>[0]);
@@ -64,7 +65,7 @@ export async function importEmergencyWorkbook(user:AuthUser,oldRouteId:number,ho
    const replacement=rows.some(r=>r.new_tracking||r.new_label_url);
    if(replacement&&rows.some(r=>!Number.isSafeInteger(r.tracking_id)||r.tracking_id<=0||!r.new_tracking||!r.new_label_url))throw Error("Khi thay Tracking/Label phải nhập đủ cả hai và Tracking ID cũ trên tất cả dòng Order.");
    const mappings=(replacement?rows:[]).map(r=>({old_tracking_id:r.tracking_id,new_tracking:r.new_tracking,new_label_url:r.new_label_url}));
-   emergencySwitchOrder(user,holdId,orderId,rows[0].route_id,mappings,estimates[0]);
+   emergencySwitchOrder(user,holdId,orderId,rows[0].route_id,mappings,estimates[0],true);
    successes.push(orderId);
   }catch(e){const error=(e as Error).message;if(original)recordEmergencyError(holdId,orderId,error);errors.push({order_id:orderId,client_order_id:String(original?.client_order_id||rows[0].client_order_id),error})}
  }

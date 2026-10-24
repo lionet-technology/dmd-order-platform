@@ -1,3 +1,6 @@
+## Owner chốt luồng xác minh Emergency — 24/10/2026
+Mọi Emergency Switch dùng một luồng: Admin rà Route, Tracking, Label, Estimated Net Cost → chỉnh nếu cần hoặc approve giữ nguyên → Order tiếp tục. Không tách thêm luồng cùng Supplier. Xác nhận lưu cùng audit Switch; sửa dữ liệu phải xác minh lại. Admin duyệt vận hành không thay Finance đối soát Actual Cost/GP. [Chi tiết hiện hành](18-emergency-route-hold.md).
+
 ## Emergency đơn giản hóa — 24/10/2026
 Đổi Route trên Order gốc, Tracking/Label và Net Cost optional; blank giữ nguyên. Nếu thay Tracking thì thay đủ bộ ACTIVE. Cost Supplier cũ/mới tách chứng từ, không tự COMPLETE chỉ vì giữ label; cost import sau Switch không sửa Charge. Order upload lỗi còn HOLD, lưu alert để retry; từng Order thành công được giữ. Bất kỳ carton đã export Manifest thì toàn Order xử lý thủ công. [Quy tắc hiện hành](18-emergency-route-hold.md).
 

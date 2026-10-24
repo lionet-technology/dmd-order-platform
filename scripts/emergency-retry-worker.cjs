@@ -5,7 +5,7 @@ try{
  require('./seed-epacket.cjs');
  const {emergencySwitchOrder}=require('../src/lib/emergency-switch.ts');
  if(workerData.action==='undo')require('../src/lib/emergency-hold.ts').undoEmergencyHold(workerData.actor,...workerData.args);
- else emergencySwitchOrder(workerData.actor,...workerData.args);
+ else {const [hold,order,route,tracks,estimate]=workerData.args;emergencySwitchOrder(workerData.actor,hold,order,route,tracks,estimate,true);}
  require('../src/lib/db.ts').db.close();
  Atomics.store(signal,0,1);
 }catch(e){if(workerData.allowClosed&&String(e.message).includes('đã đóng'))Atomics.store(signal,0,2);else{require('node:fs').writeSync(2,String(e.stack)+'\n');Atomics.store(signal,0,-1)}}

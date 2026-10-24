@@ -66,7 +66,8 @@ let checks=0;function eq(a,b,m){assert.deepEqual(a,b,m);checks++}function reject
  eq(db.prepare("SELECT workflow_status s FROM orders WHERE id=?").get(moved).s,'PURCHASED');
  eq(db.prepare("SELECT workflow_status s FROM orders WHERE id=?").get(pending).s,'HOLD');
  eq(db.prepare("SELECT * FROM ledger_entries").all(),before,'No ledger changes');
- const {emergencySwitchOrder}=require('../src/lib/emergency-switch.ts');
+ const {emergencySwitchOrder:unreviewedSwitch}=require('../src/lib/emergency-switch.ts');
+ const emergencySwitchOrder=(actor,hold,order,route,tracks=[],estimate)=>unreviewedSwitch(actor,hold,order,route,tracks,estimate,true);
  rejects(()=>emergencySwitchOrder(client,hold.id,purchased,replacementRoute,[]),/Admin/);
  rejects(()=>emergencySwitchOrder(admin,hold.id,manifested,replacementRoute,[]),/Order không thuộc/);
  rejects(()=>emergencySwitchOrder(admin,hold.id,purchased,replacementRoute,[{old_tracking_id:purchasedTracking,new_tracking:'',new_label_url:''}]),/bắt buộc/);
@@ -151,7 +152,7 @@ let checks=0;function eq(a,b,m){assert.deepEqual(a,b,m);checks++}function reject
   }
  }
  const uploadBytes=Buffer.from(await excelBook.xlsx.writeBuffer());
- const form=()=>{const data=new FormData();data.set('action','import_switch_excel');data.set('hold_id',String(hold.id));data.set('file',new File([uploadBytes],'emergency.xlsx',{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));return data};
+ const form=()=>{const data=new FormData();data.set('action','import_switch_excel');data.set('review_confirmed','true');data.set('hold_id',String(hold.id));data.set('file',new File([uploadBytes],'emergency.xlsx',{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));return data};
  const importReq=()=>new NextRequest('http://localhost/api/service-routes/'+route+'/emergency',{method:'POST',headers:{cookie:'dmd_session='+token},body:form()});
  const imported=await api.POST(importReq(),context);eq(imported.status,200,'Emergency Excel import accepted');
  const summary=await imported.json();eq(summary.success,1);eq(summary.failed,0);
@@ -230,10 +231,18 @@ let checks=0;function eq(a,b,m){assert.deepEqual(a,b,m);checks++}function reject
  const inactive=Number(db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier,active) VALUES ('Emergency','Inactive','Replacement',0)").run().lastInsertRowid);
  rejects(()=>emergencySwitchOrder(admin,keepHold.id,routeOnly,inactive,[]),/Active/);
  eq(!!db.prepare('SELECT last_error FROM emergency_hold_orders WHERE hold_id=? AND order_id=?').get(keepHold.id,routeOnly).last_error,true,'Failure persisted for retry');
- const onlyApi=await api.POST(req('POST',token,{action:'switch',hold_id:keepHold.id,order_id:routeOnly,new_route_id:replacementRoute}),context);
+ rejects(()=>unreviewedSwitch(admin,keepHold.id,routeOnly,replacementRoute,[]),/Admin cần xác minh/);
+ eq(db.prepare('SELECT workflow_status FROM orders WHERE id=?').get(routeOnly).workflow_status,'HOLD','No approval leaves Order held');
+ const noReview=await api.POST(req('POST',token,{action:'switch',hold_id:keepHold.id,order_id:routeOnly,new_route_id:replacementRoute}),context);
+ eq(noReview.status,409,'API enforces review even without UI');
+ const falseReview=await api.POST(req('POST',token,{action:'switch',review_confirmed:'true',hold_id:keepHold.id,order_id:routeOnly,new_route_id:replacementRoute}),context);
+ eq(falseReview.status,409,'JSON string cannot masquerade as boolean approval');
+ const onlyApi=await api.POST(req('POST',token,{action:'switch',review_confirmed:true,hold_id:keepHold.id,order_id:routeOnly,new_route_id:replacementRoute}),context);
  eq(onlyApi.status,200,'Route-only API accepts omitted Tracking rows');
  const keepResult=await onlyApi.json();
  eq(keepResult.updated_trackings,0);
+ const reviewedAudit=JSON.parse(db.prepare("SELECT after_json FROM order_events WHERE order_id=? AND event_type='EMERGENCY_ROUTE_SWITCH'").get(routeOnly).after_json);
+ eq(reviewedAudit.admin_review,{confirmed:true,actor_id:admin.id,tracking_label_action:'KEEP',estimated_net_cost_action:'KEEP'},'Reviewed KEEP decisions and authenticated actor audited');
  eq(db.prepare('SELECT tracking,label FROM orders WHERE id=?').get(routeOnly),keepMain,'Route only also preserves primary Order Tracking/Label exactly');
  eq(db.prepare('SELECT * FROM order_trackings WHERE order_id=?').all(routeOnly),keepBefore,'Route only keeps full tracking history byte for byte');
  eq(db.prepare('SELECT est_net_cost,actual_cost_coverage,finalized_gp FROM orders WHERE id=?').get(routeOnly),{est_net_cost:10,actual_cost_coverage:'PARTIAL',finalized_gp:null},'Old NOT_BILLED cannot waive new supplier cost');
@@ -256,13 +265,15 @@ let checks=0;function eq(a,b,m){assert.deepEqual(a,b,m);checks++}function reject
  const excelOrders=[add('PENDING_PURCHASE'),add('PENDING_PURCHASE'),add('PURCHASED')];
  const partialIds=[1,2].map(i=>Number(db.prepare("INSERT INTO order_trackings(order_id,tracking,normalized_tracking,label_url) VALUES (?,?,?,?)").run(excelOrders[2],'PARTIAL-'+i,'PARTIAL'+i,'/p.pdf').lastInsertRowid));
  const excelHold=startEmergencyHold(admin,route,'Mixed Excel');
- const {EMERGENCY_EXCEL_HEADERS,importEmergencyWorkbook}=require('../src/lib/emergency-excel.ts');
+ const {EMERGENCY_EXCEL_HEADERS,importEmergencyWorkbook:unreviewedWorkbook}=require('../src/lib/emergency-excel.ts');
+ const importEmergencyWorkbook=(actor,route,hold,bytes)=>unreviewedWorkbook(actor,route,hold,bytes,true);
  const mixed=new (require('exceljs').Workbook)(),mixedSheet=mixed.addWorksheet('Emergency');mixedSheet.addRow(EMERGENCY_EXCEL_HEADERS);
  for(const [i,id] of excelOrders.entries()){
   const row=mixedSheet.addRow([id,db.prepare('SELECT order_id FROM orders WHERE id=?').get(id).order_id,25,route,i===2?partialIds[0]:'','','','',replacementRoute,'',excelHold.id,'']);
   if(i===1)row.getCell(10).value={formula:'1+1',result:2};
   if(i===2){row.getCell(7).value='PARTIAL-NEW';row.getCell(8).value='/new.pdf'}
  }
+ await assert.rejects(()=>unreviewedWorkbook(admin,route,excelHold.id,Buffer.from([])),/Admin cần xác minh/);checks++;
  const mixedResult=await importEmergencyWorkbook(admin,route,excelHold.id,Buffer.from(await mixed.xlsx.writeBuffer()));
  eq(mixedResult.success,1);eq(mixedResult.failed,2);
  eq(db.prepare('SELECT workflow_status FROM orders WHERE id=?').get(excelOrders[0]).workflow_status,'PENDING_PURCHASE');

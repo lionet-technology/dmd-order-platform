@@ -1,9 +1,9 @@
 "use client";
 import {useEffect,useState} from "react";
-type Tracking={old_tracking_id:number;old_tracking:string;carton_number:number|null};
-type Item={source_dmd_id:number;client_order_id:string;original_selling_price:number;original_status:string;resolved_at:string|null;last_error?:string|null;trackings:Tracking[];current?:{est_net_cost:number;system_order_code:string}};
+type Tracking={old_tracking_id:number;old_tracking:string;old_label:string|null;carton_number:number|null};
+type Item={source_dmd_id:number;client_order_id:string;original_selling_price:number;original_status:string;resolved_at:string|null;last_error?:string|null;trackings:Tracking[];current?:{est_net_cost:number;system_order_code:string;service:string;sub_service:string;supplier:string}};
 type Route={id:number;service:string;sub_service:string;supplier:string;active:number;warehouse_hold:number};
-type Draft={estimate:string;fields:Record<number,{tracking:string;label:string}>};
+type Draft={reviewed:boolean;estimate:string;fields:Record<number,{tracking:string;label:string}>};
 export function EmergencySwitchWorkspace({routeId,holdId}:{routeId:number;holdId:number}){
  const [items,setItems]=useState<Item[]>([]),[routes,setRoutes]=useState<Route[]>([]),[route,setRoute]=useState("");
  const [drafts,setDrafts]=useState<Record<number,Draft>>({}),[confirmed,setConfirmed]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState("");
@@ -19,21 +19,22 @@ export function EmergencySwitchWorkspace({routeId,holdId}:{routeId:number;holdId
   if(live){setItems(x.orders||[]);setRoutes(y||[])}
  }).catch(e=>{if(live)setMessage(e.message)});return ()=>{live=false}},[url,holdId]);
  const eligible=routes.filter(r=>r.id!==routeId&&r.active&&r.warehouse_hold!==1);
+ const selectedRoute=eligible.find(r=>String(r.id)===route);
  const pending=items.filter(i=>!i.resolved_at);
- const get=(i:Item)=>drafts[i.source_dmd_id]||{estimate:"",fields:{}};
+ const get=(i:Item)=>drafts[i.source_dmd_id]||{reviewed:false,estimate:"",fields:{}};
  function setField(i:Item,trackingId:number,key:"tracking"|"label",value:string){
   setDrafts(p=>{
-   const old=p[i.source_dmd_id]||{estimate:"",fields:{}};
+   const old=p[i.source_dmd_id]||{reviewed:false,estimate:"",fields:{}};
    const field=old.fields[trackingId]||{tracking:"",label:""};
-   return {...p,[i.source_dmd_id]:{...old,fields:{...old.fields,[trackingId]:{...field,[key]:value}}}};
+   return {...p,[i.source_dmd_id]:{...old,reviewed:false,fields:{...old.fields,[trackingId]:{...field,[key]:value}}}};
   });
  }
  function replacing(i:Item){return Object.values(get(i).fields).some(f=>f.tracking.trim()||f.label.trim())}
- function ready(i:Item){return !!route&&confirmed&&(!replacing(i)||i.trackings.every(t=>!!get(i).fields[t.old_tracking_id]?.tracking.trim()&&!!get(i).fields[t.old_tracking_id]?.label.trim()))}
+ function ready(i:Item){return !!route&&get(i).reviewed&&(!replacing(i)||i.trackings.every(t=>!!get(i).fields[t.old_tracking_id]?.tracking.trim()&&!!get(i).fields[t.old_tracking_id]?.label.trim()))}
  async function submit(i:Item){
   const d=get(i);
   const response=await fetch(url,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({
-   action:"switch",hold_id:holdId,order_id:i.source_dmd_id,new_route_id:Number(route),estimated_net_cost:d.estimate,
+   action:"switch",review_confirmed:d.reviewed,hold_id:holdId,order_id:i.source_dmd_id,new_route_id:Number(route),estimated_net_cost:d.estimate,
    trackings:(replacing(i)?i.trackings:[]).map(t=>({old_tracking_id:t.old_tracking_id,new_tracking:d.fields[t.old_tracking_id]?.tracking||"",new_label_url:d.fields[t.old_tracking_id]?.label||""}))
   })});
   const result=await response.json();if(!response.ok)throw Error(result.error||"Đổi Route thất bại");
@@ -41,7 +42,7 @@ export function EmergencySwitchWorkspace({routeId,holdId}:{routeId:number;holdId
  async function importExcel(){
   if(!excel||!confirmed)return;setBusy(true);
   try{
-   const data=new FormData();data.set("action","import_switch_excel");data.set("hold_id",String(holdId));data.set("file",excel);
+   const data=new FormData();data.set("action","import_switch_excel");data.set("review_confirmed",String(confirmed));data.set("hold_id",String(holdId));data.set("file",excel);
    const response=await fetch(url,{method:"POST",body:data}),result=await response.json();
    if(!response.ok)throw Error(result.error||"Import Excel thất bại.");
    await load();
@@ -56,33 +57,36 @@ export function EmergencySwitchWorkspace({routeId,holdId}:{routeId:number;holdId
  }
  return <section className="templateConfigCard" aria-label="Emergency đổi Route Tracking Label">
   <h3>Emergency · Đổi Route trên cùng Order</h3>
-  <p>Giữ nguyên DMD ID, Client Order ID, giá bán và Balance. Mỗi Order được lưu trọn vẹn; lỗi không ảnh hưởng Order khác. Để trống Tracking/Label mới nếu chỉ đổi Route.</p>
-  <label>Route mới<select aria-label="Emergency Route mới" value={route} onChange={e=>setRoute(e.target.value)}>
+  <p>Giữ nguyên DMD ID, Client Order ID, giá bán và Balance. Admin kiểm tra, điều chỉnh nếu cần rồi xác nhận từng Order. Mỗi Order được lưu trọn vẹn; lỗi không ảnh hưởng Order khác. Để trống Tracking/Label mới nếu chỉ đổi Route.</p>
+  <label>Route mới<select aria-label="Emergency Route mới" value={route} onChange={e=>{setRoute(e.target.value);setDrafts(p=>Object.fromEntries(Object.entries(p).map(([id,d])=>[id,{...d,reviewed:false}])));}}>
    <option value="">Chọn Route Active</option>{eligible.map(r=><option key={r.id} value={r.id}>{r.service} / {r.sub_service} / {r.supplier} (r{r.id})</option>)}
   </select></label>
-  <label><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/> Tôi đã xác nhận tất cả Carton chưa bàn giao và đã kiểm tra Route cùng Tracking/Label cần giữ hoặc thay.</label>
   <p>{pending.length} Order chờ xử lý; {items.length-pending.length} Order đã đổi.</p>
   <div className="routeVariablesEditor">
    <b>Import Excel để xử lý hàng loạt</b>
    <p>Tải Excel tại phần Hold phía trên. Điền Route ID mới trên từng dòng cần xử lý, Tracking/Label mới và Net Cost nếu muốn thay. Để trống toàn bộ Tracking/Label mới của Order để giữ nguyên. Dòng để trống Route ID mới sẽ được bỏ qua. Nếu thay Tracking/Label, phải nhập đủ tất cả Tracking đang dùng của cùng Order.</p>
-   <label>Excel Emergency (.xlsx)<input type="file" accept=".xlsx" onChange={e=>setExcel(e.target.files?.[0]||null)}/></label>
+   <label>Excel Emergency (.xlsx)<input type="file" accept=".xlsx" onChange={e=>{setExcel(e.target.files?.[0]||null);setConfirmed(false)}}/></label>
+   <label><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/> Tôi đã xác minh Route, Tracking, Label, Estimated Net Cost của các Order trong file và xác nhận tất cả Carton chưa bàn giao. Giá trị để trống được giữ nguyên.</label>
    <button className="secondaryBtn" disabled={busy||!confirmed||!excel} onClick={()=>void importExcel()}>Kiểm tra & xử lý Excel</button>
   </div>
   <div role="alert" aria-label="Order Emergency chưa xử lý">{pending.length>0&&<p>Các Order bên dưới vẫn đang Hold. Order lỗi được giữ lại để sửa và thử lại; Order thành công đã ra khỏi hàng chờ.</p>}</div>
   {pending.map(i=><section key={i.source_dmd_id} className="routeVariablesEditor">
    <b>{i.current?.system_order_code||"DMD #"+i.source_dmd_id} · {i.client_order_id}</b>
    {i.last_error&&<p role="alert">Cần xử lý lại: {i.last_error}</p>}
+   <p>Route hiện tại: {i.current?.service} / {i.current?.sub_service} / {i.current?.supplier} → {selectedRoute?[selectedRoute.service,selectedRoute.sub_service,selectedRoute.supplier].join(" / "):"Chưa chọn Route mới"}</p>
    <p>Giá bán giữ nguyên: {Number(i.original_selling_price).toFixed(2)} USD · {i.original_status}</p>
+   <p>Estimated Net Cost hiện tại: {i.current?.est_net_cost??"Chưa có"} USD · Tracking/Label: {replacing(i)?"Thay toàn bộ theo dữ liệu bên dưới":"Giữ nguyên"}</p>
    <label>Estimated Net Cost mới (USD; để trống để giữ nguyên)
     <input type="number" step="0.01" min="0" placeholder={String(i.current?.est_net_cost??0)}
-     value={get(i).estimate} onChange={e=>setDrafts(p=>({...p,[i.source_dmd_id]:{...get(i),estimate:e.target.value}}))}/>
+     value={get(i).estimate} onChange={e=>setDrafts(p=>({...p,[i.source_dmd_id]:{...get(i),reviewed:false,estimate:e.target.value}}))}/>
    </label>
    {i.trackings.map(t=><div key={t.old_tracking_id} className="templateGrid">
-    <p>Carton {t.carton_number??"—"} · Tracking cũ: {t.old_tracking}</p>
+    <p style={{overflowWrap:"anywhere"}}>Carton {t.carton_number??"—"} · Tracking cũ: {t.old_tracking} · Label hiện tại: {t.old_label||"Chưa có"}</p>
     <label>Tracking mới<input value={get(i).fields[t.old_tracking_id]?.tracking||""} onChange={e=>setField(i,t.old_tracking_id,"tracking",e.target.value)}/></label>
     <label>URL Label mới<input value={get(i).fields[t.old_tracking_id]?.label||""} onChange={e=>setField(i,t.old_tracking_id,"label",e.target.value)}/></label>
    </div>)}
-   <button className="primaryBtn" disabled={busy||!ready(i)} onClick={()=>void run([i])}>Chuyển Order này</button>
+   <label><input type="checkbox" checked={get(i).reviewed} onChange={e=>setDrafts(p=>({...p,[i.source_dmd_id]:{...get(i),reviewed:e.target.checked}}))}/> Tôi đã xác minh Route, Tracking, Label và Estimated Net Cost của Order này; đồng ý giữ nguyên phần không điều chỉnh và xác nhận tất cả Carton chưa bàn giao.</label>
+   <button className="primaryBtn" disabled={busy||!ready(i)} onClick={()=>void run([i])}>Xác nhận & chuyển Order này</button>
   </section>)}
   <button className="secondaryBtn" disabled={busy||!pending.some(ready)} onClick={()=>void run(pending.filter(ready))}>Chuyển các Order sẵn sàng ({pending.filter(ready).length})</button>
   {message&&<p role="status">{message}</p>}
