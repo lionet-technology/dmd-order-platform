@@ -1,4 +1,11 @@
 # Supplier accounts — Owner continuation 24/10/2026
+
+## Source coordination — 25/10/2026
+Finance/BOD may use `link_recovery` with claim_id, recovery_id, evidence, reference, reason and request_key, before approval. It requires the same Supplier, exact Order scope, equal requested/expected amounts, one unambiguous overlapping Recovery, no prior Account approval/posting and no old receipt. Link history is immutable. It transfers financial ownership of the follow-up to Account Claim; it does not create approval, receivable, receipt or Balance entry.
+Any overlapping unlinked operational Recovery blocks Account status/approval/settlement; linked or overlapping Account Claims block operational status/receipts and new duplicate Recoveries. Account settlement and operational receipt reject reuse of a Supplier/reference across the two stores. Old Recovery evidence and receipts remain unchanged. Existing historical receipts, mismatched scope/amount and multiple overlapping Recoveries remain REVIEW; no inferred migration or duplicate receivable.
+Account Claims UI displays Recovery IDs, Case IDs, legacy receipt totals and linked Claim IDs, plus the link form. API report exposes recovery_conflicts and recovery_link. Operational status is historical after linkage; Account status is authoritative.
+Verified with isolated synthetic Supplier Account and Operations suites, typecheck and lint. Full release UAT remains open.
+
 **Status: Partial MVP locally verified. No production migration or carrier activity.**
 
 ## Approved decision
@@ -29,7 +36,7 @@ Additive CREATE TABLE migrations preserve old data. No destructive migration, au
 - Invoice-to-cost matching and opening reconciliation wizard; no automatic historical cutover. Do not add invoice outstanding to signed Balance.
 - Supplier-specific add-on catalogue/rate mapping, third-party Supplier-to-Supplier counterparty allocation and company-wide BOD GP integration. Current explicit BUY/SELL represents DMD's side with each selected Supplier.
 - Component/replacement-cost/late-adjustment allocation across Suppliers, including historical Emergency reroutes. Confirmed postings are immutable snapshots; later source corrections require explicit signed account adjustment with evidence, not automatic retroactive rewriting.
-- Final decision corrections, settlement reversals, reopening/cancellation and an evidence upload store remain pending. Evidence/reference is text. Legacy posted Claims require reviewed manual reconciliation; no inferred receivable/opening. Operational Client Claim `supplier_recoveries` remains a separate manual follow-up module, with no automatic import/link to this account; never record the same receipt in both modules. Company bank reconciliation/report consolidation remains pending.
+- Final decision corrections, settlement reversals, reopening/cancellation and an evidence upload store remain pending. Evidence/reference is text. Legacy posted Claims require reviewed manual reconciliation; no inferred receivable/opening. Operational Recovery and Account Claim now support an explicit immutable source link; see the 25/10 continuation below. Historical posted receipts still require manual reviewed migration. Company bank reconciliation/report consolidation remains pending.
 - Formal payment-term defaults and invoice allocation aging. Simple per-entry due-date warnings only.
 - Supplier lists show at most the latest 1,000 Tracking and Cost records; older records remain preserved. Full server pagination/search is pending. Account/claim history currently loads all rows.
 - Orders/Tracking identification follows current Order Supplier. Replaced/cancelled Tracking cannot be newly marked via the refund action; historical Supplier mapping needs explicit allocation before extending that workflow.

@@ -4,6 +4,8 @@ import {canonicalEnumValue} from './enums';
 import {moneyCommand} from './money-command';
 import {localDay} from './credit';
 import './supplier-payables';
+import './claims';
+import {recoveryConflicts} from './supplier-claim-source';
 import {reconcileLots} from './reconciliation';
 type Row=Record<string,unknown>;
 export function supplierAccountSchema(){
@@ -34,10 +36,12 @@ export function supplierAccounts(u:AuthUser){
  const offset=settlements.filter(s=>s.kind==='OFFSET').reduce((n,s)=>n+Number(s.amount_cents),0);
  return {...c,received_cents:received,offset_cents:offset,outstanding_cents:c.approved_cents===null?null:Number(c.approved_cents)-received-offset,settlements,
  events:db.prepare('SELECT * FROM supplier_claim_events WHERE claim_id=? ORDER BY id').all(c.id),
- requires_review:Number(c.legacy_credited_cents)!==0};
+ recovery_conflicts:recoveryConflicts(Number(c.id)),recovery_link:db.prepare('SELECT * FROM supplier_claim_recovery_links WHERE claim_id=?').get(c.id)||null,
+ requires_review:Number(c.legacy_credited_cents)!==0||recoveryConflicts(Number(c.id)).length>0};
  });
  const suppliers=db.prepare("SELECT value supplier FROM enum_values WHERE enum_type='SUPPLIER' UNION SELECT supplier FROM supplier_account_entries UNION SELECT supplier FROM supplier_invoices UNION SELECT supplier FROM orders WHERE supplier IS NOT NULL AND supplier<>''").all() as {supplier:string}[];
- return {suppliers:suppliers.map(s=>{const rows=entries.filter(e=>e.supplier===s.supplier);const balance=rows.reduce((n,e)=>n+Number(e.delta_cents),0);return {...s,balance_cents:balance,receivable_cents:claims.filter(c=>(c as Row).supplier===s.supplier).reduce((n,c)=>n+Number(c.outstanding_cents||0),0),revenue_cents:rows.reduce((n,e)=>n+Number(e.revenue_cents),0),cost_cents:rows.reduce((n,e)=>n+Number(e.cost_cents),0),overdue:balance<0&&rows.some(e=>Number(e.delta_cents)<0&&e.due_date&&String(e.due_date)<localDay())};}),entries,claims,requests:db.prepare('SELECT r.*,t.tracking,t.order_id,ct.claim_id FROM supplier_refund_requests r JOIN order_trackings t ON t.id=r.tracking_id LEFT JOIN supplier_claim_trackings ct ON ct.tracking_id=r.tracking_id').all(),trackings:db.prepare("SELECT t.id,t.order_id,t.tracking,o.supplier,o.service,o.reconciliation_status FROM order_trackings t JOIN orders o ON o.id=t.order_id ORDER BY t.id DESC LIMIT 1000").all(),costs:db.prepare("SELECT c.id,c.supplier,c.tracking,c.total_net_cost,c.order_lot_id,l.order_id,l.cost_status FROM supplier_costs c LEFT JOIN order_lots l ON l.id=c.order_lot_id ORDER BY c.id DESC LIMIT 1000").all(),services:db.prepare("SELECT value FROM enum_values WHERE enum_type='SERVICE' AND active=1").all()};
+ const recoveries=db.prepare(`SELECT r.*,l.claim_id,(SELECT COALESCE(SUM(amount_cents),0) FROM supplier_recovery_receipts x WHERE x.recovery_id=r.id) received_cents FROM supplier_recoveries r LEFT JOIN supplier_claim_recovery_links l ON l.recovery_id=r.id ORDER BY r.id DESC`).all();
+ return {recoveries,suppliers:suppliers.map(s=>{const rows=entries.filter(e=>e.supplier===s.supplier);const balance=rows.reduce((n,e)=>n+Number(e.delta_cents),0);return {...s,balance_cents:balance,receivable_cents:claims.filter(c=>(c as Row).supplier===s.supplier).reduce((n,c)=>n+Number(c.outstanding_cents||0),0),revenue_cents:rows.reduce((n,e)=>n+Number(e.revenue_cents),0),cost_cents:rows.reduce((n,e)=>n+Number(e.cost_cents),0),overdue:balance<0&&rows.some(e=>Number(e.delta_cents)<0&&e.due_date&&String(e.due_date)<localDay())};}),entries,claims,requests:db.prepare('SELECT r.*,t.tracking,t.order_id,ct.claim_id FROM supplier_refund_requests r JOIN order_trackings t ON t.id=r.tracking_id LEFT JOIN supplier_claim_trackings ct ON ct.tracking_id=r.tracking_id').all(),trackings:db.prepare("SELECT t.id,t.order_id,t.tracking,o.supplier,o.service,o.reconciliation_status FROM order_trackings t JOIN orders o ON o.id=t.order_id ORDER BY t.id DESC LIMIT 1000").all(),costs:db.prepare("SELECT c.id,c.supplier,c.tracking,c.total_net_cost,c.order_lot_id,l.order_id,l.cost_status FROM supplier_costs c LEFT JOIN order_lots l ON l.id=c.order_lot_id ORDER BY c.id DESC LIMIT 1000").all(),services:db.prepare("SELECT value FROM enum_values WHERE enum_type='SERVICE' AND active=1").all()};
 }
 export function supplierAccountAction(u:AuthUser,b:Row){
  access(u);if(!b.request_key)throw Error('Cần request_key.');
@@ -80,9 +84,25 @@ export function supplierAccountAction(u:AuthUser,b:Row){
  for(const tracking of ids)db.prepare('INSERT INTO supplier_claim_trackings VALUES (?,?)').run(tracking,id);
  return {id};
  }
+ if(b.action==='link_recovery'){
+ text(b.evidence);text(b.reference);
+ const c=db.prepare('SELECT * FROM supplier_claims WHERE id=? AND supplier=?').get(Number(b.claim_id),supplier) as Row|undefined;
+ const r=db.prepare('SELECT * FROM supplier_recoveries WHERE id=? AND supplier=? COLLATE NOCASE').get(Number(b.recovery_id),supplier) as Row|undefined;
+ if(!c||!r)throw Error('Claim / Recovery không cùng Supplier.');
+ if(db.prepare('SELECT 1 FROM supplier_claim_approvals WHERE claim_id=?').get(c.id)||db.prepare("SELECT 1 FROM supplier_account_entries WHERE source=?").get('CLAIM:'+c.id))throw Error('Phải liên kết trước khi duyệt; nguồn đã posted cần REVIEW.');
+ if(db.prepare('SELECT 1 FROM supplier_recovery_receipts WHERE recovery_id=?').get(r.id))throw Error('Recovery đã thực thu: cần REVIEW chứng từ cũ, không tự tạo receivable.');
+ const conflicts=recoveryConflicts(Number(c.id));
+ if(conflicts.length!==1||Number(conflicts[0].id)!==Number(r.id))throw Error('Nguồn chồng lấn / không cùng Order; cần REVIEW.');
+ const foreign=db.prepare(`SELECT 1 FROM supplier_claim_trackings ct JOIN order_trackings t ON t.id=ct.tracking_id WHERE ct.claim_id=? AND NOT EXISTS(SELECT 1 FROM operation_case_orders co WHERE co.case_id=? AND co.order_id=t.order_id)`).get(c.id,r.case_id);
+ const missing=db.prepare(`SELECT 1 FROM operation_case_orders co WHERE co.case_id=? AND NOT EXISTS(SELECT 1 FROM supplier_claim_trackings ct JOIN order_trackings t ON t.id=ct.tracking_id WHERE ct.claim_id=? AND t.order_id=co.order_id)`).get(r.case_id,c.id);
+ if(foreign||missing||Number(c.amount_cents)!==Number(r.expected_cents)||!['OPEN','SUBMITTED','WAITING_SUPPLIER'].includes(String(r.status)))throw Error('Cần cùng phạm vi Order, requested amount và Recovery còn mở; khác biệt vào REVIEW.');
+ db.prepare('INSERT INTO supplier_claim_recovery_links(recovery_id,claim_id,evidence,reference,reason,actor_id) VALUES (?,?,?,?,?,?)').run(r.id,c.id,text(b.evidence),reference,reason,u.id);
+ return {id:Number(c.id),recovery_id:Number(r.id)};
+ }
  if(['claim_status','claim_credit','claim_settle'].includes(String(b.action))){
  const c=db.prepare("SELECT c.*,COALESCE((SELECT status FROM supplier_claim_events e WHERE e.claim_id=c.id ORDER BY e.id DESC LIMIT 1),'OPEN') status FROM supplier_claims c WHERE c.id=? AND c.supplier=?").get(Number(b.claim_id),supplier) as Row|undefined;
  if(!c)throw Error('Claim không tồn tại.');
+ if(recoveryConflicts(Number(c.id)).length)throw Error('Recovery vận hành chồng lấn: cần REVIEW / liên kết nguồn trước khi ghi tài chính.');
  if(db.prepare("SELECT id FROM supplier_account_entries WHERE source=?").get('CLAIM:'+c.id))throw Error('Claim đã ghi theo luồng cũ; cần REVIEW đối chiếu, không tạo receivable lần hai.');
  const approval=db.prepare('SELECT * FROM supplier_claim_approvals WHERE claim_id=?').get(c.id) as Row|undefined;
  const event=(status:string)=>db.prepare('INSERT INTO supplier_claim_events(claim_id,status,reason,actor_id) VALUES (?,?,?,?)').run(c.id,status,reason,u.id);
@@ -91,6 +111,7 @@ export function supplierAccountAction(u:AuthUser,b:Row){
  if(!approval||!['APPROVED','PARTIALLY_SETTLED'].includes(String(c.status)))throw Error('Cần claim đã chốt Final Approved Amount còn phải thu.');
  if(!['OFFSET','REFUND_RECEIVED'].includes(String(b.settlement)))throw Error('Chọn OFFSET hoặc REFUND_RECEIVED.');
  const amount=cents(b.amount);
+ if(db.prepare('SELECT 1 FROM supplier_recovery_receipts x JOIN supplier_recoveries r ON r.id=x.recovery_id WHERE r.supplier=? COLLATE NOCASE AND x.reference=? COLLATE NOCASE').get(supplier,reference))throw Error('Chứng từ đã ghi ở Recovery vận hành; cần REVIEW, không ghi lần hai.');
  const settled=Number((db.prepare('SELECT COALESCE(SUM(amount_cents),0) n FROM supplier_claim_settlements WHERE claim_id=?').get(c.id) as {n:number}).n);
  if(amount>Number(approval.amount_cents)-settled)throw Error('Số tiền vượt khoản phải thu còn lại.');
  const id=Number(db.prepare('INSERT INTO supplier_claim_settlements(claim_id,supplier,kind,amount_cents,reference,evidence,reason,actor_id) VALUES (?,?,?,?,?,?,?,?)').run(c.id,supplier,b.settlement,amount,reference,text(b.evidence),reason,u.id).lastInsertRowid);

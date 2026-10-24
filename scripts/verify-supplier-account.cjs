@@ -176,6 +176,39 @@ for(const u of [undefined,admin,sales,client,warehouse,finance,bod]){
 const response=await api.POST(new NextRequest('http://local/api/supplier-accounts',{method:'POST',headers:{cookie:'dmd_session='+createSession(finance.id).token,'content-type':'application/json'},body:JSON.stringify({supplier,action:'adjustment',amount:1,direction:'POSITIVE',reason:'Synthetic API',reference:'api-actor',request_key:'api-actor',actor_id:admin.id})}));
 assert(response.status===200,'Finance API mutation');
 const created=await response.json();assert(db.prepare('SELECT actor_id FROM supplier_account_entries WHERE id=?').get(created.id).actor_id===finance.id,'Actor from session');
+// Operational recovery and account claim must share one explicit financial owner.
+const {caseAction}=require('../src/lib/cases.ts'),{claimAction,recoveriesFor}=require('../src/lib/claims.ts');
+function sourceFixture(key,received=false){
+ const oid=Number(db.prepare("INSERT INTO orders(order_id,client_user_id,supplier,service,workflow_status) VALUES (?,?,?,'UPS','PURCHASED')").run(key,client.id,supplier).lastInsertRowid);
+ const tid=Number(db.prepare('INSERT INTO order_trackings(order_id,tracking,normalized_tracking) VALUES (?,?,?)').run(oid,key,key).lastInsertRowid);
+ const cs=caseAction(client,{action:'create',kind:'CLAIM',visibility:'PUBLIC',order_ids:[oid],summary:key});
+ const rec=claimAction(admin,{action:'create_recovery',case_id:cs.id,supplier,expected_amount:10});
+ if(received)claimAction(admin,{action:'receive_recovery',case_id:cs.id,recovery_id:rec.id,amount:2,reference:key+'-bank'});
+ command({action:'request_refund',tracking_id:tid,evidence:'source'});
+ const cl=command({action:'claim',tracking_ids:[tid],amount:10,evidence:'source'});
+ return {cs,rec,cl};
+}
+const src=sourceFixture('SRC-LINK');
+const sourceApprove={action:'claim_status',claim_id:src.cl.id,status:'APPROVED',final_approved_amount:10,evidence:'source approval'};
+rejects(()=>command(sourceApprove),'Unlinked source blocks approval');
+assert(report(finance).claims.find(c=>c.id===src.cl.id).requires_review,'Conflict visible');
+const link={action:'link_recovery',claim_id:src.cl.id,recovery_id:src.rec.id,evidence:'Reviewed same Order and amount',reference:'source-link',request_key:'source-link'};
+command(link);command(link);
+assert(!report(finance).claims.find(c=>c.id===src.cl.id).requires_review,'Linked source resolved');
+rejects(()=>claimAction(admin,{action:'receive_recovery',case_id:src.cs.id,recovery_id:src.rec.id,amount:1,reference:'other-path'}),'Linked receipt blocked in operational path');
+rejects(()=>claimAction(admin,{action:'recovery_status',case_id:src.cs.id,recovery_id:src.rec.id,status:'CLOSED'}),'Linked old status blocked');
+rejects(()=>claimAction(admin,{action:'create_recovery',case_id:src.cs.id,supplier,expected_amount:10}),'New operational duplicate blocked');
+command(sourceApprove);
+command({action:'claim_settle',claim_id:src.cl.id,settlement:'REFUND_RECEIVED',amount:3,reference:'source-bank',evidence:'actual receipt'});
+assert(report(finance).claims.find(c=>c.id===src.cl.id).outstanding_cents===700,'Single receivable owner');
+assert(recoveriesFor(admin).find(r=>r.id===src.rec.id).recovered_cents===0,'No mirrored duplicate receipt');
+const receivedSrc=sourceFixture('SRC-RECEIVED',true);
+rejects(()=>command({...link,claim_id:receivedSrc.cl.id,recovery_id:receivedSrc.rec.id,reference:'received-link',request_key:'received-link'}),'Historical receipt cannot infer opening');
+rejects(()=>command({...sourceApprove,claim_id:receivedSrc.cl.id}),'Historical receipt blocks reapproval');
+rejects(()=>command({...receive,claim_id:src.cl.id,amount:1,reference:'src-received-bank',request_key:'cross-source-bank'}),'Same supplier legacy receipt reference cannot be reused on another claim');
+const otherSrc=sourceFixture('SRC-OTHER');
+rejects(()=>command({...link,claim_id:otherSrc.cl.id,recovery_id:receivedSrc.rec.id,reference:'wrong-link',request_key:'wrong-link'}),'Different Order rejected');
+for(const op of ['UPDATE','DELETE'])rejects(()=>db.prepare(op==='UPDATE'?'UPDATE supplier_claim_recovery_links SET reason=?':'DELETE FROM supplier_claim_recovery_links').run(...(op==='UPDATE'?['rewrite']:[])),'Immutable source link '+op);
 console.log('SUPPLIER ACCOUNT PASS ('+checks+' assertions)');
 }finally{db.close();for(const suffix of ['','-shm','-wal'])fs.rmSync(dbPath+suffix,{force:true});}}
 main().catch(e=>{console.error(e);process.exitCode=1});

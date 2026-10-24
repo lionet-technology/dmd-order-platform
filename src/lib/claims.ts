@@ -4,6 +4,7 @@ import {db} from "./db";
 import {moneyCommand} from "./money-command";
 import {caseAccess,caseEvent} from "./cases";
 import {requireAdmin,cents,localDay,audit,validDay} from "./credit";
+import {assertRecoveryOperational,accountClaimsForCase} from './supplier-claim-source';
 import {publishPublicNote} from "./order-audit";
 import type {AuthUser} from "./auth";
 type Row=Record<string,unknown>;
@@ -26,12 +27,14 @@ function claimActionOnce(user:AuthUser,b:Row){return db.transaction(()=>{
  }return result;
  }
  if(action==='create_recovery'){
- const supplier=String(b.supplier||'').trim();if(!supplier)throw Error("Supplier bắt buộc.");const expected=cents(b.expected_amount);const recovery=Number(db.prepare("INSERT INTO supplier_recoveries(case_id,supplier,expected_cents,due_date,note,created_by) VALUES (?,?,?,?,?,?)").run(id,supplier,expected,deadline('SUPPLIER_RECOVERY',undefined,b.due_date?validDay(b.due_date):undefined),String(b.note||''),user.id).lastInsertRowid);caseEvent(id,user,'SUPPLIER_RECOVERY_CREATED',{recovery_id:recovery});return {id:recovery};
+ const supplier=String(b.supplier||'').trim();if(!supplier)throw Error("Supplier bắt buộc.");if(accountClaimsForCase(id,supplier).length)throw Error('Order đã có Supplier Account Claim; dùng nguồn hiện có hoặc REVIEW.');const expected=cents(b.expected_amount);const recovery=Number(db.prepare("INSERT INTO supplier_recoveries(case_id,supplier,expected_cents,due_date,note,created_by) VALUES (?,?,?,?,?,?)").run(id,supplier,expected,deadline('SUPPLIER_RECOVERY',undefined,b.due_date?validDay(b.due_date):undefined),String(b.note||''),user.id).lastInsertRowid);caseEvent(id,user,'SUPPLIER_RECOVERY_CREATED',{recovery_id:recovery});return {id:recovery};
  }
  const r=db.prepare("SELECT * FROM supplier_recoveries WHERE id=? AND case_id=?").get(Number(b.recovery_id),id) as Row|undefined;if(!r)throw Error("Recovery không tồn tại.");
+ assertRecoveryOperational(Number(r.id),id,String(r.supplier));
  if(action==='recovery_status'){const status=String(b.status);if(!['OPEN','SUBMITTED','WAITING_SUPPLIER','REJECTED','CLOSED'].includes(status))throw Error("Trạng thái recovery không hợp lệ.");db.prepare("UPDATE supplier_recoveries SET status=?,note=?,due_date=? WHERE id=?").run(status,String(b.note||''),b.due_date?validDay(b.due_date):r.due_date,r.id);caseEvent(id,user,'SUPPLIER_RECOVERY_UPDATED',{recovery_id:r.id,status});return {id:r.id};}
  if(action==='receive_recovery'){
  const amount=cents(b.amount),reference=String(b.reference||'').trim();if(!amount||!reference)throw Error("Số tiền và reference bắt buộc.");if(db.prepare("SELECT id FROM supplier_recovery_receipts WHERE recovery_id=? AND reference=?").get(r.id,reference))return {id:r.id};
+ if(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='supplier_claim_settlements'").get()&&db.prepare('SELECT 1 FROM supplier_claim_settlements WHERE supplier=? COLLATE NOCASE AND reference=? COLLATE NOCASE').get(r.supplier,reference))throw Error('Chứng từ đã ghi ở Supplier Account; không ghi lần hai.');
  const recovered=Number((db.prepare("SELECT COALESCE(SUM(amount_cents),0) n FROM supplier_recovery_receipts WHERE recovery_id=?").get(r.id) as {n:number}).n);if(recovered+amount>Number(r.expected_cents))throw Error("Thu hồi vượt expected; cần sửa quyết định riêng.");
  db.prepare("INSERT INTO supplier_recovery_receipts(recovery_id,amount_cents,reference,occurred_at,created_by,created_at) VALUES (?,?,?,?,?,CURRENT_TIMESTAMP)").run(r.id,amount,reference,validDay(b.occurred_at||localDay()),user.id);db.prepare("UPDATE supplier_recoveries SET status=? WHERE id=?").run(recovered+amount===Number(r.expected_cents)?'RECOVERED':'PARTIALLY_RECOVERED',r.id);caseEvent(id,user,'SUPPLIER_RECOVERY_RECEIVED',{recovery_id:r.id,amount:amount/100,reference});return {id:r.id};
  }throw Error("Action không hỗ trợ.");
