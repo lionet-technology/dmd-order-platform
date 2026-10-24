@@ -43,7 +43,7 @@ Old/new Emergency Suppliers remain visible in scoped reconciliation, including r
 
 ## Pending / limits
 - Invoice-to-cost matching and opening reconciliation wizard; no automatic historical cutover. Do not add invoice outstanding to signed Balance.
-- Supplier-specific add-on catalogue/rate mapping, third-party Supplier-to-Supplier counterparty allocation and company-wide BOD GP integration. Current explicit BUY/SELL represents DMD's side with each selected Supplier.
+- Supplier-specific add-on catalogue/rate mapping, third-party Supplier-to-Supplier counterparty allocation and full company net-profit/bank integration. BOD now shows current Supplier exposure and period Add-ons separately from approved Order GP. Current explicit BUY/SELL represents DMD's side with each selected Supplier.
 - Component/replacement-cost/late-adjustment allocation across Suppliers, including historical Emergency reroutes. Confirmed postings are immutable snapshots; later source corrections require explicit signed account adjustment with evidence, not automatic retroactive rewriting.
 - Final decision correction and settlement reversal now use append-only compensations (25/10 below). Correction of a rejected/unapproved claim, Recovery history migration and an evidence upload store remain pending. Evidence/reference is text. Legacy posted Claims require reviewed manual reconciliation; no inferred receivable/opening. Operational Recovery and Account Claim now support an explicit immutable source link; see the 25/10 continuation below. Historical posted receipts still require manual reviewed migration. Company bank reconciliation/report consolidation remains pending.
 - Formal payment-term defaults and invoice allocation aging. Simple per-entry due-date warnings only.

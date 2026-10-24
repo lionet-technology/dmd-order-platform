@@ -1,5 +1,9 @@
 # Payment reconciliation
 
+## Client Reconciliation continuation — 25/10/2026
+BOD now reports explicit per-Client Statement availability/issued status alongside existing period balances; unavailable historical periods require review, not a zero reconciliation. Current Supplier and approved Order GP sections remain separate from Client money. Existing Payment confirmation/adjustment, debt-first allocation and immutable Statement workflows are retained; all 10 owned synthetic HTTP suites passed during Supplier continuation. No historical allocation migration or production reconciliation is implied.
+
+
 ## UI clarification — 20/10/2026
 
 Admin credit detail is labelled **Xem Payment / Debt / Balance**, removing the obsolete reallocation wording. It remains a detail view with audited full rejection where allowed; partial actual-receipt correction belongs in Finance Payment Adjustment. No manual allocation action was reintroduced. See [current audit](STATUS-AS-IS-2026-10-20.md).

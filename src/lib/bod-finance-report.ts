@@ -3,6 +3,7 @@ import './cases'; // Initialize legacy Claim schema used by refund compatibility
 import {accountFinancials,validDay} from './credit';
 import {RefundService} from './refunds';
 import {statementPreview,listStatements} from './statements-v2';
+import {supplierAccounts} from './supplier-account';
 import type {AuthUser} from './auth';
 
 /** Read-only cross-module BOD projection. Refund obligation is NOT added to wallet or Debt. */
@@ -33,7 +34,21 @@ export function bodFinanceReport(actor:Pick<AuthUser,'role'|'id'>,start:string,e
    return {client_id:c.id,available:true,opening:p.opening,closing:p.closing,bank_posted_cents:p.bank_outflow_cents,finalized:issued[0]??null};
   }catch(e){return {client_id:c.id,available:false,error:(e as Error).message};}
  });
+ const supplierData=supplierAccounts(actor as AuthUser);
+ const supplier_accounts=supplierData.suppliers.map(s=>({...s,requires_review:supplierData.claims.some(c=>(c as Record<string,unknown>).supplier===s.supplier&&c.requires_review)}));
+ const supplierPeriod=supplierData.entries.filter(e=>{const day=String(e.created_at).replace(' ','T')+'Z';const postingDay=new Date(new Date(day).getTime()+7*3600000).toISOString().slice(0,10);return postingDay>=start&&postingDay<=end;});
+ const order_gp=db.prepare(`SELECT
+ COALESCE(SUM(CASE WHEN margin_status='FINALIZED' AND actual_cost_coverage='COMPLETE' AND reconciliation_status='PASS' THEN ROUND(finalized_gp*100) ELSE 0 END),0) finalized_gp_cents,
+ SUM(CASE WHEN margin_status='FINALIZED' AND actual_cost_coverage='COMPLETE' AND reconciliation_status='PASS' THEN 1 ELSE 0 END) finalized_count,
+ SUM(CASE WHEN margin_status='FINALIZED' AND actual_cost_coverage='COMPLETE' AND reconciliation_status='PASS' THEN 0 ELSE 1 END) pending_count,
+ COALESCE(SUM(CASE WHEN margin_status='FINALIZED' AND actual_cost_coverage='COMPLETE' AND reconciliation_status='PASS' THEN 0 ELSE ROUND(COALESCE(estimated_gp,0)*100) END),0) pending_estimated_gp_cents
+ FROM orders`).get() as {finalized_gp_cents:number;finalized_count:number|null;pending_count:number|null;pending_estimated_gp_cents:number};
+ const client_reconciliation={available_count:statement_periods.filter(p=>p.available).length,total_count:clients.length,unavailable:statement_periods.filter(p=>!p.available).map(p=>({client_id:p.client_id,error:p.error})),finalized_count:statement_periods.filter(p=>p.available&&p.finalized).length};
  const report={
+  client_reconciliation,
+  supplier_accounts,
+  supplier_addons_period:{revenue_cents:supplierPeriod.reduce((n,e)=>n+Number(e.revenue_cents),0),cost_cents:supplierPeriod.reduce((n,e)=>n+Number(e.cost_cents),0)},
+  order_gp:{...order_gp,finalized_count:order_gp.finalized_count||0,pending_count:order_gp.pending_count||0},
   statement_periods,
   period_start:start,period_end:end,accounts,
   balances:{negative_clients_cents:accounts.reduce((s,c)=>s+Math.max(0,-c.balance_cents),0),
@@ -50,7 +65,8 @@ export function bodFinanceReport(actor:Pick<AuthUser,'role'|'id'>,start:string,e
    postings_count:postings.length},
   limitations:['Signed wallet and Debt balances are current as-of query, not period-end reconstructed snapshots.',
    'Bank refunds are reported as cash outflow, not Client wallet entries.',
-   'Statement finalization and Supplier cash reconciliation are separate modules.']
+   'Supplier balances/receivables and Order GP are current as-of query; Add-ons use Vietnam posting period. No inferred historical Supplier opening or company bank reconciliation.',
+   'Only approved COMPLETE Actual Cost contributes finalized Order GP. Pending estimated GP and Supplier Add-ons stay separate; this is not company net profit.']
  };
  if(report.ledger_flows.payment_net_cents+report.ledger_flows.refund_balance_net_cents+
    report.ledger_flows.service_and_adjustment_net_cents!==report.ledger_flows.net_balance_change_cents)throw Error('BOD Ledger report invariant failed');
