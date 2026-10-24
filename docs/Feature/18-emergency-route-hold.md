@@ -1,45 +1,33 @@
-# Emergency Route Switch — legacy first-stage notes
+# Emergency Hold và đổi Route trên Order gốc
 
-## Audit correction — 24/10/2026
-An explicit new estimate updates an existing single-Lot estimate override atomically, so the old override cannot silently mask it. Existing multi-Lot allocation or component estimates require leaving this field blank and editing allocation in Reconciliation; Switch never invents a cost split. Blank continues to preserve all estimates.
-Hold and Switch now share a single shipment-movement predicate: WAITING_HANDOVER-only audit is not handoff; actual movement and malformed audit remain manual exceptions. Previously Hold could accept an Order that Switch then rejected solely for a WAITING_HANDOVER event.
-Switch also links supplier costs received before the new Tracking was registered, without invoking legacy repricing/Charge recomputation. New-supplier coverage requires matched evidence for the expected Supplier and Lot; a cost attached to that Tracking for another Supplier cannot finalize the replacement expectation.
-Bootstrap compatibility backfill no longer issues redundant Tracking INSERT/UPDATE operations. These no-op writes previously fired Hold guards and could prevent a fresh worker/process from opening a database with active held Tracking rows. The guards remain enabled; bootstrap skips existing normalized Tracking and unchanged Carton/Lot mappings.
-Exported handoff eligibility now checks durable REMOVE audit as well as current Manifest membership. Reopening and unpacking a previously exported carton cannot make the Order eligible for automatic Hold/Switch. Only REMOVE records preceded by EXPORT on that same Manifest carton count, so removing an unexported carton remains supported.
-Switch now recomputes reconciliation inside its atomic transaction, immediately invalidating prior complete coverage/finalized profit until the replacement supplier is accounted for. Previously reports could retain old finalized values until a later reconciliation. Exact retry also requires distinct original Tracking IDs, preventing duplicate rows from masquerading as a full multi-carton retry. Extended regression and acceptance results are recorded separately; this entry does not assert production acceptance.
+**Trạng thái:** Implemented local; chưa nghiệm thu production. Quy tắc Owner 24/10/2026 ưu tiên hơn các mô tả Phase 1/2 cũ.
 
-**Superseded for Phase 2:** Owner chose to keep the original Order and use audited Route + Tracking/Label replacement instead of cancelling/re-purchasing. The later tested implementation and its limits are described in [VERIFICATION-EMERGENCY-SWITCH-2026-10-23.md](VERIFICATION-EMERGENCY-SWITCH-2026-10-23.md). The historical notes below document the original Hold-only stage.
-Status: Partial implementation, 2026-10-23. Not production acceptance.
+## Luồng đơn giản
+Admin Hold một Route có lý do → Order đủ điều kiện vào HOLD → chọn Route mới Active, không warehouse Hold → chuyển từng Order bằng một SQLite IMMEDIATE transaction. Giữ nguyên original Order, Client Order ID, DMD ID và giá bán; không cancel/rebuy, refund, Charge hay Reserve giả.
 
-## Owner decision
-Two distinct phases: (1) reversible Emergency Hold, no money movement; (2) explicitly cancel for linked replacement without refund or double Charge/Reserve. The latter must conserve liability during partial upload, retries and recovery. It must never use ordinary cancellation/refund.
+- Tracking/Label OPTIONAL: không gửi mapping (API `[]` hoặc bỏ `trackings`), hoặc để trống toàn bộ hai cột mới trong Excel → chỉ đổi Route, giữ nguyên tất cả hàng Tracking và lịch sử.
+- Nếu nhập bất kỳ Tracking/Label mới nào: phải nhập đủ **tất cả Tracking ACTIVE** của Order, mỗi Tracking ID cũ đúng một lần, đủ Tracking mới và Label hợp lệ. Không hỗ trợ thay một phần trong Emergency; lỗi rollback cả Order.
+- Estimated Net Cost OPTIONAL: blank giữ nguyên, số mới không âm, tối đa hai chữ số thập phân. Không tự chia lại phân bổ nhiều Lot/component; trường hợp đó để blank và sửa allocation qua Reconciliation.
+- Chỉ khôi phục workflow trước Hold; Order vốn HOLD vẫn HOLD. Route gốc vẫn chặn mua đến khi Undo. Undo chỉ khôi phục Order chưa resolved, không đảo Switch thành công.
 
-## Implemented scope
-Admin-only GET/POST /api/service-routes/:id/emergency; action hold requires reason; action undo requires exact hold_id. Phase 2 is rejected. UI is in Service Configuration → Hoàn / Huỷ. Admin can download JSON snapshots or an Excel inspection report (DMD ID, Client Order ID, status, original sale, tracking/label and hold provenance). This Excel is read-only for review and NOT yet an enabled bulk reroute/relabel upload template.
+## Bàn giao và stale state
+Xuất Manifest carton là bàn giao Supplier/ETD Express. Bất kỳ carton nào đã export khiến toàn Order thành ngoại lệ thủ công; kiểm cả EXPORT/REMOVE audit bền vững sau khi reopen/unpack. Tracking movement, delivered timestamp, fulfillment_started hoặc audit movement hỏng cũng loại khỏi tự động. Hold và Switch dùng chung `emergencyException`. Carton trong Manifest chưa export cần kho gỡ khỏi Manifest trước Switch.
 
-Hold snapshots eligible orders and their original workflow status, sets HOLD, and blocks route purchases/outbound through warehouse_hold. Existing warehouse Hold is preserved and restored on Undo. Existing order Hold remains Hold after Undo. Route activation is not changed; Admin may deactivate after Undo using existing route configuration.
+Switch kiểm tra lại Order còn HOLD, Route gốc khớp snapshot, Hold còn mở và Route đích Active/không Hold/đúng giới hạn carton trong cùng transaction. Guard DB khóa route, định danh, giá bán, estimate và Tracking của Order chưa resolved. Switch/Undo và duplicate Switch được serialize. Retry cùng Route/mapping/estimate không ghi thêm; payload khác bị từ chối. Retry Hold/Undo cũ không mở/đóng nhầm batch mới.
 
-All changes, item snapshots and per-order audit are in one SQLite immediate transaction. Repeated Hold while active returns the same batch. Repeated Undo of an already undone batch does nothing, including when a later batch exists. Only one active Hold per route is permitted.
+## Cost, tiền và audit
+Actual Cost Supplier cũ và mới giữ từng chứng từ, không rewrite supplier cũ sang mới, cộng vào actual exposure khi đủ coverage. Switch ghi Route/Supplier trước-sau, Tracking KEEP/REPLACE_ALL, estimate và cost đã biết theo Supplier trong audit. Client chỉ nhận thông báo đổi Route hoặc Tracking/Label, không thấy cost.
 
-Eligibility excludes cancelled/delivered/closed orders, fulfillment_started_at, **any carton belonging to an exported Manifest** (including historical EXPORT audit events), any non-WAITING_HANDOVER tracking (including replaced tracking), delivered timestamps and historical shipment movement. Manifest export is the Express operational handoff/ETD boundary. Pre-existing exports subsequently reopened before this durable audit event was installed may require manual evidence review. Malformed history fails closed. ETD is never evidence of handoff. Physical carrier evidence not entered in the application cannot be inferred: operational handoff recording remains essential.
+Replacement đòi cost Supplier mới đúng Tracking/Lot. Route-only thêm expectation theo Hold/Order/Lot/Tracking; không tạo Tracking giả. NOT_BILLED/INCLUDED_IN_PARENT của label cũ không miễn cost Supplier mới. Thiếu evidence mới → PARTIAL/PENDING, xóa finalized GP ngay trong Switch. Route khác nhưng cùng Supplier cũng không tái dùng bill có trước Switch: giữ pending chờ evidence mới. Đây là mặc định bảo thủ để tránh COMPLETE sai, chưa có thao tác miễn phí mới hoặc gộp bill cùng Supplier; ngoại lệ đó cần Finance xác nhận quy tắc trước khi mở.
 
-DB guards reject changes to held workflow status/route/price/tracking/label, held tracking inserts/updates/deletes and order deletion. Active route configuration cannot be edited or warehouse Hold cleared until Undo. New orders for the route are blocked. These guards also prevent ordinary cancellation from crediting an emergency-held order. Account Payment/Statement/Refund operations remain separate; Emergency Hold itself neither reads nor modifies their financial postings.
+Order không có Tracking vẫn có expectation theo Lot, cần invoice trực tiếp Lot của Supplier mới. ePacket aggregate chưa mapping component vẫn UNKNOWN theo quy tắc đối soát chung. Cost import sau Switch chỉ đối soát cost, không chạy lại nhánh legacy sửa Charge/giá. Statement snapshot đã phát hành không đổi.
 
-Undo restores workflow status only; money/pricing/route are untouched by Hold. Stored original snapshots retain selling price, source Order, route, tracking and label for audit. Export is Admin-only and explicitly carries replacement_enabled=false. No Client Order ID reuse exception is installed.
+## Excel và hàng chờ lỗi
+Download từ Hold, một dòng cho mỗi Tracking. Điền Route ID mới trên dòng xử lý; blank Route bỏ qua dòng. Route-only không bắt nhập Tracking ID mới/Label. Nếu replacement, tất cả dòng/Tracking của Order phải đầy đủ. Giới hạn 5 MB, 2.000 dòng, 250 Order. Không nhận formula/hyperlink.
 
-## Deferred phase 2 — explicit safety limit
-Cancellation for replacement, replacement XLSX import, source↔replacement links, estimate entry and atomic liability carry-forward are NOT implemented. Existing cancellation creates REFUND CREDIT and releases Reserve; ordinary purchase can create a new debit. Reusing these paths would violate the Owner's conservation rule, especially between cancellation and partial/retried imports. No emergency cancel or replacement button is enabled, and no synthetic refund/payment is generated.
+Parse theo dòng, nhóm theo Order; lỗi của một Order không hủy kết quả Order khác. Mỗi Order thành công được giữ lại; Order lỗi còn HOLD/unresolved, lưu `last_error`, hiện trong alert khi tải lại trang, retry bằng cùng file đã sửa. Header/file hỏng hoặc vượt giới hạn bị từ chối trước khi xử lý; các Order unresolved vẫn trong hàng chờ. Không cố đoán Order khi DMD ID không đọc được. Success xóa lỗi của chính Order đó. Các dòng thành công có thể replay an toàn.
 
-Before phase 2: design a durable obligation/suspense record linked to exact immutable Ledger/Reserve references; migrate charge ownership or reverse/reapply atomically without changing available buying room; define frozen Statement late adjustments, Payment interactions, partial batch recovery and old/new route history. Verify concurrency, auth, crashes, repeated imports, estimate vs actual costs and Statement/Balance parity before enabling it.
+## Nguồn và kiểm chứng
+`emergency-hold.ts`, `emergency-switch.ts`, `emergency-schema.ts`, `emergency-excel.ts`, `reconciliation.ts`, `order-operations.ts`, API service-routes/:id/emergency và `emergency-switch-workspace.tsx`.
 
-## Source and verification
-src/lib/emergency-hold.ts, emergency-schema.ts (installed by db.ts), API service-routes/[id]/emergency, emergency-hold-panel.tsx.
-scripts/verify-emergency-hold.cjs uses a fresh temporary synthetic SQLite DB; covers role denial, reason, Hold/Undo, original Hold, historical handoff exclusions, duplicate retry, price/cancel/tracking/route guards, original-price export, audit-failure rollback, schema reload and unchanged Ledger.
-## Recorded QA — 2026-10-23
-- Full npm test: 34 domain suites PASS; then expanded Emergency Hold domain/API suite: 39 assertions PASS.
-- TypeScript, full ESLint and production build PASS (build used a synthetic /tmp database).
-- API checks include anonymous 401, Client 403, Admin status and explicit phase-2 409. Fresh child-process DB reload and injected audit failures prove durable Hold and atomic rollback.
-- No browser click-through/UAT was run for the new panel. No production DB, deployment or phase-2 financial acceptance.
-- Local checks used Node 20.20.2 arm64 matching the installed SQLite binding. Duplicate generated .next/types files were moved to /tmp before TypeScript; source configuration was not weakened.
-
-Broader Route lifecycle, Supplier/add-on and Statement-name scope remains approved, but is not claimed complete by this first-stage change. Existing Supplier/BOD features are described in their own feature docs.
+`scripts/verify-emergency-hold.cjs`: database synthetic tạm; tiền/Statement bất biến, route-only, full replacement, rollback audit, role, Manifest history, duplicate/retry, worker concurrency/Switch-vs-Undo, cost cũ+mới, cost import retry và mixed Excel recovery. Kết quả thực chạy và giới hạn ghi trong [audit mới](AUDIT-EMERGENCY-SIMPLIFICATION-2026-10-24.md).

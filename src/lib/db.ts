@@ -568,7 +568,10 @@ db.transaction(()=>{
     inheritReplacementCarton.run(orderId);
   }
 }).immediate();
-const ordersMissingCode=db.prepare("SELECT id,created_at FROM orders WHERE system_order_code IS NULL OR system_order_code='' ORDER BY id").all() as Array<{id:number;created_at:string|null}>;
+const codeBackfillHoldFilter=db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='emergency_hold_orders'").get()
+ ?" AND NOT EXISTS(SELECT 1 FROM emergency_hold_orders i JOIN emergency_route_holds h ON h.id=i.hold_id WHERE i.order_id=o.id"+
+ ((db.pragma('table_info(emergency_hold_orders)') as Array<{name:string}>).some(c=>c.name==='resolved_at')?" AND i.resolved_at IS NULL":"")+" AND h.undone_at IS NULL)":"";
+const ordersMissingCode=db.prepare("SELECT id,created_at FROM orders o WHERE (system_order_code IS NULL OR system_order_code='')"+codeBackfillHoldFilter+" ORDER BY id").all() as Array<{id:number;created_at:string|null}>;
 const setSystemCode=db.prepare("UPDATE orders SET system_order_code=? WHERE id=?");
 for(const row of ordersMissingCode){
   const dateMatch=String(row.created_at||"").match(/^(\d{4})-(\d{2})-(\d{2})/);

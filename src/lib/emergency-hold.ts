@@ -23,6 +23,17 @@ export function hasShipmentMovement(orderId:number){
  const events=db.prepare("SELECT after_json FROM order_events WHERE order_id=? AND event_type='SHIPMENT_STATUS_UPDATED'").all(orderId) as Row[];
  return events.some(e=>{try{const s=JSON.parse(String(e.after_json||"{}")).shipment_status;return !s||s!=="WAITING_HANDOVER";}catch{return true;}});
 }
+// Both Hold and Switch use the same durable handoff rule.
+export function emergencyException(order:Row){
+ if(order.fulfillment_started_at)return "Order đã bắt đầu fulfilment; cần xử lý thủ công.";
+ if(hasExportedManifestHistory(Number(order.id)))return "Order có lịch sử xuất Manifest; phải xử lý ngoại lệ thủ công.";
+ if(hasShipmentMovement(Number(order.id)))return "Tracking có bằng chứng đã bàn giao hoặc lịch sử không hợp lệ; phải xử lý ngoại lệ thủ công.";
+ return null;
+}
+export function recordEmergencyError(holdId:number,orderId:number,error:string){
+ db.prepare(`UPDATE emergency_hold_orders SET last_error=? WHERE hold_id=? AND order_id=? AND resolved_at IS NULL
+ AND EXISTS(SELECT 1 FROM emergency_route_holds WHERE id=? AND undone_at IS NULL)`).run(error,holdId,orderId,holdId);
+}
 function admin(user:AuthUser){if(user.role!=="ADMIN")throw Error("Emergency Hold chỉ dành cho Admin.");}
 export function emergencyStatus(user:AuthUser,routeId:number){
  admin(user);
@@ -38,13 +49,7 @@ export function startEmergencyHold(user:AuthUser,routeId:number,reason:string){
  const orders=db.prepare("SELECT * FROM orders WHERE service=? COLLATE NOCASE AND sub_service=? COLLATE NOCASE AND supplier=? COLLATE NOCASE AND workflow_status NOT IN ('CANCELLED','DELIVERED','CLOSED')").all(route.service,route.sub_service,route.supplier) as Row[];
  // Never infer handoff from ETD. Any historical movement, including replaced labels,
  // makes an order ineligible. Malformed movement evidence fails closed.
- const eligible=orders.filter(o=>{
- if(o.fulfillment_started_at)return false;
- // A manifest export is the operational handoff boundary. This is an order-level hold:
- // if any carton was exported, the entire order needs manual exception handling.
- if(hasExportedManifestHistory(Number(o.id)))return false;
- return !hasShipmentMovement(Number(o.id));
- });
+ const eligible=orders.filter(o=>!emergencyException(o));
  db.prepare("UPDATE service_route_configs SET warehouse_hold=1 WHERE id=?").run(routeId);
  const id=Number(db.prepare("INSERT INTO emergency_route_holds(route_id,actor_id,reason,prior_warehouse_hold) VALUES (?,?,?,?)").run(routeId,user.id,reason.trim(),route.warehouse_hold||0).lastInsertRowid);
  for(const o of eligible){
@@ -85,8 +90,8 @@ export function emergencyHoldDetails(user:AuthUser,routeId:number,holdId:number)
 export function exportEmergencyHold(user:AuthUser,routeId:number,holdId:number){
  admin(user);
  if(!db.prepare("SELECT id FROM emergency_route_holds WHERE id=? AND route_id=?").get(holdId,routeId))throw Error("Không tìm thấy Emergency Hold.");
- return db.prepare("SELECT order_id,snapshot_json,resolved_at FROM emergency_hold_orders WHERE hold_id=? ORDER BY order_id").all(holdId).map(raw=>{
+ return db.prepare("SELECT order_id,snapshot_json,resolved_at,last_error FROM emergency_hold_orders WHERE hold_id=? ORDER BY order_id").all(holdId).map(raw=>{
  const row=raw as Row,o=JSON.parse(String(row.snapshot_json));
- return {source_dmd_id:row.order_id,client_order_id:o.order_id,original_status:o.workflow_status,original_selling_price:o.total_due,source_route_id:routeId,tracking:o.tracking,label:o.label,hold_id:holdId,resolved_at:row.resolved_at,replacement_enabled:true};
+ return {source_dmd_id:row.order_id,client_order_id:o.order_id,original_status:o.workflow_status,original_selling_price:o.total_due,source_route_id:routeId,tracking:o.tracking,label:o.label,hold_id:holdId,resolved_at:row.resolved_at,last_error:row.last_error,replacement_enabled:true};
  });
 }

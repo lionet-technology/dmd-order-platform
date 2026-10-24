@@ -69,7 +69,7 @@ let checks=0;function eq(a,b,m){assert.deepEqual(a,b,m);checks++}function reject
  const {emergencySwitchOrder}=require('../src/lib/emergency-switch.ts');
  rejects(()=>emergencySwitchOrder(client,hold.id,purchased,replacementRoute,[]),/Admin/);
  rejects(()=>emergencySwitchOrder(admin,hold.id,manifested,replacementRoute,[]),/Order không thuộc/);
- rejects(()=>emergencySwitchOrder(admin,hold.id,purchased,replacementRoute,[]),/khai báo đầy đủ/);
+ rejects(()=>emergencySwitchOrder(admin,hold.id,purchased,replacementRoute,[{old_tracking_id:purchasedTracking,new_tracking:'',new_label_url:''}]),/bắt buộc/);
  const change=[{old_tracking_id:purchasedTracking,new_tracking:'EMERGENCY-NEW',new_label_url:'/new-label.pdf'}];
  rejects(()=>emergencySwitchOrder(admin,hold.id,purchased,replacementRoute,change,-1),/Estimated/);
  rejects(()=>emergencySwitchOrder(admin,hold.id,purchased,replacementRoute,change,1.234),/Estimated/);
@@ -116,6 +116,8 @@ let checks=0;function eq(a,b,m){assert.deepEqual(a,b,m);checks++}function reject
  rejects(()=>emergencySwitchOrder(admin,hold.id,purchased,replacementRoute,[{...change[0],new_tracking:'WRONG'}],27.5),/thông tin khác/);
  rejects(()=>db.prepare("UPDATE orders SET workflow_status='CANCELLED' WHERE id=?").run(pending),/Emergency Hold/);
  rejects(()=>db.prepare("UPDATE orders SET total_due=0 WHERE id=?").run(pending),/Emergency Hold/);
+ for(const field of ['sales_price','surcharge','import_tax','est_net_cost'])rejects(()=>db.prepare('UPDATE orders SET '+field+'=123 WHERE id=?').run(pending),/Emergency Hold/);
+ rejects(()=>db.prepare("UPDATE orders SET order_id='WRONG' WHERE id=?").run(pending),/Emergency Hold/);
  rejects(()=>db.prepare("UPDATE service_route_configs SET warehouse_hold=0 WHERE id=?").run(route),/Emergency Hold/);
  rejects(()=>add('PENDING_PURCHASE'),/Emergency Hold/);
  rejects(()=>db.prepare("INSERT INTO order_trackings(order_id,tracking,normalized_tracking) VALUES (?,'SYNTHETIC','SYNTHETIC')").run(pending),/Emergency Hold/);
@@ -213,6 +215,76 @@ let checks=0;function eq(a,b,m){assert.deepEqual(a,b,m);checks++}function reject
  eq(db.prepare('SELECT count(*) n FROM route_lifecycle_events WHERE route_id=?').get(route).n,3,'Audited transitions');
  eq(db.prepare('SELECT * FROM ledger_entries').all(),before,'Undo/retry preserve liability');
  eq(db.prepare('SELECT * FROM statement_v2_snapshots').all(),statementBefore,'Issued Statement unchanged through imports, stale Undo and concurrent Switch');
+ // Owner's simplified flow: keep tracking/labels, preserve all money, await new Supplier cost.
+ const routeOnly=add('PURCHASED',{est_net_cost:10,sales_price:25});
+ const keepCarton=Number(db.prepare('INSERT INTO order_cartons(order_id,carton_number) VALUES (?,1)').run(routeOnly).lastInsertRowid);
+ const keepTracking=Number(db.prepare("INSERT INTO order_trackings(order_id,carton_id,tracking,normalized_tracking,label_url,is_primary,cost_match_type) VALUES (?,?,'KEEP-TRACK','KEEPTRACK','/keep.pdf',1,'NOT_BILLED')").run(routeOnly,keepCarton).lastInsertRowid);
+ ensureOrderShipmentStructure(routeOnly);
+ const keepLot=db.prepare('SELECT id FROM order_lots WHERE order_id=?').get(routeOnly).id;
+ db.prepare("INSERT INTO supplier_costs(supplier,tracking,normalized_tracking,total_net_cost,matched_order_id,matched_order_tracking_id,order_lot_id) VALUES ('Synthetic','KEEP-TRACK','KEEPTRACK',4,?,?,?)").run(routeOnly,keepTracking,keepLot);
+ reconcileLots(routeOnly);
+ eq(db.prepare('SELECT actual_cost_coverage FROM orders WHERE id=?').get(routeOnly).actual_cost_coverage,'COMPLETE');
+ const keepBefore=db.prepare('SELECT * FROM order_trackings WHERE order_id=?').all(routeOnly);
+ const keepMain=db.prepare('SELECT tracking,label FROM orders WHERE id=?').get(routeOnly);
+ const keepHold=startEmergencyHold(admin,route,'Route only');
+ const inactive=Number(db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier,active) VALUES ('Emergency','Inactive','Replacement',0)").run().lastInsertRowid);
+ rejects(()=>emergencySwitchOrder(admin,keepHold.id,routeOnly,inactive,[]),/Active/);
+ eq(!!db.prepare('SELECT last_error FROM emergency_hold_orders WHERE hold_id=? AND order_id=?').get(keepHold.id,routeOnly).last_error,true,'Failure persisted for retry');
+ const onlyApi=await api.POST(req('POST',token,{action:'switch',hold_id:keepHold.id,order_id:routeOnly,new_route_id:replacementRoute}),context);
+ eq(onlyApi.status,200,'Route-only API accepts omitted Tracking rows');
+ const keepResult=await onlyApi.json();
+ eq(keepResult.updated_trackings,0);
+ eq(db.prepare('SELECT tracking,label FROM orders WHERE id=?').get(routeOnly),keepMain,'Route only also preserves primary Order Tracking/Label exactly');
+ eq(db.prepare('SELECT * FROM order_trackings WHERE order_id=?').all(routeOnly),keepBefore,'Route only keeps full tracking history byte for byte');
+ eq(db.prepare('SELECT est_net_cost,actual_cost_coverage,finalized_gp FROM orders WHERE id=?').get(routeOnly),{est_net_cost:10,actual_cost_coverage:'PARTIAL',finalized_gp:null},'Old NOT_BILLED cannot waive new supplier cost');
+ eq(db.prepare('SELECT last_error FROM emergency_hold_orders WHERE hold_id=? AND order_id=?').get(keepHold.id,routeOnly).last_error,null,'Success clears alert');
+ eq(emergencySwitchOrder(admin,keepHold.id,routeOnly,replacementRoute,[]).replayed,true);
+ rejects(()=>emergencySwitchOrder(admin,keepHold.id,routeOnly,replacementRoute,[],11),/thông tin khác/);
+ db.prepare("INSERT INTO supplier_costs(supplier,tracking,normalized_tracking,total_net_cost,matched_order_id,matched_order_tracking_id,order_lot_id) VALUES ('Wrong Supplier','KEEP-TRACK','KEEPTRACK',2,?,?,?)").run(routeOnly,keepTracking,keepLot);
+ reconcileLots(routeOnly);
+ eq(db.prepare('SELECT actual_cost_coverage FROM orders WHERE id=?').get(routeOnly).actual_cost_coverage,'PARTIAL');
+ // Real cost ingestion path, including its legacy financial recomputation hook.
+ const {addSupplierCost}=require('../src/lib/finance.ts');
+ const incoming={supplier:'Replacement',service:'Emergency',sub_service:'New',tracking:'KEEP-TRACK',total_net_cost:9,source_key:'route-only-invoice'};
+ addSupplierCost(incoming);
+ eq(db.prepare('SELECT actual_cost_coverage,true_net_cost FROM orders WHERE id=?').get(routeOnly),{actual_cost_coverage:'COMPLETE',true_net_cost:15},'Old and new costs remain distinct and summed');
+ eq(db.prepare('SELECT * FROM ledger_entries').all(),before,'Later supplier invoice cannot create or edit Charge');
+ eq(addSupplierCost(incoming).duplicate,true,'Supplier invoice retry is idempotent');
+ eq(db.prepare('SELECT * FROM statement_v2_snapshots').all(),statementBefore);
+ undoEmergencyHold(admin,route,keepHold.id);
+ // Mixed Excel: one success, one bad formula, one partial tracking replacement.
+ const excelOrders=[add('PENDING_PURCHASE'),add('PENDING_PURCHASE'),add('PURCHASED')];
+ const partialIds=[1,2].map(i=>Number(db.prepare("INSERT INTO order_trackings(order_id,tracking,normalized_tracking,label_url) VALUES (?,?,?,?)").run(excelOrders[2],'PARTIAL-'+i,'PARTIAL'+i,'/p.pdf').lastInsertRowid));
+ const excelHold=startEmergencyHold(admin,route,'Mixed Excel');
+ const {EMERGENCY_EXCEL_HEADERS,importEmergencyWorkbook}=require('../src/lib/emergency-excel.ts');
+ const mixed=new (require('exceljs').Workbook)(),mixedSheet=mixed.addWorksheet('Emergency');mixedSheet.addRow(EMERGENCY_EXCEL_HEADERS);
+ for(const [i,id] of excelOrders.entries()){
+  const row=mixedSheet.addRow([id,db.prepare('SELECT order_id FROM orders WHERE id=?').get(id).order_id,25,route,i===2?partialIds[0]:'','','','',replacementRoute,'',excelHold.id,'']);
+  if(i===1)row.getCell(10).value={formula:'1+1',result:2};
+  if(i===2){row.getCell(7).value='PARTIAL-NEW';row.getCell(8).value='/new.pdf'}
+ }
+ const mixedResult=await importEmergencyWorkbook(admin,route,excelHold.id,Buffer.from(await mixed.xlsx.writeBuffer()));
+ eq(mixedResult.success,1);eq(mixedResult.failed,2);
+ eq(db.prepare('SELECT workflow_status FROM orders WHERE id=?').get(excelOrders[0]).workflow_status,'PENDING_PURCHASE');
+ eq(db.prepare('SELECT workflow_status FROM orders WHERE id=?').get(excelOrders[1]).workflow_status,'HOLD');
+ eq(!!db.prepare('SELECT last_error FROM emergency_hold_orders WHERE hold_id=? AND order_id=?').get(excelHold.id,excelOrders[1]).last_error,true);
+ eq(db.prepare("SELECT COUNT(*) n FROM order_trackings WHERE order_id=? AND status='ACTIVE'").get(excelOrders[2]).n,2,'Partial replacement rolls back whole Order');
+ mixedSheet.getRow(3).getCell(10).value='';mixedSheet.getRow(4).getCell(7).value='';mixedSheet.getRow(4).getCell(8).value='';
+ const repaired=await importEmergencyWorkbook(admin,route,excelHold.id,Buffer.from(await mixed.xlsx.writeBuffer()));
+ eq(repaired.success,3,'Same workbook retry retains success, repairs failures as route only');eq(repaired.failed,0);
+ eq(excelOrders.map(id=>db.prepare('SELECT resolved_at FROM emergency_hold_orders WHERE hold_id=? AND order_id=?').get(excelHold.id,id).resolved_at).every(Boolean),true);
+ eq(db.prepare('SELECT * FROM ledger_entries').all(),before);
+ undoEmergencyHold(admin,route,excelHold.id);
+ // Same Supplier/subservice change cannot reuse a bill that predates the switch.
+ const sameSupplierOrder=add('PURCHASED',{est_net_cost:20});
+ const sameTracking=Number(db.prepare("INSERT INTO order_trackings(order_id,tracking,normalized_tracking,label_url) VALUES (?,'SAME-SUPPLIER','SAMESUPPLIER','/same.pdf')").run(sameSupplierOrder).lastInsertRowid);
+ ensureOrderShipmentStructure(sameSupplierOrder);
+ const sameLot=db.prepare('SELECT id FROM order_lots WHERE order_id=?').get(sameSupplierOrder).id;
+ db.prepare("INSERT INTO supplier_costs(supplier,tracking,total_net_cost,matched_order_id,matched_order_tracking_id,order_lot_id) VALUES ('Synthetic','SAME-SUPPLIER',4,?,?,?)").run(sameSupplierOrder,sameTracking,sameLot);
+ const sameRoute=Number(db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier) VALUES ('Emergency','Other','Synthetic')").run().lastInsertRowid);
+ const sameHold=startEmergencyHold(admin,route,'Same Supplier');emergencySwitchOrder(admin,sameHold.id,sameSupplierOrder,sameRoute,[]);
+ eq(db.prepare('SELECT actual_cost_coverage FROM orders WHERE id=?').get(sameSupplierOrder).actual_cost_coverage,'PARTIAL','Old bill cannot finalize same-Supplier reroute');
+ undoEmergencyHold(admin,route,sameHold.id);
  eq(db.pragma('integrity_check',{simple:true}),'ok');
  console.log('EMERGENCY HOLD PASS ('+checks+' assertions)');
 }finally{db.close();fs.rmSync(dir,{recursive:true,force:true})}})().catch(e=>{console.error(e);process.exit(1)});

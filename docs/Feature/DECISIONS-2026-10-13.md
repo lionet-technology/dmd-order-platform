@@ -1,3 +1,10 @@
+## Owner xác nhận — 24/10/2026, lượt đơn giản hóa Emergency
+- Emergency dùng Order gốc; chỉ Route là bắt buộc khi Switch. Tracking/Label và Estimated Net Cost optional, blank giữ cũ. Nếu replacement thì đủ bộ ACTIVE, không tự thay một phần. Bất kỳ carton đã xuất Manifest là ngoại lệ thủ công toàn Order. Lỗi Excel giữ Order unresolved để retry, giữ kết quả thành công; không refund/charge giả.
+- Supplier: giữ invoice USD/payment và đối chiếu chứng từ thủ công; chưa thêm prepayment, credit note hoặc tự ghép invoice–Order cost.
+- Add-on là dịch vụ có phí thực hưởng, doanh thu và GP. Balance Adjustment mới là khoản thu hộ/chi hộ. Không phát minh thêm phân loại từng add-on để thay quyết định này; cần kiểm chứng mapping code trước mở rộng.
+- Owner xác nhận toàn bộ dữ liệu cũ là TEST, cho phép xóa để nhập mới/test lại. Lượt này dùng DB synthetic mới, chưa xóa/reset database tại chỗ. Quyết định cho phép reset không phải bằng chứng đã reset hoặc nghiệm thu dữ liệu.
+- BOD ưu tiên GP Order đã đủ Actual Cost và duyệt; Estimated/Pending trình bày riêng. Chưa gọi là lãi ròng công ty.
+
 # Các quyết định sản phẩm — 2026-10-13
 
 ## Payment Adjustment application continuation — 20/10/2026

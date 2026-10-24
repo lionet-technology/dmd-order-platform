@@ -146,6 +146,10 @@ export function findTrackingOwner(tracking:unknown){
 export function recomputeOrderFinancials(orderId:number){
   const order=db.prepare("SELECT * FROM orders WHERE id=?").get(orderId) as Record<string,unknown>|undefined;
   if(!order)return null;
+  // An Emergency reroute preserves its original sale/Charge for every later cost import too.
+  if(db.prepare("SELECT 1 FROM emergency_hold_orders WHERE order_id=? AND resolved_at IS NOT NULL LIMIT 1").get(orderId)){
+    reconcileLots(orderId);return db.prepare("SELECT * FROM orders WHERE id=?").get(orderId);
+  }
   // Pending manual quotes and an authorized pre-tracking amendment cannot invoke legacy auto-charge.
   if((isManualPriceRoute(order.service)&&!order.pricing_snapshot_json)||db.prepare('SELECT order_id FROM order_amendment_context WHERE order_id=?').get(orderId))return order;
   // Reconciliation for versioned purchases is deferred; keep their snapshot/charge intact.

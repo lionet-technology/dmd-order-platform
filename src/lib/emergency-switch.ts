@@ -4,13 +4,16 @@ import {logInternalEvent,publishPublicNote} from "./order-audit";
 import {normalizeTracking,linkSupplierCostsForOrder} from "./order-operations";
 import {assertRouteCartons} from "./carton-policy";
 import {reconcileLots} from "./reconciliation";
-import {hasExportedManifestHistory,hasShipmentMovement} from "./emergency-hold";
+import {emergencyException,recordEmergencyError} from "./emergency-hold";
+import {ensureOrderShipmentStructure} from "./order-shipments";
 
 type Row=Record<string,unknown>;
 type NewTracking={old_tracking_id:number;new_tracking:string;new_label_url:string};
-export function emergencySwitchOrder(actor:AuthUser,holdId:number,orderId:number,newRouteId:number,trackings:NewTracking[],estimatedNetCost?:unknown){
+export function emergencySwitchOrder(actor:AuthUser,holdId:number,orderId:number,newRouteId:number,trackings:NewTracking[]=[],estimatedNetCost?:unknown){
  if(actor.role!=="ADMIN")throw Error("Chỉ Admin được chuyển Emergency Route.");
- return db.transaction(()=>{
+ try{return db.transaction(()=>{
+  if(!Array.isArray(trackings))throw Error("Tracking phải là danh sách; để trống danh sách nếu chỉ đổi Route.");
+  const request=JSON.stringify({route_id:newRouteId,trackings:trackings.map(t=>({old_tracking_id:Number(t.old_tracking_id),new_tracking:normalizeTracking(t.new_tracking),new_label_url:String(t.new_label_url||"").trim()})).sort((a,b)=>a.old_tracking_id-b.old_tracking_id)});
   const item=db.prepare(`SELECT i.*,h.route_id,h.undone_at,h.reason hold_reason
    FROM emergency_hold_orders i JOIN emergency_route_holds h ON h.id=i.hold_id
    WHERE i.hold_id=? AND i.order_id=?`).get(holdId,orderId) as Row|undefined;
@@ -20,7 +23,7 @@ export function emergencySwitchOrder(actor:AuthUser,holdId:number,orderId:number
    const original=db.prepare("SELECT old_tracking_id,new_tracking_id FROM emergency_switch_cost_pending WHERE hold_id=? AND order_id=?").all(holdId,orderId) as Row[];
    const byOld=new Map(original.map(x=>[Number(x.old_tracking_id),Number(x.new_tracking_id)]));
    const sameRoute=current&&db.prepare("SELECT id FROM service_route_configs WHERE id=? AND service=? COLLATE NOCASE AND sub_service=? COLLATE NOCASE AND supplier=? COLLATE NOCASE").get(newRouteId,current.service,current.sub_service,current.supplier);
-   const sameTrackings=Array.isArray(trackings)&&trackings.length===original.length&&new Set(trackings.map(t=>Number(t.old_tracking_id))).size===original.length&&trackings.every(t=>{
+   const sameTrackings=item.switch_request_json?String(item.switch_request_json)===request:Array.isArray(trackings)&&trackings.length===original.length&&new Set(trackings.map(t=>Number(t.old_tracking_id))).size===original.length&&trackings.every(t=>{
     const id=byOld.get(Number(t.old_tracking_id));if(!id)return false;
     const existing=db.prepare("SELECT tracking,label_url,status FROM order_trackings WHERE id=?").get(id) as Row|undefined;
     return existing?.status==="ACTIVE"&&normalizeTracking(existing.tracking)===normalizeTracking(t.new_tracking)&&String(existing.label_url||"")===String(t.new_label_url||"").trim();
@@ -37,16 +40,14 @@ export function emergencySwitchOrder(actor:AuthUser,holdId:number,orderId:number
   const newRoute=db.prepare("SELECT * FROM service_route_configs WHERE id=? AND active=1 AND warehouse_hold=0").get(newRouteId) as Row|undefined;
   if(!newRoute||newRouteId===Number(item.route_id))throw Error("Route mới phải Active, không Hold và khác Route cũ.");
   assertRouteCartons(newRoute.service,newRoute.max_cartons_per_order,before.carton_count);
-  if(hasExportedManifestHistory(orderId))throw Error("Order có lịch sử xuất Manifest; phải xử lý ngoại lệ thủ công.");
+  const exception=emergencyException(before);if(exception)throw Error(exception);
   if(db.prepare("SELECT id FROM manifest_carton_items WHERE order_id=? LIMIT 1").get(orderId))
    throw Error("Order đã vào thùng Manifest: kho phải bốc ra và xác minh trước khi đổi Route.");
-  if(hasShipmentMovement(orderId))throw Error("Tracking có bằng chứng đã bàn giao hoặc lịch sử không hợp lệ; phải xử lý ngoại lệ thủ công.");
-  if(before.fulfillment_started_at)throw Error("Order đã bắt đầu fulfilment.");
   const previous=db.prepare("SELECT * FROM order_trackings WHERE order_id=? AND status='ACTIVE' ORDER BY id").all(orderId) as Row[];
-  if(!Array.isArray(trackings)||trackings.length!==previous.length)throw Error("Phải khai báo đầy đủ Tracking mới theo từng Carton/Tracking đang Active.");
+  if(trackings.length&&trackings.length!==previous.length)throw Error("Phải khai báo đầy đủ Tracking mới theo từng Carton/Tracking đang Active.");
   const mapping=new Map(trackings.map(t=>[Number(t.old_tracking_id),t]));
-  if(mapping.size!==previous.length)throw Error("Tracking cũ bị trùng trong file.");
-  for(const old of previous){
+  if(mapping.size!==trackings.length)throw Error("Tracking cũ bị trùng trong file.");
+  for(const old of trackings.length?previous:[]){
    const item=mapping.get(Number(old.id));
    if(!item)throw Error("Thiếu Tracking thay thế cho "+old.tracking);
    const normalized=normalizeTracking(item.new_tracking);
@@ -75,8 +76,21 @@ export function emergencySwitchOrder(actor:AuthUser,holdId:number,orderId:number
     updated_by_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`)
    .run(newRoute.service,newRoute.sub_service,newRoute.supplier,hasEstimate?1:0,hasEstimate?estimate:0,actor.id,orderId);
   if(hasEstimate)db.prepare("UPDATE lot_reconciliation_settings SET estimated_cents=? WHERE lot_id IN (SELECT id FROM order_lots WHERE order_id=?) AND estimated_cents IS NOT NULL").run(Math.round(estimate*100),orderId);
+  // Keeping a label must not carry old-supplier COMPLETE coverage into the new route.
+  // Same-supplier reroutes require fresh cost evidence, rather than reusing its old bill.
+  if(!trackings.length){
+   ensureOrderShipmentStructure(orderId);
+   const lots=db.prepare("SELECT lot_number FROM order_lots WHERE order_id=?").all(orderId) as Row[];
+   const cutoff=String(before.supplier||"").toLowerCase()===String(newRoute.supplier||"").toLowerCase()
+    ?Number((db.prepare("SELECT COALESCE(MAX(id),0) n FROM supplier_costs").get() as {n:number}).n):0;
+   for(const lot of lots){
+    const targets=previous.filter(t=>Number(t.lot_number)===Number(lot.lot_number));
+    for(const target of targets.length?targets:[{id:0}])db.prepare("INSERT INTO emergency_route_only_cost_pending(hold_id,order_id,lot_number,tracking_id,new_supplier,cost_id_after) VALUES (?,?,?,?,?,?)")
+     .run(holdId,orderId,lot.lot_number,target.id,newRoute.supplier,cutoff);
+   }
+  }
   const changed=[];
-  for(const old of previous){
+  for(const old of trackings.length?previous:[]){
    const incoming=mapping.get(Number(old.id))!;
    const normalized=normalizeTracking(incoming.new_tracking);
    const inserted=db.prepare(`INSERT INTO order_trackings
@@ -90,11 +104,11 @@ export function emergencySwitchOrder(actor:AuthUser,holdId:number,orderId:number
    changed.push({from:old.tracking,to:incoming.new_tracking,old_tracking_id:old.id,new_tracking_id:fresh});
   }
   const primary=db.prepare("SELECT tracking,label_url FROM order_trackings WHERE order_id=? AND status='ACTIVE' ORDER BY is_primary DESC,lot_number,id LIMIT 1").get(orderId) as {tracking:string;label_url:string}|undefined;
-  db.prepare("UPDATE orders SET tracking=?,label=?,workflow_status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(primary?.tracking||null,primary?.label_url||null,origin.workflow_status,orderId);
-  db.prepare("UPDATE emergency_hold_orders SET resolved_at=CURRENT_TIMESTAMP WHERE hold_id=? AND order_id=?").run(holdId,orderId);
+  db.prepare("UPDATE orders SET tracking=?,label=?,workflow_status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(trackings.length?primary?.tracking||null:before.tracking,trackings.length?primary?.label_url||null:before.label,origin.workflow_status,orderId);
+  db.prepare("UPDATE emergency_hold_orders SET resolved_at=CURRENT_TIMESTAMP,last_error=NULL,switch_request_json=? WHERE hold_id=? AND order_id=?").run(request,holdId,orderId);
   db.prepare("DELETE FROM emergency_route_switch_context WHERE order_id=?").run(orderId);
   const after=db.prepare("SELECT * FROM orders WHERE id=?").get(orderId) as Row;
-  if(Number(after.total_due)!==originalDue||String(after.order_id)!==String(before.order_id)||String(after.system_order_code)!==String(before.system_order_code))
+  if(["total_due","sales_price","surcharge","import_tax","client_user_id","order_id","system_order_code","pricing_snapshot_json"].some(key=>after[key]!==before[key]))
    throw Error("Emergency Switch thay đổi định danh hoặc giá bán, đã rollback.");
   // Invalidate old finalized profit and coverage in the same transaction as rerouting.
   // Reports must not retain a COMPLETE old-supplier result until the next cost import.
@@ -102,8 +116,9 @@ export function emergencySwitchOrder(actor:AuthUser,holdId:number,orderId:number
   reconcileLots(orderId);
   const ledgerAfter=db.prepare("SELECT COUNT(*) n FROM ledger_entries").get() as {n:number};
   if(ledgerAfter.n!==ledgerBefore.n)throw Error("Emergency Switch không được ghi Ledger.");
-  logInternalEvent({orderId,eventType:"EMERGENCY_ROUTE_SWITCH",summary:"Chuyển Route do Emergency Hold; giá bán và Balance không đổi.",actorId:actor.id,before:{route:[before.service,before.sub_service,before.supplier],estimated_net_cost:before.est_net_cost,trackings:previous},after:{route:[newRoute.service,newRoute.sub_service,newRoute.supplier],estimated_net_cost:after.est_net_cost,trackings:changed,hold_id:holdId}});
-  publishPublicNote({orderId,eventType:"TRACKING_LABEL_CHANGED",summary:"DMD đã thay đổi Tracking/Label do điều chỉnh tuyến vận chuyển; giá bán Order không đổi.",actorId:actor.id,publicData:{hold_id:holdId,route_changed:true}});
+  logInternalEvent({orderId,eventType:"EMERGENCY_ROUTE_SWITCH",summary:"Chuyển Route do Emergency Hold; giá bán và Balance không đổi.",actorId:actor.id,before:{route:[before.service,before.sub_service,before.supplier],estimated_net_cost:before.est_net_cost,trackings:previous},after:{route:[newRoute.service,newRoute.sub_service,newRoute.supplier],estimated_net_cost:after.est_net_cost,trackings:changed,tracking_mode:trackings.length?"REPLACE_ALL":"KEEP",cost_exposure:db.prepare("SELECT supplier,SUM(total_net_cost) actual_net_cost FROM supplier_costs WHERE matched_order_id=? GROUP BY supplier").all(orderId),hold_id:holdId}});
+  publishPublicNote({orderId,eventType:trackings.length?"TRACKING_LABEL_CHANGED":"ROUTE_CHANGED",summary:trackings.length?"DMD đã thay đổi Tracking/Label do điều chỉnh tuyến vận chuyển; giá bán Order không đổi.":"DMD đã điều chỉnh tuyến vận chuyển, giữ nguyên Tracking/Label và giá bán Order.",actorId:actor.id,publicData:{hold_id:holdId,route_changed:true}});
   return {order_id:orderId,hold_id:holdId,route_id:newRouteId,updated_trackings:changed.length,original_price:originalDue};
  }).immediate();
+ }catch(error){recordEmergencyError(holdId,orderId,(error as Error).message);throw error;}
 }
