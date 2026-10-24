@@ -1,3 +1,6 @@
+## Supplier Refund Receivable — Owner option A, 24/10/2026
+[Supplier accounts](19-supplier-accounts.md): final approved amount (possibly below requested) creates a separate receivable once. Partial actual receipts and/or explicit Balance offsets reduce it; only Offset increases Balance. Status/evidence remain linked and immutable; no revenue/GP or second posting on close. Legacy posted claims require REVIEW. [Verification and remaining limits](VERIFICATION-SUPPLIER-RECEIVABLES-2026-10-24.md).
+
 # Control Tower, Cases, Claims & SLA
 
 ## Owner financial update — 20/10/2026

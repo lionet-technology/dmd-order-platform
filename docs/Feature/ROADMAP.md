@@ -1,3 +1,6 @@
+## Supplier Refund Receivable — Owner option A, 24/10/2026
+[Supplier accounts](19-supplier-accounts.md): final approved amount (possibly below requested) creates a separate receivable once. Partial actual receipts and/or explicit Balance offsets reduce it; only Offset increases Balance. Status/evidence remain linked and immutable; no revenue/GP or second posting on close. Legacy posted claims require REVIEW. [Verification and remaining limits](VERIFICATION-SUPPLIER-RECEIVABLES-2026-10-24.md).
+
 ## Supplier / Client — Owner 24/10/2026
 Latest Owner continuation authorizes Supplier-centered accounts, signed prepayments/payables, bidirectional Add-ons and internal Claims. [Current MVP, invariants and explicit pending scope](19-supplier-accounts.md) supersedes earlier Supplier deferral/no-prepayment notes. Invoice/payment history is preserved; no inferred opening or duplicate invoice cost. Client financial tools now open within account detail.
 

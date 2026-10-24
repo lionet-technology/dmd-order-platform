@@ -38,6 +38,7 @@ const sales=createUser({username:'synthetic.sales',display_name:'Synthetic Sales
 const _client=createUser({username:'synthetic.client',display_name:'Synthetic Client',password:'TestPass123!',role:'CLIENT',sales_user_id:sales.id});
 const supplier=db.prepare("SELECT value FROM enum_values WHERE enum_type='SUPPLIER' AND active=1 LIMIT 1").get().value;
 supplierAccountAction(finance,{supplier,action:'opening',amount:100,direction:'NEGATIVE',request_key:'ui-opening',reason:'Synthetic opening',reference:'synthetic-opening'});
+const claimId=Number(db.prepare("INSERT INTO supplier_claims(supplier,amount_cents,reason,evidence,actor_id) VALUES (?,30000,'Synthetic partial claim','Supplier correspondence',?)").run(supplier,finance.id).lastInsertRowid);
 const financeToken=createSession(finance.id).token,adminToken=createSession(admin.id).token;
 db.close();
 let browser,server;let checks=0;function assert(v,m){checks++;if(!v)throw Error(m)}
@@ -49,7 +50,7 @@ async function main(){
  console.log('Synthetic server ready; launching Chrome');
  browser=await chromium.launch({headless:true,channel:'chrome',args:['--disable-gpu']});
  console.log('Chrome ready');
- const evidence=path.join(root,'docs/Feature/evidence/supplier-accounts-20261024');fs.mkdirSync(evidence,{recursive:true});
+ const evidence=path.join(root,'docs/Feature/evidence/supplier-receivables-20261024');fs.mkdirSync(evidence,{recursive:true});
  const errors=[];
  const context=await browser.newContext({viewport:{width:1440,height:1000}});
  await context.addCookies([{name:'dmd_session',value:financeToken,url:base}]);
@@ -79,7 +80,42 @@ async function main(){
  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Supplier mobile no page overflow');
  await page.getByRole('button',{name:'Claims / Refunds',exact:true}).click();
  await page.getByText('Đánh dấu Tracking trước, gom nhiều Tracking vào claim.',{exact:false}).waitFor();
+ await page.getByLabel('Thao tác').selectOption('claim_status');
+ await page.locator('select[name=claim_id]').selectOption(String(claimId));
+ await page.locator('select[name=status]').selectOption('APPROVED');
+ await page.getByLabel('Final Approved Amount',{exact:false}).fill('200');
+ await page.getByLabel('Evidence / chứng từ',{exact:true}).fill('Supplier final approval');
+ await page.getByLabel('Mã chứng từ / tham chiếu',{exact:true}).fill('ui-approval');
+ await page.getByLabel('Lý do',{exact:true}).fill('Partial approval 200 of 300');
+ await page.getByRole('button',{name:'Lưu',exact:true}).click();
+ await page.getByRole('status').filter({hasText:'Đã lưu'}).waitFor();
+ await page.getByLabel('Thao tác').selectOption('claim_settle');
+ async function settle(kind,amount,reference){
+ await page.locator('select[name=claim_id]').selectOption(String(claimId));
+ await page.locator('select[name=settlement]').selectOption(kind);
+ await page.getByLabel('Số tiền USD',{exact:true}).fill(amount);
+ await page.getByLabel('Evidence / chứng từ',{exact:true}).fill('Synthetic agreement / bank proof');
+ await page.getByLabel('Mã chứng từ / tham chiếu',{exact:true}).fill(reference);
+ await page.getByLabel('Lý do',{exact:true}).fill('Synthetic settlement');
+ await page.getByRole('button',{name:'Lưu',exact:true}).click();
+ await page.getByRole('status').filter({hasText:'Đã lưu'}).waitFor();
+ }
+ await settle('OFFSET','100','ui-offset');
+ await settle('REFUND_RECEIVED','50','ui-bank');
+ report=await (await page.request.get(base+'/api/supplier-accounts')).json();
+ const claim=report.claims.find(c=>c.id===claimId);
+ assert(claim.outstanding_cents===5000&&claim.offset_cents===10000&&claim.received_cents===5000,'UI partial receivable equation');
+ assert(claim.status==='PARTIALLY_SETTLED','UI synchronized partial status');
+ assert(report.suppliers.find(s=>s.supplier===supplier).balance_cents===1500,'UI only offset moves Balance');
+ await page.getByText('Còn phải thu $50.00',{exact:false}).waitFor();
+ assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Claim mobile no overflow');
  await page.screenshot({path:path.join(evidence,'supplier-claims-mobile.png'),fullPage:true});
+ await page.setViewportSize({width:1440,height:1000});
+ await page.screenshot({path:path.join(evidence,'supplier-claims-desktop.png'),fullPage:true});
+ await settle('REFUND_RECEIVED','50','ui-bank-final');
+ report=await (await page.request.get(base+'/api/supplier-accounts')).json();
+ assert(report.claims.find(c=>c.id===claimId).status==='CLOSED','UI last settlement closes');
+ await page.screenshot({path:path.join(evidence,'supplier-claims-closed-desktop.png'),fullPage:true});
  console.log('Supplier UI passed');
  await context.close();
  const adminContext=await browser.newContext({viewport:{width:1440,height:1000}});
