@@ -6,7 +6,7 @@
     "test": "node scripts/verify-all.cjs",
     "verify:release-gates": "node scripts/verify-release-gates.cjs",
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/build-isolated.cjs",
     "start": "next start",
     "lint": "eslint .",
     "verify:rbac": "node scripts/verify-rbac.cjs",

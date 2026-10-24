@@ -55,6 +55,9 @@ try{
  const beforeReads={ledger:db.prepare('SELECT COUNT(*) n FROM ledger_entries').get().n,entries:db.prepare('SELECT COUNT(*) n FROM supplier_account_entries').get().n,corrections:db.prepare('SELECT COUNT(*) n FROM supplier_claim_corrections').get().n,statements:db.prepare('SELECT COUNT(*) n FROM statement_v2_snapshots').get().n};
  bodFinanceReport(bod,day,day);bodFinanceReport(finance,day,day);
  eq({ledger:db.prepare('SELECT COUNT(*) n FROM ledger_entries').get().n,entries:db.prepare('SELECT COUNT(*) n FROM supplier_account_entries').get().n,corrections:db.prepare('SELECT COUNT(*) n FROM supplier_claim_corrections').get().n,statements:db.prepare('SELECT COUNT(*) n FROM statement_v2_snapshots').get().n},beforeReads,'BOD reads never post money or finalize Statements');
+ db.prepare("INSERT INTO orders(order_id,margin_status,actual_cost_coverage,reconciliation_status) VALUES ('BOD-MISSING-GP','FINALIZED','COMPLETE','PASS')").run();
+ const missing=bodFinanceReport(bod,day,day).order_gp;
+ eq([missing.finalized_count,missing.finalized_gp_cents,missing.pending_count,missing.pending_estimate_missing_count],[1,1200,3,1],'Missing GP is pending and explicitly counted, never finalized zero');
  const outOfPeriod=bodFinanceReport(bod,'2020-01-01','2020-01-01');
  eq(outOfPeriod.supplier_addons_period,{revenue_cents:0,cost_cents:0},'Add-on period uses posting day');
  eq(outOfPeriod.supplier_accounts.find(s=>s.supplier===supplier).receivable_cents,10000,'Current Supplier exposure explicitly independent of requested historical period');

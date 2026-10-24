@@ -67,7 +67,7 @@ async function main(){
   assert(!/supplier|net cost/i.test(String(reconciled.public_note)),"public updates must not expose Supplier or Net Cost");
   assert(!/supplier|net cost|address correction/i.test(String(reconciled.internal_note||"")),"private note must not receive supplier reconciliation detail");
   assert(reconciled.actual_cost_coverage==="UNKNOWN" && reconciled.finalized_gp===null && reconciled.effective_net_cost===null,"Aggregate ePacket supplier feed cannot finalize GP or silently assume actual Mid-mile coverage");
-  assert(reconciled.estimated_gp===-100 && reconciled.gross_profit_net===reconciled.estimated_gp && reconciled.margin_status==="PROVISIONAL","Legacy GP projection remains explicitly estimated until coverage is confirmed; supplier surcharge/tax never becomes Client revenue");
+  assert(reconciled.estimated_gp===-100 && reconciled.gross_profit_net===reconciled.estimated_gp && reconciled.margin_status==="PENDING","Multi-Lot GP remains pending review and estimated until coverage is confirmed; supplier surcharge/tax never becomes Client revenue");
   const salesEvents=listOrderEvents(first.id,"SALES");
   const adminEvents=listOrderEvents(first.id,"ADMIN");
   assert(!salesEvents.some(event=>event.event_type==="SUPPLIER_COST_MATCHED"),"Sales history must hide supplier cost events");

@@ -2,9 +2,9 @@
 
 ## Continuation — 25/10/2026
 BOD/Finance report now adds current Supplier signed Balance and separate Refund Receivable from the same Account projection (including effective decision corrections and settlement reversals). Unresolved Claim/Recovery sources are flagged REVIEW. Historical invoices are not added to Balance; no old receipts/openings are inferred. This is current exposure, explicitly independent of requested report period.
-Supplier Add-on revenue/cost use Vietnam posting date in the requested period and remain separate from Order GP. Current Order GP includes only FINALIZED + COMPLETE Actual coverage + PASS reconciliation. Pending/Review estimated GP and counts appear separately; no sum is labelled company net profit. No automatic allocation or physical bank reconciliation.
+Supplier Add-on revenue/cost use Vietnam posting date in the requested period and remain separate from Order GP. Current Order GP includes only FINALIZED + COMPLETE Actual coverage + PASS reconciliation. Missing finalized GP stays pending (never assumed zero); pending Orders without estimated GP have a separate missing count. Pending/Review estimated GP and counts appear separately; no sum is labelled company net profit. No automatic allocation or physical bank reconciliation.
 Client Reconciliation now summarizes available / total / issued Statement periods and explicitly identifies unavailable Clients. Missing historical periods are not reconciled zero. Existing period opening/closing and bank-versus-wallet separation remain intact.
-Regression `verify-bod-finance-report.cjs`: 22 synthetic assertions including correction/reversal parity, legacy invoice non-duplication, pending GP exclusion, period/current separation and no money/Statement posting on repeated reads. Typecheck/lint PASS. Full acceptance and historical migration remain open. Older sections below are historical where superseded.
+Regression `verify-bod-finance-report.cjs`: 23 synthetic assertions including correction/reversal parity, legacy invoice non-duplication, pending GP exclusion, period/current separation and no money/Statement posting on repeated reads. Typecheck/lint PASS. Full acceptance and historical migration remain open. Older sections below are historical where superseded.
 
 
 ## Consecutive period UI continuation — 20/10/2026

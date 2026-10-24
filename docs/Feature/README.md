@@ -1,3 +1,6 @@
+## Supplier / Client / BOD continuation — 25/10/2026
+Linked Recovery/Claim sources, append-only corrections/reversals, Emergency old/new cost visibility and review, BOD Supplier exposure/approved Actual GP and Client Statement availability. [Verified scope, 35 domain suites + 10 HTTP suites + 22 browser assertions, remaining exceptions and build DB-safety incident](VERIFICATION-SUPPLIER-CONTINUATION-2026-10-25.md). No production acceptance.
+
 ## Supplier Refund Receivable — Owner option A, 24/10/2026
 [Supplier accounts](19-supplier-accounts.md): final approved amount (possibly below requested) creates a separate receivable once. Partial actual receipts and/or explicit Balance offsets reduce it; only Offset increases Balance. Status/evidence remain linked and immutable; no revenue/GP or second posting on close. Legacy posted claims require REVIEW. [Verification and remaining limits](VERIFICATION-SUPPLIER-RECEIVABLES-2026-10-24.md).
 

@@ -84,6 +84,8 @@ async function main(){
   addSupplierCost({supplier:"KILOSHIP",service:"UPS",sub_service:"Express",tracking:"LOT-1-TRACK",total_net_cost:10,source_key:"purchase-cost-1"});
   addSupplierCost({supplier:"KILOSHIP",service:"UPS",sub_service:"Express",tracking:"LOT-2-TRACK",total_net_cost:20,extra_surcharge:5,import_tax:7,surcharge_type:"Remote area",source_key:"purchase-cost-2"});
 
+  assert(db.prepare("SELECT finalized_gp FROM orders WHERE id=?").get(order.id).finalized_gp===null,"Multi-Lot feed requires explicit review before finalized GP");
+  reconciliationAction(admin,{items:[1,2].map(lot=>({order_id:order.id,lot_number:lot,action:'absorb_loss',reason:'Admin reviewed separate Lot cost evidence'}))});
   const current=db.prepare("SELECT * FROM orders WHERE id=?").get(order.id);
   const lots=db.prepare("SELECT * FROM order_lots WHERE order_id=? ORDER BY lot_number").all(order.id);
   assert(lots[0].net_cost===10&&lots[1].net_cost===20&&lots.every(lot=>lot.cost_status==="MATCHED"),"each Lot should carry its matched supplier cost");
