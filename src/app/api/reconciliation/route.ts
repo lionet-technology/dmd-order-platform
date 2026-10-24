@@ -21,6 +21,7 @@ async function handleGET(req:NextRequest) {
     where.push("(tracking LIKE ? OR order_id LIKE ? OR customer LIKE ? OR supplier LIKE ? OR service LIKE ? OR reconciliation_status LIKE ?)");
     const like="%"+q+"%"; params.push(like,like,like,like,like,like);
   }
+  if(req.nextUrl.searchParams.get("supplier")){where.push("supplier=?");params.push(req.nextUrl.searchParams.get("supplier"));}
   if(req.nextUrl.searchParams.get("loss_only")==="1")where.push("actual_gp<0");
   if(req.nextUrl.searchParams.get("emergency_only")==="1")where.push("EXISTS(SELECT 1 FROM emergency_switch_cost_pending ep WHERE ep.order_id=orders.id)");
   const whereSql=" WHERE "+where.join(" AND ");

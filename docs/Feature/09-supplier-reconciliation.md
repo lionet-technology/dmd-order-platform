@@ -1,3 +1,6 @@
+## Supplier account continuation — 24/10/2026
+[Current Supplier/Client MVP](19-supplier-accounts.md) documents the latest Owner decision, explicit confirmation of Actual Cost, non-posting Estimated/approved Supplier Claims and account-centered Client UX. Earlier Supplier deferrals are superseded only within that documented scope. Existing Order GP and Client money rules are preserved.
+
 ## Emergency đơn giản hóa — 24/10/2026
 Đổi Route trên Order gốc, Tracking/Label và Net Cost optional; blank giữ nguyên. Nếu thay Tracking thì thay đủ bộ ACTIVE. Cost Supplier cũ/mới tách chứng từ, không tự COMPLETE chỉ vì giữ label; cost import sau Switch không sửa Charge. Order upload lỗi còn HOLD, lưu alert để retry; từng Order thành công được giữ. Bất kỳ carton đã export Manifest thì toàn Order xử lý thủ công. [Quy tắc hiện hành](18-emergency-route-hold.md).
 

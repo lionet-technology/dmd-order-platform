@@ -1,5 +1,9 @@
 # Sổ phải trả Supplier nội bộ — GĐ1
 
+## Owner continuation 24/10/2026
+[Supplier accounts](19-supplier-accounts.md) adds Supplier overview/detail, signed Balance and Claims. The old invoice/payment ledger remains documentary history and does not auto-post into Balance. Duplicate payment references are rejected across the two entry paths. New prepayments/credits are authorized by the latest Owner request; historical restrictions below describe the old module.
+
+
 ## Quyền hiện hành 18/10/2026
 BOD/FINANCE là role riêng, được invoice/payment/allocation/reversal theo audit của module này. Admin vận hành không được đọc/ghi API. Root Owner cấp role tường minh. Không có chuyển tiền ngân hàng qua app. Supplier portal vẫn deferred; xem feature 01 và verification mới.
 

@@ -1,3 +1,6 @@
+## Supplier / Client — Owner 24/10/2026
+Latest Owner continuation authorizes Supplier-centered accounts, signed prepayments/payables, bidirectional Add-ons and internal Claims. [Current MVP, invariants and explicit pending scope](19-supplier-accounts.md) supersedes earlier Supplier deferral/no-prepayment notes. Invoice/payment history is preserved; no inferred opening or duplicate invoice cost. Client financial tools now open within account detail.
+
 ## Owner chốt luồng xác minh Emergency — 24/10/2026
 Mọi Emergency Switch dùng một luồng: Admin rà Route, Tracking, Label, Estimated Net Cost → chỉnh nếu cần hoặc approve giữ nguyên → Order tiếp tục. Không tách thêm luồng cùng Supplier. Xác nhận lưu cùng audit Switch; sửa dữ liệu phải xác minh lại. Admin duyệt vận hành không thay Finance đối soát Actual Cost/GP. [Chi tiết hiện hành](18-emergency-route-hold.md).
 

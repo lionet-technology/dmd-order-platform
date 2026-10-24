@@ -43,6 +43,7 @@ export function supplierPayableAction(user:AuthUser,b:Row){
  const supplier=canonicalEnumValue('SUPPLIER',b.supplier,'',{allowInactive:true});if(!supplier)throw Error('Cần Supplier.');
  if(b.currency!=='USD')throw Error('GĐ1 chỉ hỗ trợ USD.');
  const paid=day(b.paid_date);if(paid>localDay())throw Error('Không ghi nhận đã thanh toán trong tương lai.');
+ if(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='supplier_account_entries'").get()&&db.prepare("SELECT id FROM supplier_account_entries WHERE supplier=? AND kind='PAYMENT' AND reference=? COLLATE NOCASE").get(supplier,String(b.payment_reference||'').trim()))throw Error('Khoản thanh toán đã ghi trong Supplier Balance; không ghi lần hai.');
  const total=amount(b.amount);if(!Array.isArray(b.allocations)||!b.allocations.length||b.allocations.length>200)throw Error('Chọn từ 1 đến 200 invoice để phân bổ.');
  const seen=new Set<number>();let allocated=0;
  const rows=(b.allocations as Row[]).map(a=>{

@@ -4,10 +4,10 @@ type Invoice={id:number;supplier:string;invoice_number:string;amount_cents:numbe
 type Payment={id:number;supplier:string;payment_reference:string;amount_cents:number;reversed_at:string|null};
 type Data={invoices:Invoice[];payments:Payment[];suppliers:{supplier:string;outstanding_cents:number}[]};
 const usd=(n:number)=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(n/100);
-export function SupplierPayablesWorkspace({suppliers}:{suppliers:string[]}){
+export function SupplierPayablesWorkspace({suppliers,scopeSupplier}:{suppliers:string[];scopeSupplier?:string}){
  const [data,setData]=useState<Data>({invoices:[],payments:[],suppliers:[]}),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false),[action,setAction]=useState('invoice');
  const receipt=useRef<{payload:string;key:string}|null>(null);
- const load=useCallback(async()=>{const r=await fetch('/api/supplier-payables');const d=await r.json();if(!r.ok)throw Error(d.error);setData(d);},[]);
+ const load=useCallback(async()=>{const r=await fetch('/api/supplier-payables');const d=await r.json();if(!r.ok)throw Error(d.error);setData(scopeSupplier?{invoices:d.invoices.filter((r:Invoice)=>r.supplier===scopeSupplier),payments:d.payments.filter((r:Payment)=>r.supplier===scopeSupplier),suppliers:d.suppliers.filter((r:{supplier:string})=>r.supplier===scopeSupplier)}:d);},[scopeSupplier]);
  useEffect(()=>{void load().catch(e=>setError(e.message));},[load]);
  async function submit(e:React.FormEvent<HTMLFormElement>){
  e.preventDefault();setBusy(true);setError('');setNotice('');

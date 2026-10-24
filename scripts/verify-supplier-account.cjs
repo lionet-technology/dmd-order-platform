@@ -1,0 +1,130 @@
+const fs=require("node:fs");
+const os=require("node:os");
+const path=require("node:path");
+const Module=require("node:module");
+const ts=require("typescript");
+
+const root=path.resolve(__dirname,"..");
+const dbPath=path.join(fs.mkdtempSync(path.join(os.tmpdir(),"dmd-supplier-account-")),"test.db");
+process.env.DMD_DB_PATH=dbPath;
+process.env.NODE_ENV="test";
+for(const suffix of ["","-shm","-wal"])fs.rmSync(dbPath+suffix,{force:true});
+
+const originalResolve=Module._resolveFilename;
+Module._resolveFilename=function(request,parent,isMain,options){
+  if(request.startsWith("@/")){
+    const target=path.join(root,"src",request.slice(2));
+    for(const candidate of [target,target+".ts",target+".tsx",path.join(target,"index.ts")])if(fs.existsSync(candidate))return candidate;
+  }
+  return originalResolve.call(this,request,parent,isMain,options);
+};
+require.extensions[".ts"]=function(module,filename){
+  const source=fs.readFileSync(filename,"utf8");
+  const result=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true},fileName:filename});
+  module._compile(result.outputText,filename);
+};
+
+const {db}=require('../src/lib/db.ts');
+const {createUser}=require('../src/lib/auth.ts');
+
+const {supplierAccounts:report,supplierAccountAction:act,supplierAccountSchema}=require('../src/lib/supplier-account.ts');
+const {ensureOrderShipmentStructure}=require('../src/lib/order-shipments.ts');
+const {updateEnumValue}=require('../src/lib/enums.ts');
+let checks=0;function assert(v,m){checks++;if(!v)throw Error(m)}function rejects(f,m){let failed=false;try{f()}catch{failed=true}assert(failed,m)}
+const make=role=>createUser({username:'account.'+role.toLowerCase(),display_name:role,password:'TestPass123!',role});
+const admin=make('ADMIN'),finance=make('FINANCE'),bod=make('BOD'),sales=make('SALES'),warehouse=make('WAREHOUSE');
+const client=createUser({username:'account.client',display_name:'Client',password:'TestPass123!',role:'CLIENT',sales_user_id:sales.id});
+const supplier=db.prepare("SELECT value FROM enum_values WHERE enum_type='SUPPLIER' AND active=1 LIMIT 1").get().value;
+const service=db.prepare("SELECT value FROM enum_values WHERE enum_type='SERVICE' AND active=1 LIMIT 1").get().value;
+db.prepare("INSERT INTO enum_values(enum_type,value,parent_value) VALUES ('SUPPLIER','ACCOUNT-OTHER','')").run();
+let serial=0;const command=b=>act(finance,{request_key:'test-'+(++serial),supplier,reason:'Synthetic evidence',reference:'ref-'+serial,...b});
+const balance=()=>report(finance).suppliers.find(s=>s.supplier===supplier).balance_cents;
+async function main(){try{
+for(const u of [admin,sales,client,warehouse]){rejects(()=>report(u),u.role+' read denied');rejects(()=>act(u,{action:'opening'}),u.role+' write denied');}
+rejects(()=>act(finance,{supplier,action:'opening'}),'key required');
+const opening={action:'opening',amount:100,direction:'POSITIVE',reference:'opening',request_key:'opening'};
+const first=command(opening);assert(command(opening).id===first.id,'Exact replay');
+rejects(()=>command({...opening,amount:101}),'Payload mismatch');
+rejects(()=>command({...opening,request_key:'new-opening'}),'Opening unique');
+assert(balance()===10000,'Positive prepaid');
+const ledgerBefore=db.prepare('SELECT COUNT(*) n FROM ledger_entries').get().n;
+const order=Number(db.prepare("INSERT INTO orders(order_id,supplier,service,est_net_cost,workflow_status) VALUES ('ACCT-ORDER',?,'UPS',100,'PURCHASED')").run(supplier).lastInsertRowid);
+ensureOrderShipmentStructure(order);
+const lot=db.prepare('SELECT id FROM order_lots WHERE order_id=?').get(order).id;
+const tracking=Number(db.prepare("INSERT INTO order_trackings(order_id,tracking,normalized_tracking) VALUES (?,'ACCT-T1','ACCTT1')").run(order).lastInsertRowid);
+const tracking2=Number(db.prepare("INSERT INTO order_trackings(order_id,tracking,normalized_tracking) VALUES (?,'ACCT-T2','ACCTT2')").run(order).lastInsertRowid);
+const cost=Number(db.prepare("INSERT INTO supplier_costs(supplier,tracking,total_net_cost,order_lot_id) VALUES (?,'ACCT-T1',150,?)").run(supplier,lot).lastInsertRowid);
+rejects(()=>command({action:'confirm_cost',cost_id:cost}),'Actual above estimate unapproved');
+assert(balance()===10000,'Estimated/review nonposting');
+db.prepare('UPDATE orders SET est_net_cost=200 WHERE id=?').run(order);
+const posted=command({action:'confirm_cost',cost_id:cost,reference:'cost',request_key:'cost'});
+assert(command({action:'confirm_cost',cost_id:cost,reference:'cost',request_key:'cost'}).id===posted.id,'Cost retry');
+assert(balance()===-5000,'Confirmed actual payable');
+rejects(()=>act(bod,{supplier,action:'confirm_cost',cost_id:cost,request_key:'other-actor',reason:'retry',reference:'cost'}),'Cost uniqueness across actors');
+const pending=db.prepare("INSERT INTO supplier_costs(supplier,tracking,total_net_cost) VALUES (?,'UNMATCHED',20)").run(supplier).lastInsertRowid;
+rejects(()=>command({action:'confirm_cost',cost_id:pending}),'Unmatched cost denied');
+const buy={action:'addon',direction:'BUY',service,amount:10,net_cost:0,order_id:order,reference:'addon-buy',request_key:'buy'};
+command(buy);assert(balance()===-6000,'Buy reduces balance');
+command({action:'addon',direction:'SELL',service,amount:25,net_cost:4,reference:'addon-sell'});
+assert(balance()===-3500,'Sell increases balance');
+assert(report(finance).suppliers.find(s=>s.supplier===supplier).revenue_cents===2500,'Sales revenue only');
+assert(report(finance).suppliers.find(s=>s.supplier===supplier).cost_cents===1400,'Add-on commercial cost');
+rejects(()=>command({...buy,request_key:'duplicate-buy'}),'Add-on reference unique');
+rejects(()=>command({...buy,reference:'foreign',supplier:'ACCOUNT-OTHER'}),'Cross supplier Order denied');
+rejects(()=>command({...buy,reference:'fraction',amount:'1.001'}),'Fractional cents denied');
+rejects(()=>command({...buy,reference:'bad-dir',direction:'OTHER'}),'Direction required');
+command({action:'adjustment',direction:'POSITIVE',amount:5});
+command({action:'payment',amount:10,reference:'bank-new'});
+assert(balance()===-2000,'Adjustment/payment signed');
+assert(db.prepare('SELECT COUNT(*) n FROM ledger_entries').get().n===ledgerBefore,'No Client charges');
+for(const id of [tracking,tracking2])command({action:'request_refund',tracking_id:id,evidence:'Internal proof'});
+rejects(()=>command({action:'claim',tracking_ids:[tracking,tracking],amount:10,evidence:'proof'}),'No duplicate tracking');
+const claim=command({action:'claim',tracking_ids:[tracking,tracking2],amount:20,evidence:'proof'});
+assert(balance()===-2000,'Claim create nonposting');
+rejects(()=>command({action:'claim_credit',claim_id:claim.id,settlement:'REFUND_RECEIVED'}),'Unapproved claim denied');
+command({action:'claim_status',claim_id:claim.id,status:'APPROVED'});
+assert(balance()===-2000,'Approval nonposting');
+command({action:'claim_credit',claim_id:claim.id,settlement:'CREDIT_ISSUED',reference:'supplier-credit'});
+assert(balance()===0,'Actual credit posted');
+rejects(()=>command({action:'claim_credit',claim_id:claim.id,settlement:'REFUND_RECEIVED',reference:'bank-refund'}),'Credit or money posts only once');
+rejects(()=>command({action:'claim',tracking_ids:[tracking],amount:10,evidence:'proof'}),'Tracking cannot be reused');
+const before=report(finance).entries.length;
+db.exec("CREATE TRIGGER synthetic_fail BEFORE INSERT ON supplier_account_entries BEGIN SELECT RAISE(ABORT,'Synthetic failure'); END");
+rejects(()=>command({action:'payment',amount:1,reference:'rollback',request_key:'rollback'}),'Injected failure');
+assert(report(finance).entries.length===before,'Atomic rollback');
+assert(!db.prepare("SELECT 1 FROM money_command_receipts WHERE request_key='rollback'").get(),'No success receipt on failure');
+db.exec('DROP TRIGGER synthetic_fail');
+command({action:'payment',amount:1,reference:'rollback',request_key:'rollback'});
+assert(balance()===100,'Retry after rollback');
+for(const table of ['supplier_account_entries','supplier_refund_requests','supplier_claims','supplier_claim_trackings','supplier_claim_events'])rejects(()=>db.prepare('DELETE FROM '+table).run(),'Immutable '+table);
+const enumId=db.prepare("SELECT id FROM enum_values WHERE enum_type='SUPPLIER' AND value=?").get(supplier).id;
+rejects(()=>updateEnumValue(enumId,{value:supplier+'-NEW'},admin.id),'Cannot orphan supplier history');
+supplierAccountSchema();assert(balance()===100,'Schema preserves data');
+const {supplierPayableAction}=require('../src/lib/supplier-payables.ts');
+const day=new Date(Date.now()+7*3600000).toISOString().slice(0,10);
+const invoice=supplierPayableAction(finance,{supplier,action:'invoice',currency:'USD',amount:100,invoice_number:'LEGACY-INV',invoice_date:day,due_date:day,document_reference:'proof',reason:'Synthetic',request_key:'legacy-invoice'});
+rejects(()=>supplierPayableAction(finance,{supplier,action:'payment',currency:'USD',amount:1,paid_date:day,payment_reference:'ROLLBACK',allocations:[{invoice_id:invoice.id,amount:1}],reason:'Synthetic',request_key:'duplicate-other-path'}),'Balance payment cannot post again in old path');
+supplierPayableAction(finance,{supplier,action:'payment',currency:'USD',amount:10,paid_date:day,payment_reference:'LEGACY-BANK',allocations:[{invoice_id:invoice.id,amount:10}],reason:'Synthetic',request_key:'legacy-bank'});
+rejects(()=>command({action:'payment',amount:10,reference:'legacy-bank'}),'Old payment cannot post again in Balance');
+assert(balance()===100,'Legacy invoice/payment not silently migrated');
+const beforeInvalid=balance();
+rejects(()=>command({action:'adjustment',amount:1,direction:'NEGATIVE',due_date:'2026-02-30'}),'Invalid due date');
+assert(balance()===beforeInvalid,'Invalid date atomic');
+command({action:'adjustment',amount:10,direction:'NEGATIVE',due_date:'2000-01-01'});
+assert(report(finance).suppliers.find(s=>s.supplier===supplier).overdue,'Simple overdue warning');
+assert(db.prepare('SELECT COUNT(*) n FROM ledger_entries').get().n===ledgerBefore,'No Client ledger changes from supplier flows');
+const {createSession}=require('../src/lib/auth.ts'),{NextRequest}=require('next/server'),api=require('../src/app/api/supplier-accounts/route.ts');
+for(const u of [undefined,admin,sales,client,warehouse,finance,bod]){
+ const headers=u?{cookie:'dmd_session='+createSession(u.id).token}:{};
+ const expected=['FINANCE','BOD'].includes(u?.role)?200:u?403:401;
+ const r=await api.GET(new NextRequest('http://local/api/supplier-accounts',{headers}));
+ assert(r.status===expected,'API read '+(u?.role||'anonymous'));
+ if(expected!==200)assert((await api.POST(new NextRequest('http://local/api/supplier-accounts',{method:'POST',headers:{...headers,'content-type':'application/json'},body:'{}'}))).status===expected,'API write denied');
+ else assert(r.headers.get('cache-control').includes('no-store'),'Private finance cache');
+}
+const response=await api.POST(new NextRequest('http://local/api/supplier-accounts',{method:'POST',headers:{cookie:'dmd_session='+createSession(finance.id).token,'content-type':'application/json'},body:JSON.stringify({supplier,action:'adjustment',amount:1,direction:'POSITIVE',reason:'Synthetic API',reference:'api-actor',request_key:'api-actor',actor_id:admin.id})}));
+assert(response.status===200,'Finance API mutation');
+const created=await response.json();assert(db.prepare('SELECT actor_id FROM supplier_account_entries WHERE id=?').get(created.id).actor_id===finance.id,'Actor from session');
+console.log('SUPPLIER ACCOUNT PASS ('+checks+' assertions)');
+}finally{db.close();for(const suffix of ['','-shm','-wal'])fs.rmSync(dbPath+suffix,{force:true});}}
+main().catch(e=>{console.error(e);process.exitCode=1});

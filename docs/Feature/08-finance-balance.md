@@ -1,3 +1,6 @@
+## Supplier account continuation — 24/10/2026
+[Current Supplier/Client MVP](19-supplier-accounts.md) documents the latest Owner decision, explicit confirmation of Actual Cost, non-posting Estimated/approved Supplier Claims and account-centered Client UX. Earlier Supplier deferrals are superseded only within that documented scope. Existing Order GP and Client money rules are preserved.
+
 # Balance, Credit & Statement
 
 ## Visible name — 24/10/2026
