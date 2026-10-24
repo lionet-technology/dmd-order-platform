@@ -517,7 +517,8 @@ db.prepare("UPDATE supplier_costs SET normalized_tracking=UPPER(REPLACE(REPLACE(
 db.exec(`
   INSERT OR IGNORE INTO order_trackings(order_id,lot_number,tracking,normalized_tracking,label_url,status,is_primary)
   SELECT id,1,tracking,UPPER(REPLACE(REPLACE(TRIM(tracking),' ',''),'-','')),NULLIF(label,''),'ACTIVE',1
-  FROM orders WHERE workflow_status<>'CANCELLED' AND tracking IS NOT NULL AND TRIM(tracking)<>'';
+  FROM orders o WHERE workflow_status<>'CANCELLED' AND tracking IS NOT NULL AND TRIM(tracking)<>''
+  AND NOT EXISTS(SELECT 1 FROM order_trackings t WHERE t.normalized_tracking=UPPER(REPLACE(REPLACE(TRIM(o.tracking),' ',''),'-','')));
 `);
 
 // Backfill normalized Order -> Lot -> Carton -> SKU structures without
@@ -533,7 +534,7 @@ db.transaction(()=>{
   const findCarton=db.prepare("SELECT id FROM order_cartons WHERE order_id=? AND carton_number=?");
   const findLegacyItem=db.prepare("SELECT id FROM order_items WHERE order_id=? AND sku=''");
   const activeTrackings=db.prepare("SELECT id,lot_number FROM order_trackings WHERE order_id=? AND status='ACTIVE' ORDER BY id");
-  const mapTracking=db.prepare("UPDATE order_trackings SET carton_id=?,lot_number=? WHERE id=?");
+  const mapTracking=db.prepare("UPDATE order_trackings SET carton_id=?,lot_number=? WHERE id=? AND (carton_id IS NOT ? OR lot_number IS NOT ?)");
   const inheritReplacementCarton=db.prepare("UPDATE order_trackings SET carton_id=(SELECT newer.carton_id FROM order_trackings newer WHERE newer.id=order_trackings.replaced_by_tracking_id) WHERE order_id=? AND carton_id IS NULL AND replaced_by_tracking_id IS NOT NULL");
   for(const order of legacyOrders){
     const orderId=Number(order.id);
@@ -562,7 +563,7 @@ db.transaction(()=>{
       const lotNo=Math.min(lotCount,Math.max(1,Number(tracking.lot_number||1)));
       const lot=findLot.get(orderId,lotNo) as {id:number};
       db.prepare("UPDATE order_cartons SET order_lot_id=COALESCE(order_lot_id,?) WHERE id=?").run(lot.id,carton.id);
-      mapTracking.run(carton.id,lotNo,tracking.id);
+      mapTracking.run(carton.id,lotNo,tracking.id,carton.id,lotNo);
     });
     inheritReplacementCarton.run(orderId);
   }

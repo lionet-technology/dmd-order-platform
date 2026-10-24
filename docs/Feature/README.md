@@ -1,7 +1,7 @@
 # Feature documentation — DMD Report
 
 ## Emergency Route Switch — 23/10/2026
-[Safe first-stage Hold/Undo and explicit phase-2 safety limit](18-emergency-route-hold.md). No emergency cancellation, refund, replacement import or Client Order ID reuse is enabled.
+[Emergency Hold & Switch](18-emergency-route-hold.md): original-Order reroute with Tracking/Label replacement and Excel recovery; no cancellation/refund or second Charge. Audit corrections on 24/10 preserve exported-then-unpacked Manifest evidence, startup under Hold, immediate cost coverage and supplier-loss visibility. Full acceptance and remaining work are recorded in [24/10 audit](AUDIT-EMERGENCY-2026-10-24.md).
 
 ## Owner correction — 23/10/2026
 Statement aging now covers negative net Balance only; Debt uses its own deadline. Opening age evidence is optional. Admin exceptions use an aggregate Balance candidate query and prefilter incomplete Label coverage. [Verification, UI findings and limits](VERIFICATION-BALANCE-DEBT-SPLIT-2026-10-23.md).

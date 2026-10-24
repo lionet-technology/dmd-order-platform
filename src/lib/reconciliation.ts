@@ -9,7 +9,7 @@ type Row=Record<string,unknown>;
 // check-and-ALTER sequence across SQLite connections to avoid migration races.
 export function reconciliationSchema(){
  db.transaction(() => {
- for(const name of ['finalized_gp','finalized_margin_pct','estimated_gp','estimated_margin_pct'])if(!(db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r=>r.name===name))db.exec(`ALTER TABLE orders ADD COLUMN ${name} REAL`);
+ for(const name of ['finalized_gp','finalized_margin_pct','estimated_gp','estimated_margin_pct','actual_gp'])if(!(db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r=>r.name===name))db.exec(`ALTER TABLE orders ADD COLUMN ${name} REAL`);
  for(const [name,type] of Object.entries({actual_cost_coverage:"TEXT NOT NULL DEFAULT 'UNKNOWN'",effective_net_cost:'REAL',cost_coverage_json:'TEXT'}))if(!(db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r=>r.name===name))db.exec(`ALTER TABLE orders ADD COLUMN ${name} ${type}`);
  db.exec(`CREATE TABLE IF NOT EXISTS lot_cost_components(lot_id INTEGER NOT NULL REFERENCES order_lots(id),component TEXT NOT NULL CHECK(component IN ('LAST_MILE','MID_MILE','WAREHOUSE','OTHER')),estimated_cents INTEGER NOT NULL CHECK(estimated_cents>=0),actual_cents INTEGER CHECK(actual_cents>=0),reference TEXT NOT NULL,PRIMARY KEY(lot_id,component));
  CREATE TABLE IF NOT EXISTS lot_reconciliation_versions(id INTEGER PRIMARY KEY,lot_id INTEGER NOT NULL REFERENCES order_lots(id),estimated_cents INTEGER,actual_cents INTEGER,status TEXT NOT NULL,decision TEXT,reason TEXT,actor_id INTEGER,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
@@ -33,7 +33,7 @@ export function reconcileLots(orderId:number){
  const pendingNewSupplierCost=(db.prepare(`SELECT COUNT(*) n FROM emergency_switch_cost_pending ep
   JOIN order_trackings ot ON ot.id=ep.new_tracking_id
   WHERE ep.order_id=? AND ep.lot_number=? AND ot.cost_match_type NOT IN ('NOT_BILLED','INCLUDED_IN_PARENT')
-  AND NOT EXISTS(SELECT 1 FROM supplier_costs sc WHERE sc.matched_order_tracking_id=ep.new_tracking_id)`).get(orderId,lot.lot_number) as {n:number}).n;
+  AND NOT EXISTS(SELECT 1 FROM supplier_costs sc WHERE sc.matched_order_tracking_id=ep.new_tracking_id AND sc.supplier=ep.new_supplier COLLATE NOCASE AND sc.order_lot_id=? )`).get(orderId,lot.lot_number,lot.id) as {n:number}).n;
  const estimated=settings?.estimated_cents??(lots.length===1&&order.est_net_cost!=null?cents(order.est_net_cost):null);
  const components=db.prepare('SELECT * FROM lot_cost_components WHERE lot_id=? ORDER BY component').all(lot.id) as Row[];
  if(components.length&&cost.n)throw Error('Aggregate supplier cost không được trộn với component cost.');
@@ -68,7 +68,10 @@ export function reconcileLots(orderId:number){
  const covered=results.every(l=>l.actual_cost_coverage==='COMPLETE');
  const effectiveCost=results.every(l=>l.effective_cents!==null)?results.reduce((n,l)=>n+Number(l.effective_cents),0):null;
  db.prepare('UPDATE orders SET actual_cost_coverage=?,effective_net_cost=?,cost_coverage_json=? WHERE id=?').run(covered?'COMPLETE':results.some(l=>l.actual_cost_coverage==='PARTIAL')?'PARTIAL':'UNKNOWN',effectiveCost===null?null:effectiveCost/100,JSON.stringify(results.map(l=>({lot_id:l.id,...JSON.parse(l.cost_snapshot_json)}))),orderId);
- const gp=clean&&covered&&actual!==null?(revenue-actual)/100:null;
+ // Actual exposure is visible during REVIEW; it is never a finalized approval.
+ const actualGP=actual===null||!covered?null:(revenue-actual)/100;
+ db.prepare('UPDATE orders SET actual_gp=? WHERE id=?').run(actualGP,orderId);
+ const gp=clean&&covered&&actual!==null?actualGP:null;
  const margin=gp===null||!revenue?null:Math.round(gp*10000/revenue*100)/100;
  db.prepare('UPDATE orders SET finalized_gp=?,finalized_margin_pct=?,estimated_gp=?,estimated_margin_pct=?,gross_profit_net=?,gross_margin_pct=?,margin_status=? WHERE id=?').run(gp,margin,estimatedGP,estimatedMargin,gp??estimatedGP??0,margin??estimatedMargin??0,clean&&covered?'FINALIZED':clean?'PROVISIONAL':'PENDING',orderId);
  return results;

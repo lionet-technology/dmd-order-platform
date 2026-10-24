@@ -1,5 +1,13 @@
 # Emergency Route Switch — legacy first-stage notes
 
+## Audit correction — 24/10/2026
+An explicit new estimate updates an existing single-Lot estimate override atomically, so the old override cannot silently mask it. Existing multi-Lot allocation or component estimates require leaving this field blank and editing allocation in Reconciliation; Switch never invents a cost split. Blank continues to preserve all estimates.
+Hold and Switch now share a single shipment-movement predicate: WAITING_HANDOVER-only audit is not handoff; actual movement and malformed audit remain manual exceptions. Previously Hold could accept an Order that Switch then rejected solely for a WAITING_HANDOVER event.
+Switch also links supplier costs received before the new Tracking was registered, without invoking legacy repricing/Charge recomputation. New-supplier coverage requires matched evidence for the expected Supplier and Lot; a cost attached to that Tracking for another Supplier cannot finalize the replacement expectation.
+Bootstrap compatibility backfill no longer issues redundant Tracking INSERT/UPDATE operations. These no-op writes previously fired Hold guards and could prevent a fresh worker/process from opening a database with active held Tracking rows. The guards remain enabled; bootstrap skips existing normalized Tracking and unchanged Carton/Lot mappings.
+Exported handoff eligibility now checks durable REMOVE audit as well as current Manifest membership. Reopening and unpacking a previously exported carton cannot make the Order eligible for automatic Hold/Switch. Only REMOVE records preceded by EXPORT on that same Manifest carton count, so removing an unexported carton remains supported.
+Switch now recomputes reconciliation inside its atomic transaction, immediately invalidating prior complete coverage/finalized profit until the replacement supplier is accounted for. Previously reports could retain old finalized values until a later reconciliation. Exact retry also requires distinct original Tracking IDs, preventing duplicate rows from masquerading as a full multi-carton retry. Extended regression and acceptance results are recorded separately; this entry does not assert production acceptance.
+
 **Superseded for Phase 2:** Owner chose to keep the original Order and use audited Route + Tracking/Label replacement instead of cancelling/re-purchasing. The later tested implementation and its limits are described in [VERIFICATION-EMERGENCY-SWITCH-2026-10-23.md](VERIFICATION-EMERGENCY-SWITCH-2026-10-23.md). The historical notes below document the original Hold-only stage.
 Status: Partial implementation, 2026-10-23. Not production acceptance.
 

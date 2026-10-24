@@ -1,5 +1,8 @@
 # Supplier Cost & Reconciliation
 
+## Continuation — 24/10/2026
+Reconciliation now stores `actual_gp` separately from approved/finalized GP. It uses the same commercial revenue and aggregate actual cost calculation (including old + new Supplier costs after Emergency Switch). Known loss remains visible during REVIEW without approving GP or charging the Client. Missing actual remains null. BOD/FINANCE can filter GP Orders by `loss_only=1` and `emergency_only=1`, independently of Lot filters, through UI/API. These filters do not rewrite history or Ledger. New field is removed from operational projections. Existing rows acquire values when normally reconciled; no historic backfill was run. Supplier Management, exports, payables integration and complete BOD/Add-on scope remain pending.
+
 ## Quyền hiện hành 18/10/2026
 API Costs/Reconciliation và nhập Excel kind=costs chỉ BOD/FINANCE; Admin vận hành bị chặn. BOD/FINANCE không được import Orders/Balance/Tracking. Các hướng dẫn “Admin” phía dưới là thuật ngữ lịch sử cho người xử lý đối soát; quyền tài chính hiện hành xem feature 01. Không thay đổi scope coverage/FX đang pending.
 

@@ -3,6 +3,26 @@ import type {AuthUser} from "./auth";
 import {logInternalEvent} from "./order-audit";
 
 type Row=Record<string,unknown>;
+// Durable REMOVE audit preserves exported membership even after warehouse unpacks it.
+export function hasExportedManifestHistory(orderId:number){
+ return !!db.prepare(`SELECT 1 FROM manifest_carton_items mi
+ JOIN manifest_cartons mc ON mc.id=mi.manifest_carton_id
+ WHERE mi.order_id=? AND (mc.exported_at IS NOT NULL OR EXISTS(
+ SELECT 1 FROM manifest_carton_events e WHERE e.manifest_carton_id=mc.id AND e.action='EXPORT'))
+ UNION ALL
+ SELECT 1 FROM manifest_carton_events removed
+ WHERE removed.action='REMOVE' AND json_valid(removed.details_json)
+ AND json_extract(removed.details_json,'$.order_id')=?
+ AND EXISTS(SELECT 1 FROM manifest_carton_events exported
+ WHERE exported.manifest_carton_id=removed.manifest_carton_id AND exported.action='EXPORT' AND exported.id<removed.id)
+ LIMIT 1`).get(orderId,orderId);
+}
+export function hasShipmentMovement(orderId:number){
+ const tracks=db.prepare("SELECT shipment_status,delivered_at FROM order_trackings WHERE order_id=?").all(orderId) as Row[];
+ if(tracks.some(t=>t.delivered_at||String(t.shipment_status||"")!=="WAITING_HANDOVER"))return true;
+ const events=db.prepare("SELECT after_json FROM order_events WHERE order_id=? AND event_type='SHIPMENT_STATUS_UPDATED'").all(orderId) as Row[];
+ return events.some(e=>{try{const s=JSON.parse(String(e.after_json||"{}")).shipment_status;return !s||s!=="WAITING_HANDOVER";}catch{return true;}});
+}
 function admin(user:AuthUser){if(user.role!=="ADMIN")throw Error("Emergency Hold chỉ dành cho Admin.");}
 export function emergencyStatus(user:AuthUser,routeId:number){
  admin(user);
@@ -22,16 +42,8 @@ export function startEmergencyHold(user:AuthUser,routeId:number,reason:string){
  if(o.fulfillment_started_at)return false;
  // A manifest export is the operational handoff boundary. This is an order-level hold:
  // if any carton was exported, the entire order needs manual exception handling.
- const manifest=db.prepare(`SELECT mc.id,mc.carton_code,mc.exported_at FROM manifest_carton_items mi
- JOIN manifest_cartons mc ON mc.id=mi.manifest_carton_id
- WHERE mi.order_id=? AND (mc.exported_at IS NOT NULL OR EXISTS(
- SELECT 1 FROM manifest_carton_events me WHERE me.manifest_carton_id=mc.id AND me.action='EXPORT'))
- LIMIT 1`).get(o.id) as Row|undefined;
- if(manifest)return false;
- const tracks=db.prepare("SELECT shipment_status,delivered_at FROM order_trackings WHERE order_id=?").all(o.id) as Row[];
- if(tracks.some(t=>t.delivered_at||String(t.shipment_status||"")!=="WAITING_HANDOVER"))return false;
- const events=db.prepare("SELECT after_json FROM order_events WHERE order_id=? AND event_type='SHIPMENT_STATUS_UPDATED'").all(o.id) as Row[];
- return !events.some(e=>{try{const s=JSON.parse(String(e.after_json||"{}")).shipment_status;return !s||s!=="WAITING_HANDOVER";}catch{return true;}});
+ if(hasExportedManifestHistory(Number(o.id)))return false;
+ return !hasShipmentMovement(Number(o.id));
  });
  db.prepare("UPDATE service_route_configs SET warehouse_hold=1 WHERE id=?").run(routeId);
  const id=Number(db.prepare("INSERT INTO emergency_route_holds(route_id,actor_id,reason,prior_warehouse_hold) VALUES (?,?,?,?)").run(routeId,user.id,reason.trim(),route.warehouse_hold||0).lastInsertRowid);

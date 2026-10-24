@@ -120,7 +120,8 @@ export function replaceOrderTracking(input:{orderId:number;oldTrackingId:number;
   return created;
 }
 
-export function matchSupplierCostsForOrder(orderId:number){
+// Link supplier evidence independently from legacy quote/Charge recomputation.
+export function linkSupplierCostsForOrder(orderId:number){
   db.prepare(`UPDATE supplier_costs SET
     matched_order_id=?,
     matched_order_tracking_id=(SELECT ot.id FROM order_trackings ot WHERE ot.order_id=? AND ot.normalized_tracking=supplier_costs.normalized_tracking LIMIT 1)
@@ -131,7 +132,10 @@ export function matchSupplierCostsForOrder(orderId:number){
     logAdminEvent({orderId,eventType:"SUPPLIER_COST_MATCHED",summary:`Supplier Cost đã khớp Tracking ${String(cost.tracking)}.`,after:cost});
     db.prepare("UPDATE supplier_costs SET audit_recorded_at=CURRENT_TIMESTAMP WHERE id=?").run(cost.id);
   }
-  syncLotCostsForOrder(orderId);
+  return syncLotCostsForOrder(orderId);
+}
+export function matchSupplierCostsForOrder(orderId:number){
+  linkSupplierCostsForOrder(orderId);
   return recomputeOrderFinancials(orderId);
 }
 

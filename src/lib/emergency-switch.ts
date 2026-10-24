@@ -1,8 +1,10 @@
 import {db} from "./db";
 import type {AuthUser} from "./auth";
 import {logInternalEvent,publishPublicNote} from "./order-audit";
-import {normalizeTracking} from "./order-operations";
+import {normalizeTracking,linkSupplierCostsForOrder} from "./order-operations";
 import {assertRouteCartons} from "./carton-policy";
+import {reconcileLots} from "./reconciliation";
+import {hasExportedManifestHistory,hasShipmentMovement} from "./emergency-hold";
 
 type Row=Record<string,unknown>;
 type NewTracking={old_tracking_id:number;new_tracking:string;new_label_url:string};
@@ -18,7 +20,7 @@ export function emergencySwitchOrder(actor:AuthUser,holdId:number,orderId:number
    const original=db.prepare("SELECT old_tracking_id,new_tracking_id FROM emergency_switch_cost_pending WHERE hold_id=? AND order_id=?").all(holdId,orderId) as Row[];
    const byOld=new Map(original.map(x=>[Number(x.old_tracking_id),Number(x.new_tracking_id)]));
    const sameRoute=current&&db.prepare("SELECT id FROM service_route_configs WHERE id=? AND service=? COLLATE NOCASE AND sub_service=? COLLATE NOCASE AND supplier=? COLLATE NOCASE").get(newRouteId,current.service,current.sub_service,current.supplier);
-   const sameTrackings=Array.isArray(trackings)&&trackings.length===original.length&&trackings.every(t=>{
+   const sameTrackings=Array.isArray(trackings)&&trackings.length===original.length&&new Set(trackings.map(t=>Number(t.old_tracking_id))).size===original.length&&trackings.every(t=>{
     const id=byOld.get(Number(t.old_tracking_id));if(!id)return false;
     const existing=db.prepare("SELECT tracking,label_url,status FROM order_trackings WHERE id=?").get(id) as Row|undefined;
     return existing?.status==="ACTIVE"&&normalizeTracking(existing.tracking)===normalizeTracking(t.new_tracking)&&String(existing.label_url||"")===String(t.new_label_url||"").trim();
@@ -35,14 +37,11 @@ export function emergencySwitchOrder(actor:AuthUser,holdId:number,orderId:number
   const newRoute=db.prepare("SELECT * FROM service_route_configs WHERE id=? AND active=1 AND warehouse_hold=0").get(newRouteId) as Row|undefined;
   if(!newRoute||newRouteId===Number(item.route_id))throw Error("Route mới phải Active, không Hold và khác Route cũ.");
   assertRouteCartons(newRoute.service,newRoute.max_cartons_per_order,before.carton_count);
+  if(hasExportedManifestHistory(orderId))throw Error("Order có lịch sử xuất Manifest; phải xử lý ngoại lệ thủ công.");
   if(db.prepare("SELECT id FROM manifest_carton_items WHERE order_id=? LIMIT 1").get(orderId))
    throw Error("Order đã vào thùng Manifest: kho phải bốc ra và xác minh trước khi đổi Route.");
-  if(db.prepare(`SELECT 1 FROM order_trackings WHERE order_id=? AND
-   (delivered_at IS NOT NULL OR COALESCE(shipment_status,'')<>'WAITING_HANDOVER') LIMIT 1`).get(orderId))
-   throw Error("Tracking có bằng chứng đã bàn giao; phải xử lý ngoại lệ thủ công.");
+  if(hasShipmentMovement(orderId))throw Error("Tracking có bằng chứng đã bàn giao hoặc lịch sử không hợp lệ; phải xử lý ngoại lệ thủ công.");
   if(before.fulfillment_started_at)throw Error("Order đã bắt đầu fulfilment.");
-  if(db.prepare("SELECT id FROM order_events WHERE order_id=? AND event_type='SHIPMENT_STATUS_UPDATED' LIMIT 1").get(orderId))
-   throw Error("Order có lịch sử Shipment Status; cần xử lý ngoại lệ thủ công.");
   const previous=db.prepare("SELECT * FROM order_trackings WHERE order_id=? AND status='ACTIVE' ORDER BY id").all(orderId) as Row[];
   if(!Array.isArray(trackings)||trackings.length!==previous.length)throw Error("Phải khai báo đầy đủ Tracking mới theo từng Carton/Tracking đang Active.");
   const mapping=new Map(trackings.map(t=>[Number(t.old_tracking_id),t]));
@@ -60,6 +59,12 @@ export function emergencySwitchOrder(actor:AuthUser,holdId:number,orderId:number
   const hasEstimate=estimatedNetCost!==undefined&&estimatedNetCost!==null&&String(estimatedNetCost).trim()!=="";
   const estimate=Number(estimatedNetCost);
   if(hasEstimate&&(!Number.isFinite(estimate)||estimate<0||Math.round(estimate*100)/100!==estimate))throw Error("Estimated Net Cost phải là số USD hợp lệ tối đa hai chữ số thập phân.");
+  if(hasEstimate){
+   const lots=db.prepare("SELECT id FROM order_lots WHERE order_id=?").all(orderId) as Row[];
+   const configured=db.prepare("SELECT 1 FROM lot_reconciliation_settings s JOIN order_lots l ON l.id=s.lot_id WHERE l.order_id=? AND s.estimated_cents IS NOT NULL LIMIT 1").get(orderId);
+   const components=db.prepare("SELECT 1 FROM lot_cost_components c JOIN order_lots l ON l.id=c.lot_id WHERE l.order_id=? LIMIT 1").get(orderId);
+   if(components||(lots.length>1&&configured))throw Error("Estimate đã phân bổ theo Lot/component; để trống Net Cost và cập nhật qua Reconciliation, không tự chia lại.");
+  }
   const ledgerBefore=db.prepare("SELECT COUNT(*) n FROM ledger_entries").get() as {n:number};
   const originalDue=Number(before.total_due);
   // Context is inserted and removed inside one IMMEDIATE transaction. Held order/Tracking
@@ -69,6 +74,7 @@ export function emergencySwitchOrder(actor:AuthUser,holdId:number,orderId:number
     est_net_cost=CASE WHEN ?=1 THEN ? ELSE est_net_cost END,
     updated_by_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`)
    .run(newRoute.service,newRoute.sub_service,newRoute.supplier,hasEstimate?1:0,hasEstimate?estimate:0,actor.id,orderId);
+  if(hasEstimate)db.prepare("UPDATE lot_reconciliation_settings SET estimated_cents=? WHERE lot_id IN (SELECT id FROM order_lots WHERE order_id=?) AND estimated_cents IS NOT NULL").run(Math.round(estimate*100),orderId);
   const changed=[];
   for(const old of previous){
    const incoming=mapping.get(Number(old.id))!;
@@ -90,6 +96,10 @@ export function emergencySwitchOrder(actor:AuthUser,holdId:number,orderId:number
   const after=db.prepare("SELECT * FROM orders WHERE id=?").get(orderId) as Row;
   if(Number(after.total_due)!==originalDue||String(after.order_id)!==String(before.order_id)||String(after.system_order_code)!==String(before.system_order_code))
    throw Error("Emergency Switch thay đổi định danh hoặc giá bán, đã rollback.");
+  // Invalidate old finalized profit and coverage in the same transaction as rerouting.
+  // Reports must not retain a COMPLETE old-supplier result until the next cost import.
+  linkSupplierCostsForOrder(orderId);
+  reconcileLots(orderId);
   const ledgerAfter=db.prepare("SELECT COUNT(*) n FROM ledger_entries").get() as {n:number};
   if(ledgerAfter.n!==ledgerBefore.n)throw Error("Emergency Switch không được ghi Ledger.");
   logInternalEvent({orderId,eventType:"EMERGENCY_ROUTE_SWITCH",summary:"Chuyển Route do Emergency Hold; giá bán và Balance không đổi.",actorId:actor.id,before:{route:[before.service,before.sub_service,before.supplier],estimated_net_cost:before.est_net_cost,trackings:previous},after:{route:[newRoute.service,newRoute.sub_service,newRoute.supplier],estimated_net_cost:after.est_net_cost,trackings:changed,hold_id:holdId}});
