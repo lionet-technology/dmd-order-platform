@@ -3,7 +3,7 @@ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'dmd-bod-finance-')),root=path.re
 process.env.DMD_DB_PATH=path.join(dir,'test.db');process.env.NODE_ENV='test';
 const resolver=Module._resolveFilename;Module._resolveFilename=function(r,p,m,o){if(r.startsWith('@/'))r=path.join(root,'src',r.slice(2));return resolver.call(this,r,p,m,o)};
 require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true}}).outputText,f);
-const {db}=require('../src/lib/db.ts'),auth=require('../src/lib/auth.ts'),{RefundService}=require('../src/lib/refunds.ts'),{bodFinanceReport}=require('../src/lib/bod-finance-report.ts');
+const {db}=require('../src/lib/db.ts'),auth=require('../src/lib/auth.ts'),{RefundService}=require('../src/lib/refunds.ts'),{bodFinanceReport}=require('../src/lib/bod-finance-report.ts'),{bodCommercialMonth}=require('../src/lib/bod-commercial.ts');
 let checks=0;const eq=(a,b,msg)=>{checks++;assert.deepEqual(a,b,msg)},reject=(fn,msg)=>{checks++;assert.throws(fn,undefined,msg)};
 const create=(name,role,sales_user_id)=>auth.createUser({username:'bod.'+name,display_name:name,password:'TestPass123!',role,sales_user_id});
 const admin=create('admin','ADMIN'),sales=create('sales','SALES'),client=create('client','CLIENT',sales.id),finance=create('finance','FINANCE'),bod=create('owner','BOD');
@@ -52,12 +52,23 @@ try{
  eq([r.order_gp.finalized_count,r.order_gp.finalized_gp_cents,r.order_gp.pending_count,r.order_gp.pending_estimated_gp_cents],[1,1200,2,1300],'Only COMPLETE approved Actual Order GP finalized; estimated pending separate');
  eq(r.accounts.find(a=>a.client_id===client.id).balance_cents,-3500,'Supplier actions never alter Client report');
  eq(r.client_reconciliation.available_count+r.client_reconciliation.unavailable.length,r.client_reconciliation.total_count,'Every Client has explicit reconciliation availability');
+ const month=day.slice(0,7);
+ db.prepare(`INSERT INTO orders(order_id,client_user_id,sales_user_id,service,sub_service,supplier,workflow_status,service_purchased_at,total_due,sales_price,base_cost,finalized_gp,margin_status,actual_cost_coverage,reconciliation_status) VALUES
+ ('BOD-MONTH-A',?,?,?,'Standard',?,'PURCHASED',?,25,25,20,3,'FINALIZED','COMPLETE','PASS'),
+ ('BOD-MONTH-B',?,?,?,'Standard',?,'PURCHASED',?,15,15,10,NULL,'PENDING','PARTIAL','REVIEW'),
+ ('BOD-MONTH-C',?,?,?,'Standard',?,'CANCELLED',?,900,900,2,898,'FINALIZED','COMPLETE','PASS')`).run(client.id,sales.id,service,supplier,day,client.id,sales.id,service,supplier,day,client.id,sales.id,service,supplier,day);
+ const commercial=bodCommercialMonth(bod,month);
+ eq([commercial.total.orders,commercial.total.revenue_cents,commercial.total.gp_base_cents,commercial.total.gp_net_finalized_cents,commercial.total.pending_orders],[2,4000,1000,300,1],'Monthly report: no cancelled order or pending GP masquerading as finalized');
+ eq([commercial.by_sales.length,commercial.by_sales[0].revenue_cents,commercial.by_client.length,commercial.by_service_supplier.length],[1,4000,1,1],'Four commercial report groupings reconcile to total');
+ reject(()=>bodCommercialMonth(admin,month),'Admin cannot view BOD commercial report');
+ reject(()=>bodCommercialMonth(bod,'2026-13'),'Reject invalid month');
+ eq(bodCommercialMonth(bod,'2020-01').total.orders,0,'Empty historic month is zero Orders, not current GP');
  const beforeReads={ledger:db.prepare('SELECT COUNT(*) n FROM ledger_entries').get().n,entries:db.prepare('SELECT COUNT(*) n FROM supplier_account_entries').get().n,corrections:db.prepare('SELECT COUNT(*) n FROM supplier_claim_corrections').get().n,statements:db.prepare('SELECT COUNT(*) n FROM statement_v2_snapshots').get().n};
  bodFinanceReport(bod,day,day);bodFinanceReport(finance,day,day);
  eq({ledger:db.prepare('SELECT COUNT(*) n FROM ledger_entries').get().n,entries:db.prepare('SELECT COUNT(*) n FROM supplier_account_entries').get().n,corrections:db.prepare('SELECT COUNT(*) n FROM supplier_claim_corrections').get().n,statements:db.prepare('SELECT COUNT(*) n FROM statement_v2_snapshots').get().n},beforeReads,'BOD reads never post money or finalize Statements');
  db.prepare("INSERT INTO orders(order_id,margin_status,actual_cost_coverage,reconciliation_status) VALUES ('BOD-MISSING-GP','FINALIZED','COMPLETE','PASS')").run();
  const missing=bodFinanceReport(bod,day,day).order_gp;
- eq([missing.finalized_count,missing.finalized_gp_cents,missing.pending_count,missing.pending_estimate_missing_count],[1,1200,3,1],'Missing GP is pending and explicitly counted, never finalized zero');
+ eq([missing.finalized_count,missing.finalized_gp_cents,missing.pending_count,missing.pending_estimate_missing_count],[3,91300,4,2],'Missing GP is pending and explicitly counted, never finalized zero, including added cohort fixtures');
  const outOfPeriod=bodFinanceReport(bod,'2020-01-01','2020-01-01');
  eq(outOfPeriod.supplier_addons_period,{revenue_cents:0,cost_cents:0},'Add-on period uses posting day');
  eq(outOfPeriod.supplier_accounts.find(s=>s.supplier===supplier).receivable_cents,10000,'Current Supplier exposure explicitly independent of requested historical period');
