@@ -1,0 +1,88 @@
+E2E ORDER API PASS (36 assertions)
+
+OPERATIONS HTTP PASS (23 assertions)
+
+FINANCE HTTP PASS (20 assertions)
+
+MANIFEST SCAN API PASS (16 assertions)
+
+E2E ORDER CANCELLATION PASS (86 assertions)
+
+OWNER CREDIT RULES PASS (47 assertions); isolated DB /var/folders/x6/q7g3prc91cng1tjxqpd64yvc0000gn/T/dmd-owner-credit-bZqzKg/test.db
+
+OWNER CREDIT HTTP PASS (18 assertions)
+
+{"database":"/var/folders/x6/q7g3prc91cng1tjxqpd64yvc0000gn/T/dmd-refund-browser-fBRTW1/synthetic.db","users":["uat.admin","uat.sales","uat.finance","uat.client","uat.bod"],"password":"UatRefund123!"}
+
+OWNER MANUAL HTTP PASS (31 assertions; 8 concurrent Tracking retries + 8 price retries + 20 filtered GETs)
+
+{"database":"/var/folders/x6/q7g3prc91cng1tjxqpd64yvc0000gn/T/dmd-refund-browser-9i4SuK/synthetic.db","users":["uat.admin","uat.sales","uat.finance","uat.client","uat.bod"],"password":"UatRefund123!"}
+
+STATEMENT V2 HTTP PASS (39 assertions)
+
+{
+  "database": "/Users/quan/Desktop/report/.smoke/internal-uat-test-owner-http-1792927907446.db",
+  "users": [
+    {
+      "role": "ADMIN",
+      "count": 1
+    },
+    {
+      "role": "BOD",
+      "count": 1
+    },
+    {
+      "role": "CLIENT",
+      "count": 15
+    },
+    {
+      "role": "FINANCE",
+      "count": 2
+    },
+    {
+      "role": "SALES",
+      "count": 3
+    },
+    {
+      "role": "WAREHOUSE",
+      "count": 1
+    }
+  ],
+  "orders": [
+    {
+      "workflow_status": "CANCELLED",
+      "count": 1
+    },
+    {
+      "workflow_status": "PENDING_PURCHASE",
+      "count": 32
+    },
+    {
+      "workflow_status": "PURCHASED",
+      "count": 354
+    },
+    {
+      "workflow_status": "SALES_DRAFT",
+      "count": 157
+    }
+  ],
+  "costs": {
+    "count": 300
+  },
+  "multiLot": {
+    "count": 40
+  },
+  "integrity": [
+    {
+      "integrity_check": "ok"
+    }
+  ]
+}
+
+{ id: 24, username: 'uat.partial' }
+
+BALANCE OVERVIEW HTTP PASS (140 assertions)
+
+FINANCE LIST HTTP PASS (22 assertions)
+
+OWNER HTTP SUITES PASS; logs /var/folders/x6/q7g3prc91cng1tjxqpd64yvc0000gn/T/dmd-owner-http-dXdWjz

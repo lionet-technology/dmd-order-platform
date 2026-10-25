@@ -1,3 +1,6 @@
+## Owner continuation — 25/10/2026
+Current Sales snapshots, BOD monthly trends and Statement batch close: [approved behavior and integration](20-sales-monthly-close.md). This delta supersedes conflicting historical notes below. No background scheduler is configured.
+
 ## Supplier / Client / BOD continuation — 25/10/2026
 Linked Recovery/Claim sources, append-only corrections/reversals, Emergency old/new cost visibility and review, BOD Supplier exposure/approved Actual GP and Client Statement availability. [Verified scope, 35 domain suites + 10 HTTP suites + 22 browser assertions, remaining exceptions and build DB-safety incident](VERIFICATION-SUPPLIER-CONTINUATION-2026-10-25.md). No production acceptance.
 

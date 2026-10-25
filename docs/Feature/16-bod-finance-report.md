@@ -1,3 +1,6 @@
+## Owner continuation — 25/10/2026
+Current Sales snapshots, BOD monthly trends and Statement batch close: [approved behavior and integration](20-sales-monthly-close.md). This delta supersedes conflicting historical notes below. No background scheduler is configured.
+
 # BOD Finance report — Client, Supplier and approved Order GP
 
 ## Continuation — 25/10/2026

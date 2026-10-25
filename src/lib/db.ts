@@ -1,3 +1,4 @@
+import {installSalesAttributionSchema} from './sales-attribution-schema';
 import Database from "better-sqlite3";
 import {installEmergencySchema} from "./emergency-schema";
 import {installRouteLifecycleSchema} from "./route-lifecycle";
@@ -794,3 +795,4 @@ db.exec(`CREATE TABLE IF NOT EXISTS route_pricing_audit(
 
 installEmergencySchema(db);
 installRouteLifecycleSchema(db);
+installSalesAttributionSchema(db);

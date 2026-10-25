@@ -6,17 +6,17 @@ export const runtime="nodejs";
 
 type ExistingUser={id:number;role:string;sales_user_id:number|null;active:number;is_root_admin:number};
 
-function syncClientSales(clientId:number,salesUserId:number){
-  const sales=db.prepare("SELECT display_name FROM users WHERE id=? AND role='SALES'").get(salesUserId) as {display_name:string}|undefined;
-  if(sales)db.prepare("UPDATE orders SET sales_user_id=?,sales=?,updated_at=CURRENT_TIMESTAMP WHERE client_user_id=?")
-    .run(salesUserId,sales.display_name,clientId);
+function auditOwner(clientId:number,previous:number|null,next:number|null,actorId:number){
+  if(previous!==next)db.prepare("INSERT INTO client_sales_owner_history(client_id,previous_sales_user_id,next_sales_user_id,actor_id) VALUES (?,?,?,?)").run(clientId,previous,next,actorId);
 }
 
 async function handlePATCH(req:NextRequest,{params}:{params:Promise<{id:string}>}){
   const auth=requireUser(req,"ADMIN"); if(auth.error)return auth.error;
   const id=Number((await params).id); const b=await req.json();
+  return db.transaction(()=>{
   const existing=db.prepare("SELECT id,role,sales_user_id,active,is_root_admin FROM users WHERE id=?").get(id) as ExistingUser|undefined;
   if(!existing)return NextResponse.json({error:"User not found"},{status:404});
+  if(b.expected_sales_user_id!==undefined&&b.expected_sales_user_id!==existing.sales_user_id)return NextResponse.json({error:"Sales owner đã thay đổi. Tải lại trước khi lưu."},{status:409});
 
   if((["BOD","FINANCE"].includes(existing.role)||["BOD","FINANCE"].includes(String(b.role).toUpperCase()))&&!auth.user.is_root_admin)return NextResponse.json({error:"Chỉ Root Owner quản lý tài khoản BOD/Finance."},{status:403});
   if(existing.is_root_admin){
@@ -26,10 +26,6 @@ async function handlePATCH(req:NextRequest,{params}:{params:Promise<{id:string}>
   }
   if(id===auth.user.id && b.active===false) return NextResponse.json({error:"Không thể tự khóa tài khoản đang đăng nhập."},{status:400});
 
-  if(typeof b.active==="boolean") {
-    db.prepare("UPDATE users SET active=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(b.active?1:0,id);
-    if(!b.active) db.prepare("DELETE FROM sessions WHERE user_id=?").run(id);
-  }
   if(b.role!==undefined){
     const nextRole=String(b.role).toUpperCase();
     if(!["ADMIN","SALES","CLIENT","WAREHOUSE","BOD","FINANCE"].includes(nextRole)) return NextResponse.json({error:"Role phải là ADMIN, SALES, CLIENT hoặc WAREHOUSE."},{status:400});
@@ -39,14 +35,18 @@ async function handlePATCH(req:NextRequest,{params}:{params:Promise<{id:string}>
       if(!sales)return NextResponse.json({error:"Client bắt buộc phải có Sales phụ trách hợp lệ."},{status:400});
     }
     db.prepare("UPDATE users SET role=?,sales_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(nextRole,nextSalesUserId,id);
-    if(nextRole==="CLIENT"&&nextSalesUserId)syncClientSales(id,nextSalesUserId);
+    if(existing.role==='CLIENT'||nextRole==='CLIENT')auditOwner(id,existing.sales_user_id,nextSalesUserId,auth.user.id);
   } else if(b.sales_user_id!==undefined){
     if(existing.role!=="CLIENT")return NextResponse.json({error:"Chỉ tài khoản Client mới có Sales phụ trách."},{status:400});
     const salesUserId=Number(b.sales_user_id||0);
     const sales=salesUserId?db.prepare("SELECT id FROM users WHERE id=? AND role='SALES' AND active=1").get(salesUserId):undefined;
     if(!sales)return NextResponse.json({error:"Sales phụ trách không hợp lệ."},{status:400});
     db.prepare("UPDATE users SET sales_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(salesUserId,id);
-    syncClientSales(id,salesUserId);
+    auditOwner(id,existing.sales_user_id,salesUserId,auth.user.id);
+  }
+  if(typeof b.active==="boolean"){
+    db.prepare("UPDATE users SET active=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(b.active?1:0,id);
+    if(!b.active)db.prepare("DELETE FROM sessions WHERE user_id=?").run(id);
   }
   if(b.password) {
     if(existing.is_root_admin && id!==auth.user.id) return NextResponse.json({error:"Không thể reset password của Root Admin."},{status:403});
@@ -54,6 +54,7 @@ async function handlePATCH(req:NextRequest,{params}:{params:Promise<{id:string}>
     db.prepare("DELETE FROM sessions WHERE user_id=?").run(id);
   }
   return NextResponse.json(db.prepare("SELECT id,username,display_name,role,sales_user_id,active,is_root_admin,created_at,updated_at FROM users WHERE id=?").get(id));
+  }).immediate();
 }
 
 async function handleDELETE(req:NextRequest,{params}:{params:Promise<{id:string}>}){
@@ -65,5 +66,10 @@ async function handleDELETE(req:NextRequest,{params}:{params:Promise<{id:string}
   return NextResponse.json({error:"Không hỗ trợ xóa tài khoản. Hãy deactivate để giữ lịch sử dữ liệu."},{status:405});
 }
 
+export const GET=withFinancialPrivacy(async(req:NextRequest,{params}:{params:Promise<{id:string}>})=>{
+ const auth=requireUser(req,"ADMIN");if(auth.error)return auth.error;
+ const id=Number((await params).id);
+ return NextResponse.json({items:db.prepare("SELECT * FROM client_sales_owner_history WHERE client_id=? ORDER BY id DESC").all(id)});
+});
 export const PATCH=withFinancialPrivacy(handlePATCH);
 export const DELETE=withFinancialPrivacy(handleDELETE);

@@ -87,7 +87,7 @@ async function handlePOST(req: NextRequest) {
 
   try {
     const body=await req.json();
-    const before=body.id?db.prepare("SELECT * FROM orders WHERE id=?").get(Number(body.id)):undefined;
+    const before=body.id?db.prepare("SELECT * FROM orders WHERE id=?").get(Number(body.id)) as Record<string,unknown>|undefined:undefined;
 
     if(auth.user.role==="SALES"){
       const client=getClientAccount(body.client_user_id,true);
@@ -111,14 +111,14 @@ async function handlePOST(req: NextRequest) {
         ...body,
         client_user_id:client.id,
         customer:client.display_name,
-        sales:auth.user.display_name,
+        sales:before?.sales_attributed_at?before.sales:auth.user.display_name,
         supplier:undefined,label:undefined,tracking:undefined,est_net_cost:undefined,base_cost:undefined,
         retail:undefined,sales_price:undefined,surcharge:undefined,import_tax:undefined,total_due:undefined,
         auto_pricing:undefined,volume:undefined,chargeable_weight:undefined,
       };
       const saved=upsertOrder(salesBody) as {id:number};
       db.prepare("UPDATE orders SET client_user_id=?,sales_user_id=?,customer=?,sales=?,created_by_user_id=COALESCE(created_by_user_id,?),updated_by_user_id=? WHERE id=?")
-        .run(client.id,auth.user.id,client.display_name,auth.user.display_name,auth.user.id,auth.user.id,saved.id);
+        .run(client.id,before?.sales_attributed_at?before.sales_user_id:auth.user.id,client.display_name,before?.sales_attributed_at?before.sales:auth.user.display_name,auth.user.id,auth.user.id,saved.id);
       const after=db.prepare("SELECT * FROM orders WHERE id=?").get(saved.id);
       logOrderEvent({orderId:saved.id,eventType:body.id?"ORDER_UPDATED":"ORDER_CREATED",summary:body.id?"Cập nhật thông tin Order.":"Tạo Order mới.",actorId:auth.user.id,before,after});
       const record=stripPricingInternals({...after as Record<string,unknown>,pricing:safePricing(after as Record<string,unknown>,auth.user.role)});
@@ -157,6 +157,7 @@ async function handlePOST(req: NextRequest) {
       }
     }
 
+    if(before?.sales_attributed_at){salesName=String(before.sales||'');salesUserId=before.sales_user_id===null?null:Number(before.sales_user_id);}
     const saved=amendOrderBeforeTracking({...body,client_user_id:clientUserId??body.client_user_id,sales:salesName},auth.user) as {id:number};
     db.prepare("UPDATE orders SET client_user_id=COALESCE(?,client_user_id),sales_user_id=COALESCE(?,sales_user_id),created_by_user_id=COALESCE(created_by_user_id,?),updated_by_user_id=? WHERE id=?")
       .run(clientUserId,salesUserId,auth.user.id,auth.user.id,saved.id);

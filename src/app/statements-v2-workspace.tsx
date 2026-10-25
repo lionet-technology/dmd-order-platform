@@ -9,6 +9,22 @@ const usd=(n:number)=>new Intl.NumberFormat('en-US',{style:'currency',currency:'
 export function StatementsV2Workspace({role,clientId}:{role:string;clientId?:string}){
  const sequence=useRef(0);
  const [clients,setClients]=useState<Row[]>([]),[client,setClient]=useState(clientId||''),[start,setStart]=useState(day()),[end,setEnd]=useState(day()),[items,setItems]=useState<Snapshot[]>([]),[selected,setSelected]=useState<Snapshot|null>(null),[nextStart,setNextStart]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+ const [monthlyReview,setMonthlyReview]=useState<Row[]>([]),[monthlyNotice,setMonthlyNotice]=useState(''),[monthlyBusy,setMonthlyBusy]=useState(false);
+ const previousMonth=new Date(Date.UTC(Number(day().slice(0,4)),Number(day().slice(5,7))-1,0)).toISOString().slice(0,7);
+ async function monthlyClose(){
+  setMonthlyBusy(true);setMonthlyNotice('');setError('');
+  try{
+   let after:number|null=0;let finalized=0;
+   do{
+    const response:Response=await fetch('/api/statements-v2',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'monthly_close',through_month:previousMonth,after_client_id:after,limit:50})});
+    const result:{items:Row[];review:Row[];next_client_id:number|null;error?:string}=await response.json();if(!response.ok)throw Error(result.error);
+    finalized+=result.items.filter((r:Row)=>r.status==='FINALIZED').length;setMonthlyReview(result.review);after=result.next_client_id;
+   }while(after!==null);
+   setMonthlyNotice('Đã chốt '+finalized+' kỳ. Ngoại lệ giữ tại Admin Review. Chưa cấu hình lịch nền.');
+   if(client)await load('list');
+  }catch(e){setError((e as Error).message)}finally{setMonthlyBusy(false)}
+ }
+ useEffect(()=>{if(!['ADMIN','FINANCE'].includes(role))return;let active=true;fetch('/api/statements-v2?monthly_review=1',{cache:'no-store'}).then(async r=>{const d=await r.json();if(!r.ok)throw Error(d.error);if(active)setMonthlyReview(d.items)}).catch(e=>{if(active)setError(e.message)});return()=>{active=false}},[role]);
  useEffect(()=>{setClient(clientId||'')},[clientId]);
  useEffect(()=>{
  const pending=sequence;const request=++pending.current;setSelected(null);setItems([]);setNextStart('');setError('');
@@ -29,6 +45,7 @@ export function StatementsV2Workspace({role,clientId}:{role:string;clientId?:str
  }catch(e){if(request===sequence.current)setError((e as Error).message)}finally{if(request===sequence.current)setBusy(false)}}
  async function dispute(event:React.FormEvent<HTMLFormElement>){event.preventDefault();const summary=String(new FormData(event.currentTarget).get('summary'));const request=++sequence.current;setBusy(true);setError('');try{const r=await fetch('/api/cases',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'create',kind:'CLAIM',visibility:'PUBLIC',summary,order_ids:selected?.order_ids,statement_v2_id:selected?.id})}),d=await r.json();if(!r.ok)throw Error(d.error);if(request===sequence.current)await load('list');}catch(e){if(request===sequence.current)setError((e as Error).message)}finally{if(request===sequence.current)setBusy(false)}}
  return <section className="panel"><h2>Statement</h2><p>Chứng từ báo cáo Balance, Debt và Refund Balance. Finalize giữ nguyên số liệu đã chốt; không thu phí hoặc phân bổ Payment. Khoản ghi sau khi chốt chuyển sang kỳ tiếp theo. Chuyển Balance → Debt được ghi riêng trong kỳ phát sinh; phần đã chuyển chỉ áp dụng hạn trả Debt, không tiếp tục quá hạn theo Statement cũ.</p>
+ {['ADMIN','FINANCE'].includes(role)&&<details><summary>Đóng Statement tháng · Admin Review</summary><p>Chạy các kỳ liên tục đến hết {previousMonth}, tối đa 12 kỳ mỗi Client trong một lượt. Payment phải được đối soát, giá bán và số dư phải khớp. Claim mở vẫn được giữ theo dõi. Chưa cấu hình lịch nền; bấm chạy lại để tiếp tục kỳ còn lại.</p><button className="primaryBtn" disabled={monthlyBusy||busy} onClick={()=>void monthlyClose()}>{monthlyBusy?'Đang đóng tháng…':'Chạy đóng tháng'}</button>{monthlyNotice&&<p role="status">{monthlyNotice}</p>}{monthlyReview.length===0?<p>Không có ngoại lệ đã ghi nhận.</p>:monthlyReview.map(r=><p key={String(r.client_id)+String(r.period_start)}>Client #{String(r.client_id)} · {String(r.period_start)} → {String(r.period_end)}: {String(r.reason)}</p>)}</details>}
  <div className="settingsActions">{!clientId&&role!=='CLIENT'&&<label className="field">Client<select value={client} onChange={e=>{setClient(e.target.value);setSelected(null);setItems([])}}><option value="">Chọn Client</option>{clients.map(c=><option key={String(c.id)} value={String(c.id)}>{String(c.display_name)}</option>)}</select></label>}
  <label className="field">Từ ngày<input type="date" value={start} onChange={e=>setStart(e.target.value)}/></label><label className="field">Đến ngày<input type="date" value={end} onChange={e=>setEnd(e.target.value)}/></label>
  <button disabled={busy||(!client&&role!=='CLIENT')} onClick={()=>void load('preview')}>Xem trước</button><button disabled={busy||(!client&&role!=='CLIENT')} onClick={()=>void load('list')}>Đã Finalized</button>

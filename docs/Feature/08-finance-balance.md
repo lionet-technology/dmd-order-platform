@@ -1,3 +1,6 @@
+## Owner continuation — 25/10/2026
+Current Sales snapshots, BOD monthly trends and Statement batch close: [approved behavior and integration](20-sales-monthly-close.md). This delta supersedes conflicting historical notes below. No background scheduler is configured.
+
 ## Supplier account continuation — 24/10/2026
 [Current Supplier/Client MVP](19-supplier-accounts.md) documents the latest Owner decision, explicit confirmation of Actual Cost, non-posting Estimated/approved Supplier Claims and account-centered Client UX. Earlier Supplier deferrals are superseded only within that documented scope. Existing Order GP and Client money rules are preserved.
 

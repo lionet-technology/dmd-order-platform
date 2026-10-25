@@ -89,7 +89,7 @@ export function purchaseService(id:number,actor:{id:number;role:string},requireB
   if(actor.role==='CLIENT'&&!route.client_self_purchase)throw Error('Route chưa cho phép Client lên đơn.');
   if(o.client_user_id)assertPurchasing(Number(o.client_user_id),0);
   const stamp=new Date().toISOString();
-  db.prepare("UPDATE orders SET service_purchased_at=COALESCE(service_purchased_at,?),workflow_status='PENDING_PURCHASE',updated_at=CURRENT_TIMESTAMP WHERE id=?").run(stamp,id);
+  db.prepare("UPDATE orders SET service_purchased_at=COALESCE(service_purchased_at,?),workflow_status='PENDING_PURCHASE',updated_by_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(stamp,actor.id,id);
   logOrderEvent({orderId:id,eventType:'SERVICE_PURCHASED',summary:'Đã lên đơn; chờ Admin nhập giá thủ công trước khi cấp Tracking/Label.',actorId:actor.id});
   return db.prepare('SELECT * FROM orders WHERE id=?').get(id) as Row;
  }
@@ -100,7 +100,7 @@ export function purchaseService(id:number,actor:{id:number;role:string},requireB
  if(requireBalance)assertPurchasing(Number(o.client_user_id),q.total_charge);
  reservePurchase(id,Number(o.client_user_id),q.total_charge,actor.id);
  const stamp=new Date().toISOString();
- db.prepare("UPDATE orders SET pricing_snapshot_json=?,pricing_version_id=?,pricing_config_version_id=?,service_purchased_at=?,workflow_status='PENDING_PURCHASE',updated_at=CURRENT_TIMESTAMP WHERE id=?").run(JSON.stringify(q),q.pricing_version_id,q.pricing_config_version_id,stamp,id);
+ db.prepare("UPDATE orders SET pricing_snapshot_json=?,pricing_version_id=?,pricing_config_version_id=?,service_purchased_at=?,workflow_status='PENDING_PURCHASE',updated_by_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(JSON.stringify(q),q.pricing_version_id,q.pricing_config_version_id,stamp,actor.id,id);
 
  logOrderEvent({orderId:id,eventType:"SERVICE_PURCHASED",summary:"Đặt mua dịch vụ; giá USD đã được khóa.",actorId:actor.id,after:q});
  for(const s of q.surcharge_breakdown)publishPublicNote({orderId:id,eventType:"SURCHARGE_NOTICE",summary:s.note,actorId:actor.id,publicData:{amount:s.amount,currency:"USD",surcharge_type:s.code}});

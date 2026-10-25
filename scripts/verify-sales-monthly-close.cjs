@@ -1,0 +1,100 @@
+const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),Module=require('node:module'),ts=require('typescript'),assert=require('node:assert/strict');
+const {Worker,isMainThread,workerData,parentPort}=require('node:worker_threads');
+if(!isMainThread){
+ const d=new(require('better-sqlite3'))(workerData.file);d.pragma('busy_timeout=10000');
+ try{for(let i=0;i<40;i++)d.transaction(()=>{
+ if(workerData.kind==='owner')d.prepare('UPDATE users SET sales_user_id=? WHERE id=?').run(i%2?workerData.a:workerData.b,workerData.client);
+ else{
+ const owner=d.prepare('SELECT sales_user_id FROM users WHERE id=?').get(workerData.client).sales_user_id;
+ const id=Number(d.prepare("INSERT INTO orders(client_user_id,order_id) VALUES (?,?)").run(workerData.client,'RACE-'+i).lastInsertRowid);
+ d.prepare("UPDATE orders SET service_purchased_at='2026-01-15' WHERE id=?").run(id);
+ assert.equal(d.prepare('SELECT sales_user_id FROM orders WHERE id=?').get(id).sales_user_id,owner);
+ }
+ }).immediate();parentPort.postMessage('ok');}finally{d.close();}
+}else{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'dmd-sales-close-')),root=path.resolve(__dirname,'..'),file=path.join(dir,'test.db');
+ process.env.DMD_DB_PATH=file;process.env.NODE_ENV='test';
+ const resolver=Module._resolveFilename;Module._resolveFilename=function(r,p,m,o){return resolver.call(this,r.startsWith('@/')?path.join(root,'src',r.slice(2)):r,p,m,o)};
+ require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,f);
+ const RealDate=Date;let now='2026-01-15T03:00:00.000Z';global.Date=class extends RealDate{constructor(...a){super(...(a.length?a:[now]))}static now(){return new RealDate(now).getTime()}};
+ const {db}=require('../src/lib/db.ts');
+ db.function('strftime',{varargs:true},(format,value)=>{if(value==='now'&&format==='%Y-%m-%dT%H:%M:%fZ')return now;throw Error('Unexpected clock')});
+ const auth=require('../src/lib/auth.ts'),credit=require('../src/lib/credit.ts'),{purchaseService}=require('../src/lib/route-pricing.ts'),{bodCommercialMonth,bodCommercialOverview}=require('../src/lib/bod-commercial.ts'),{closeMonthlyStatements,monthlyCloseReview}=require('../src/lib/statement-monthly-close.ts'),{PaymentReconciliation}=require('../src/lib/payment-reconciliation.ts'),{RefundService}=require('../src/lib/refunds.ts'),{caseAction}=require('../src/lib/cases.ts');
+ const create=(name,role,owner)=>auth.createUser({username:'close.'+name,display_name:name,password:'TestPass123!',role,sales_user_id:owner});
+ const admin=create('admin','ADMIN'),a=create('a','SALES'),b=create('b','SALES'),client=create('client','CLIENT',a.id),finance=create('finance','FINANCE'),bod=create('bod','BOD');
+ let n=0;const eq=(x,y,m)=>{n++;assert.deepEqual(x,y,m)},reject=(fn,m)=>{n++;assert.throws(fn,undefined,m)};
+ const order=(name)=>{const id=Number(db.prepare("INSERT INTO orders(order_id,client_user_id,sales_user_id,sales,service,sub_service,supplier,workflow_status,carton_count) VALUES (?,?,?,'stale','UPS','Close','DMD','SALES_DRAFT',1)").run(name,client.id,a.id).lastInsertRowid);db.prepare('INSERT INTO order_cartons(order_id,carton_number) VALUES (?,1)').run(id);return id};
+ (async()=>{try{
+ db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier,active,client_self_purchase) VALUES ('UPS','Close','DMD',1,1)").run();
+ const first=order('OWNER-FIRST');purchaseService(first,client);
+ eq(db.prepare('SELECT sales_user_id,sales FROM orders WHERE id=?').get(first),{sales_user_id:a.id,sales:'a'},'Client purchase snapshots fresh owner');
+ db.prepare('UPDATE users SET sales_user_id=? WHERE id=?').run(b.id,client.id);
+ eq(purchaseService(first,client).sales_user_id,a.id,'Retry preserves historical owner');
+ eq(auth.canAccessClient(a,auth.getClientAccount(client.id)),false,'Former owner loses current Client access');
+ eq(auth.canAccessClient(b,auth.getClientAccount(client.id)),true,'New owner gains current Client access');
+ reject(()=>purchaseService(order('OLD-SALES'),a),'Former Sales cannot buy');
+ const second=order('OWNER-SECOND');purchaseService(second,b);
+ eq(db.prepare('SELECT sales_user_id FROM orders WHERE id=?').get(second).sales_user_id,b.id,'Sales snapshots current owner instead of draft owner');
+ const third=order('OWNER-ADMIN');purchaseService(third,admin);
+ eq(db.prepare('SELECT sales_user_id FROM orders WHERE id=?').get(third).sales_user_id,b.id,'Admin snapshots Client owner');
+ reject(()=>db.prepare('UPDATE orders SET sales_user_id=? WHERE id=?').run(b.id,first),'Attribution immutable');
+ reject(()=>db.prepare('UPDATE orders SET client_user_id=NULL WHERE id=?').run(first),'Purchased Client immutable');
+ eq(db.prepare('SELECT COUNT(*) n FROM order_sales_snapshots').get().n,3,'Exactly one snapshot per accepted purchase');
+ const fail=order('OWNER-INACTIVE');db.prepare('UPDATE users SET active=0 WHERE id=?').run(b.id);
+ reject(()=>purchaseService(fail,admin),'Inactive owner purchase fails');
+ eq(db.prepare('SELECT service_purchased_at FROM orders WHERE id=?').get(fail).service_purchased_at,null,'Failed snapshot rolls back purchase');
+ db.prepare('UPDATE users SET active=1 WHERE id=?').run(b.id);
+ db.prepare("UPDATE orders SET sales_price=25,base_cost=20,surcharge=7,import_tax=9,estimated_gp=3 WHERE id IN (?,?,?)").run(first,second,third);
+ const initial=bodCommercialMonth(bod,'2026-01');
+ eq([initial.total.revenue_cents,initial.total.gp_base_cents,initial.total.commission_gp_base_cents],[7500,1500,1500],'Surcharge/tax excluded from GP Base');
+ eq(initial.by_sales.find(r=>r.key===String(a.id)).orders,1,'BOD historical Sales attribution');
+ const claim=caseAction(client,{action:'create',kind:'CLAIM',visibility:'PUBLIC',order_ids:[first],summary:'Synthetic'});
+ const refunds=new RefundService(db);
+ refunds.decide(admin,{case_id:claim.id,refund_cents:100,compensation_cents:0,reason:'Approved',category:'OTHER',request_key:'decide'});
+ eq(bodCommercialMonth(bod,'2026-01').total.commission_gp_base_cents,1000,'Refund excludes order commission once');
+ refunds.execute(finance,{action:'to_balance',client_id:client.id,amount_cents:50,reason:'Partial',reference:'p',request_key:'p'});
+ eq(bodCommercialMonth(bod,'2026-01').total.commission_gp_base_cents,1000,'Payout never reverses commission twice');
+ refunds.decide(admin,{case_id:claim.id,refund_cents:0,compensation_cents:0,reason:'Reversed',category:'OTHER',request_key:'reverse'});
+ eq(bodCommercialMonth(bod,'2026-01').total.commission_gp_base_cents,1500,'Revised zero obligation restores eligibility');
+ const overview=bodCommercialOverview(bod,'2026-01',12);
+ eq([overview.trend.length,overview.trend[0].month,overview.mom.revenue.percent],[12,'2025-02',null],'12 months and zero denominator MoM');
+ reject(()=>bodCommercialOverview(a,'2026-01'),'Sales cannot view GP Net');
+ db.prepare("INSERT INTO orders(order_id,client_user_id,sales_user_id,service_purchased_at,sales_price,base_cost) VALUES ('MOM-PRIOR',?,?,'2025-12-10',50,20)").run(client.id,a.id);
+ eq(bodCommercialOverview(bod,'2026-01').mom.revenue,{delta_cents:2500,percent:50},'Nonzero prior month MoM');
+ db.prepare('UPDATE orders SET estimated_gp=NULL WHERE id=?').run(first);
+ eq(bodCommercialMonth(bod,'2026-01').total.pending_estimate_missing_orders,1,'Missing GP estimate explicit');
+ db.prepare('UPDATE orders SET estimated_gp=3 WHERE id=?').run(first);
+ const payment=Number(db.prepare("INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount) VALUES (?,'PAYMENT','CREDIT',10)").run(client.id).lastInsertRowid);
+ db.prepare("UPDATE ledger_entries SET created_at='2026-01-20' WHERE id=?").run(payment);
+ now='2026-03-10T03:00:00.000Z';
+ let batch=closeMonthlyStatements(admin,'2026-02');
+ eq(batch.items[0].status,'REVIEW','Unreconciled payment routes to Review');
+ eq(db.prepare('SELECT COUNT(*) n FROM statement_v2_snapshots').get().n,0,'Failed close writes no financial snapshot');
+ const confirmation=new PaymentReconciliation(db).batch(finance,{request_key:'confirm',reason:'Matched',status:'CONFIRMED',rows:[{ledger_id:payment,expected_event_id:0}]});
+ new(require('../src/lib/payment-adjustments.ts').PaymentAdjustments)(db,credit.allocateFIFO).adjust(finance,{ledger_id:payment,actual_cents:900,expected_adjustment_event_id:0,reason:'Correct actual receipt',request_key:'adjust-after-confirm'});
+ batch=closeMonthlyStatements(admin,'2026-02');
+ eq(batch.items[0].reason.includes('Payment'),true,'Changed receipt invalidates stale reconciliation');
+ new PaymentReconciliation(db).batch(finance,{request_key:'reconfirm',reason:'Matched corrected amount',status:'CONFIRMED',rows:[{ledger_id:payment,expected_event_id:confirmation.items[0].event_id}]});
+ // Unpriced manual Orders stay in Review even after payments pass.
+ batch=closeMonthlyStatements(admin,'2026-02');eq(batch.items[0].status,'REVIEW','Manual price gate');
+ for(const id of [first,second,third])db.prepare("UPDATE orders SET pricing_snapshot_json='{}',total_due=25 WHERE id=?").run(id);
+ batch=closeMonthlyStatements(admin,'2026-02');
+ eq(batch.items.map(r=>[r.period_start,r.period_end,r.status]),[['2026-01-15','2026-01-31','FINALIZED'],['2026-02-01','2026-02-28','FINALIZED']],'Contiguous checkpoint and month close, open Claim does not block');
+ eq(monthlyCloseReview(admin),[],'Resolved Review removed');
+ const frozen=db.prepare('SELECT snapshot_json FROM statement_v2_snapshots ORDER BY id').all();
+ eq(closeMonthlyStatements(admin,'2026-02').items,[],'Repeated batch idempotent');
+ eq(db.prepare('SELECT snapshot_json FROM statement_v2_snapshots ORDER BY id').all(),frozen,'Finalized immutable');
+ reject(()=>closeMonthlyStatements(admin,'2026-03'),'Open month cannot close');
+ reject(()=>monthlyCloseReview(a),'Sales cannot read Admin Review');
+ const legacy=Number(db.prepare("INSERT INTO orders(order_id,client_user_id,sales_user_id,sales,service_purchased_at) VALUES ('LEGACY-UNKNOWN',?,NULL,NULL,'2025-01-01')").run(client.id).lastInsertRowid);
+ require('../src/lib/sales-attribution-schema.ts').installSalesAttributionSchema(db);
+ eq(db.prepare('SELECT sales_user_id,sales FROM orders WHERE id=?').get(legacy),{sales_user_id:null,sales:null},'Legacy unknown attribution is never inferred');
+ reject(()=>db.prepare('UPDATE orders SET sales_user_id=? WHERE id=?').run(b.id,legacy),'Migrated legacy attribution locked');
+ require('../src/lib/sales-attribution-schema.ts').installSalesAttributionSchema(db);
+ eq(db.prepare('SELECT sales_attributed_at FROM orders WHERE id=?').get(legacy).sales_attributed_at,'2025-01-01','Schema migration replay preserves history');
+ const run=(kind)=>new Promise((resolve,reject)=>{const w=new Worker(__filename,{workerData:{kind,file,client:client.id,a:a.id,b:b.id}});w.on('message',resolve);w.on('error',reject);w.on('exit',c=>{if(c)reject(Error('worker exit '+c))})});
+ await Promise.all([run('owner'),run('purchase')]);eq(db.prepare('SELECT COUNT(*) n FROM order_sales_snapshots').get().n,43,'40 concurrent snapshots serialized with owner transfers');
+ eq(db.pragma('integrity_check',{simple:true}),'ok','SQLite integrity');
+ console.log('SALES MONTHLY CLOSE PASS ('+n+' assertions, 40 concurrent purchases)');
+ }finally{db.close();fs.rmSync(dir,{recursive:true,force:true});}})().catch(e=>{console.error(e);process.exitCode=1});
+}

@@ -1,3 +1,6 @@
+## Owner continuation — 25/10/2026
+Current Sales snapshots, BOD monthly trends and Statement batch close: [approved behavior and integration](20-sales-monthly-close.md). This delta supersedes conflicting historical notes below. No background scheduler is configured.
+
 # Tài khoản & phân quyền
 
 ## Payment Adjustment application continuation — 20/10/2026
