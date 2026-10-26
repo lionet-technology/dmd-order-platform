@@ -1,0 +1,16 @@
+'use client';
+import {useCallback,useEffect,useState} from 'react';
+type Item={id:number;order_id:string;customer:string;sales_user_id:number|null;gp_base_cents:number;cancelled:boolean;approved:boolean;requires_review:boolean;signature:string;sources:{id:number;summary:string;kind:string;status:string}[]};
+const categories=[['CANCELLATION','Huỷ đơn'],['SHIPPING_INCIDENT','Sự cố vận chuyển'],['RECONCILIATION_ERROR','Lỗi đối soát'],['FORCE_MAJEURE','Bất khả kháng'],['OTHER','Khác']];
+export function CommissionReviewPanel(){
+ const [rows,setRows]=useState<Item[]>([]),[inputs,setInputs]=useState<Record<number,{category:string;reason:string}>>({}),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+ const load=useCallback(async()=>{try{const response=await fetch('/api/commission-review',{cache:'no-store'}),j=await response.json();if(!response.ok)throw Error(j.error);setRows(j.items);setError('')}catch(e){setError((e as Error).message)}},[]);
+ useEffect(()=>{void load()},[load]);
+ async function decide(row:Item,decision:string){
+  const val=inputs[row.id];if(!val?.reason.trim())return;
+  setBusy(true);try{const response=await fetch('/api/commission-review',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({order_id:row.id,decision,category:val.category,reason:val.reason,expected_source_hash:row.signature})}),j=await response.json();if(!response.ok)throw Error(j.error);await load()}catch(e){setError((e as Error).message)}finally{setBusy(false)}
+ }
+ return <div><h3>Hoa hồng — Order có Claim / Refund</h3><p>Không tính mặc định. Doanh thu và GP Base gốc vẫn giữ nguyên; Admin chỉ xét bổ sung, không phát sinh Payment.</p><button className="secondaryBtn" onClick={()=>void load()}>Làm mới</button>{error&&<p role="alert">{error}</p>}
+ <p>{rows.filter(row=>row.requires_review).length} Order chờ xét / {rows.length} Order có ngoại lệ.</p>
+ <div className="tableWrap"><table><thead><tr><th>Order · Client</th><th>Sales</th><th>GP Base</th><th>Lý do</th><th>Kết quả</th><th>Admin xử lý</th></tr></thead><tbody>{rows.map(row=><tr key={row.id}><td>{row.order_id||row.id} · {row.customer}</td><td>{row.sales_user_id??'—'}</td><td>{(row.gp_base_cents/100).toFixed(2)} USD</td><td>{row.sources.map(s=><p key={s.kind+s.id}>{s.kind}: {s.summary} ({s.status})</p>)}</td><td>{row.cancelled?'Huỷ — không tính':row.approved?'Đã duyệt bổ sung':row.requires_review?'Chờ Admin xét':'Không tính'}</td><td>{row.cancelled?'—':<div><select aria-label="Phân loại" value={inputs[row.id]?.category||'OTHER'} onChange={e=>setInputs(v=>({...v,[row.id]:{category:e.target.value,reason:v[row.id]?.reason||''}}))}>{categories.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select><input aria-label="Lý do duyệt" placeholder="Ghi lý do" value={inputs[row.id]?.reason||''} onChange={e=>setInputs(v=>({...v,[row.id]:{category:v[row.id]?.category||'OTHER',reason:e.target.value}}))}/><button disabled={busy||!inputs[row.id]?.reason?.trim()} onClick={()=>void decide(row,'APPROVE_SUPPLEMENT')}>Duyệt bổ sung</button><button disabled={busy||!inputs[row.id]?.reason?.trim()} onClick={()=>void decide(row,'EXCLUDE')}>Không tính</button></div>}</td></tr>)}</tbody></table></div></div>;
+}

@@ -1,5 +1,6 @@
 'use client';
 import {useCallback,useEffect,useState} from 'react';
+import {CommissionReviewPanel} from './commission-review-panel';
 type Row=Record<string,unknown>;
 type Queue={unpriced:Row[];blocked_statement_count:number;partial_labels:Row[];age_review:Row[];as_of:string};
 export function AdminActionDashboard({openOrder,openDebt,openStatement}:{openOrder:(id:number)=>void;openDebt:(clientId:number)=>void;openStatement:()=>void}){
@@ -14,5 +15,6 @@ export function AdminActionDashboard({openOrder,openDebt,openStatement}:{openOrd
    <div><h4>Label chưa đủ ({queue.partial_labels.length}{queue.partial_labels.length===100?'+':''})</h4>{queue.partial_labels.length===0?<p className="emptyState">Không có Order thiếu Label.</p>:<ul>{queue.partial_labels.map(o=><li key={String(o.id)}><button className="rowAction" onClick={()=>openOrder(Number(o.id))}>{String(o.system_order_code||o.order_id||o.id)} · {String(o.labelled)}/{String(o.carton_count)} Carton</button></li>)}</ul>}
     <h4>Tuổi nợ cần xác minh ({queue.age_review.length})</h4>{queue.age_review.length===0?<p className="emptyState">Không có Client cần đối chiếu.</p>:<ul>{queue.age_review.map(c=><li key={String(c.client_id)}><button className="rowAction" onClick={()=>openDebt(Number(c.client_id))}>{String(c.client)} · {String((c.warnings as string[]||[]).join('; '))}</button></li>)}</ul>}</div>
   </div>}
+ <CommissionReviewPanel/>
  </section>;
 }
