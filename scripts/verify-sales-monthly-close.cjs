@@ -51,9 +51,11 @@ if(!isMainThread){
  const claim=caseAction(client,{action:'create',kind:'CLAIM',visibility:'PUBLIC',order_ids:[first],summary:'Synthetic'});
  const refunds=new RefundService(db);
  refunds.decide(admin,{case_id:claim.id,refund_cents:100,compensation_cents:0,reason:'Approved',category:'OTHER',request_key:'decide'});
- eq(bodCommercialMonth(bod,'2026-01').total.commission_gp_base_cents,1000,'Refund excludes order commission once');
+ eq(bodCommercialMonth(bod,'2026-01').total.commission_gp_base_cents,1400,'Partial refund reduces sale before Base Cost');
  refunds.execute(finance,{action:'to_balance',client_id:client.id,amount_cents:50,reason:'Partial',reference:'p',request_key:'p'});
- eq(bodCommercialMonth(bod,'2026-01').total.commission_gp_base_cents,1000,'Payout never reverses commission twice');
+ eq(bodCommercialMonth(bod,'2026-01').total.commission_gp_base_cents,1400,'Payout never reverses commission twice');
+ refunds.decide(admin,{case_id:claim.id,refund_cents:600,compensation_cents:0,reason:'Raised approval',category:'OTHER',request_key:'raise'});
+ eq(bodCommercialMonth(bod,'2026-01').total.commission_gp_base_cents,1000,'Refund larger than GP floors commission of that Order at zero');
  refunds.decide(admin,{case_id:claim.id,refund_cents:0,compensation_cents:0,reason:'Reversed',category:'OTHER',request_key:'reverse'});
  eq(bodCommercialMonth(bod,'2026-01').total.commission_gp_base_cents,1500,'Revised zero obligation restores eligibility');
  const overview=bodCommercialOverview(bod,'2026-01',12);

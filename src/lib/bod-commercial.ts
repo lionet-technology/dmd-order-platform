@@ -18,8 +18,33 @@ export function bodCommercialOverview(actor:Pick<AuthUser,'role'>,month:string,m
  return {...current,months,previous_month:previous.month,trend:series.slice(1),mom:{revenue:mom('revenue_cents'),gp_base:mom('gp_base_cents'),gp_net:mom('gp_net_finalized_cents')}};
  }).deferred();
 }
+/** Commission refunds are an obligation projection, not the bank/wallet payouts.
+ * Multi-order claims cannot be divided by guesswork. They need a recorded allocation. */
+function commissionRefund(orderId:number):{refund_cents:number;review:boolean}{
+ const claims=db.prepare(`SELECT e.claim_id,e.refund_cents,
+ (SELECT COUNT(*) FROM operation_case_orders co WHERE co.case_id=e.claim_id) linked_orders
+ FROM refund_events e JOIN operation_case_orders co ON co.case_id=e.claim_id
+ WHERE co.order_id=? AND e.kind='CLAIM_DECISION'
+ AND e.id=(SELECT MAX(last.id) FROM refund_events last WHERE last.claim_id=e.claim_id AND last.kind='CLAIM_DECISION')`).all(orderId) as {claim_id:number;refund_cents:number;linked_orders:number}[];
+ let refund=0,review=false;
+ for(const c of claims){
+  const approved=Number(c.refund_cents||0);if(approved<=0)continue;
+  if(c.linked_orders===1){refund+=approved;continue;}
+  const allocation=db.prepare('SELECT amount_cents FROM claim_refund_allocations WHERE case_id=? AND order_id=?').get(c.claim_id,orderId) as {amount_cents:number}|undefined;
+  const allocated=db.prepare('SELECT COALESCE(SUM(amount_cents),0) total FROM claim_refund_allocations WHERE case_id=?').get(c.claim_id) as {total:number};
+  if(allocated.total!==approved||!allocation){review=true;continue;}
+  refund+=allocation.amount_cents;
+ }
+ const legacy=db.prepare(`SELECT COUNT(*) n FROM ledger_entries l WHERE l.entry_type='REFUND' AND l.direction='CREDIT'
+ AND ((l.reference_type='ORDER_CANCELLATION' AND l.reference_id=CAST(? AS TEXT))
+ OR (l.reference_type='CLAIM' AND EXISTS(SELECT 1 FROM operation_case_orders co WHERE co.order_id=? AND CAST(co.case_id AS TEXT)=l.reference_id)
+ AND NOT EXISTS(SELECT 1 FROM refund_events e WHERE e.claim_id=CAST(l.reference_id AS INTEGER) AND e.kind='CLAIM_DECISION')))`).get(orderId,orderId) as {n:number};
+ if(legacy.n)review=true;
+ return {refund_cents:refund,review};
+}
+
 type R={id:number;client_id:number|null;sales_id:number|null;sales_name:string|null;client_name:string|null;service:string|null;sub_service:string|null;supplier:string|null;sales_price:number;base_cost:number;finalized_gp:number|null;finalized:number;estimated_gp:number|null;refunded:number};
-export type Metric={key:string;label:string;orders:number;revenue_cents:number;gp_base_cents:number;gp_net_finalized_cents:number;finalized_orders:number;pending_orders:number;pending_estimated_gp_cents:number;pending_estimate_missing_orders:number;commission_gp_base_cents:number;refunded_orders:number};
+export type Metric={key:string;label:string;orders:number;revenue_cents:number;gp_base_cents:number;gp_net_finalized_cents:number;finalized_orders:number;pending_orders:number;pending_estimated_gp_cents:number;pending_estimate_missing_orders:number;commission_gp_base_cents:number;refunded_orders:number;commission_review_orders:number};
 export function bodCommercialMonth(actor:Pick<AuthUser,'role'>,month:string){
  if(!['BOD','FINANCE'].includes(actor.role))throw Error('Forbidden');
  if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))throw Error('Tháng phải có dạng YYYY-MM.');
@@ -45,20 +70,22 @@ export function bodCommercialMonth(actor:Pick<AuthUser,'role'>,month:string){
    const groups=new Map<string,Metric>();
    for(const r of rows){
     const [key,label]=group(r);let t=groups.get(key);
-    if(!t){t={key,label,orders:0,revenue_cents:0,gp_base_cents:0,gp_net_finalized_cents:0,finalized_orders:0,pending_orders:0,pending_estimated_gp_cents:0,pending_estimate_missing_orders:0,commission_gp_base_cents:0,refunded_orders:0};groups.set(key,t);}
+    if(!t){t={key,label,orders:0,revenue_cents:0,gp_base_cents:0,gp_net_finalized_cents:0,finalized_orders:0,pending_orders:0,pending_estimated_gp_cents:0,pending_estimate_missing_orders:0,commission_gp_base_cents:0,refunded_orders:0,commission_review_orders:0};groups.set(key,t);}
     const revenue=Math.round(r.sales_price*100),base=Math.round(r.base_cost*100);
     t.orders++;t.revenue_cents+=revenue;t.gp_base_cents+=revenue-base;
-    if(r.refunded)t.refunded_orders++;else t.commission_gp_base_cents+=revenue-base;
+    const adj=commissionRefund(r.id);
+    if(adj.refund_cents>0)t.refunded_orders++;
+    if(adj.review){t.commission_review_orders++;}else t.commission_gp_base_cents+=Math.max(0,revenue-Math.min(revenue,adj.refund_cents)-base);
     if(r.finalized){t.finalized_orders++;t.gp_net_finalized_cents+=Math.round(Number(r.finalized_gp)*100);}
     else {t.pending_orders++;if(r.estimated_gp===null)t.pending_estimate_missing_orders++;else t.pending_estimated_gp_cents+=Math.round(r.estimated_gp*100);}
    }
    return [...groups.values()].sort((a,b)=>b.revenue_cents-a.revenue_cents||a.label.localeCompare(b.label));
   };
-  const total=summarize(()=>['ALL','Tổng tháng'])[0]??{key:'ALL',label:'Tổng tháng',orders:0,revenue_cents:0,gp_base_cents:0,gp_net_finalized_cents:0,finalized_orders:0,pending_orders:0,pending_estimated_gp_cents:0,pending_estimate_missing_orders:0,commission_gp_base_cents:0,refunded_orders:0};
+  const total=summarize(()=>['ALL','Tổng tháng'])[0]??{key:'ALL',label:'Tổng tháng',orders:0,revenue_cents:0,gp_base_cents:0,gp_net_finalized_cents:0,finalized_orders:0,pending_orders:0,pending_estimated_gp_cents:0,pending_estimate_missing_orders:0,commission_gp_base_cents:0,refunded_orders:0,commission_review_orders:0};
   return {month,total,
    by_sales:summarize(r=>[String(r.sales_id??'NONE'),r.sales_name||'Chưa phân Sales']),
    by_client:summarize(r=>[String(r.client_id??'NONE'),r.client_name||'Chưa xác định']),
    by_service_supplier:summarize(r=>[[r.service,r.sub_service,r.supplier].join('|'),[r.service,r.sub_service,r.supplier].filter(Boolean).join(' · ')||'Chưa xác định']),
-   note:'Doanh thu giá bán theo sales_price Order và tháng mua; GP Base = sales_price - base_cost (không tính phụ phí/thuế); GP Net chỉ tính Order COMPLETE/PASS/finalized. Hoa hồng dùng GP Base đủ điều kiện: Order có nghĩa vụ Refund hiện hành hoặc Refund legacy bị loại một lần, không trừ lại khi chi Bank/Balance. Không gồm Add-on/Adjustment; GP Net pending không được coi là zero. Đây là cohort theo tháng mua, chưa phải snapshot tài chính chốt kỳ.'};
+   note:'Doanh thu giá bán theo sales_price Order và tháng mua; GP Base = sales_price - base_cost (không tính phụ phí/thuế); GP Net chỉ tính Order COMPLETE/PASS/finalized. GP đủ điều kiện hoa hồng động = max(0, sales_price - phần Refund giá dịch vụ được duyệt - base_cost); Claim nhiều Order chưa được phân bổ Refund hoặc Refund legacy không rõ nguồn bị loại khỏi GP hoa hồng và ghi review; không trừ lần nữa khi chi Bank/Balance. Không gồm Add-on/Adjustment; GP Net pending không được coi là zero. Đây là cohort theo tháng mua, chưa phải snapshot tài chính chốt kỳ.'};
  }).deferred();
 }
