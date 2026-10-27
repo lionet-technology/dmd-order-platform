@@ -3,6 +3,10 @@
 
 # Tracking, Label & trạng thái vận chuyển
 
+## Empty Sub-Service bulk pricing repair — 27/10/2026
+
+Manual UPS/chuyên tuyến routes with optional empty Sub-Service now match consistently when a bulk Tracking save stores SQL NULL. Manual pricing normalizes the empty value; route-lock checks treat NULL and empty as the same optional selection, while rejecting a real route change. Regression verifies two Cartons, one whole-Order $35 charge, exact replay and a rejected switch to Saver. Browser UAT exercises workbook upload, last-insert failure rollback and explicit retry. [Evidence and remaining release gates](AUDIT-EGRESS-BULK-2026-10-27.md). Money semantics and historical source rows are unchanged.
+
 ## Owner continuation — 22/10/2026 (current delta)
 
 See [implementation, debt-age assumptions, test evidence and explicit remaining gates](OWNER-EXECUTION-2026-10-22.md). Five horizontal financial task tabs; read-only financial GETs; deterministic frozen-period debt aging; Tracking/Label before manual price; price/finalization gate; auditable partial-label override; server Ledger pagination. This delta supersedes contrary historical behavior below. No deployment or full production acceptance.

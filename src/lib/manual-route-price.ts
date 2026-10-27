@@ -14,9 +14,10 @@ export function setManualOrderPrice(orderId:number,amount:unknown,actorId:number
   const purchasing=canPurchase(order);
   if((!purchasing.allowed&&!['PURCHASED','RECONCILED'].includes(String(order.workflow_status)))||!order.service_purchased_at)throw Error('Client chưa gửi yêu cầu mua hoặc Order không được phép cấp dịch vụ.');
   if(hasCaseHold(orderId)||db.prepare('SELECT id FROM warehouse_order_holds WHERE order_id=? AND released_at IS NULL').get(orderId))throw Error('Order đang Hold, không được cấp Tracking/Label.');
-  const max=db.prepare('SELECT max_cartons_per_order FROM service_route_configs WHERE lower(service)=lower(?) AND lower(sub_service)=lower(?) AND lower(supplier)=lower(?) AND active=1').get(order.service,order.sub_service,order.supplier) as {max_cartons_per_order:number}|undefined;
+  const routeSubService=String(order.sub_service||'');
+  const max=db.prepare("SELECT max_cartons_per_order FROM service_route_configs WHERE lower(service)=lower(?) AND lower(COALESCE(sub_service,''))=lower(?) AND lower(supplier)=lower(?) AND active=1").get(order.service,routeSubService,order.supplier) as {max_cartons_per_order:number}|undefined;
   if(!max)throw Error('Route chưa được cấu hình active.');
-  if((db.prepare('SELECT warehouse_hold FROM service_route_configs WHERE lower(service)=lower(?) AND lower(sub_service)=lower(?) AND lower(supplier)=lower(?) AND active=1').get(order.service,order.sub_service,order.supplier) as {warehouse_hold:number}|undefined)?.warehouse_hold)throw Error('Route đang Hold.');
+  if((db.prepare("SELECT warehouse_hold FROM service_route_configs WHERE lower(service)=lower(?) AND lower(COALESCE(sub_service,''))=lower(?) AND lower(supplier)=lower(?) AND active=1").get(order.service,routeSubService,order.supplier) as {warehouse_hold:number}|undefined)?.warehouse_hold)throw Error('Route đang Hold.');
   assertRouteCartons(order.service,max.max_cartons_per_order,order.carton_count);
   const value=Number(amount),cents=Math.round(value*100);
   if(!Number.isFinite(value)||!Number.isSafeInteger(cents)||cents<=0||Math.abs(value*100-cents)>0.000001)throw Error('Giá bán thủ công toàn Order phải lớn hơn 0, tối đa hai chữ số thập phân.');

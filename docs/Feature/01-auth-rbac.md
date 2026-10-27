@@ -1,3 +1,7 @@
+## Content egress continuation — 27/10/2026
+
+Sales/Client JSON projection now sanitizes catalogued Supplier names and explicitly labelled private financial values within prose, error bodies, string arrays and nested serialized JSON. Additional cost aliases and internal `source_code` are excluded. Private/inline Label or attachment URLs are withheld; ordinary safe links remain. Order notes retain safe text in the same paragraph, replacing confidential spans instead of dropping paragraphs. Admin Supplier operations and Finance/BOD endpoint permissions remain unchanged. Original audited rows are preserved. [Reproductions, exact coverage and remaining remote-document/content gates](AUDIT-EGRESS-BULK-2026-10-27.md).
+
 ## Supplier privacy audit — 27/10/2026
 
 Sales/Client JSON projections remove all Supplier-named fields and Supplier enum rows, including nested serialized JSON. This closes `/api/enums` and `/api/client-services` (`default_supplier`, including `view=setup`) disclosures; Admin routing configuration remains available. Assigned-Client checks remain in the endpoint. `scripts/verify-supplier-privacy.cjs` uses a disposable DB and tests both roles, nested JSON, unassigned Sales and Admin preservation. Base Cost permission is not explicitly granted to Sales by current pricing decisions: existing Base/guidance/markup exclusions remain fail-closed pending Owner clarification. This is not a claim that arbitrary notes, uploaded label contents, CSV or all APIs have been proven free of confidential content.

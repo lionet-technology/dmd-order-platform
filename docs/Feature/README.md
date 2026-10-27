@@ -1,3 +1,7 @@
+## Content egress and bulk continuation — 27/10/2026
+
+[Case text disclosure, empty-Sub-Service bulk pricing repair, content/workbook assertions, browser UAT and unresolved release gates](AUDIT-EGRESS-BULK-2026-10-27.md). External Label/document confidentiality and real-data acceptance remain open; no zero-egress or production certification.
+
 ## Owner continuation — 27/10/2026 · Refund / Internal Expenses
 
 Refund chặn vượt nghĩa vụ Client ở cả Bank/Balance; [Chi tiêu nội bộ VND](22-internal-expenses.md) cho cả BOD/Finance, nhiều đợt đến hạn/thực chi và audit. [Kiểm chứng và giới hạn](VERIFICATION-EXPENSES-REFUNDS-2026-10-27.md).

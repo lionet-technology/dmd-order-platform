@@ -1,5 +1,6 @@
 import { db } from "./db";
 import type { UserRole } from "./auth";
+import {redactPrivateContent} from './private-content';
 
 export const PUBLIC_ORDER_EVENT_TYPES = [
   "SURCHARGE_NOTICE",
@@ -123,11 +124,6 @@ export function publicNoteText(orderId:number){
 }
 
 export function sanitizePrivateNoteForSales(value:unknown,supplier?:unknown){
-  const terms=["supplier","net cost","netcost","true net","est net","estimated net","base cost","giá vốn","chi phí nhà cung cấp"];
-  const supplierName=String(supplier||"").trim().toLowerCase();
-  if(supplierName)terms.push(supplierName);
-  return String(value||"").split(/\n\s*\n/).map(part=>part.trim()).filter(part=>{
-    const lower=part.toLowerCase();
-    return part&&!terms.some(term=>lower.includes(term));
-  }).join("\n\n");
+  const name=String(supplier||'').trim();
+  return redactPrivateContent(String(value||''),name?[name]:[]);
 }

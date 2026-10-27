@@ -1,0 +1,79 @@
+PASS fixture HTTP ready
+PASS Client setup hidden 1440
+PASS bulk TSV creates two table rows 1440
+PASS UI saved both Drafts 1440
+PASS partial purchase failure visible 1440
+PASS failed purchase requires explicit reselection 1440
+PASS exactly one reserve per successful/retried Order 1440
+PASS Client bulk 1440 page fits
+PASS Client bulk 1440 modal fits
+PASS two multi-Carton Orders form four queue rows 1440
+PASS Order fields span both Cartons 1440
+PASS alternating Order colors 1440
+TRACKING HEADERS [null,"DMD ID","Client Order ID","Client","Người nhận","Service","Sub-Service","Số lượng Carton","Carton số","Supplier","Số lượng Lô","Giá bán thủ công (USD/Order)","Tracking","URL Label"]
+PASS actual Tracking workbook contains filtered rows 1440
+PASS actual workbook upload populates Tracking/Label 1440
+PASS bulk Tracking/Label paste applied 1440
+PASS Admin Tracking 1440 page fits
+PASS Admin Tracking 1440 modal fits
+SAVE RESPONSE 400 {"error":"synthetic UAT retry"}
+PASS failed bulk save rolls back all Tracking 1440
+PASS failed bulk save preserves typed data 1440
+SAVE RESPONSE 200 {"saved":4,"orders":2}
+PASS multi-Carton purchase charges 35 once per Order 1440
+PASS UI save persists every filtered Tracking 1440
+PASS Admin setup 1440 page fits
+PASS Admin setup 1440 modal fits
+PASS SALES setup hidden 1440
+PASS SALES 1440 page fits
+PASS SALES 1440 modal fits
+PASS WAREHOUSE setup hidden 1440
+PASS WAREHOUSE 1440 page fits
+PASS WAREHOUSE 1440 modal fits
+PASS FINANCE setup hidden 1440
+PASS FINANCE 1440 page fits
+PASS FINANCE 1440 modal fits
+PASS BOD setup hidden 1440
+PASS BOD 1440 page fits
+PASS BOD 1440 modal fits
+PASS Client setup hidden 390
+PASS bulk TSV creates two table rows 390
+PASS UI saved both Drafts 390
+PASS partial purchase failure visible 390
+PASS failed purchase requires explicit reselection 390
+PASS exactly one reserve per successful/retried Order 390
+PASS Client bulk 390 page fits
+PASS Client bulk 390 modal fits
+PASS two multi-Carton Orders form four queue rows 390
+PASS Order fields span both Cartons 390
+PASS alternating Order colors 390
+TRACKING HEADERS [null,"DMD ID","Client Order ID","Client","Người nhận","Service","Sub-Service","Số lượng Carton","Carton số","Supplier","Số lượng Lô","Giá bán thủ công (USD/Order)","Tracking","URL Label"]
+PASS actual Tracking workbook contains filtered rows 390
+PASS actual workbook upload populates Tracking/Label 390
+PASS bulk Tracking/Label paste applied 390
+PASS Admin Tracking 390 page fits
+PASS Admin Tracking 390 modal fits
+SAVE RESPONSE 400 {"error":"synthetic UAT retry"}
+PASS failed bulk save rolls back all Tracking 390
+PASS failed bulk save preserves typed data 390
+SAVE RESPONSE 200 {"saved":4,"orders":2}
+PASS multi-Carton purchase charges 35 once per Order 390
+PASS UI save persists every filtered Tracking 390
+PASS Admin setup 390 page fits
+PASS Admin setup 390 modal fits
+PASS SALES setup hidden 390
+PASS SALES 390 page fits
+PASS SALES 390 modal fits
+PASS WAREHOUSE setup hidden 390
+PASS WAREHOUSE 390 page fits
+PASS WAREHOUSE 390 modal fits
+PASS FINANCE setup hidden 390
+PASS FINANCE 390 page fits
+PASS FINANCE 390 modal fits
+PASS BOD setup hidden 390
+PASS BOD 390 page fits
+PASS BOD 390 modal fits
+PASS no browser runtime errors:
+PASS fixture integrity
+PASS fixture foreign keys
+BULK HTTP/BROWSER PASS (72 assertions)

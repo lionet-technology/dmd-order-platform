@@ -30,3 +30,7 @@ Supplier Cost Excel chỉ BOD/FINANCE. Không cấp họ import Orders/Balance/T
 
 ## Orders search readability — 27/10/2026
 The Orders search placeholder is shortened to fit its single-line height, with an accessible search name and clear-button name. Bulk newline/comma matching remains unchanged; the longer paste instruction is available as a tooltip. Verified clipping was present at desktop and mobile widths; this is a presentation/accessibility change only.
+
+
+## Content egress and workbook UAT — 27/10/2026
+Actual Generic/Tracking XLSX contents are parsed and decompressed during the disposable egress/bulk audit; public template bytes are scanned after HTTP download. Sales/Client remain denied operational/template exports and Owner Base Rate CSV; Admin retains Supplier setup and downloads. Browser UAT at 1440/390 downloads, edits and uploads Tracking XLSX for two multi-Carton Orders, verifies grouping/filtering and recovers from an injected final-row failure. [Exact checks and remaining external-document gates](AUDIT-EGRESS-BULK-2026-10-27.md). This does not certify arbitrary remote Label bytes.

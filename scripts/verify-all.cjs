@@ -8,7 +8,7 @@ suites.push("verify-financial-projection","verify-debt-age","verify-debt-aging-o
 suites.push("verify-balance-debt-aging-split","verify-emergency-hold","verify-supplier-account");
 suites.push("verify-sales-monthly-close");
 suites.push("verify-internal-expenses");
-suites.push("verify-supplier-privacy");
+suites.push("verify-supplier-privacy","verify-egress-content");
 const env={...process.env,NODE_ENV:"test"};
 // Every suite must select its own disposable DB; never inherit a DB selected by an operator.
 delete env.DMD_DB_PATH;delete env.DMD_VERIFY_DB;

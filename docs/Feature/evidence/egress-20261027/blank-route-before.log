@@ -1,0 +1,12 @@
+AssertionError [ERR_ASSERTION]: manual empty Sub-Service matches configured route: {"error":"Route chưa được cấu hình active."}
+
+400 !== 200
+
+    at eq (/private/tmp/dmd-egress-20261028/scripts/verify-bulk-recovery.cjs:9:49)
+    at /private/tmp/dmd-egress-20261028/scripts/verify-bulk-recovery.cjs:51:27 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 400,
+  expected: 200,
+  operator: 'deepStrictEqual'
+}
