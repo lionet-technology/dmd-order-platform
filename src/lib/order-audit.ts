@@ -92,16 +92,21 @@ export function publishPublicNote(input:{
 }
 
 export function listOrderEvents(orderId:number,role:UserRole){
+  const supplier=role==='ADMIN'?undefined:(db.prepare('SELECT supplier FROM orders WHERE id=?').get(orderId) as {supplier:string|null}|undefined)?.supplier;
+  const clean=(items:unknown[])=>items.map(value=>{
+    const event=value as Record<string,unknown>;
+    return {...event,summary:sanitizePrivateNoteForSales(event.summary,supplier),...(event.source===undefined?{}:{source:sanitizePrivateNoteForSales(event.source,supplier)})};
+  }).filter(event=>event.summary);
   const publicTypes=PUBLIC_ORDER_EVENT_TYPES.map(()=>"?").join(",");
   if(role==="CLIENT"){
-    return db.prepare(
+    return clean(db.prepare(
       "SELECT id,order_id,event_type,summary,visibility,created_at FROM order_events WHERE order_id=? AND visibility='PUBLIC' AND event_type IN ("+publicTypes+") ORDER BY datetime(created_at) DESC,id DESC"
-    ).all(orderId,...PUBLIC_ORDER_EVENT_TYPES);
+    ).all(orderId,...PUBLIC_ORDER_EVENT_TYPES));
   }
   if(role==="SALES"){
-    return db.prepare(
+    return clean(db.prepare(
       "SELECT id,order_id,event_type,summary,visibility,source,actor_display_name,actor_role,created_at FROM order_events WHERE order_id=? AND (visibility='INTERNAL' OR (visibility='PUBLIC' AND event_type IN ("+publicTypes+"))) ORDER BY datetime(created_at) DESC,id DESC"
-    ).all(orderId,...PUBLIC_ORDER_EVENT_TYPES);
+    ).all(orderId,...PUBLIC_ORDER_EVENT_TYPES));
   }
   return db.prepare(
     "SELECT id,order_id,event_type,summary,visibility,source,actor_user_id,actor_username,actor_display_name,actor_role,before_json,after_json,created_at FROM order_events WHERE order_id=? ORDER BY datetime(created_at) DESC,id DESC"
@@ -113,7 +118,8 @@ export function publicNoteText(orderId:number){
   const rows=db.prepare(
     "SELECT summary FROM order_events WHERE order_id=? AND visibility='PUBLIC' AND event_type IN ("+placeholders+") ORDER BY datetime(created_at),id"
   ).all(orderId,...PUBLIC_ORDER_EVENT_TYPES) as Array<{summary:string}>;
-  return rows.map(row=>row.summary).filter(Boolean).join("\n\n");
+  const supplier=(db.prepare('SELECT supplier FROM orders WHERE id=?').get(orderId) as {supplier:string|null}|undefined)?.supplier;
+  return rows.map(row=>sanitizePrivateNoteForSales(row.summary,supplier)).filter(Boolean).join("\n\n");
 }
 
 export function sanitizePrivateNoteForSales(value:unknown,supplier?:unknown){

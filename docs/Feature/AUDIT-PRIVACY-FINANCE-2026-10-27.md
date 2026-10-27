@@ -1,5 +1,10 @@
 # Financial and role audit — 27/10/2026
 
+## Follow-up (27/10, Order History content leak)
+A synthetic Order carrying internal Supplier sentinel and Net Cost in an INTERNAL event was visible to an assigned Sales user through the Order detail timeline; a PUBLIC note also disclosed the Supplier sentinel to Sales and Client. This was reproduced in a failing privacy test before remediation. The read projection in order-audit now filters restricted internal event summaries and source fields for Sales/Client and sanitizes public-note text using the Order's Supplier; legitimate delivery notes remain. Original audit source rows are not modified and Admin retains full history. The privacy fixture now asserts the leak is blocked without hiding legitimate delivery history.
+Limitation: free-text confidentiality across other workflows, attachments and exported binary content still needs separate inspection. Because Supplier labels may overlap with public brand terms, UX acceptance should inspect redacted timeline summaries on real route names.
+
+
 Baseline: `178baa18e5b1132463d9e175049e96e6ffad7f07`. Local tracked tree was clean; untracked operator `Codex/` preserved. Work and every test ran in a separate checkout with newly created temporary databases. Operator `data/`, environment and existing build were not used or reset. No deployment or production acceptance.
 
 ## Verified findings and repairs
