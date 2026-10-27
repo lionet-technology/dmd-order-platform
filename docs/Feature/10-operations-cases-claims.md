@@ -1,3 +1,7 @@
+## Owner continuation — 27/10/2026
+
+Claim decisions support SHIPPING_INCIDENT (includes force majeure) and RECONCILIATION_ERROR; historical LOST/DELAYED/PARAMETER_ADJUSTMENT/OTHER remain readable/selectable for compatibility. The amount is labelled Refund for the whole Claim, not service-only freight. No fee/tax or Order split is required. See [manual commission inputs](21-commission-review.md).
+
 ## Supplier source coordination — 25/10/2026
 Operational Recovery overlapping an Account Claim requires explicit source review/link; after linking, Account Claim owns all financial decisions/receipts. Historical Recovery rows are retained and old write paths are blocked. [Rules and limits](19-supplier-accounts.md#source-coordination--25102026).
 

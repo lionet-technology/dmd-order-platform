@@ -44,13 +44,11 @@ const cookies={};
  const report=await call('/api/bod-finance-report?month='+month+'&months=12','bod');
  check(report.status===200&&report.data.trend.length===12,'Monthly trend API');
  check(report.data.by_sales[0].key===String(a.id),'Historical report stays with original Sales');
- const reviews=await call('/api/commission-review','admin');
- check(reviews.status===200&&reviews.data.items.some(x=>x.id===old&&x.requires_review),'Admin Claim review queue includes held Order');
- const item=reviews.data.items.find(x=>x.id===old);
- check((await call('/api/commission-review','a')).status===403,'Sales cannot read commission review data');
- check((await call('/api/commission-review','client',{order_id:old,decision:'APPROVE_SUPPLEMENT',category:'OTHER',reason:'Forbidden',expected_source_hash:item.signature})).status===403,'Client cannot approve supplemental commission');
- check((await call('/api/commission-review','admin',{order_id:old,decision:'APPROVE_SUPPLEMENT',category:'RECONCILIATION_ERROR',reason:'Approved internal review',expected_source_hash:item.signature})).status===200,'Admin can approve supplemental eligibility');
- check((await call('/api/commission-review','admin')).data.items.find(x=>x.id===old).approved===true,'Review status persists after reload');
+ const reviews=await call('/api/commission-review?month='+month,'admin');
+ check(reviews.status===200&&reviews.data.performance.some(x=>x.category==='PENDING_CLAIM'&&x.order_ids.includes(old)),'Monthly report separates pending Claim');
+ check((await call('/api/commission-review','a')).status===403,'Sales cannot read payroll inputs');
+ check((await call('/api/commission-review','client',{order_id:old})).status===403,'Client cannot approve commission');
+ check((await call('/api/commission-review','admin',{order_id:old})).status===410,'Per Order commission approval retired');
  for(const role of ['admin','a','b','client'])check((await call('/api/bod-finance-report?month='+month,role)).status===403,'GP Net privacy '+role);
  for(const role of ['a','b','client','bod'])check((await call('/api/statements-v2',role,{action:'monthly_close',through_month:month})).status===403,'Monthly close restricted '+role);
  let result=await call('/api/statements-v2','finance',{action:'monthly_close',through_month:month});
@@ -73,12 +71,19 @@ const cookies={};
  const {chromium}=require(process.env.DMD_PLAYWRIGHT_MODULE||'playwright');
  console.log('HTTP assertions passed; starting browser');
  browser=await chromium.launch({timeout:30000,args:['--disable-gpu'],headless:true,executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
- const evidence=path.join(root,'docs/Feature/evidence/sales-monthly-20261025');fs.mkdirSync(evidence,{recursive:true});
- for(const width of [1440,390])for(const role of ['bod','finance']){
+ const evidence=path.join(root,'docs/Feature/evidence/sales-monthly-20261027');fs.mkdirSync(evidence,{recursive:true});
+ for(const width of [1440,390])for(const role of ['admin','bod','finance']){
  const context=await browser.newContext({viewport:{width,height:1000}});await context.addCookies([{name:'dmd_session',value:cookies[role].split('=')[1],url:base}]);
  console.log('Browser '+role+' '+width);
  const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(base,{waitUntil:'domcontentloaded',timeout:15000});console.log('Loaded '+role);
- if(role==='bod'){
+ if(role==='admin'){
+ await page.getByRole('heading',{name:'Hoa hồng — Báo cáo Sales theo tháng',exact:true}).waitFor();
+ await page.locator('input[type=month]').fill(month);
+ await page.getByRole('heading',{name:'Performance — tháng mua',exact:true}).waitFor();
+ assert.equal(await page.getByRole('button',{name:'Duyệt bổ sung',exact:true}).count(),0);ui++;
+ assert.ok(await page.getByText('Claim chờ quyết định',{exact:false}).count());ui++;
+ assert.equal(await page.getByRole('columnheader',{name:'Original GP Base',exact:true}).count(),2);ui++;
+ }else if(role==='bod'){
  await page.getByRole('button',{name:'BOD Finance',exact:true}).click();
  await page.locator('input[type=month]').fill(month);await page.getByLabel('Xu hướng').selectOption('12');
  await page.getByRole('button',{name:'Xem kết quả kinh doanh',exact:true}).click();await page.getByRole('heading',{name:'Xu hướng 12 tháng',exact:true}).waitFor();

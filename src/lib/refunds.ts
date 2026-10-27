@@ -4,7 +4,7 @@ import type {AuthUser} from './auth';
 
 type Actor=Pick<AuthUser,'id'|'role'>;
 type Row=Record<string,unknown>;
-const categories=['LOST','DELAYED','PARAMETER_ADJUSTMENT','OTHER'];
+const categories=['SHIPPING_INCIDENT','RECONCILIATION_ERROR','LOST','DELAYED','PARAMETER_ADJUSTMENT','OTHER'];
 const today=()=>new Date(Date.now()+7*3600000).toISOString().slice(0,10);
 function required(v:unknown){if(typeof v!=='string'||!v.trim()||v.length>2000)throw Error('Thông tin bắt buộc, tối đa 2000 ký tự.');return v.trim();}
 function amount(v:unknown,zero=false){if(!Number.isSafeInteger(v)||Number(v)<(zero?0:1)||Number(v)>100_000_000_000)throw Error('Số tiền phải là số nguyên cents hợp lệ.');return Number(v);}

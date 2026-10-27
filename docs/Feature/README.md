@@ -1,3 +1,7 @@
+## Owner continuation — 27/10/2026
+
+[Manual Sales/month commission inputs](21-commission-review.md) supersede per-Order commission approvals. Four uniform columns, separate purchase performance and processing-month obligation revisions, pending Claims and attribution review; actual Bank/Balance payouts are not counted twice. Financial Statement/Balance semantics are unchanged.
+
 ## Owner continuation — 25/10/2026
 Current Sales snapshots, BOD monthly trends and Statement batch close: [approved behavior and integration](20-sales-monthly-close.md). This delta supersedes conflicting historical notes below. No background scheduler is configured.
 
@@ -141,3 +145,5 @@ Cập nhật: 2026-10-16. Tài liệu này mô tả hành vi từ code, nguồn 
 - [Owner Credit 19/10](VERIFICATION-OWNER-CREDIT-2026-10-19.md): semantics Balance ròng, giới hạn chuyển Debt, regression quyền/concurrency và blockers Finance Reconciliation.
 
 Final recorded checks and limits: [Owner verification 22/10](VERIFICATION-OWNER-2026-10-22.md).
+
+Verification for this continuation: [27/10 audit, test evidence and limits](VERIFICATION-REFUND-COMMISSION-2026-10-27.md).

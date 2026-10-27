@@ -58,6 +58,10 @@ async function main(){try{
  service.decide(admin,{case_id:claim,refund_cents:200,compensation_cents:0,category:'DELAYED',reason:'Correct incident classification',request_key:'category-revision'});
  const categorized=service.report(bod,day,day);eq(categorized.categories.find(c=>c.category==='LOST').obligation_change_cents,0,'Category revision removes previous category exposure');
  eq(categorized.categories.find(c=>c.category==='DELAYED').obligation_change_cents,500,'Category revision attributes new obligation without double count');
+ service.decide(admin,{case_id:claim,refund_cents:200,compensation_cents:0,category:'SHIPPING_INCIDENT',reason:'Shipping including force majeure',request_key:'shipping-category'});
+ eq(service.report(bod,day,day).categories.find(c=>c.category==='SHIPPING_INCIDENT').obligation_change_cents,200,'Canonical shipping category retains total without second obligation');
+ service.decide(admin,{case_id:claim,refund_cents:200,compensation_cents:0,category:'RECONCILIATION_ERROR',reason:'Reconciliation category',request_key:'recon-category'});
+ eq(service.report(bod,day,day).categories.find(c=>c.category==='RECONCILIATION_ERROR').obligation_change_cents,200,'Canonical reconciliation category supported');
  eq(db.prepare('PRAGMA foreign_key_check').all(),[],'Foreign keys intact');
  console.log('REFUNDS DOMAIN/API PASS ('+checks+' assertions)');
  }finally{db.close();fs.rmSync(dir,{recursive:true,force:true})}}

@@ -1,3 +1,7 @@
+## Owner continuation — 27/10/2026
+
+[Manual Sales/month commission inputs](21-commission-review.md) supersede per-Order commission approvals. Four uniform columns, separate purchase performance and processing-month obligation revisions, pending Claims and attribution review; actual Bank/Balance payouts are not counted twice. Financial Statement/Balance semantics are unchanged.
+
 # Client Sales attribution, BOD trends and monthly Statement close
 Updated: 2026-10-25. Local implementation; verification results recorded separately.
 

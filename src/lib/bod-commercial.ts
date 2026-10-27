@@ -44,8 +44,8 @@ export function bodCommercialMonth(actor:Pick<AuthUser,'role'>,month:string){
     t.orders++;t.revenue_cents+=revenue;t.gp_base_cents+=revenue-base;
     const review=commissionReviewForOrder(r.id);
     if(review.flagged)t.refunded_orders++;
-    if(review.requires_review)t.commission_review_orders++;
-    if(!review.flagged||review.approved)t.commission_gp_base_cents+=Math.max(0,revenue-base);
+    if(review.flagged&&!review.cancelled)t.commission_review_orders++;
+    if(!review.flagged)t.commission_gp_base_cents+=Math.max(0,revenue-base);
     if(r.finalized){t.finalized_orders++;t.gp_net_finalized_cents+=Math.round(Number(r.finalized_gp)*100);}
     else {t.pending_orders++;if(r.estimated_gp===null)t.pending_estimate_missing_orders++;else t.pending_estimated_gp_cents+=Math.round(r.estimated_gp*100);}
    }
@@ -56,6 +56,6 @@ export function bodCommercialMonth(actor:Pick<AuthUser,'role'>,month:string){
    by_sales:summarize(r=>[String(r.sales_id??'NONE'),r.sales_name||'Chưa phân Sales']),
    by_client:summarize(r=>[String(r.client_id??'NONE'),r.client_name||'Chưa xác định']),
    by_service_supplier:summarize(r=>[[r.service,r.sub_service,r.supplier].join('|'),[r.service,r.sub_service,r.supplier].filter(Boolean).join(' · ')||'Chưa xác định']),
-   note:'Doanh thu giá bán theo sales_price Order và tháng mua; GP Base = sales_price - base_cost (không tính phụ phí/thuế); GP Net chỉ tính Order COMPLETE/PASS/finalized. GP Base gốc giữ nguyên; Order có Claim/Refund bị loại khỏi cơ sở xét hoa hồng mặc định. Admin có thể duyệt bổ sung GP Base gốc với lý do và audit. Không tự tính hay chi trả hoa hồng; Claim/Refund thay đổi sẽ yêu cầu review lại. Không gồm Add-on/Adjustment; GP Net pending không được coi là zero. Đây là cohort theo tháng mua, chưa phải snapshot tài chính chốt kỳ.'};
+   note:'Doanh thu và GP Base gốc theo tháng mua, không gồm phụ phí/thuế. GP Net chỉ tính Order COMPLETE/PASS/finalized, pending trình bày riêng. GP Base không Claim/Refund là số liệu hỗ trợ tính thủ công; các quyết định duyệt Order cũ không phục hồi GP. Báo cáo hoa hồng Sales/tháng tách các nhóm Claim và tháng xử lý Refund; không tự tính hoa hồng. Không gồm Add-on/Adjustment; đây là cohort tháng mua, không phải snapshot tài chính chốt kỳ.'};
  }).deferred();
 }
