@@ -18,9 +18,13 @@ try{
  reject(()=>bodFinanceReport(bod,'not-date',day),'Reject malformed range');
  reject(()=>bodFinanceReport(bod,'2026-10-21','2026-10-20'),'Reject reverse range');
  const payout={action:'to_balance',client_id:client.id,amount_cents:2500,reason:'Recorded refund',reference:'refund-1',request_key:'bod-wallet-1'};
+ const fixtureOrder=Number(db.prepare("INSERT INTO orders(client_user_id) VALUES (?)").run(client.id).lastInsertRowid);
+ const fixtureCase=require('../src/lib/cases.ts').caseAction(client,{action:'create',kind:'CLAIM',visibility:'PUBLIC',order_ids:[fixtureOrder],summary:'Approved refund fixture'}).id;
+ refund.decide(admin,{case_id:fixtureCase,refund_cents:3500,compensation_cents:0,reason:'Approved fixture',category:'OTHER',request_key:'fixture-approved'});
  refund.execute(finance,payout);
  const bank={action:'to_bank',client_id:client.id,amount_cents:1000,reason:'Bank executed',reference:'bank-1',from_account:'DMD A',to_account:'Client A',paid_date:day,proof:'TX-1',request_key:'bod-bank-1'};
  refund.execute(finance,bank);
+ refund.decide(admin,{case_id:fixtureCase,refund_cents:0,compensation_cents:0,reason:'Revised after payment',category:'OTHER',request_key:'fixture-revised'});
  let r=bodFinanceReport(finance,day,day);
  eq([r.refunds.balance_refund_cents,r.refunds.bank_outflow_cents],[2500,1000],'Bank and Wallet refund channels separate');
  eq(r.ledger_flows.net_balance_change_cents,-3500,'Only Wallet refund changes Ledger');
@@ -49,7 +53,7 @@ try{
  const sr=r.supplier_accounts.find(s=>s.supplier===supplier);
  eq([sr.balance_cents,sr.receivable_cents],[-7500,10000],'BOD effective correction/reversal and Balance; legacy invoice never double counts');
  eq(r.supplier_addons_period,{revenue_cents:2500,cost_cents:400},'Supplier commercial Add-ons separate from Client ledger and Order GP');
- eq([r.order_gp.finalized_count,r.order_gp.finalized_gp_cents,r.order_gp.pending_count,r.order_gp.pending_estimated_gp_cents],[1,1200,2,1300],'Only COMPLETE approved Actual Order GP finalized; estimated pending separate');
+ eq([r.order_gp.finalized_count,r.order_gp.finalized_gp_cents,r.order_gp.pending_count,r.order_gp.pending_estimated_gp_cents],[1,1200,3,1300],'Only COMPLETE approved Actual Order GP finalized; estimated pending separate');
  eq(r.accounts.find(a=>a.client_id===client.id).balance_cents,-3500,'Supplier actions never alter Client report');
  eq(r.client_reconciliation.available_count+r.client_reconciliation.unavailable.length,r.client_reconciliation.total_count,'Every Client has explicit reconciliation availability');
  const month=day.slice(0,7);
@@ -68,7 +72,7 @@ try{
  eq({ledger:db.prepare('SELECT COUNT(*) n FROM ledger_entries').get().n,entries:db.prepare('SELECT COUNT(*) n FROM supplier_account_entries').get().n,corrections:db.prepare('SELECT COUNT(*) n FROM supplier_claim_corrections').get().n,statements:db.prepare('SELECT COUNT(*) n FROM statement_v2_snapshots').get().n},beforeReads,'BOD reads never post money or finalize Statements');
  db.prepare("INSERT INTO orders(order_id,margin_status,actual_cost_coverage,reconciliation_status) VALUES ('BOD-MISSING-GP','FINALIZED','COMPLETE','PASS')").run();
  const missing=bodFinanceReport(bod,day,day).order_gp;
- eq([missing.finalized_count,missing.finalized_gp_cents,missing.pending_count,missing.pending_estimate_missing_count],[3,91300,4,2],'Missing GP is pending and explicitly counted, never finalized zero, including added cohort fixtures');
+ eq([missing.finalized_count,missing.finalized_gp_cents,missing.pending_count,missing.pending_estimate_missing_count],[3,91300,5,3],'Missing GP is pending and explicitly counted, never finalized zero, including added cohort fixtures');
  const outOfPeriod=bodFinanceReport(bod,'2020-01-01','2020-01-01');
  eq(outOfPeriod.supplier_addons_period,{revenue_cents:0,cost_cents:0},'Add-on period uses posting day');
  eq(outOfPeriod.supplier_accounts.find(s=>s.supplier===supplier).receivable_cents,10000,'Current Supplier exposure explicitly independent of requested historical period');

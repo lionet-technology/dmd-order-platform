@@ -72,10 +72,11 @@ export class RefundService {
   if(!['to_balance','to_bank','recover'].includes(String(b.action)))throw Error('Action không hỗ trợ.');
   return this.receipt(user,b,()=>{
    this.ready(id);const cents=amount(b.amount_cents),reason=required(b.reason),before=this.balance(id),recovery=b.action==='recover';
+   if(!recovery&&cents>Math.max(0,before))throw Error('Số tiền hoàn vượt Refund đã duyệt còn lại. Điều chỉnh Balance phải dùng Balance Adjustment.');
    if(recovery&&cents>Math.max(0,-before))throw Error('Thu hồi vượt Refund Balance âm.');
    const reference=recovery?null:required(b.reference),bank=b.action==='to_bank';
    const from=bank?required(b.from_account):null,to=bank?required(b.to_account):null,paid=bank?date(b.paid_date):today(),proof=bank?required(b.proof):null;
-   const warnings=!recovery&&cents>before?['Hoàn vượt nghĩa vụ hiện tại; Refund Balance sẽ âm.']:[];
+   const warnings:string[]=[];
    let ledgerId:number|null=null;
    if(!bank)ledgerId=Number(this.db.prepare(`INSERT INTO ledger_entries(client_user_id,occurred_at,entry_type,direction,amount,customer,reference_type,reference_id,note,created_by_user_id)
     VALUES (?,?,?,?,?,(SELECT display_name FROM users WHERE id=?),'REFUND_ACTUAL',?,?,?)`).run(id,today(),recovery?'ADJUSTMENT_DEBIT':'REFUND',recovery?'DEBIT':'CREDIT',cents/100,id,user.id+':'+required(b.request_key),reason,user.id).lastInsertRowid);

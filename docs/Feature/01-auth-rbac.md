@@ -1,3 +1,7 @@
+## Owner continuation — 27/10/2026 · Refund / Internal Expenses
+
+[Chi tiêu nội bộ](22-internal-expenses.md): BOD và FINANCE đều được tạo/sửa/thanh toán/đảo và xem audit; ADMIN/SALES/CLIENT/WAREHOUSE bị chặn GET/POST trên server. Không cấp quyền mới vào Client Ledger.
+
 ## Owner continuation — 25/10/2026
 Current Sales snapshots, BOD monthly trends and Statement batch close: [approved behavior and integration](20-sales-monthly-close.md). This delta supersedes conflicting historical notes below. No background scheduler is configured.
 

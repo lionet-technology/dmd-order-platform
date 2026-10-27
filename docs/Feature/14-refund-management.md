@@ -1,3 +1,11 @@
+## Owner update — 27/10/2026 (supersedes warning-only payouts)
+
+Giữ pool Refund ở cấp Client: tổng quyết định Claim được duyệt tạo nghĩa vụ; Bank/Balance thực trả tiêu thụ pool, không cần phân bổ `claim_id`. Cả hai kênh **từ chối toàn bộ** tiền vượt `max(0, current signed Refund Balance)` trong immediate transaction. Không warning-only, không cap. Balance Adjustment dùng workflow riêng; không dùng Refund để cộng Balance tùy ý.
+
+Retry receipt thành công được trả lại trước kiểm tra số dư hiện tại, không ghi lần hai kể cả sau sửa quyết định. Quyết định giảm dưới đã trả vẫn tạo số âm; không sửa khoản đã chi/Statement finalize, không tự Debt/Hold. Admin recovery giữ quy tắc cũ: chỉ tối đa số âm hiện tại, debit Balance thật và bù pool. Các nghĩa vụ mới bù số âm của cùng Client trước khi có thể trả thêm. Migration legacy gate giữ nguyên.
+
+[Kiểm chứng mới, dữ liệu và giới hạn](VERIFICATION-EXPENSES-REFUNDS-2026-10-27.md).
+
 ## Owner continuation — 27/10/2026
 
 [Manual Sales/month commission inputs](21-commission-review.md) supersede per-Order commission approvals. Four uniform columns, separate purchase performance and processing-month obligation revisions, pending Claims and attribution review; actual Bank/Balance payouts are not counted twice. Financial Statement/Balance semantics are unchanged.
@@ -23,7 +31,7 @@ This document supersedes the historical automatic Claim credit and per-Order pay
 2. A subsequent Admin decision specifies the **new total** shipping refund and compensation, not a delta. An immutable revision posts new obligation minus previous obligation. It never changes past wallet postings or actual payouts. Case detail displays the latest decision.
 3. Finance opens Refund Management, sees current signed balances, and enters 1–100 actual payout rows. A batch is atomic: one invalid row rolls back every payout, wallet posting, notification and request receipt. Each retry must retain its key and payload. Different payloads under one key fail.
 4. `to_balance` subtracts the payout from Refund Balance and writes one CREDIT/REFUND into the existing `ledger_entries`, with source `REFUND_ACTUAL`. `to_bank` subtracts the payout and records free-text source/destination accounts, executed date, reference and evidence; it writes **no Client wallet entry**. Economic bank-outflow reporting uses the executed date; obligation movements use recording time.
-5. Exceeding the obligation returns a warning and still records the payout. Negative Refund Balance stays negative without automatic recovery, Debt or Hold. Only Admin can `recover` some or all of the negative amount: one ADJUSTMENT_DEBIT in the wallet plus a positive refund event. Recovery cannot exceed the current overpayment.
+5. New payouts exceeding the current outstanding obligation are rejected atomically (Owner 27/10 update). Negative Refund Balance stays negative without automatic recovery, Debt or Hold. Only Admin can `recover` some or all of the negative amount: one ADJUSTMENT_DEBIT in the wallet plus a positive refund event. Recovery cannot exceed the current overpayment.
 6. Every decision/payout/recovery inserts durable in-app notifications for the Client and responsible Sales in the same transaction. Recipient-only acknowledgement is append-only and idempotent. No email/SMS transport is claimed.
 
 The existing wallet ledger remains authoritative for Balance; `fc_*` balances are not enrolled or written by this adapter. Operational financial API now projects signed net Balance instead of the old unallocated-credit expression. Refund recovery is excluded from legacy service-fee/Statement receivable materialization; it is a financial movement, not a new service charge. A complete Statement snapshot of all movements is still pending.
@@ -65,6 +73,6 @@ The guarded synthetic demo seeder was updated to seed a decision plus explicit a
 
 ## Verification and open gates
 
-See [continuation evidence](VERIFICATION-REFUNDS-2026-10-20.md). Domain/API assertions cover signed revisions, original receipts, bank versus Balance, warning-only overpayment, partial recovery, role/ownership restrictions, all-or-nothing batches, immutable wallet links, outbox failure rollback, private bank evidence, recipient acknowledgement, category/report parity and 40 retries over four independent SQLite connections.
+See [continuation evidence](VERIFICATION-REFUNDS-2026-10-20.md). Domain/API assertions cover signed revisions, original receipts, bank versus Balance, strict payout rejection, negative balances after downward decisions, partial recovery, role/ownership restrictions, all-or-nothing batches, immutable wallet links, outbox failure rollback, private bank evidence, recipient acknowledgement, category/report parity and 40 retries over four independent SQLite connections.
 
 Still required for the full build: operational Payment reconciliation/adjustment, one Debt account without Statement selection, full Statement snapshots/dispute/late-adjustment integration, unified financial reporting, reviewed historical cutover and complete cross-module UAT. Generic manual/import financial entry paths also need retirement/restriction as part of that cutover; the dedicated Refund API does not make those legacy paths compliant.

@@ -1,3 +1,7 @@
+## Owner continuation — 27/10/2026 · Refund / Internal Expenses
+
+[Chi tiêu nội bộ VND](22-internal-expenses.md) và Refund chặn vượt pool đã triển khai. FX là nghiệp vụ đầu tiên giai đoạn 2; không có phân bổ chi phí kế toán. [Kiểm chứng](VERIFICATION-EXPENSES-REFUNDS-2026-10-27.md).
+
 ## Supplier / Client / BOD continuation — 25/10/2026
 Verified source coordination, compensating correction/reversal, Emergency cost review and BOD expansion. [Delivered increments, tests, data-safety incident and explicit remaining gates](VERIFICATION-SUPPLIER-CONTINUATION-2026-10-25.md). Historical migration, authenticated Admin signoff queue, full bank/company reporting and production acceptance remain open.
 

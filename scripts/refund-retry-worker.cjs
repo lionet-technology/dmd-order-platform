@@ -6,4 +6,4 @@ try{
  const {RefundService}=require('../src/lib/refunds.ts'),service=new RefundService(db);
  for(let i=0;i<10;i++)service.execute(workerData.actor,workerData.payload);
  db.close();Atomics.store(signal,0,1);
-}catch(e){process.stderr.write(String(e.stack)+'\n');Atomics.store(signal,0,-1)}finally{Atomics.notify(signal,0)}
+}catch(e){if(workerData.allow_rejection&&String(e).includes('Số tiền hoàn vượt')){Atomics.store(signal,0,2);Atomics.notify(signal,0);return;}process.stderr.write(String(e.stack)+'\n');Atomics.store(signal,0,-1)}finally{Atomics.notify(signal,0)}

@@ -18,22 +18,24 @@ async function main(){try{
  decision(5,2);eq([wallet(client.id),service.balance(client.id)],[0,700],'Decision only creates obligation');
  decision(4);eq([wallet(client.id),service.balance(client.id)],[0,400],'Revision changes signed obligation only');
  eq(cases.casesFor(client).find(c=>c.id===claim).decision.refund_cents,400,'Case UI shows latest decision');
- const payload={action:'to_balance',client_id:client.id,amount_cents:600,reason:'Over refund allowed',reference:'r1',request_key:'exact-retry'};
- const payout=service.execute(finance,payload);eq(payout.warnings.length,1,'Over refund warning');eq([wallet(client.id),service.balance(client.id)],[600,-200],'Balance credit and signed overpayment');
+ const payload={action:'to_balance',client_id:client.id,amount_cents:600,reason:'Approved partial refund',reference:'r1',request_key:'exact-retry'};
+ reject(()=>service.execute(finance,payload),'Reject Balance overpayment, never cap');eq([wallet(client.id),service.balance(client.id)],[0,400],'Rejected payout changes no money');
+ decision(6);const payout=service.execute(finance,payload);decision(4);eq(payout.warnings.length,0,'Approved payout has no overpayment warning');eq([wallet(client.id),service.balance(client.id)],[600,-200],'Balance credit and signed overpayment');
  eq(service.execute(finance,payload),payout,'Identical retry returns original result');reject(()=>service.execute(finance,{...payload,amount_cents:1}),'Key conflict');
  reject(()=>service.execute(admin,payload),'Admin cannot execute Finance payout');reject(()=>service.execute(sales,payload),'Sales cannot payout');reject(()=>service.execute(other,payload),'Cross-client forbidden');
  pay('recover',50);eq([wallet(client.id),service.balance(client.id)],[550,-150],'Partial manual recovery');reject(()=>pay('recover',151),'No excess recovery');
  decision(0);eq([wallet(client.id),service.balance(client.id)],[550,-550],'Decision revision never rewrites actual payouts');
  const bank={from_account:'DMD free text',to_account:'Recipient free text',paid_date:new Date(Date.now()+7*3600000).toISOString().slice(0,10),proof:'receipt-123'};
- pay('to_bank',100,bank);eq([wallet(client.id),service.balance(client.id)],[550,-650],'Bank cash out does not credit Balance');
- reject(()=>pay('to_bank',100,{...bank,paid_date:'2100-01-01'}),'Reject future execution');reject(()=>pay('to_bank',100,{...bank,proof:''}),'Bank evidence required');
- const before=[wallet(client.id),service.balance(client.id)];reject(()=>service.batch(finance,{action:'batch',request_key:'atomic-batch',rows:[{...payload,amount_cents:10},{...payload,client_id:999999}]}),'Invalid bulk rolls back entire batch');eq([wallet(client.id),service.balance(client.id)],before,'Atomic batch no partial money');
+ reject(()=>pay('to_bank',100,bank),'Negative pool blocks Bank payout');reject(()=>pay('to_balance',1),'Negative pool blocks Balance payout');
+ decision(7);pay('to_bank',100,bank);decision(0);eq([wallet(client.id),service.balance(client.id)],[550,-650],'Bank cash out does not credit Balance');
+ decision(7);reject(()=>pay('to_bank',1,{...bank,paid_date:'2100-01-01'}),'Reject future execution');reject(()=>pay('to_bank',1,{...bank,proof:''}),'Bank evidence required');
+ const before=[wallet(client.id),service.balance(client.id)];reject(()=>service.batch(finance,{action:'batch',request_key:'atomic-batch',rows:[{...payload,amount_cents:10},{...payload,client_id:999999}]}),'Invalid bulk rolls back entire batch');eq([wallet(client.id),service.balance(client.id)],before,'Atomic batch no partial money');decision(0);
  const f=require('../src/lib/credit.ts').accountFinancials(client.id);eq(f.receivable_cents,0,'Refund recovery is not a service fee or Statement receivable');
  const event=db.prepare("SELECT * FROM refund_events WHERE kind='TO_BALANCE' LIMIT 1").get();reject(()=>db.prepare('UPDATE ledger_entries SET amount=1 WHERE id=?').run(event.ledger_id),'Actual ledger immutable');reject(()=>db.prepare('DELETE FROM refund_events WHERE id=?').run(event.id),'Refund events immutable');
  const outboxBefore=db.prepare('SELECT COUNT(*) n FROM refund_notifications').get().n;
- db.exec("CREATE TRIGGER injected_outbox_failure BEFORE INSERT ON refund_notifications BEGIN SELECT RAISE(ABORT,'injected'); END;");reject(()=>pay('to_balance',1),'Notification failure rolls back money');eq([wallet(client.id),service.balance(client.id)],before,'Outbox and money atomic');db.exec('DROP TRIGGER injected_outbox_failure');
- eq(db.prepare('SELECT COUNT(*) n FROM refund_notifications').get().n,outboxBefore,'No partial notifications');
- const notifications=service.notifications(client);eq(notifications.length>0,true,'Client durable notifications');eq(service.notifications(sales).length,notifications.length,'Sales notifications');service.acknowledge(client,notifications[0].id);service.acknowledge(client,notifications[0].id);eq(service.notifications(client)[0].is_read,1,'Acknowledgement idempotent');reject(()=>service.acknowledge(other,notifications[0].id),'Other user cannot ack');
+ decision(7);db.exec("CREATE TRIGGER injected_outbox_failure BEFORE INSERT ON refund_notifications BEGIN SELECT RAISE(ABORT,'injected'); END;");reject(()=>pay('to_balance',1),'Notification failure rolls back money');eq([wallet(client.id),service.balance(client.id)],before,'Outbox and money atomic');db.exec('DROP TRIGGER injected_outbox_failure');
+ eq(db.prepare('SELECT COUNT(*) n FROM refund_notifications').get().n,outboxBefore+2,'No partial notifications');
+ decision(0);const notifications=service.notifications(client);eq(notifications.length>0,true,'Client durable notifications');eq(service.notifications(sales).length,notifications.length,'Sales notifications');service.acknowledge(client,notifications[0].id);service.acknowledge(client,notifications[0].id);eq(service.notifications(client)[0].is_read,1,'Acknowledgement idempotent');reject(()=>service.acknowledge(other,notifications[0].id),'Other user cannot ack');
  eq(service.history(client,client.id).every(e=>!('from_account'in e)&&!('proof'in e)),true,'Bank details private');eq(service.history(finance,client.id).some(e=>e.from_account===bank.from_account),true,'Finance sees bank evidence');
  const otherClaim=open(other.id);service.decide(admin,{case_id:otherClaim,refund_cents:300,compensation_cents:0,category:'DELAYED',reason:'Approved',request_key:'other-obligation'});
  const day=bank.paid_date,report=service.report(bod,day,day);eq([report.owes_clients_cents,report.overpaid_clients_cents,report.balance_refund_cents,report.bank_outflow_cents],[300,650,600,100],'Report preserves both exposures and payout channels');
@@ -46,6 +48,7 @@ async function main(){try{
  for(const u of [undefined,warehouse,admin,sales,client,finance,bod])eq((await api.GET(req(u))).status,!u?401:u===warehouse?403:200,'HTTP overview '+u?.role);
  eq((await api.GET(req(otherSales,null,'/api/refunds?client_id='+client.id))).status,403,'HTTP cross-client');
  const financialsApi=require('../src/app/api/financials/route.ts');const projected=await (await financialsApi.GET(req(client,null,'/api/financials'))).json();eq(projected.purchasing_balance_cents,wallet(client.id),'Public Balance is signed net ledger, not historical unallocated credit');
+ eq((await api.POST(req(finance,{...payload,request_key:'http-reject'}))).status,400,'HTTP rejects exceeding current obligation');decision(20);
  eq((await api.POST(req(finance,{...payload,request_key:'http-refund'}))).status,200,'HTTP Finance payout');eq((await api.POST(req(admin,{...payload,request_key:'http-admin-refund'}))).status,403,'HTTP Admin payout denied');
  eq((await api.GET(req(bod,null,'/api/refunds?view=report&start='+day+'&end='+day))).status,200,'HTTP BOD report');
  eq((await api.POST(req(finance,{action:'recover',client_id:client.id,amount_cents:1,reason:'bad',request_key:'http-finance-recovery'}))).status,403,'Finance cannot recover');
@@ -62,6 +65,13 @@ async function main(){try{
  eq(service.report(bod,day,day).categories.find(c=>c.category==='SHIPPING_INCIDENT').obligation_change_cents,200,'Canonical shipping category retains total without second obligation');
  service.decide(admin,{case_id:claim,refund_cents:200,compensation_cents:0,category:'RECONCILIATION_ERROR',reason:'Reconciliation category',request_key:'recon-category'});
  eq(service.report(bod,day,day).categories.find(c=>c.category==='RECONCILIATION_ERROR').obligation_change_cents,200,'Canonical reconciliation category supported');
+ // Two separate requests compete for the same aggregate allowance, across Balance and Bank.
+ const remaining=service.balance(client.id);if(remaining<0)pay('recover',-remaining);
+ decision(20);const secondClaim=open(client.id);service.decide(admin,{case_id:secondClaim,refund_cents:300,compensation_cents:0,category:'OTHER',reason:'Second approved Claim in same Client pool',request_key:'second-pool-claim'});eq(service.balance(client.id),2100,'Separate Claim obligations sum into one Client pool after recovery');const pool=service.balance(client.id),raceAmount=Math.floor(pool*0.75);
+ const raceSignals=['to_balance','to_bank'].map((action,i)=>{const buffer=new SharedArrayBuffer(4);new Worker(path.join(__dirname,'refund-retry-worker.cjs'),{workerData:{file:process.env.DMD_DB_PATH,actor:{id:finance.id,role:'FINANCE'},payload:{...payload,...bank,action,amount_cents:raceAmount,request_key:'distinct-race-'+i},allow_rejection:true,signal:buffer}});return new Int32Array(buffer)});
+ const outcomes=raceSignals.map(signal=>{if(!Atomics.load(signal,0))Atomics.wait(signal,0,0,30000);return Atomics.load(signal,0)});
+ eq(outcomes.sort(),[1,2],'Concurrent distinct Balance/Bank requests cannot overpay');eq(service.balance(client.id),pool-raceAmount,'Only winning payout consumes pool');
+ reject(()=>pay('recover',1),'Cannot recover a positive pool');
  eq(db.prepare('PRAGMA foreign_key_check').all(),[],'Foreign keys intact');
  console.log('REFUNDS DOMAIN/API PASS ('+checks+' assertions)');
  }finally{db.close();fs.rmSync(dir,{recursive:true,force:true})}}

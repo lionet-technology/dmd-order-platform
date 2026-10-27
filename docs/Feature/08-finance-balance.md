@@ -1,3 +1,7 @@
+## Owner continuation — 27/10/2026 · Refund / Internal Expenses
+
+[Refund](14-refund-management.md) giữ pool Client có dấu, chặn toàn bộ khoản Bank/Balance vượt nghĩa vụ còn được duyệt; Balance Adjustment vẫn riêng. Giảm quyết định sau khi chi có thể tạo số âm; không sửa Statement đã finalize. [Chi tiêu nội bộ VND](22-internal-expenses.md) không ghi Client Balance/Statement.
+
 ## Owner continuation — 25/10/2026
 Current Sales snapshots, BOD monthly trends and Statement batch close: [approved behavior and integration](20-sales-monthly-close.md). This delta supersedes conflicting historical notes below. No background scheduler is configured.
 

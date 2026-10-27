@@ -1,3 +1,7 @@
+## Owner continuation — 27/10/2026 · Refund / Internal Expenses
+
+[Chi tiêu nội bộ VND](22-internal-expenses.md) có tab/report tháng riêng cho BOD/Finance, tách tổng cam kết/lịch đến hạn và cash ròng; chưa cộng vào GP USD để tránh trộn tiền tệ. Refund current exposure vẫn có dấu do sửa quyết định sau khi chi, nhưng khoản trả mới vượt nghĩa vụ bị chặn. [Kiểm chứng](VERIFICATION-EXPENSES-REFUNDS-2026-10-27.md).
+
 ## Owner continuation — 27/10/2026
 
 [Manual Sales/month commission inputs](21-commission-review.md) supersede per-Order commission approvals. Four uniform columns, separate purchase performance and processing-month obligation revisions, pending Claims and attribution review; actual Bank/Balance payouts are not counted twice. Financial Statement/Balance semantics are unchanged.

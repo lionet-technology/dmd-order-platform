@@ -1,3 +1,7 @@
+## Owner continuation — 27/10/2026 · Refund / Internal Expenses
+
+Owner chốt pool Refund cấp Client, không gán thực trả từng Claim; từ chối mọi thực trả vượt pool dương cho cả Bank/Balance. Chi tiêu nội bộ: BOD/Finance cùng quản lý, VND, lịch nhiều đợt, partial payments, Commission nhập tay nằm trong lương thưởng, không multilevel approval/amortization. FX đầu giai đoạn 2. [Hành vi hiện hành](22-internal-expenses.md).
+
 ## Supplier Refund Receivable — Owner option A, 24/10/2026
 [Supplier accounts](19-supplier-accounts.md): final approved amount (possibly below requested) creates a separate receivable once. Partial actual receipts and/or explicit Balance offsets reduce it; only Offset increases Balance. Status/evidence remain linked and immutable; no revenue/GP or second posting on close. Legacy posted claims require REVIEW. [Verification and remaining limits](VERIFICATION-SUPPLIER-RECEIVABLES-2026-10-24.md).
 

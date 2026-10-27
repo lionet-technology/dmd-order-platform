@@ -6,6 +6,7 @@ import {PaymentReconciliationWorkspace} from "./payment-reconciliation-workspace
 import {SupplierAccountWorkspace} from "./supplier-account-workspace";
 import {BodFinanceWorkspace} from './bod-finance-workspace';
 import {StatementsV2Workspace} from './statements-v2-workspace';
+import {InternalExpensesWorkspace} from "./internal-expenses-workspace";
 type Row=Record<string,unknown>;
 export function FinanceWorkspace({user,onLogout}:{user:{display_name:string;role:string};onLogout:()=>void}){
  const [tab,setTab]=useState("suppliers"),[rows,setRows]=useState<Row[]>([]),[suppliers,setSuppliers]=useState<string[]>([]),[error,setError]=useState(""),[notice,setNotice]=useState(""),[busy,setBusy]=useState(false);
@@ -22,8 +23,8 @@ export function FinanceWorkspace({user,onLogout}:{user:{display_name:string;role
  try{const response=await fetch("/api/costs",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({...values,total_net_cost:Number(values.total_net_cost)})}),data=await response.json();if(!response.ok)throw Error(data.error);form.reset();await load();}catch(e){setError((e as Error).message)}finally{setBusy(false)}
  }
  async function importCost(event:FormEvent<HTMLFormElement>){event.preventDefault();setBusy(true);setError("");setNotice("");const form=event.currentTarget,body=new FormData(form);body.set("kind","costs");try{const response=await fetch("/api/import",{method:"POST",body}),data=await response.json();if(!response.ok)throw Error(data.error);setNotice("Đã nhập "+data.imported+" dòng chi phí.");form.reset();await load();}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
- return <main className="financeRoleWorkspace"><header className="pageHeader"><div><span className="eyebrow">{user.role}</span><h1>Tài chính Supplier</h1><p>{user.display_name}</p></div><button className="secondaryBtn" onClick={async()=>{await fetch("/api/auth/logout",{method:"POST"});onLogout()}}>Đăng xuất</button></header>
- <nav className="settingsActions" aria-label="Tài chính Supplier">{[["suppliers","Supplier"],["refunds","Refund Management"],["payments","Payment Reconciliation"],["bod","BOD Finance"],["statements","Statement"]].map(([id,label])=><button className={tab===id?"primaryBtn":"secondaryBtn"} key={id} onClick={()=>{setTab(id);setNotice("");setError("")}}>{label}</button>)}</nav>
+ return <main className="financeRoleWorkspace"><header className="pageHeader"><div><span className="eyebrow">{user.role}</span><h1>Tài chính</h1><p>{user.display_name}</p></div><button className="secondaryBtn" onClick={async()=>{await fetch("/api/auth/logout",{method:"POST"});onLogout()}}>Đăng xuất</button></header>
+ <nav className="settingsActions" aria-label="Tài chính">{[["expenses","Chi tiêu nội bộ"],["suppliers","Supplier"],["refunds","Refund Management"],["payments","Payment Reconciliation"],["bod","BOD Finance"],["statements","Statement"]].map(([id,label])=><button className={tab===id?"primaryBtn":"secondaryBtn"} key={id} onClick={()=>{setTab(id);setNotice("");setError("")}}>{label}</button>)}</nav>
  {error&&<p role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
  {tab==="costs"&&<section className="panel"><button className="secondaryBtn" onClick={()=>setTab("suppliers")}>← Tổng quan Supplier</button><h2>Chứng từ Cost · {supplierFilter}</h2><form onSubmit={importCost} className="settingsActions"><label className="field">File đối soát Supplier (.xlsx, tối đa 10 MB)<input type="file" name="file" accept=".xlsx" required/></label><button className="secondaryBtn" disabled={busy}>Nhập Excel chi phí</button></form><form onSubmit={save} className="settingsGrid">
  <label className="field">Tracking<input name="tracking" required/></label>
@@ -40,6 +41,7 @@ export function FinanceWorkspace({user,onLogout}:{user:{display_name:string;role
  <div className="tableWrap"><table><thead><tr>{["Order / DMD ID","Lot","Khách","Tracking","Supplier","Actual Net (USD)","Reconciliation"].map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{rows.map((row,i)=><tr key={String(row.id??i)}><td>{String(row.order_id||"Chưa ghép Order")}<small>{String(row.system_order_code||"")}</small></td>{["lot_number","customer","tracking","supplier","total_net_cost","reconciliation_status"].map(k=><td key={k}>{String(row[k]|| (row[k]===0?0:"—"))}</td>)}</tr>)}</tbody></table></div>
  {!loading&&!rows.length&&<p>Không có chi phí phù hợp bộ lọc.</p>}
  <div className="financePagination"><button className="secondaryBtn" disabled={loading||page<=1} onClick={()=>setPage(p=>p-1)}>Chi phí: trang trước</button><span>Trang {page} / {totalPages}</span><button className="secondaryBtn" disabled={loading||page>=totalPages} onClick={()=>setPage(p=>p+1)}>Chi phí: trang sau</button></div></section>}
+ {tab==="expenses"&&<InternalExpensesWorkspace/>}
  {tab==="reconciliation"&&<ReconciliationWorkspace/>}
  {tab==="statements"&&<StatementsV2Workspace role={user.role}/>}
  {tab==="refunds"&&<RefundWorkspace role={user.role}/>}

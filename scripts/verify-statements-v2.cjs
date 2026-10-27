@@ -21,8 +21,12 @@ const ledger=(type,dir,amount,occurred='2026-10-20',referenceType=null,reference
  const payment=ledger('PAYMENT','CREDIT',70,'2026-10-01');
  const f=credit.accountFinancials(client.id);
  eq([f.net_balance_cents,f.debts[0].outstanding_cents],[-3000,0],'Backdated Payment settles current Debt, surplus only in Balance');
+ const fixtureOrder=Number(db.prepare("INSERT INTO orders(client_user_id) VALUES (?)").run(client.id).lastInsertRowid);
+ const fixtureCase=require('../src/lib/cases.ts').caseAction(client,{action:'create',kind:'CLAIM',visibility:'PUBLIC',order_ids:[fixtureOrder],summary:'Approved refund fixture'}).id;
+ refund.decide(admin,{case_id:fixtureCase,refund_cents:700,compensation_cents:0,reason:'Approved fixture',category:'OTHER',request_key:'fixture-approved'});
  refund.execute(finance,{action:'to_balance',client_id:client.id,amount_cents:500,reason:'Wallet payout',reference:'w',request_key:'wallet'});
  refund.execute(finance,{action:'to_bank',client_id:client.id,amount_cents:200,reason:'Bank payout',reference:'b',from_account:'A',to_account:'B',paid_date:day,proof:'proof',request_key:'bank'});
+ refund.decide(admin,{case_id:fixtureCase,refund_cents:0,compensation_cents:0,reason:'Revised after payment',category:'OTHER',request_key:'fixture-revised'});
  let p=statements.statementPreview(admin,client.id,day,day);
  eq(p.opening,{balance_cents:0,debt_cents:0,refund_cents:0},'Exact zero opening');
  eq(p.closing,{balance_cents:-2500,debt_cents:0,refund_cents:-700},'Wallet / Debt / Refund close separately');
@@ -129,6 +133,7 @@ const ledger=(type,dir,amount,occurred='2026-10-20',referenceType=null,reference
  eq((await route.POST(request(finance,{client_id:client.id,start:day,end:day}))).status,200,'Finance route can finalize/replay independently of Admin');
  const financialRoute=require('../src/app/api/financials/route.ts');const legacyResponse=await financialRoute.GET(request(admin,null,'/api/financials?client_id='+client.id));const legacyData=await legacyResponse.json();eq(legacyData.statements.every(s=>!('status' in s)&&!('paid_cents' in s)&&!('outstanding_cents' in s)),true,'Legacy operational Statement projection has no paid/unpaid workflow');
  const frozenRefundSnapshots=db.prepare('SELECT id,snapshot_json FROM statement_v2_snapshots ORDER BY id').all();
+ refund.decide(admin,{case_id:fixtureCase,refund_cents:700,compensation_cents:0,reason:'Resolve historical negative pool before new payout',category:'OTHER',request_key:'fixture-reapproved'});
  const preRefund=statements.statementPreview(finance,client.id,'2026-10-22','2026-10-22');
  refund.decide(admin,{case_id:claim.id,refund_cents:1000,compensation_cents:0,category:'SHIPPING_INCIDENT',reason:'Late approved obligation',request_key:'late-approved'});
  const approvedRefund=statements.statementPreview(finance,client.id,'2026-10-22','2026-10-22');
