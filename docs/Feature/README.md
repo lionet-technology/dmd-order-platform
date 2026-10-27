@@ -151,3 +151,6 @@ Cập nhật: 2026-10-16. Tài liệu này mô tả hành vi từ code, nguồn 
 Final recorded checks and limits: [Owner verification 22/10](VERIFICATION-OWNER-2026-10-22.md).
 
 Verification for this continuation: [27/10 audit, test evidence and limits](VERIFICATION-REFUND-COMMISSION-2026-10-27.md).
+
+## Financial/privacy audit — 27/10/2026
+[Verified Supplier disclosures, unauthorized draft repricing, fixes, test evidence and residual launch gates](AUDIT-PRIVACY-FINANCE-2026-10-27.md). Zero-leakage and full production acceptance are not certified.

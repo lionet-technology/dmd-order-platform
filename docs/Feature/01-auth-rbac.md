@@ -1,3 +1,7 @@
+## Supplier privacy audit — 27/10/2026
+
+Sales/Client JSON projections remove all Supplier-named fields and Supplier enum rows, including nested serialized JSON. This closes `/api/enums` and `/api/client-services` (`default_supplier`, including `view=setup`) disclosures; Admin routing configuration remains available. Assigned-Client checks remain in the endpoint. `scripts/verify-supplier-privacy.cjs` uses a disposable DB and tests both roles, nested JSON, unassigned Sales and Admin preservation. Base Cost permission is not explicitly granted to Sales by current pricing decisions: existing Base/guidance/markup exclusions remain fail-closed pending Owner clarification. This is not a claim that arbitrary notes, uploaded label contents, CSV or all APIs have been proven free of confidential content.
+
 ## Owner continuation — 27/10/2026 · Refund / Internal Expenses
 
 [Chi tiêu nội bộ](22-internal-expenses.md): BOD và FINANCE đều được tạo/sửa/thanh toán/đảo và xem audit; ADMIN/SALES/CLIENT/WAREHOUSE bị chặn GET/POST trên server. Không cấp quyền mới vào Client Ledger.
@@ -43,3 +47,6 @@ Refund Management now has a dedicated authenticated API: Finance executes actual
 ## Bằng chứng
 src/lib/auth.ts, finance-role-schema.ts, financial-privacy.ts; src/app/api/; finance-role-workspace.tsx.
 Tests: verify-rbac.cjs, verify-release-gates.cjs, verify-supplier-payables.cjs.
+
+### Order detail authorization before refresh — 27/10/2026
+`GET /api/orders/[id]` now checks current Client ownership before `refreshDraft`. Previously an unassigned Sales received 403 only after the active quote updated another Client's draft. The regression seeds an active approved Base Rate, asserts the quote exists, then compares the full Order row before/after the denied read. No schema or Balance semantics changed; authorized draft refresh behavior remains as before.

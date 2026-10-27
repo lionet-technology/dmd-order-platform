@@ -1,0 +1,9 @@
+AssertionError [ERR_ASSERTION]: denied GET cannot reprice another Client draft
+    at check (/Users/quan/.codex/.chatgpt-projects/g-p-6abc85a7200881919c54f058c96b91bf/audit-work/scripts/verify-supplier-privacy.cjs:11:81)
+    at /Users/quan/.codex/.chatgpt-projects/g-p-6abc85a7200881919c54f058c96b91bf/audit-work/scripts/verify-supplier-privacy.cjs:24:203 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '=='
+}

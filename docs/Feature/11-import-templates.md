@@ -27,3 +27,6 @@ Supplier Cost Excel chỉ BOD/FINANCE. Không cấp họ import Orders/Balance/T
 - `src/lib/importers.ts`, `src/lib/purchase-templates.ts`, `src/app/api/import/`, `src/app/api/purchase-export/`, `src/app/api/purchase-templates/`, `src/app/api/manifest-export/`, `scripts/verify-purchase-engine.cjs`.
 ## Cần xác nhận
 - Danh sách mapping bắt buộc cho từng supplier; file Excel thực tế cần acceptance check ngoài parser.
+
+## Orders search readability — 27/10/2026
+The Orders search placeholder is shortened to fit its single-line height, with an accessible search name and clear-button name. Bulk newline/comma matching remains unchanged; the longer paste instruction is available as a tooltip. Verified clipping was present at desktop and mobile widths; this is a presentation/accessibility change only.

@@ -813,7 +813,7 @@ function SearchBar({value,onChange,placeholder}:{value:string;onChange:(v:string
 
 function OrderSearchBar({value,onChange}:{value:string;onChange:(v:string)=>void}) {
   const count=value.split(/[\n,]+/).map(term=>term.trim()).filter(Boolean).length;
-  return <div className="searchBox orderSearchBox"><span>⌕</span><textarea rows={1} value={value} onChange={e=>onChange(e.target.value)} placeholder="Tìm Order ID, Tracking, khách hàng, dịch vụ… Dán nhiều Tracking / Client Order ID bằng dòng hoặc dấu phẩy."/>{count>1&&<em>{count} mã</em>}{value&&<button onClick={()=>onChange("")}>×</button>}</div>;
+  return <div className="searchBox orderSearchBox"><span>⌕</span><textarea rows={1} value={value} onChange={e=>onChange(e.target.value)} aria-label="Tìm Orders theo mã, Tracking, khách hàng hoặc dịch vụ" title="Dán nhiều Tracking / Client Order ID bằng dòng hoặc dấu phẩy." placeholder="Tìm mã đơn, Tracking, khách…"/>{count>1&&<em>{count} mã</em>}{value&&<button aria-label="Xóa tìm kiếm Orders" onClick={()=>onChange("")}>×</button>}</div>;
 }
 
 function Modal({title,onClose,children,size="wide"}:{title:string;onClose:()=>void;children:React.ReactNode;size?:"wide"|"compact"|"fullscreen"}) {

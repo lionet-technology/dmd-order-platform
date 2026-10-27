@@ -1,0 +1,18 @@
+HTTP assertions passed; starting browser
+Browser admin 1440
+Loaded admin
+Browser bod 1440
+Loaded bod
+Browser finance 1440
+Loaded finance
+Opened Statement
+Opened Review
+Browser admin 390
+Loaded admin
+Browser bod 390
+Loaded bod
+Browser finance 390
+Loaded finance
+Opened Statement
+Opened Review
+SALES MONTHLY HTTP PASS (39 assertions), BROWSER 24 assertions; evidence /var/folders/x6/q7g3prc91cng1tjxqpd64yvc0000gn/T/dmd-sales-monthly-http-Usg3LJ

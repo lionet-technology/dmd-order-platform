@@ -13,13 +13,14 @@ export const runtime="nodejs";
 async function handleGET(req:NextRequest,{params}:{params:Promise<{id:string}>}){
   const auth=requireUser(req);if(auth.error)return auth.error;
   const id=Number((await params).id);
-  const found=db.prepare("SELECT id FROM orders WHERE id=?").get(id);
-  const order=found?refreshDraft(id):undefined;
-  if(!order)return NextResponse.json({error:"Order không tồn tại."},{status:404});
+  const found=db.prepare("SELECT id,client_user_id FROM orders WHERE id=?").get(id) as {id:number;client_user_id:number|null}|undefined;
+  if(!found)return NextResponse.json({error:"Order không tồn tại."},{status:404});
   if(auth.user.role!=="ADMIN"){
-    const client=order.client_user_id?getClientAccount(order.client_user_id):undefined;
+    const client=found.client_user_id?getClientAccount(found.client_user_id):undefined;
     if(!client||!canAccessClient(auth.user,client))return NextResponse.json({error:"Không có quyền xem Order này."},{status:403});
   }
+  // Draft refresh writes pricing and removes stale charges; authorize before it runs.
+  const order=refreshDraft(id);
   const trackings=listOrderTrackings(id,auth.user.role==="ADMIN"||order.workflow_status==="CANCELLED");
   const events=orderTimeline(id,auth.user.role);
   const payload={...order,pricing:safePricing(order,auth.user.role),cancellation:cancellationPolicy(order as Record<string,unknown>&{id:number}),trackings:auth.user.role==="ADMIN"?trackings:trackings.filter(row=>row.status==="ACTIVE"||(order.workflow_status==="CANCELLED"&&row.status==="CANCELLED")).map(publicOrderTracking),events};
