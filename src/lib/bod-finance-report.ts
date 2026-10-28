@@ -31,7 +31,7 @@ export function bodFinanceReport(actor:Pick<AuthUser,'role'|'id'>,start:string,e
  const refundWalletIds=new Set((refunds.events as {ledger_id?:number;kind:string}[]).filter(e=>e.kind==='TO_BALANCE'||e.kind==='RECOVERY').map(e=>e.ledger_id).filter((v):v is number=>typeof v==='number'));
  const statement_periods=clients.map(c=>{
   try{const p=statementPreview(actor as AuthUser,c.id,start,end);const issued=listStatements(actor as AuthUser,c.id).items.filter(s=>s.period_start===start&&s.period_end===end);
-   return {client_id:c.id,available:true,opening:p.opening,closing:p.closing,bank_posted_cents:p.bank_outflow_cents,finalized:issued[0]??null};
+   return {client_id:c.id,available:true,opening:p.opening,closing:p.closing,bank_posted_cents:p.bank_net_outflow_cents,finalized:issued[0]??null};
   }catch(e){return {client_id:c.id,available:false,error:(e as Error).message};}
  });
  const supplierData=supplierAccounts(actor as AuthUser);
@@ -57,8 +57,8 @@ export function bodFinanceReport(actor:Pick<AuthUser,'role'|'id'>,start:string,e
    debt_outstanding_cents:accounts.reduce((s,c)=>s+c.debt_outstanding_cents,0),
    reserve_cents:accounts.reduce((s,c)=>s+c.reserve_cents,0)},
   refunds:{owes_clients_cents:refunds.owes_clients_cents,overpaid_clients_cents:refunds.overpaid_clients_cents,
-   bank_outflow_cents:refunds.bank_outflow_cents,balance_refund_cents:refunds.balance_refund_cents,
-   categories:refunds.categories,bank_events:refunds.bank_events},
+   bank_outflow_cents:refunds.bank_outflow_cents,bank_recovery_cents:refunds.bank_recovery_cents,bank_net_outflow_cents:refunds.bank_net_outflow_cents,balance_refund_cents:refunds.balance_refund_cents,
+   categories:refunds.categories,bank_events:refunds.bank_events,bank_recovery_events:refunds.bank_recovery_events},
   ledger_flows:{net_balance_change_cents:sum(()=>true),
    payment_net_cents:sum(e=>['PAYMENT','PAYMENT_ADJUSTMENT','PAYMENT_REVERSAL'].includes(e.entry_type)),
    refund_balance_net_cents:sum(e=>refundWalletIds.has(e.id)),

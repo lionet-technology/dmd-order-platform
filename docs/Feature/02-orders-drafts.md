@@ -1,5 +1,9 @@
 # Orders, Draft & cấu trúc kiện
 
+## Owner continuation — 28/10/2026
+Manual Order entry is capped at 20 rows in Client and Admin/Sales UIs, including paste/add/clone/Enter. Oversized paste is rejected whole. Admin/Sales use `/api/orders/manual-batch` (1–20 rows, existing per-row authorization, partial successes retained). Client JSON preview/save rejects >20 Orders regardless of a caller-supplied source flag. Larger imports use multipart CSV/XLSX, reparsed on preview and save; manual cap does not affect imported Orders or purchase selection (up to 1000). No advanced sheet selection/fill/undo/arrow navigation. Tracking/Refund/other EntrySheet paths are unchanged.
+
+
 ## UI follow-up — 23/10/2026
 Tracking/Label save keeps its success notice after reloading and refreshes the Admin action queue through the shared financial update event. Unpriced and partial-Label actions open the relevant Order directly. Late-price purchasing semantics remain as approved on 22/10. Browser mobile completion and HTTP concurrency evidence: [verification](VERIFICATION-BALANCE-DEBT-SPLIT-2026-10-23.md).
 

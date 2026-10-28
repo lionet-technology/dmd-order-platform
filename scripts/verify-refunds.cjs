@@ -72,6 +72,24 @@ async function main(){try{
  const outcomes=raceSignals.map(signal=>{if(!Atomics.load(signal,0))Atomics.wait(signal,0,0,30000);return Atomics.load(signal,0)});
  eq(outcomes.sort(),[1,2],'Concurrent distinct Balance/Bank requests cannot overpay');eq(service.balance(client.id),pool-raceAmount,'Only winning payout consumes pool');
  reject(()=>pay('recover',1),'Cannot recover a positive pool');
+ decision(0);const overpaid=-service.balance(client.id);eq(overpaid>0,true,'Revision creates negative pool for cross-channel recovery race');
+ const recoveryAmount=Math.floor(overpaid*.75),walletBeforeRecovery=wallet(client.id);
+ const recoverySignals=['recover','recover_bank'].map((action,i)=>{const buffer=new SharedArrayBuffer(4);new Worker(path.join(__dirname,'refund-retry-worker.cjs'),{workerData:{file:process.env.DMD_DB_PATH,actor:action==='recover'?{id:admin.id,role:'ADMIN'}:{id:finance.id,role:'FINANCE'},payload:{...payload,...bank,action,amount_cents:recoveryAmount,request_key:'recovery-race-'+i},allow_rejection:true,signal:buffer}});return new Int32Array(buffer)});
+ const recoveryResults=recoverySignals.map(signal=>{if(!Atomics.load(signal,0))Atomics.wait(signal,0,0,30000);return Atomics.load(signal,0)});
+ eq([...recoveryResults].sort(),[1,2],'Bank and wallet recoveries compete atomically for one negative allowance');
+ eq(service.balance(client.id),-overpaid+recoveryAmount,'Only one recovery consumes negative pool');
+ eq(wallet(client.id),walletBeforeRecovery-(recoveryResults[0]===1?recoveryAmount:0),'Bank winner never debits wallet');
+ const bankRecovery={action:'recover_bank',client_id:client.id,amount_cents:1,...bank,reference:'BANK-IN-TEST',reason:'Actual received correction',request_key:'http-bank-recover'};
+ eq((await api.POST(req(admin,bankRecovery))).status,403,'HTTP Admin cannot record Finance bank recovery');
+ eq((await api.POST(req(finance,{...bankRecovery,amount_cents:-1}))).status,400,'Negative actual Bank amount rejected');
+ eq((await api.POST(req(finance,bankRecovery))).status,200,'HTTP Finance bank recovery');
+ eq((await api.POST(req(finance,bankRecovery))).status,200,'HTTP Bank recovery exact retry');
+ const bankEvent=service.history(finance,client.id).find(e=>e.kind==='RECOVERY'&&e.ledger_id===null);eq(!!bankEvent,true,'Bank recovery has explicit cash metadata and no ledger link');
+ eq(service.history(client,client.id).every(e=>!('from_account'in e)&&!('proof'in e)),true,'Bank recovery evidence remains private');
+ const beforeBankFailure=[wallet(client.id),service.balance(client.id)];
+ db.exec("CREATE TRIGGER injected_bank_recovery_failure BEFORE INSERT ON refund_notifications BEGIN SELECT RAISE(ABORT,'injected bank recovery'); END;");
+ reject(()=>service.execute(finance,{...bankRecovery,request_key:'bank-recover-rollback'}),'Bank recovery notification failure rolls back cash event and receipt');
+ db.exec('DROP TRIGGER injected_bank_recovery_failure');eq([wallet(client.id),service.balance(client.id)],beforeBankFailure,'No partial recovery after failure');
  eq(db.prepare('PRAGMA foreign_key_check').all(),[],'Foreign keys intact');
  console.log('REFUNDS DOMAIN/API PASS ('+checks+' assertions)');
  }finally{db.close();fs.rmSync(dir,{recursive:true,force:true})}}

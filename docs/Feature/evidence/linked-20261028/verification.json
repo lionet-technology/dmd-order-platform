@@ -1,0 +1,113 @@
+{
+  "date": "2026-10-28",
+  "base_commit": "f7b1083",
+  "scope": "synthetic verification only; no production acceptance",
+  "runtime": {
+    "node": "20.20.2 arm64",
+    "database": "better-sqlite3 on disposable SQLite databases",
+    "browser": "Brave/Chromium, temporary profiles",
+    "viewports": [
+      1440,
+      390
+    ]
+  },
+  "quality": {
+    "domain": {
+      "status": "PASS",
+      "suites": 41,
+      "linked_workflow_assertions": 489,
+      "oracle_steps": 80,
+      "manual_limit_assertions": 19,
+      "refund_assertions": 83
+    },
+    "http": {
+      "status": "PASS",
+      "owned_suites": 10
+    },
+    "browser": {
+      "status": "PASS",
+      "manual_import_recovery_bod_assertions": 46,
+      "expense_refund_assertions": 30,
+      "runtime_errors": 0
+    },
+    "typecheck": "PASS",
+    "lint": {
+      "status": "PASS",
+      "warnings": 0
+    },
+    "isolated_build": "PASS",
+    "diff_check": "PASS"
+  },
+  "concurrency": [
+    "Purchase and route deactivation on independent SQLite connections; simultaneous and both controlled orderings",
+    "Competing Bank/Balance payouts and Bank/wallet recoveries",
+    "Independent exact request retries",
+    "Tracking and manual-price retries over HTTP",
+    "Sales attribution and expense installment races",
+    "12 concurrent Statement finalizations"
+  ],
+  "load_restore": {
+    "status": "PASS",
+    "synthetic_clients": 100,
+    "ledger_rows": 10000,
+    "http_requests": 600,
+    "http_errors": 0,
+    "phases": [
+      {
+        "concurrency": 1,
+        "p95_ms": 10.12
+      },
+      {
+        "concurrency": 8,
+        "p95_ms": 85.74
+      },
+      {
+        "concurrency": 24,
+        "p95_ms": 552.32
+      }
+    ],
+    "concurrent_finalizations": 12,
+    "bank_recovery_exact_retries": 8,
+    "restored_all_table_digest_equal": true,
+    "restored_statement_identical": true,
+    "integrity": "ok",
+    "foreign_key_violations": 0,
+    "restored_wallet_cents": -3700,
+    "restored_refund_cents": -100,
+    "bank_payout_cents": 1100,
+    "bank_recovery_cents": 100,
+    "bank_net_outflow_cents": 1000,
+    "server_sampled_peak_rss_mb": 247.7
+  },
+  "findings": [
+    {
+      "severity": "P1",
+      "issue": "Stale displayed Client quote silently replaced at purchase",
+      "resolution": "Displayed quote key checked in Reserve transaction; explicit reconfirmation on mismatch"
+    },
+    {
+      "severity": "P1",
+      "issue": "Changed Supplier source-key payload silently acknowledged as duplicate",
+      "resolution": "Normalized payload conflict rejects; exact replay preserved after Supplier deactivation"
+    },
+    {
+      "severity": "Workflow gap",
+      "issue": "Only wallet recovery existed for overpaid Refund",
+      "resolution": "Explicit evidenced Finance Bank receipt, separate from Admin wallet recovery and never automatically touching wallet"
+    }
+  ],
+  "remaining": [
+    "Dedicated unidentified incoming-funds receipt/allocation ledger",
+    "Defined immutable Supplier-period close/reopen model",
+    "Deployment-target backup schedule, retention, monitoring and restore rehearsal",
+    "Real provider/rate/cancellation/tax/cost evidence and Owner pilot acceptance",
+    "Legacy/domain callers without a quote key retain re-quote compatibility"
+  ],
+  "data_safety": {
+    "user_database_reset": false,
+    "legacy_migration_performed": false,
+    "fc_core_activated": false,
+    "user_data_or_Codex_modified": false,
+    "personal_browser_profile_used": false
+  }
+}

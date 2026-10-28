@@ -82,12 +82,12 @@ export function validateOrderEnums(input:{
   };
 }
 
-export function validateSupplierCostEnums(input:{service?:unknown;sub_service?:unknown;supplier?:unknown}) {
-  const service=text(input.service)?canonicalEnumValue("SERVICE",input.service):"";
+export function validateSupplierCostEnums(input:{service?:unknown;sub_service?:unknown;supplier?:unknown},options?:{allowInactive?:boolean}) {
+  const service=text(input.service)?canonicalEnumValue("SERVICE",input.service,"",options):"";
   return {
     service,
-    sub_service:text(input.sub_service)?canonicalEnumValue("SUB_SERVICE",input.sub_service,service):"",
-    supplier:text(input.supplier)?canonicalEnumValue("SUPPLIER",input.supplier):"",
+    sub_service:text(input.sub_service)?canonicalEnumValue("SUB_SERVICE",input.sub_service,service,options):"",
+    supplier:text(input.supplier)?canonicalEnumValue("SUPPLIER",input.supplier,"",options):"",
   };
 }
 

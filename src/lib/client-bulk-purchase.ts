@@ -6,7 +6,7 @@ export function purchaseErrorType(message:string):'DATA'|'SYSTEM'{
 }
 // Each Order owns its own immediate transaction. Errors never undo successful
 // reservations from earlier Orders, and the remaining Orders are still checked.
-export function purchaseBatch(ids:number[],actor:AuthUser){
+export function purchaseBatch(ids:number[],actor:AuthUser,expectedQuotes:Record<string,string>={}){
  const seen=new Set<number>();
  const results:Array<{id:number;status:'PURCHASED'|'FAILED';order_id?:string;pricing?:ReturnType<typeof safePricing>;error?:string;error_type?:'DATA'|'SYSTEM'}>=[];
  for(const id of ids){
@@ -14,7 +14,7 @@ export function purchaseBatch(ids:number[],actor:AuthUser){
    results.push({id,status:'FAILED',error:'Order ID không hợp lệ hoặc trùng trong batch.',error_type:'DATA'});continue;
   }
   seen.add(id);
-  try{const o=purchaseService(id,actor);results.push({id,status:'PURCHASED',order_id:String(o.order_id||''),pricing:safePricing(o,'CLIENT')});}
+  try{const o=purchaseService(id,actor,true,expectedQuotes[String(id)]);results.push({id,status:'PURCHASED',order_id:String(o.order_id||''),pricing:safePricing(o,'CLIENT')});}
   catch(e){const error=e instanceof Error?e.message:'Không thể mua đơn.';results.push({id,status:'FAILED',error,error_type:purchaseErrorType(error)});}
  }
  return {results,succeeded:results.filter(r=>r.status==='PURCHASED').length,failed:results.filter(r=>r.status==='FAILED').length};

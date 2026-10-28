@@ -1,0 +1,70 @@
+// Own disposable fixture and localhost production server; no operator database.
+const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),assert=require('node:assert/strict'),{spawn}=require('node:child_process');
+const root=path.resolve(__dirname,'..'),dir=fs.mkdtempSync(path.join(os.tmpdir(),'dmd-limit-browser-'));process.env.DMD_DB_PATH=path.join(dir,'test.db');process.env.NODE_ENV='test';
+const {seed}=require('./seed-epacket.cjs');seed();
+const {db}=require('../src/lib/db.ts'),auth=require('../src/lib/auth.ts');
+const client=db.prepare("SELECT * FROM users WHERE username='epacket.client.a'").get(),admin=db.prepare("SELECT * FROM users WHERE role='ADMIN' LIMIT 1").get();
+const finance=auth.createUser({username:'limit.finance',display_name:'Finance',role:'FINANCE',password:'Synthetic123!'});
+const tokens={finance:auth.createSession(finance.id).token,client:auth.createSession(client.id).token,admin:auth.createSession(admin.id).token};
+const route=db.prepare("SELECT id FROM service_route_configs WHERE service='ePacket' AND sub_service='Standard'").get().id;
+const fields=['order_id','weight','length','width','height','carton_count','recipient_name','address1','address2','city','state','zip','country','phone','recipient_email','item','material','declared_value'];
+const row=(code)=>({order_id:code,weight:.1,length:10,width:5,height:3,carton_count:1,recipient_name:'Browser Test',address1:'100 Main',city:'New York',state:'NY',zip:'10001',country:'US',phone:'123456',item:'Shirt',material:'Cotton',declared_value:1});
+const matrix=(prefix,count,separator)=>Array.from({length:count},(_,i)=>{const r=row(prefix+i);return fields.map(k=>r[k]??'').join(separator)}).join('\n');
+let browser,server,checks=0;const errors=[],check=(v,m)=>{assert.ok(v,m);checks++;console.log('PASS '+m)};
+(async()=>{try{
+ const port=await new Promise(resolve=>{const s=require('node:net').createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p))})}),base='http://127.0.0.1:'+port;
+ const log=fs.openSync(path.join(dir,'server.log'),'a');server=spawn(process.execPath,[path.join(root,'node_modules/next/dist/bin/next'),'start','-H','127.0.0.1','-p',String(port)],{cwd:root,env:{...process.env,NODE_ENV:'production'},stdio:['ignore',log,log]});
+ let ready=false;for(let i=0;i<100;i++){if(server.exitCode!==null)throw Error(fs.readFileSync(path.join(dir,'server.log'),'utf8'));try{if((await fetch(base+'/api/health')).ok){ready=true;break}}catch{}await new Promise(r=>setTimeout(r,200))}check(ready,'Owned server ready');
+ const {chromium}=require(process.env.DMD_PLAYWRIGHT_MODULE);browser=await chromium.launch({headless:true,executablePath:process.env.DMD_BROWSER_PATH||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',args:['--disable-gpu'],timeout:30000});
+ const evidence=path.join(root,'docs/Feature/evidence/linked-20261028');fs.mkdirSync(evidence,{recursive:true});
+ for(const width of [1440,390]){
+  const context=await browser.newContext({viewport:{width,height:900}});await context.addCookies([{name:'dmd_session',value:tokens.client,url:base}]);const page=await context.newPage();page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(e.message));await page.goto(base,{waitUntil:'networkidle'});
+  await page.getByRole('button',{name:/Tạo \/ Import/}).click();const panel=page.locator('.clientPurchase');await panel.locator('select').first().selectOption(String(route));
+  const paste=async text=>panel.locator('textarea').evaluate((el,text)=>{const data=new DataTransfer();data.setData('text',text);el.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,clipboardData:data}))},text);
+  await paste(matrix('REJECT-'+width+'-',21,'\t'));check(await panel.locator('tbody tr').count()===1,'Oversized paste preserves original rows '+width);check((await panel.getByRole('status').innerText()).includes('20'),'Oversized paste explains limit '+width);
+  await paste(matrix('MANUAL-'+width+'-',20,'\t'));check(await panel.locator('tbody tr').count()===20,'Paste exactly 20 '+width);check(await panel.getByRole('button',{name:'＋ Thêm Order',exact:true}).isDisabled(),'Add stops at 20 '+width);
+  await panel.getByRole('button',{name:'Lưu Draft (20)',exact:true}).click();await panel.getByText('Chọn Draft đặt mua',{exact:true}).waitFor();
+  check(db.prepare("SELECT COUNT(*) n FROM orders WHERE order_id LIKE ?").get('MANUAL-'+width+'-%').n===20,'UI/server saved all 20 '+width);
+  await panel.getByRole('button',{name:'Upload CSV / XLSX',exact:true}).click();await panel.locator('input[type=file]').setInputFiles({name:'orders.csv',mimeType:'text/csv',buffer:Buffer.from(fields.join(',')+'\n'+matrix('IMPORT-'+width+'-',21,','))});
+  await panel.getByRole('button',{name:'Validate & Preview',exact:true}).click();await panel.getByRole('button',{name:'Lưu Draft (21)',exact:true}).waitFor();
+  check(await panel.locator('tbody tr').count()===21,'File preview retains >20 '+width);
+  await panel.getByRole('button',{name:'Lưu Draft (21)',exact:true}).click();await panel.getByText('Chọn Draft đặt mua',{exact:true}).waitFor();
+  check(db.prepare("SELECT COUNT(*) n FROM orders WHERE order_id LIKE ?").get('IMPORT-'+width+'-%').n===21,'Multipart UI saves 21 '+width);
+  await panel.getByRole('button',{name:'Nhập tay / Paste',exact:true}).click();check(await panel.locator('tbody tr').count()===1,'Import cannot expand manual sheet '+width);
+  check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Client page fits '+width);await page.screenshot({path:path.join(evidence,'client-limit-'+width+'.png'),fullPage:true});
+  await context.addCookies([{name:'dmd_session',value:tokens.admin,url:base}]);await page.reload({waitUntil:'networkidle'});await page.getByRole('button',{name:/Orders/}).first().click();await page.getByRole('button',{name:'＋ Tạo Order',exact:true}).click();
+  const sheet=page.locator('.sheetEntry');await sheet.getByRole('button',{name:'＋ Thêm 10 dòng',exact:true}).click();await sheet.getByRole('button',{name:'＋ 5 dòng',exact:true}).click();
+  check(await sheet.locator('tbody tr').count()===20,'Admin add caps at 20 '+width);check(await sheet.getByRole('button',{name:'＋ 5 dòng',exact:true}).isDisabled(),'Admin add disabled '+width);
+  check(await sheet.locator('tbody tr').first().getByTitle('Clone dòng',{exact:true}).isDisabled(),'Clone disabled '+width);check(await sheet.locator('tbody tr').count()===20,'Clone cannot exceed limit '+width);
+  const input=sheet.locator('[data-sheet-cell="0-1"]');await input.evaluate((el,text)=>{const data=new DataTransfer();data.setData('text/plain',text);el.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,clipboardData:data}))},Array.from({length:21},(_,i)=>'ADMIN-REJECT-'+i).join('\n'));
+  check(await sheet.locator('tbody tr').count()===20,'Admin oversized paste never truncates/grows '+width);check((await sheet.locator('.sheetFooter').innerText()).includes('Dữ liệu chưa thay đổi'),'Admin rejection explicit '+width);
+  check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Admin page fits '+width);await page.screenshot({path:path.join(evidence,'admin-limit-'+width+'.png'),fullPage:true});await context.close();
+ }
+ // The same owned fixture verifies the new explicit Bank recovery through the rendered Finance form.
+ const {RefundService}=require('../src/lib/refunds.ts'),refunds=new RefundService(db),{caseAction}=require('../src/lib/cases.ts');
+ const orderId=db.prepare("SELECT id FROM orders WHERE order_id='MANUAL-1440-0'").get().id;
+ const claim=caseAction(client,{action:'create',kind:'CLAIM',visibility:'PUBLIC',summary:'Bank recovery browser evidence',order_ids:[orderId]}).id;
+ const decision=amount=>refunds.decide(admin,{case_id:claim,refund_cents:amount,compensation_cents:0,category:'OTHER',reason:'Recorded revised obligation',request_key:'browser-decision-'+amount});
+ decision(1000);const day=new Date(Date.now()+7*3600000).toISOString().slice(0,10);
+ const bank=await fetch(base+'/api/refunds',{method:'POST',headers:{cookie:'dmd_session='+tokens.finance,'content-type':'application/json'},body:JSON.stringify({action:'to_bank',client_id:client.id,amount_cents:400,reason:'Executed bank refund',reference:'BANK-BROWSER-OUT',from_account:'DMD bank',to_account:'Client bank',paid_date:day,proof:'Executed receipt',request_key:'browser-bank-out'})});check(bank.ok,'Real HTTP bank payout');
+ decision(100);const walletBefore=db.prepare("SELECT SUM(CASE direction WHEN 'CREDIT' THEN amount ELSE -amount END) amount FROM ledger_entries WHERE client_user_id=? AND entry_type!='SERVICE_COST'").get(client.id).amount;
+ const cashContext=await browser.newContext({viewport:{width:1440,height:1000}});await cashContext.addCookies([{name:'dmd_session',value:tokens.finance,url:base}]);const cashPage=await cashContext.newPage();cashPage.setDefaultTimeout(15000);cashPage.on('pageerror',e=>errors.push(e.message));await cashPage.goto(base,{waitUntil:'networkidle'});await cashPage.getByRole('button',{name:'Refund Management',exact:true}).click();
+ await cashPage.getByLabel('Client dòng 1',{exact:true}).selectOption(String(client.id));await cashPage.getByLabel('Hình thức dòng 1',{exact:true}).selectOption('recover_bank');
+ for(const [field,value] of Object.entries({amount:'1.50',reference:'BANK-BROWSER-IN',reason:'Actual money returned by Client',from_account:'Client bank',to_account:'DMD bank',paid_date:day,proof:'Actual received bank receipt'}))await cashPage.getByLabel(field+' dòng 1',{exact:true}).fill(value);
+ await cashPage.getByRole('button',{name:'Xác nhận ghi',exact:true}).click();await cashPage.getByRole('status').filter({hasText:'Đã ghi giao dịch Refund / thu hồi.'}).waitFor();
+ check(refunds.balance(client.id)===-150,'UI Bank recovery reduces negative obligation by positive received amount');check(db.prepare("SELECT SUM(CASE direction WHEN 'CREDIT' THEN amount ELSE -amount END) amount FROM ledger_entries WHERE client_user_id=? AND entry_type!='SERVICE_COST'").get(client.id).amount===walletBefore,'UI Bank recovery does not debit or credit wallet');
+ for(const width of [1440,390]){await cashPage.setViewportSize({width,height:900});check(await cashPage.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Bank recovery form fits '+width);await cashPage.screenshot({path:path.join(evidence,'finance-bank-recovery-'+width+'.png'),fullPage:true})}
+ await cashPage.getByRole('button',{name:'BOD Finance',exact:true}).click();await cashPage.getByRole('button',{name:'Xem báo cáo',exact:true}).click();await cashPage.getByText('Refund thu hồi Bank trong kỳ',{exact:true}).waitFor();
+ check((await cashPage.locator('.metricCard').filter({hasText:'Refund thu hồi Bank trong kỳ'}).innerText()).includes('$1.50'),'BOD UI separates positive Bank recovery total');
+ check((await cashPage.locator('.metricCard').filter({hasText:'Refund chi Bank trong kỳ'}).innerText()).includes('$4.00'),'BOD UI retains gross Bank payout');
+ await cashPage.screenshot({path:path.join(evidence,'finance-bod-cash-390.png'),fullPage:true});
+ await cashContext.close();
+ const response=await fetch(base+'/api/client-orders',{method:'POST',headers:{cookie:'dmd_session='+tokens.client,'content-type':'application/json'},body:JSON.stringify({action:'save',route_id:route,rows:Array.from({length:21},(_,i)=>row('FORGED-'+i)),source:'file'})});check(response.status===400,'Real HTTP rejects forged import flag');
+ const adminRow={...row('HTTP-ADMIN-VALID'),client_user_id:client.id,service:'ePacket',sub_service:'Standard',supplier:'DMD'};
+ const adminBatch=async rows=>{const r=await fetch(base+'/api/orders/manual-batch',{method:'POST',headers:{cookie:'dmd_session='+tokens.admin,'content-type':'application/json'},body:JSON.stringify({rows})});return {status:r.status,data:await r.json()}};
+ check((await adminBatch(Array.from({length:21},()=>adminRow))).status===400,'Real HTTP Admin batch rejects 21 before writes');
+ const partial=await adminBatch([adminRow,{...adminRow,client_user_id:999999}]);check(partial.status===200&&JSON.stringify(partial.data.results.map(r=>r.ok))==='[true,false]','Real HTTP manual batch preserves row validation and partial success');
+ const alerts=await fetch(base+'/api/admin-action-queue',{headers:{cookie:'dmd_session='+tokens.admin}});const queue=await alerts.json();check(alerts.ok&&Array.isArray(queue.failed_jobs)&&Array.isArray(queue.charge_review)&&queue.backup_monitoring==='NOT_CONFIGURED','Operational queue reports honest monitoring state');
+ check(errors.length===0,'No browser runtime errors '+errors.join(';'));check(db.pragma('integrity_check',{simple:true})==='ok','Fixture integrity');
+ console.log('MANUAL LIMIT HTTP/BROWSER PASS ('+checks+' assertions); logs '+dir);
+}finally{if(browser)await browser.close();if(server){server.kill('SIGTERM');await new Promise(r=>server.exitCode!==null?r():server.once('exit',r))}db.close()}})().catch(e=>{console.error(e);process.exitCode=1});

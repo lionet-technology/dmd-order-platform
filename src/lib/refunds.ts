@@ -69,12 +69,12 @@ export class RefundService {
  execute(user:Actor,b:Row){
   const id=Number(b.client_id);this.client(user,id);
   if(b.action==='recover' ? user.role!=='ADMIN' : user.role!=='FINANCE')throw Error('Forbidden');
-  if(!['to_balance','to_bank','recover'].includes(String(b.action)))throw Error('Action không hỗ trợ.');
+  if(!['to_balance','to_bank','recover','recover_bank'].includes(String(b.action)))throw Error('Action không hỗ trợ.');
   return this.receipt(user,b,()=>{
-   this.ready(id);const cents=amount(b.amount_cents),reason=required(b.reason),before=this.balance(id),recovery=b.action==='recover';
+   this.ready(id);const cents=amount(b.amount_cents),reason=required(b.reason),before=this.balance(id),recovery=b.action==='recover'||b.action==='recover_bank';
    if(!recovery&&cents>Math.max(0,before))throw Error('Số tiền hoàn vượt Refund đã duyệt còn lại. Điều chỉnh Balance phải dùng Balance Adjustment.');
    if(recovery&&cents>Math.max(0,-before))throw Error('Thu hồi vượt Refund Balance âm.');
-   const reference=recovery?null:required(b.reference),bank=b.action==='to_bank';
+   const bank=b.action==='to_bank'||b.action==='recover_bank',reference=recovery&&!bank?null:required(b.reference);
    const from=bank?required(b.from_account):null,to=bank?required(b.to_account):null,paid=bank?date(b.paid_date):today(),proof=bank?required(b.proof):null;
    const warnings:string[]=[];
    let ledgerId:number|null=null;
@@ -102,8 +102,10 @@ export class RefundService {
   const clients=this.overview(user),from=start+'T00:00:00+07:00',until=new Date(Date.parse(end+'T00:00:00+07:00')+86400000).toISOString();
   const events=this.db.prepare('SELECT * FROM refund_events WHERE julianday(created_at)>=julianday(?) AND julianday(created_at)<julianday(?) ORDER BY id').all(from,until) as Row[];
   const bank=this.db.prepare("SELECT * FROM refund_events WHERE kind='TO_BANK' AND paid_date BETWEEN ? AND ? ORDER BY id").all(start,end) as Row[];
+  const bankRecoveries=this.db.prepare("SELECT * FROM refund_events WHERE kind='RECOVERY' AND ledger_id IS NULL AND paid_date BETWEEN ? AND ? ORDER BY id").all(start,end) as Row[];
+  const bankOutflow=bank.reduce((s,e)=>s-Number(e.delta_cents),0),bankRecovered=bankRecoveries.reduce((s,e)=>s+Number(e.delta_cents),0);
   return {clients,incomplete_legacy_client_ids:clients.filter(c=>c.migration_required).map(c=>c.client_id),owes_clients_cents:clients.reduce((s,c)=>s+Math.max(0,c.refund_balance_cents),0),overpaid_clients_cents:clients.reduce((s,c)=>s+Math.max(0,-c.refund_balance_cents),0),
-   bank_outflow_cents:bank.reduce((s,e)=>s-Number(e.delta_cents),0),bank_events:bank,
+   bank_outflow_cents:bankOutflow,bank_recovery_cents:bankRecovered,bank_net_outflow_cents:bankOutflow-bankRecovered,bank_events:bank,bank_recovery_events:bankRecoveries,
    balance_refund_cents:events.filter(e=>e.kind==='TO_BALANCE').reduce((s,e)=>s-Number(e.delta_cents),0),
    categories:categories.map(category=>({category,obligation_change_cents:events.filter(e=>e.kind==='CLAIM_DECISION').reduce((s,e)=>s+(e.category===category?Number(e.obligation_cents):0)-(e.previous_category===category?Number(e.previous_obligation_cents):0),0)})),events};
  }

@@ -1,3 +1,4 @@
+import {createHash} from "node:crypto";
 import {canPurchase} from "./order-transition-guards";
 import {hasCaseHold} from "./cases";
 import { assertPurchasing, reservePurchase, accountFinancials } from "./credit";
@@ -72,7 +73,8 @@ export function refreshDraft(id:number){
  db.prepare("DELETE FROM ledger_entries WHERE entry_type='ORDER_CHARGE' AND reference_type='ORDER' AND reference_id=?").run(String(id));
  return db.prepare("SELECT * FROM orders WHERE id=?").get(id) as Row;
 }
-export function purchaseService(id:number,actor:{id:number;role:string},requireBalance=true){
+function quoteKey(q:ReturnType<typeof orderQuote>){return createHash("sha256").update(JSON.stringify(q&&[q.route_id,q.pricing_version_id,q.pricing_config_version_id,q.discount_percent,q.sale_price,q.surcharge,q.total_charge,q.chargeable_weight,q.tier])).digest("hex");}
+export function purchaseService(id:number,actor:{id:number;role:string},requireBalance=true,expectedQuoteKey?:string){
  return db.transaction(()=>{
  const o=refreshDraft(id);
  if((actor.role==="CLIENT"&&Number(o.client_user_id)!==actor.id)||(actor.role==="SALES"&&!db.prepare("SELECT id FROM users WHERE id=? AND sales_user_id=?").get(Number(o.client_user_id),actor.id)))throw Error("Không có quyền mua Order này.");
@@ -96,6 +98,7 @@ export function purchaseService(id:number,actor:{id:number;role:string},requireB
  if(!q)throw Error("Route chưa có bảng giá active.");
  if(actor.role==="CLIENT"&&!route?.client_self_purchase)throw Error("Route chưa cho phép Client tự đặt mua.");
  if(!q.eligible)throw Error("Không đủ điều kiện mua dịch vụ: "+q.reasons.join(" "));
+ if(expectedQuoteKey&&quoteKey(q)!==expectedQuoteKey)throw Error("Báo giá đã thay đổi. Tải lại Draft, kiểm tra giá và xác nhận mua lại.");
  for(const k of ["order_id","recipient_name","address1","city","state","zip","phone","item","material"])if(!String(o[k]||"").trim())throw Error("Thiếu thông tin bắt buộc: "+k);
  if(requireBalance)assertPurchasing(Number(o.client_user_id),q.total_charge);
  reservePurchase(id,Number(o.client_user_id),q.total_charge,actor.id);
@@ -120,7 +123,7 @@ export function safePricing(o:Row,role:string){
    if(financial.available_to_buy_cents<Math.round(q.total_charge*100))q.reasons.push("Balance / credit không đủ.");
    q.eligible=!q.reasons.length;
  }
- return {eligible:q.eligible,reasons:q.reasons,currency:q.currency,volumetric_weight:q.volumetric_weight,chargeable_weight:q.chargeable_weight,tier:q.tier,discount_percent:q.discount_percent,service_price:usd(q.sale_price),surcharge_breakdown:q.surcharge_breakdown,surcharge:usd(q.surcharge),total_charge:q.total_charge,...(role==="SALES"?{guidance:q.guidance}:{})};
+ return {quote_key:quoteKey(q),eligible:q.eligible,reasons:q.reasons,currency:q.currency,volumetric_weight:q.volumetric_weight,chargeable_weight:q.chargeable_weight,tier:q.tier,discount_percent:q.discount_percent,service_price:usd(q.sale_price),surcharge_breakdown:q.surcharge_breakdown,surcharge:usd(q.surcharge),total_charge:q.total_charge,...(role==="SALES"?{guidance:q.guidance}:{})};
 }
 export function stripPricingInternals(o:Row){for(const k of ["pricing_snapshot_json","commission_amount","pricing_version_id","pricing_config_version_id","estimated_gp","estimated_margin_pct","finalized_gp","finalized_margin_pct","effective_net_cost","cost_coverage_json"])delete o[k];return o}
 

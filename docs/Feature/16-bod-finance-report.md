@@ -1,3 +1,6 @@
+## Cash correction — 28/10/2026
+Refund Bank payouts and explicit Bank recoveries are separate positive cash totals; net cash is payout minus recovery. Recovery changes Refund obligation only, never Client Balance, commercial revenue, GP or Commission. Bank cash uses executed date; Statement journal uses posting date and carries late corrections forward. Old issued Statement bytes are unchanged.
+
 ## Owner continuation — 27/10/2026 · Refund / Internal Expenses
 
 [Chi tiêu nội bộ VND](22-internal-expenses.md) có tab/report tháng riêng cho BOD/Finance, tách tổng cam kết/lịch đến hạn và cash ròng; chưa cộng vào GP USD để tránh trộn tiền tệ. Refund current exposure vẫn có dấu do sửa quyết định sau khi chi, nhưng khoản trả mới vượt nghĩa vụ bị chặn. [Kiểm chứng](VERIFICATION-EXPENSES-REFUNDS-2026-10-27.md).

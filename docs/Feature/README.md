@@ -1,3 +1,6 @@
+## Linked financial workflow continuation — 28/10/2026
+[Manual MAX 20, stale quote/source-key fixes, explicit Bank recovery, linked oracle/chaos verification and acceptance boundaries](AUDIT-LINKED-WORKFLOWS-2026-10-28.md). Historical DB is TEST: no legacy migration requested for a fresh verified target, no user DB reset. Backup monitoring and deployment acceptance remain explicit.
+
 ## Content egress and bulk continuation — 27/10/2026
 
 [Case text disclosure, empty-Sub-Service bulk pricing repair, content/workbook assertions, browser UAT and unresolved release gates](AUDIT-EGRESS-BULK-2026-10-27.md). External Label/document confidentiality and real-data acceptance remain open; no zero-egress or production certification.

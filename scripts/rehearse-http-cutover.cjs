@@ -18,6 +18,8 @@ function digest(d){
 function integrity(d){assert.equal(d.pragma('integrity_check',{simple:true}),'ok');assert.deepEqual(d.pragma('foreign_key_check'),[])}
 async function stop(){clearInterval(sampler);if(server){const child=server;server=null;child.kill('SIGTERM');await once(child,'exit');}if(log){fs.closeSync(log);log=null}}
 async function start(file){
+ // Never send fixture requests to an unrelated service occupying this fixed test port.
+ await new Promise((resolve,reject)=>{const server=require('node:net').createServer();server.once('error',reject);server.listen(3148,'127.0.0.1',()=>server.close(resolve))});
  log=fs.openSync(path.join(dir,'server-'+report.phases.length+'.log'),'a');
  server=spawn(process.execPath,[path.join(root,'node_modules/next/dist/bin/next'),'start','--hostname','127.0.0.1','--port','3148'],{cwd:root,env:{...process.env,NODE_ENV:'production',DMD_DB_PATH:file},stdio:['ignore',log,log]});
  sampler=setInterval(()=>{if(sampling||!server)return;sampling=true;execFile('ps',['-o','rss=','-p',String(server.pid)],(error,out)=>{if(!error)peakRssKb=Math.max(peakRssKb,Number(out.trim())||0);sampling=false})},100);
@@ -49,11 +51,16 @@ async function login(role){const r=await call('/api/auth/login',null,{username:'
  assert.equal((await call('/api/financials',cookies.admin,{client_id:clientId,action:'debt',amount:50,deadline:'2099-12-31',reason:'Synthetic cutover',request_key:'cutover-debt'})).status,200);
  assert.equal((await call('/api/ledger',cookies.sales,{client_user_id:clientId,entry_type:'PAYMENT',amount:60,request_key:'cutover-payment'})).status,201);
  const claim=await call('/api/cases',cookies.client,{action:'create',kind:'CLAIM',visibility:'PUBLIC',order_ids:[orderId],summary:'Synthetic cutover Claim'});assert.equal(claim.status,200);
- assert.equal((await call('/api/claims',cookies.admin,{action:'finalize',case_id:claim.data.id,category:'LOST',refund_amount:10,compensation_amount:2,reason:'Synthetic obligation',request_key:'cutover-claim'})).status,200);
+ assert.equal((await call('/api/claims',cookies.admin,{action:'finalize',case_id:claim.data.id,category:'LOST',refund_amount:12,compensation_amount:2,reason:'Synthetic approved obligation covers both payouts',request_key:'cutover-claim'})).status,200);
  for(const [action,amount] of [['to_balance',300],['to_bank',1100]])assert.equal((await call('/api/refunds',cookies.finance,{action,client_id:clientId,amount_cents:amount,reason:'Synthetic cutover',reference:action,request_key:action,from_account:'Synthetic DMD',to_account:'Synthetic Client',paid_date:day,proof:'Synthetic only'})).status,200);
- const preview=await call(url(clientId),cookies.finance);assert.equal(preview.status,200);assert.deepEqual(preview.data.closing,{balance_cents:-3700,debt_cents:0,refund_cents:-200});assert.equal(preview.data.bank_outflow_cents,1100);
+ // Revision after actual payment may create a negative pool; new payouts may never overdraw it.
+ assert.equal((await call('/api/claims',cookies.admin,{action:'finalize',case_id:claim.data.id,category:'LOST',refund_amount:10,compensation_amount:2,reason:'Synthetic downward correction after actual payment',request_key:'cutover-claim-revision'})).status,200);
+ const recovery={action:'recover_bank',client_id:clientId,amount_cents:100,reason:'Actual Bank recovery',reference:'BANK-IN-CUTOVER',request_key:'cutover-bank-in',from_account:'Synthetic Client',to_account:'Synthetic DMD',paid_date:day,proof:'Received cash evidence'};
+ const recoveryResponses=await Promise.all(Array.from({length:8},()=>call('/api/refunds',cookies.finance,recovery)));
+ assert(recoveryResponses.every(r=>r.status===200));assert.equal(new Set(recoveryResponses.map(r=>r.data.id)).size,1);
+ const preview=await call(url(clientId),cookies.finance);assert.equal(preview.status,200);assert.deepEqual(preview.data.closing,{balance_cents:-3700,debt_cents:0,refund_cents:-100});assert.equal(preview.data.bank_outflow_cents,1100);assert.equal(preview.data.bank_recovery_cents,100);assert.equal(preview.data.bank_net_outflow_cents,1000);
  assert.equal(db.prepare('SELECT COUNT(*) n FROM credit_debts WHERE client_id=?').get(clientId).n,1);
- report.financial_http={closing:preview.data.closing,bank_outflow_cents:1100,debt_accounts:1};
+ report.financial_http={closing:preview.data.closing,bank_outflow_cents:1100,bank_recovery_cents:100,bank_net_outflow_cents:1000,debt_accounts:1};
  const body={client_id:ids[0],start:day,end:day};
  const snapshots=await Promise.all(Array.from({length:12},()=>call('/api/statements-v2',cookies.finance,body)));
  assert(snapshots.every(r=>r.status===200));assert.equal(new Set(snapshots.map(r=>JSON.stringify(r.data))).size,1);

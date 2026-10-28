@@ -481,11 +481,8 @@ function addSupplierCostOnce(input: SupplierCostInput) {
   }else if (!tracking) throw new Error("Cần số Lot + Order ID hoặc Tracking để link chi phí.");
   const normalizedTracking=normalizeTracking(tracking);
   if(lot&&db.prepare('SELECT lot_id FROM lot_cost_components WHERE lot_id=?').get(lot.id))throw Error('Lot dùng component; cần mapping supplier component trước khi import aggregate.');
-  if(input.source_key){
-    const duplicate=db.prepare("SELECT id,matched_order_id,total_net_cost FROM supplier_costs WHERE source_key=?").get(input.source_key) as {id:number;matched_order_id:number|null;total_net_cost:number}|undefined;
-    if(duplicate)return {id:duplicate.id,tracking,matched:Boolean(duplicate.matched_order_id),total_net_cost:duplicate.total_net_cost,duplicate:true,warning:"Dòng này đã được import trước đó nên không ghi nhận lại."};
-  }
-  const enumValues = validateSupplierCostEnums(input);
+  const previous=input.source_key?db.prepare("SELECT * FROM supplier_costs WHERE source_key=?").get(input.source_key) as Record<string,unknown>|undefined:undefined;
+  const enumValues = validateSupplierCostEnums(input,{allowInactive:!!previous});
   const netPrice = num(input.net_price);
   const fee = num(input.fee);
   const exportCustoms = num(input.export_customs);
@@ -500,13 +497,22 @@ function addSupplierCostOnce(input: SupplierCostInput) {
   if(owner&&db.prepare('SELECT c.lot_id FROM lot_cost_components c JOIN order_lots l ON l.id=c.lot_id WHERE l.order_id=? LIMIT 1').get(owner.order_id))throw Error('Order dùng component; aggregate tracking feed cần mapping component.');
   const extraSurcharge=money(num(input.extra_surcharge));const importTax=money(num(input.import_tax));
   const surchargeType=extraSurcharge?(text(input.surcharge_type)||"phụ phí bổ sung"):"";
+  const occurredAt=normalizeDateInput(input.occurred_at, "Ngày chi phí");
+  if(input.source_key){
+    if(previous){
+      const expected:Record<string,unknown>={supplier:enumValues.supplier,service:enumValues.service,sub_service:enumValues.sub_service,normalized_tracking:normalizedTracking,occurred_at:occurredAt,item:text(input.item),destination:text(input.destination),weight:num(input.weight),net_price:netPrice,fee,export_customs:exportCustoms,import_customs:importCustoms,total_net_cost:totalNet,extra_surcharge:extraSurcharge,import_tax:importTax,surcharge_type:surchargeType,note:text(input.note)};
+      const conflict=Object.entries(expected).some(([key,value])=>typeof value==='number'?Number(previous[key]||0)!==value:String(previous[key]||'')!==String(value||''));
+      if(conflict||(lot&&Number(previous.order_lot_id)!==lot.id)||(!lot&&!tracking))throw Error("Supplier source_key đã tồn tại với dữ liệu khác. Dùng điều chỉnh cost có lý do, không ghi đè nguồn cũ.");
+      return {id:Number(previous.id),tracking,matched:Boolean(previous.matched_order_id),total_net_cost:Number(previous.total_net_cost),duplicate:true,warning:"Dòng này đã được import trước đó nên không ghi nhận lại."};
+    }
+  }
   const result = db.prepare(`
     INSERT INTO supplier_costs(
       supplier,service,sub_service,tracking,normalized_tracking,matched_order_id,matched_order_tracking_id,occurred_at,item,destination,weight,net_price,fee,
       export_customs,import_customs,total_net_cost,extra_surcharge,import_tax,surcharge_type,note,batch_id,source_key
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
-    enumValues.supplier, enumValues.service, enumValues.sub_service, tracking,normalizedTracking,owner?.order_id||null,owner?.id||null, normalizeDateInput(input.occurred_at, "Ngày chi phí"),
+    enumValues.supplier, enumValues.service, enumValues.sub_service, tracking,normalizedTracking,owner?.order_id||null,owner?.id||null, occurredAt,
     text(input.item), text(input.destination), num(input.weight), netPrice, fee, exportCustoms, importCustoms,
     totalNet,extraSurcharge,importTax,surchargeType,text(input.note), input.batch_id || null,input.source_key||null
   );

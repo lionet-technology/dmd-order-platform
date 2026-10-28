@@ -1,3 +1,6 @@
+## Minimal operational alerts — 28/10/2026
+Admin action queue now includes up to 100 failed purchase jobs, reserved Orders with active Label still needing Charge reconciliation, and unresolved monthly Statement close reviews (issued periods excluded). Read-only, manual refresh/shared financial event, no automatic retry/debit or scheduler. Backup monitoring explicitly says NOT_CONFIGURED; successful synthetic backup rehearsal is not continuous monitoring. No raw supplier/cost/exception text is exposed in these summaries. Actual scheduler, backup destination/retention and external escalation require deployment configuration.
+
 ## Owner continuation — 27/10/2026
 
 Claim decisions support SHIPPING_INCIDENT (includes force majeure) and RECONCILIATION_ERROR; historical LOST/DELAYED/PARAMETER_ADJUSTMENT/OTHER remain readable/selectable for compatibility. The amount is labelled Refund for the whole Claim, not service-only freight. No fee/tax or Order split is required. See [manual commission inputs](21-commission-review.md).

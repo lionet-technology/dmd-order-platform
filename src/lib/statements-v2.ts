@@ -7,7 +7,7 @@ import type {AuthUser} from './auth';
 type Row=Record<string,unknown>;
 type Totals={balance_cents:number;debt_cents:number;refund_cents:number};
 type Movement=Totals&{id:number;source:string;source_id:string;operation:string;bank_cents:number;detail:Row;posted_at:string;statement_day:string};
-export type StatementSnapshot={aging_basis_cents?:number;version:2;client_id:number;period_start:string;period_end:string;status:'FINALIZED';opening:Totals;closing:Totals;movements:Movement[];bank_outflow_cents:number;reference:{credit_limit_cents:number;reserve_cents:number};order_ids:number[];last_event_id:number;checkpoint_at:string};
+export type StatementSnapshot={aging_basis_cents?:number;version:2;client_id:number;period_start:string;period_end:string;status:'FINALIZED';opening:Totals;closing:Totals;movements:Movement[];bank_outflow_cents:number;bank_recovery_cents?:number;bank_net_outflow_cents?:number;reference:{credit_limit_cents:number;reserve_cents:number};order_ids:number[];last_event_id:number;checkpoint_at:string};
 function access(actor:AuthUser,client:number){if(['FINANCE','BOD'].includes(actor.role)){if(!db.prepare("SELECT id FROM users WHERE id=? AND role='CLIENT'").get(client))throw Error('Client không tồn tại.');}else assertClientAccess(actor,client);}
 function total(events:Movement[]):Totals {return events.reduce((s,e)=>({balance_cents:s.balance_cents+e.balance_cents,debt_cents:s.debt_cents+e.debt_cents,refund_cents:s.refund_cents+e.refund_cents}),{balance_cents:0,debt_cents:0,refund_cents:0});}
 export function statementEvents(client:number):Movement[]{
@@ -33,13 +33,13 @@ export function statementPreview(actor:AuthUser,client:number,start:string,end:s
  const opening=total(events.filter(e=>e.source==='OPENING'||e.statement_day<start));
  const movements=events.filter(e=>e.source!=='OPENING'&&e.statement_day>=start&&e.statement_day<=end);
  const delta=total(movements),closing={balance_cents:opening.balance_cents+delta.balance_cents,debt_cents:opening.debt_cents+delta.debt_cents,refund_cents:opening.refund_cents+delta.refund_cents};
- const bank=Number((db.prepare("SELECT COALESCE(SUM(-delta_cents),0) n FROM refund_events WHERE client_id=? AND kind='TO_BANK'").get(client) as {n:number}).n);
+ const bank=Number((db.prepare("SELECT COALESCE(SUM(-delta_cents),0) n FROM refund_events WHERE client_id=? AND (kind='TO_BANK' OR (kind='RECOVERY' AND ledger_id IS NULL))").get(client) as {n:number}).n);
  if(events.reduce((sum,e)=>sum+e.bank_cents,0)!==bank)throw Error('Statement bank outflow mismatch');
  const live=total(events),refund=Number((db.prepare('SELECT COALESCE(SUM(delta_cents),0) n FROM refund_events WHERE client_id=?').get(client) as {n:number}).n);
  if(live.balance_cents!==f.net_balance_cents||live.debt_cents!==f.debts.reduce((s,d)=>s+d.outstanding_cents,0)||live.refund_cents!==refund)throw Error('Statement journal / operational balances mismatch; đối chiếu trước khi Finalize.');
  for(const n of [...Object.values(opening),...Object.values(closing),...Object.values(live)])if(!Number.isSafeInteger(n))throw Error('Statement exceeds exact cents range');
  return {version:2 as const,client_id:client,period_start:start,period_end:end,status:'DRAFT' as const,opening,closing,movements,
- bank_outflow_cents:movements.reduce((s,e)=>s+e.bank_cents,0),reference:{credit_limit_cents:Number((db.prepare('SELECT credit_limit_cents FROM users WHERE id=?').get(client) as {credit_limit_cents:number}).credit_limit_cents),reserve_cents:f.reserved_cents},
+ bank_outflow_cents:movements.reduce((s,e)=>s+Math.max(0,e.bank_cents),0),bank_recovery_cents:movements.reduce((s,e)=>s+Math.max(0,-e.bank_cents),0),bank_net_outflow_cents:movements.reduce((s,e)=>s+e.bank_cents,0),reference:{credit_limit_cents:Number((db.prepare('SELECT credit_limit_cents FROM users WHERE id=?').get(client) as {credit_limit_cents:number}).credit_limit_cents),reserve_cents:f.reserved_cents},
  last_event_id:events.at(-1)?.id??0,checkpoint_at:epoch(),...disputes(client,movements)};
  }).deferred();}
 export function finalizeStatement(actor:AuthUser,client:number,start:string,end:string){

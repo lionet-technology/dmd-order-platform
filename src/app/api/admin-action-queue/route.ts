@@ -34,6 +34,9 @@ export async function GET(req:NextRequest){
    const f=accountFinancials(c.id,{readOnly:true,includeDetails:false,includeTransactions:false});
    if(f.debt_age.status==='REVIEW')review.push({client_id:c.id,client:c.display_name,warnings:f.debt_age.warnings});
   }
+  const failedJobs=db.prepare("SELECT o.id,o.order_id,o.system_order_code,r.updated_at FROM purchase_reserves r JOIN orders o ON o.id=r.order_id WHERE r.status='FAILED' AND o.workflow_status<>'CANCELLED' ORDER BY r.updated_at,o.id LIMIT 100").all();
+  const chargeReview=db.prepare("SELECT o.id,o.order_id,o.system_order_code FROM purchase_reserves r JOIN orders o ON o.id=r.order_id WHERE r.status='RESERVED' AND EXISTS(SELECT 1 FROM order_trackings t WHERE t.order_id=o.id AND t.status='ACTIVE' AND trim(coalesce(t.label_url,''))<>'') ORDER BY o.id LIMIT 100").all();
+  const statementReviews=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='statement_monthly_close'").get()?db.prepare("SELECT c.client_id,c.period_start,c.period_end FROM statement_monthly_close c WHERE c.status='REVIEW' AND NOT EXISTS(SELECT 1 FROM statement_v2_snapshots s WHERE s.client_id=c.client_id AND s.period_start=c.period_start AND s.period_end=c.period_end) ORDER BY c.period_start,c.client_id LIMIT 100").all():[];
   const now=localDay();
   const prioritized=orders.map(o=>{
    const entered=new Date(String(o.service_purchased_at));
@@ -42,6 +45,6 @@ export async function GET(req:NextRequest){
    const periodEnd=day&&weekday!==null?shiftDay(day,6-((weekday+6)%7)):null;
    return {...o,period_end:periodEnd,priority:!periodEnd||periodEnd<now?'BLOCKS_STATEMENT':'PENDING_PRICE'};
   }).sort((a,b)=>(a.priority==='BLOCKS_STATEMENT'?0:1)-(b.priority==='BLOCKS_STATEMENT'?0:1));
-  return NextResponse.json({unpriced:prioritized,blocked_statement_count:prioritized.filter(o=>o.priority==='BLOCKS_STATEMENT').length,partial_labels:partial.filter(o=>Number(o.labelled)<Number(o.carton_count)&&!hasPartialLabelOverride(Number(o.id))),age_review:review,as_of:new Date().toISOString()});
+  return NextResponse.json({failed_jobs:failedJobs,charge_review:chargeReview,statement_reviews:statementReviews,backup_monitoring:"NOT_CONFIGURED",unpriced:prioritized,blocked_statement_count:prioritized.filter(o=>o.priority==='BLOCKS_STATEMENT').length,partial_labels:partial.filter(o=>Number(o.labelled)<Number(o.carton_count)&&!hasPartialLabelOverride(Number(o.id))),age_review:review,as_of:new Date().toISOString()});
  }catch(e){return NextResponse.json({error:(e as Error).message},{status:400});}
 }

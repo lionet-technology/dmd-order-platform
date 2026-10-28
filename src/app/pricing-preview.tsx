@@ -1,5 +1,5 @@
 "use client";
-export type Preview={eligible:boolean;reasons:string[];currency:string;manual_price_pending?:boolean;notice?:string;service_price?:number;sale_price?:number;discount_percent:number;surcharge:number;total_charge:number;volumetric_weight:number;chargeable_weight:number;tier:number|null;surcharge_breakdown:Array<{code:string;amount:number;note:string}>;guidance?:{floor:number;base:number;retail:number}};
+export type Preview={quote_key?:string;eligible:boolean;reasons:string[];currency:string;manual_price_pending?:boolean;notice?:string;service_price?:number;sale_price?:number;discount_percent:number;surcharge:number;total_charge:number;volumetric_weight:number;chargeable_weight:number;tier:number|null;surcharge_breakdown:Array<{code:string;amount:number;note:string}>;guidance?:{floor:number;base:number;retail:number}};
 const money=(n:number)=>Number(n||0).toFixed(2)+" USD";
 export function PricingPreview({pricing}:{pricing:Preview|null}){
  if(!pricing)return <p>Chưa thể tính giá · Nhập đủ dữ liệu và chọn dịch vụ.</p>;

@@ -27,16 +27,18 @@ export function statementJournalSchema(db:Database.Database){
  +COALESCE((SELECT SUM(i.amount_cents) FROM debt_daily_interest i JOIN credit_debts d ON d.id=i.debt_id WHERE d.client_id=u.id),0)
  -COALESCE((SELECT SUM(a.amount_cents) FROM credit_allocations a JOIN credit_debts d ON d.id=a.debt_id WHERE d.client_id=u.id),0),
  COALESCE((SELECT SUM(delta_cents) FROM refund_events WHERE client_id=u.id),0),
- COALESCE((SELECT SUM(-delta_cents) FROM refund_events WHERE client_id=u.id AND kind='TO_BANK'),0),'{}' FROM users u WHERE role='CLIENT';`);
+ COALESCE((SELECT SUM(-delta_cents) FROM refund_events WHERE client_id=u.id AND (kind='TO_BANK' OR (kind='RECOVERY' AND ledger_id IS NULL))),0),'{}' FROM users u WHERE role='CLIENT';`);
  }
  const watches=[
  {table:'ledger_entries',client:'r.client_user_id',id:'r.id',condition:"r.client_user_id IS NOT NULL AND r.entry_type!='SERVICE_COST'",balance:"CASE WHEN r.direction='CREDIT' THEN ROUND(r.amount*100) ELSE -ROUND(r.amount*100) END",debt:'0',refund:'0',bank:'0',fields:['id','entry_type','direction','amount','occurred_at','reference_type','reference_id','note','created_by_user_id']},
  {table:'credit_debts',client:'r.client_id',id:'r.id',condition:'1',balance:'r.amount_cents',debt:'r.amount_cents',refund:'0',bank:'0',fields:['id','amount_cents','deadline','reason']},
  {table:'credit_allocations',client:'(SELECT client_id FROM credit_debts WHERE id=r.debt_id)',id:'r.id',condition:'r.debt_id IS NOT NULL',balance:'-r.amount_cents',debt:'-r.amount_cents',refund:'0',bank:'0',fields:['id','ledger_id','debt_id','amount_cents','interest_cents']},
  {table:'debt_daily_interest',client:'(SELECT client_id FROM credit_debts WHERE id=r.debt_id)',id:"r.debt_id||':'||r.day",condition:'1',balance:'0',debt:'r.amount_cents',refund:'0',bank:'0',fields:['debt_id','day','amount_cents','principal_cents','daily_rate_pct']},
- {table:'refund_events',client:'r.client_id',id:'r.id',condition:'1',balance:'0',debt:'0',refund:'r.delta_cents',bank:"CASE WHEN r.kind='TO_BANK' THEN -r.delta_cents ELSE 0 END",fields:['id','kind','claim_id','category','delta_cents','ledger_id','paid_date','reason']},
+ {table:'refund_events',client:'r.client_id',id:'r.id',condition:'1',balance:'0',debt:'0',refund:'r.delta_cents',bank:"CASE WHEN r.kind='TO_BANK' OR (r.kind='RECOVERY' AND r.ledger_id IS NULL) THEN -r.delta_cents ELSE 0 END",fields:['id','kind','claim_id','category','delta_cents','ledger_id','paid_date','reason']},
  ];
  for(const w of watches)for(const op of ['INSERT','UPDATE','DELETE']){
+ // Reinstall this adapter trigger to recognize explicit bank recovery; preserve all old events.
+ if(w.table==='refund_events')db.exec(`DROP TRIGGER IF EXISTS statement_v2_refund_events_${op}`);
  const stages=op==='UPDATE'?['OLD','NEW']:op==='DELETE'?['OLD']:['NEW'];
  const statements=stages.map(r=>{
  const sql=(s:string)=>s.replaceAll('r.',r+'.'),sign=r==='OLD'?-1:1;

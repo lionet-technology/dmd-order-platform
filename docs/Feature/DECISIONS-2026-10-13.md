@@ -1,3 +1,6 @@
+## Owner continuation — 28/10/2026
+Manual entry MAX 20; larger Client batches use file import, other sheets retain their own limits. Negative Refund is an explicit signed obligation revision/overpayment state, never a negative actual payout or silent wallet debit. Admin wallet recovery and Finance recorded Bank recovery are separate, auditable commands. Old DB is TEST; no migration requested for a new verified test target. [Implementation and verification boundaries](AUDIT-LINKED-WORKFLOWS-2026-10-28.md).
+
 ## Owner continuation — 27/10/2026 · Refund / Internal Expenses
 
 Owner chốt pool Refund cấp Client, không gán thực trả từng Claim; từ chối mọi thực trả vượt pool dương cho cả Bank/Balance. Chi tiêu nội bộ: BOD/Finance cùng quản lý, VND, lịch nhiều đợt, partial payments, Commission nhập tay nằm trong lương thưởng, không multilevel approval/amortization. FX đầu giai đoạn 2. [Hành vi hiện hành](22-internal-expenses.md).

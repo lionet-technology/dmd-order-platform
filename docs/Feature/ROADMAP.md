@@ -1,3 +1,6 @@
+## Owner continuation — 28/10/2026
+[Current linked-workflow audit](AUDIT-LINKED-WORKFLOWS-2026-10-28.md): lightweight manual MAX 20, linked financial oracle verification, stale quote/Supplier retry fixes and explicit Bank recovery. Old DB is TEST; no legacy migration requested for a fresh verified target. Unknown-funds allocation ledger and Supplier-period close/reopen model remain undefined; backup scheduling/monitoring and real-data acceptance remain deployment gates.
+
 ## Owner continuation — 27/10/2026 · Refund / Internal Expenses
 
 [Chi tiêu nội bộ VND](22-internal-expenses.md) và Refund chặn vượt pool đã triển khai. FX là nghiệp vụ đầu tiên giai đoạn 2; không có phân bổ chi phí kế toán. [Kiểm chứng](VERIFICATION-EXPENSES-REFUNDS-2026-10-27.md).

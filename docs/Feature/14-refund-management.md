@@ -1,3 +1,10 @@
+## Signed revisions and explicit recovery channels — 28/10/2026
+A decision is still a new nonnegative approved total; its append-only **delta can be negative**, and approved minus actual paid plus recoveries can remain negative. No decision silently debits Balance or fabricates a negative payout. Existing Admin `recover` explicitly debits Balance. New Finance `recover_bank` records money actually received from the Client into DMD Bank: positive cents, completed date, reference, source/destination and proof required, at most the current negative Client pool. It adds one positive RECOVERY event with no wallet ledger link, no Payment/Debt posting and no commission/revenue event. Exact retry is idempotent even after the pool changes; batch invalidity rolls back both channels.
+
+Bank recovery is distinguished by RECOVERY + null ledger_id; wallet recovery always has its immutable ADJUSTMENT_DEBIT link. Existing audit tables/rows remain. Statement journal records bank recovery as cash inflow, while wallet recovery appears only through Ledger. New snapshots and BOD/Refund reports separate gross Bank payouts, Bank recoveries and net cash; old issued snapshots are never rewritten. Report cash uses executed date, obligation movements use posting date. History/notifications retain existing role privacy; Finance records bank recovery, Admin retains wallet recovery only.
+
+Legacy records remain protected; Owner says old DB is TEST and requires no legacy migration for a fresh verified target. This run uses new disposable DBs and never resets a user DB.
+
 ## Owner update — 27/10/2026 (supersedes warning-only payouts)
 
 Giữ pool Refund ở cấp Client: tổng quyết định Claim được duyệt tạo nghĩa vụ; Bank/Balance thực trả tiêu thụ pool, không cần phân bổ `claim_id`. Cả hai kênh **từ chối toàn bộ** tiền vượt `max(0, current signed Refund Balance)` trong immediate transaction. Không warning-only, không cap. Balance Adjustment dùng workflow riêng; không dùng Refund để cộng Balance tùy ý.

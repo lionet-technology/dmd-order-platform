@@ -1,3 +1,4 @@
+import {guardManualOrderRows} from "@/lib/manual-order-limit";
 import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import {accountFinancials} from "@/lib/credit";
 import { NextRequest,NextResponse } from "next/server";
@@ -27,16 +28,17 @@ async function handlePOST(req:NextRequest){
  const auth=requireUser(req,"CLIENT");if(auth.error)return auth.error;
  try{
  let body:Row;
+ const fileImport=!!req.headers.get("content-type")?.includes("multipart/form-data");
  if(req.headers.get("content-type")?.includes("multipart/form-data")){
  const form=await req.formData(),file=form.get("file");
  if(!(file instanceof File)||file.size>5*1024*1024||!/[.](csv|xlsx)$/i.test(file.name))throw Error("Chọn CSV/XLSX tối đa 5 MB.");
- body={action:"preview",route_id:Number(form.get("route_id")),rows:groupClientCartonRows(await parseClientFile(Buffer.from(await file.arrayBuffer()),file.name))};
+ body={action:String(form.get("action")||"preview"),route_id:Number(form.get("route_id")),rows:groupClientCartonRows(await parseClientFile(Buffer.from(await file.arrayBuffer()),file.name))};
  }else body=await req.json();
  const action=String(body.action||"preview");
  if(action==="purchase"){
  const ids=Array.isArray(body.order_ids)?body.order_ids.map(Number):[];
  if(!ids.length||ids.length>1000)throw Error("Chọn 1–1000 Order.");
- return NextResponse.json(purchaseBatch(ids,auth.user));
+ return NextResponse.json(purchaseBatch(ids,auth.user,(body.expected_quotes&&typeof body.expected_quotes==="object"?body.expected_quotes:{}) as Record<string,string>));
  }
  const route=db.prepare("SELECT * FROM service_route_configs WHERE id=? AND active=1 AND client_self_purchase=1").get(Number(body.route_id)) as Row|undefined;
  if(!route)throw Error("Route chưa cho phép Client tự đặt mua.");
@@ -44,6 +46,7 @@ async function handlePOST(req:NextRequest){
  if(!setting?.is_enabled)throw Error("Client chưa được cấp dịch vụ.");
  const rows=Array.isArray(body.rows)?body.rows as Row[]:[];
  if(!rows.length||rows.length>1000)throw Error("Nhập 1–1000 Order.");
+ if(!fileImport)guardManualOrderRows(rows);
  const seen=new Set<string>();
  const prepared=rows.map((row,index)=>{
  const old=row.id?db.prepare("SELECT * FROM orders WHERE id=? AND client_user_id=?").get(Number(row.id),auth.user.id) as Row|undefined:undefined;

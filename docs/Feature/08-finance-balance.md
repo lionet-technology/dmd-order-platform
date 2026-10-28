@@ -16,6 +16,9 @@ The Finance navigation, Statement workspace heading and BOD period comparison no
 ## Owner correction — 23/10/2026
 Statement Credit Term applies only to negative net Balance. Debt is excluded after transfer and ages only by its own deadline; the current overdue-Debt purchase block remains. Partial Payment priority is unchanged: interest → principal → Balance. No fake Payment, duplicate receivable or second purchasing-power release. Opening age evidence is optional; amount/date/actor remain exact and auditable. See [verification](VERIFICATION-BALANCE-DEBT-SPLIT-2026-10-23.md). This rule supersedes combined Balance+Debt aging in earlier notes.
 
+## Refund recovery — 28/10/2026
+Signed Claim revisions never silently debit Balance. Admin explicitly recovers through Balance; Finance can separately record an actual Bank recovery without a wallet posting. Statement V2 captures signed Refund and separate gross Bank outflow/recovery/net; existing issued snapshots stay immutable. [Current rule](14-refund-management.md).
+
 ## Owner continuation — 22/10/2026 (current delta)
 
 See [implementation, debt-age assumptions, test evidence and explicit remaining gates](OWNER-EXECUTION-2026-10-22.md). Five horizontal financial task tabs; read-only financial GETs; deterministic frozen-period debt aging; Tracking/Label before manual price; price/finalization gate; auditable partial-label override; server Ledger pagination. This delta supersedes contrary historical behavior below. No deployment or full production acceptance.

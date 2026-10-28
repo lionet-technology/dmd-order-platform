@@ -1,5 +1,9 @@
 # Import, mẫu mua & export
 
+## Manual batch / file boundary — 28/10/2026
+Manual Order entry is limited to 20 rows; >20 uses CSV/XLSX. Client file save now re-sends and reparses the actual file, rather than trusting a JSON `source=import` flag. Imported rows are read-only and cannot be individually removed before save; correct and reupload the file. Switching entry mode clears unsaved rows and preview. Existing grouping, 1000-Order server limit and Carton rules remain; purchase selection is not a manual-entry batch. Other operational spreadsheet paths retain their existing limits.
+
+
 ## Cập nhật 20/10 — Manual UPS/chuyên tuyến
 File Client vẫn 1 dòng = 1 Carton và Quantity chỉ dòng đầu. UPS/chuyên tuyến cho tạo Draft khi chưa có bảng giá, Admin nhập giá bán tổng Order lúc cấp Tracking/Label. Export/Import sheet Tracking có thêm cột **Giá bán thủ công (USD/Order)**, chỉ đặt giá ở dòng đầu Order. Client nhập tay chọn Single/Multiple Cartons nếu Route cho phép; API public mới hoãn. File Supplier Purchase Template vẫn là cấu hình riêng, không giả lập template generic khi thiếu. Xem `VERIFICATION-MANUAL-UPS-CARTON-2026-10-20.md`.
 

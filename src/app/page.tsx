@@ -1,4 +1,5 @@
 "use client";
+import {MANUAL_ORDER_LIMIT,MANUAL_ORDER_LIMIT_MESSAGE} from "@/lib/manual-order-limit";
 import { FinanceWorkspace } from "./finance-role-workspace";
 import { normalizeCountry } from "@/lib/epacket-pricing";
 import { OperationsWorkspace } from "./operations-workspace";
@@ -252,9 +253,10 @@ function QuickOrderSheet({role,clients,enums,onDone,edit}:{role:Role;clients:Use
     setRows(prev=>prev.map((r,i)=>i===rowIndex?{...r,[key]:value}:r));
     setErrors(prev=>{const next={...prev};delete next[rowIndex];return next});
   }
-  function addRows(count=5){setRows(prev=>[...prev,...Array.from({length:count},blankRow)])}
+  function addRows(count=5){setRows(prev=>[...prev,...Array.from({length:Math.max(0,Math.min(count,MANUAL_ORDER_LIMIT-prev.length))},blankRow)])}
   function cloneRow(index:number){
     setRows(prev=>{
+      if(prev.length>=(edit?1:MANUAL_ORDER_LIMIT))return prev;
       const next=[...prev];
       next.splice(index+1,0,{...prev[index]});
       return next;
@@ -299,6 +301,7 @@ function QuickOrderSheet({role,clients,enums,onDone,edit}:{role:Role;clients:Use
     if(!raw.includes("\t")&&!raw.includes("\n"))return;
     e.preventDefault();
     const matrix=raw.replace(/\r/g,"").split("\n").filter((line,i,a)=>!(i===a.length-1&&line==="")).map(line=>line.split("\t"));
+    if(startRow+matrix.length>(edit?1:MANUAL_ORDER_LIMIT)){setMsg(MANUAL_ORDER_LIMIT_MESSAGE+" Dữ liệu chưa thay đổi.");return;}
     setRows(prev=>{
       const next=[...prev]; while(next.length<startRow+matrix.length)next.push(blankRow());
       matrix.forEach((vals,rOff)=>vals.forEach((value,cOff)=>{
@@ -334,18 +337,19 @@ function QuickOrderSheet({role,clients,enums,onDone,edit}:{role:Role;clients:Use
     });
     if(Object.keys(invalid).length){setErrors(invalid);setMsg("Có dòng thiếu dữ liệu bắt buộc.");return;}
     setBusy(true);setMsg("");setErrors({});
-    const results=await Promise.all(activeRows.map(async({row,index})=>{
-      try{
-        const client=clients.find(item=>String(item.id)===row.client_user_id);
-        await postJson("/api/orders",{...row,customer:client?.display_name||row.customer,country:row.country||"US",auto_pricing:"0",id:row.id||undefined});
-        return {index,ok:true as const};
-      }catch(error){return {index,ok:false as const,error:error instanceof Error?error.message:"Không thể lưu"}}
-    }));
+    let results:Array<{index:number;ok:boolean;error?:string}>;
+    try{
+     const batch=await postJson("/api/orders/manual-batch",{rows:activeRows.map(({row})=>{
+      const client=clients.find(item=>String(item.id)===row.client_user_id);
+      return {...row,customer:client?.display_name||row.customer,country:row.country||"US",auto_pricing:"0",id:row.id||undefined};
+     })}) as {results:Array<{index:number;ok:boolean;error?:string}>};
+     results=batch.results.map(result=>({...result,index:activeRows[result.index].index}));
+    }catch(error){setMsg(error instanceof Error?error.message:"Không thể lưu");setBusy(false);return;}
     const failed=results.filter(x=>!x.ok);
     const succeeded=results.filter(x=>x.ok).map(x=>x.index);
     if(failed.length){
       const nextErrors:Record<number,string>={};
-      failed.forEach(x=>{if(!x.ok)nextErrors[x.index]=x.error});
+      failed.forEach(x=>{if(!x.ok)nextErrors[x.index]=x.error||"Không thể lưu"});
       setErrors(nextErrors);setRows(prev=>prev.map((r,i)=>succeeded.includes(i)?blankRow():r));
       setMsg(`Đã lưu ${succeeded.length} dòng, ${failed.length} dòng lỗi.`);setBusy(false);return;
     }
@@ -354,9 +358,9 @@ function QuickOrderSheet({role,clients,enums,onDone,edit}:{role:Role;clients:Use
 
   return <div className="sheetEntry">
     <div className="sheetToolbar">
-      <div><b>{edit?"Chỉnh sửa Order":"Nhập nhanh nhiều Order"}</b><span>Paste từ Google Sheets/Excel · Enter xuống dòng · Tab sang ô kế</span></div>
+      <div><b>{edit?"Chỉnh sửa Order":"Nhập nhanh nhiều Order"}</b><span>Tối đa 20 dòng · Paste từ Excel/Sheets · Nhiều hơn: upload Excel/CSV</span></div>
       <div className="sheetTools">
-        {!edit&&<button className="secondaryBtn" onClick={()=>addRows(5)}>＋ 5 dòng</button>}
+        {!edit&&<button className="secondaryBtn" disabled={rows.length>=MANUAL_ORDER_LIMIT} onClick={()=>addRows(5)}>＋ 5 dòng</button>}
         <button className="primaryBtn" disabled={busy||!activeRows.length} onClick={()=>void saveAll()}>{busy?"Đang lưu…":edit?"Lưu Order":`Lưu ${activeRows.length||""} Order`}</button>
       </div>
     </div>
@@ -406,14 +410,14 @@ function QuickOrderSheet({role,clients,enums,onDone,edit}:{role:Role;clients:Use
                 />}
           </td>})}
           <td className="sheetRowActions">
-            <button tabIndex={-1} title="Clone dòng" onClick={()=>cloneRow(r)}>⧉</button>
+            <button tabIndex={-1} title="Clone dòng" disabled={rows.length>=(edit?1:MANUAL_ORDER_LIMIT)} onClick={()=>cloneRow(r)}>⧉</button>
             <button tabIndex={-1} title="Xóa dòng" onClick={()=>removeRow(r)}>×</button>
           </td>
         </tr>)}</tbody>
       </table>
     </div>
     <div className="sheetFooter">
-      {!edit&&<button className="textBtn" onClick={()=>addRows(10)}>＋ Thêm 10 dòng</button>}
+      {!edit&&<button className="textBtn" disabled={rows.length>=MANUAL_ORDER_LIMIT} onClick={()=>addRows(10)}>＋ Thêm 10 dòng</button>}
       <div><span>{activeRows.length} dòng có dữ liệu</span>{msg&&<b className={msg.includes("lỗi")||msg.includes("thiếu")?"sheetMsg error":"sheetMsg"}>{msg}</b>}</div>
     </div>
   </div>;

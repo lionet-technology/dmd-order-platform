@@ -1,5 +1,9 @@
 # Service Route & Pricing
 
+## Stale Client confirmation — 28/10/2026
+Saved Client Draft pricing includes an opaque quote key (route/version/config/discount/amount/measurement). Client purchase submits the displayed keys. Under the same immediate transaction as Reserve, a changed quote rejects that Order and asks for Draft reload/reconfirmation; existing accepted-purchase retry still returns the original snapshot. Route active/Hold checks remain authoritative at purchase. Domain/legacy callers without an expected key retain existing re-quote semantics; this is a consent check for the Client UI, not an authorization token. No Net is exposed in the key.
+
+
 ## Emergency Hold — 23/10/2026
 Admin reversible Hold freezes affected orders and route configuration; Undo restores prior statuses and prior warehouse Hold. No price/money change or route lifecycle migration. [Scope and deferred replacement](18-emergency-route-hold.md).
 
