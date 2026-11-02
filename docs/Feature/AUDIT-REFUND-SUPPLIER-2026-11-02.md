@@ -2,6 +2,30 @@
 
 Status: validated local changes; synthetic acceptance only. Baseline inspected: main at b380bc6. Existing untracked Codex/ was preserved. No deployment, operator DB reset, Supplier Statement/period lock, unidentified-money book or spreadsheet enhancement. Manual Orders MAX 20 is unchanged.
 
+## Owner follow-up: fresh integrated acceptance and local demo
+Fresh verification on application commit 8da9d5d, before the documentation-only follow-up commit:
+- Full npm test PASS, 42 suites, now including all 102 Refund assertions and 138 Supplier Account assertions.
+- Lint, typecheck and isolated production build PASS.
+- verify-owner-http.cjs PASS: 10 HTTP suites / 431 assertions across Order (36), Operations (23), Finance (20), Manifest scan (16), cancellation (86), Owner Credit (18), Owner Manual (31), Statement V2 (39), Balance Overview (140) and Finance List (22). All servers/databases are owned fixtures.
+- Manual price/Tracking HTTP race PASS, 17 assertions including eight concurrent retries and late over-budget charges.
+- Refund/Expense HTTP + Chrome PASS, 41 assertions; Supplier/Client Chrome PASS, 22.
+- Manual-limit HTTP/Chrome PASS, 46 assertions at desktop 1440 and mobile 390, including 20/21 manual versus file-import boundaries, actual Bank recovery, unchanged Balance and separate BOD gross paid/recovered amounts. The existing script was compiled in memory with only its screenshot directory redirected to /tmp; repository source and historical screenshots were unchanged.
+- Additional read-only visual smoke on the large demo PASS, 60 assertions across Admin/Sales/Client/Warehouse/Finance/BOD, desktop/mobile navigation, browser runtime/API 5xx errors and page overflow. Reviewed Orders and Refund screenshots directly. Fresh mobile Refund DOM has one main/one Finance heading, no page overflow, and a usable channel selector. Wide operational tables still scroll inside their own containers; this is functional desktop/mobile UAT, not a complete mobile UX redesign.
+- No additional product P0/P1 reproduced; no application code changed in this follow-up. The previously recorded Supplier two-book/manual reconciliation and production acceptance limits remain.
+
+Fresh logs/evidence:
+- /tmp/dmd-20261102-followup-tests.log
+- /tmp/dmd-20261102-followup-build.log
+- /tmp/dmd-followup-http.log
+- /tmp/dmd-followup-refund-ui, /tmp/dmd-followup-supplier-ui, /tmp/dmd-followup-manual-ui, /tmp/dmd-followup-visual
+- HTTP suite fixture/log directory: /var/folders/x6/q7g3prc91cng1tjxqpd64yvc0000gn/T/dmd-owner-http-EVjZgx
+
+A fresh sample DB was created with seed-internal-uat.cjs, which refuses an existing target. It contains 544 Orders, 300 Supplier Costs, 40 multi-Lot Orders, 15 Clients and all six roles. Additive domain commands provide Lotus Apparel Refund -$15 with sufficient Balance, a Supplier claim with partial payable offset/actual Bank receipt and $15 receivable outstanding, and an Internal Expense VND 1,000,000 with VND 200,000 paid. Integrity check is ok, foreign_key_check has no violations.
+
+Local test server is deliberately retained at http://127.0.0.1:3000 using only .smoke/internal-uat-test-followup-1793592909.db. Server metadata is /tmp/dmd-followup-localhost.json; log /tmp/dmd-followup-localhost.log. These ignored sample files are not committed and the operator DB is untouched. Seed augmentation initially used a nonexistent is_active Tracking column; corrected to the actual status='ACTIVE' on the disposable fixture. This was a seed-helper error, not a product defect.
+
+Demo accounts all use the synthetic password Demo12345!: epacket.admin (Admin), uat.finance (Finance), uat.bod (BOD), epacket.sales (Sales), epacket.client.a (Client), demo.warehouse (Warehouse). No real customer/carrier/bank action is implied by the sample.
+
 ## Reproduced P1 and repair
 A disposable probe loaded the actual b380bc6 RefundService through git show. Approved $10 → Bank payout $10 → decision $0 → Admin Balance recovery $1 succeeded with Balance $0 → -$1 and Refund -$10 → -$9. This reproduced an unfunded debit contrary to the funded-only requirement.
 
