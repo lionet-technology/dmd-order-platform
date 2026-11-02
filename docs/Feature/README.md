@@ -1,3 +1,6 @@
+## Refund Adjustment / Supplier UAT — 02/11/2026
+Admin/Finance choose funded Balance or actual Bank recovery using the existing Refund engine. [Behavior](14-refund-management.md), [independent Supplier oracle, checks and remaining limits](AUDIT-REFUND-SUPPLIER-2026-11-02.md). No Supplier period lock/Statement or spreadsheet expansion.
+
 ## Linked financial workflow continuation — 28/10/2026
 [Manual MAX 20, stale quote/source-key fixes, explicit Bank recovery, linked oracle/chaos verification and acceptance boundaries](AUDIT-LINKED-WORKFLOWS-2026-10-28.md). Historical DB is TEST: no legacy migration requested for a fresh verified target, no user DB reset. Backup monitoring and deployment acceptance remain explicit.
 

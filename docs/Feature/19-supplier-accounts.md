@@ -1,5 +1,9 @@
 # Supplier accounts — Owner continuation 24/10/2026
 
+## Accounting oracle — 02/11/2026
+`scripts/verify-supplier-accounting-oracle.cjs` exercises documentary invoice $100, confirmed cost $100, partial actual payment $40, approved receivable $30, payable offset $20, actual Bank refund $10 and late cost $15 using independent expected cents. Balance closes at -$55; Order GP is $150 − $115 = $35 after explicit late review. Invoice outstanding remains $100 because this separate documentary book is not automatically allocated by Account payments/offsets. Never sum the two liabilities or fabricate another bank payment to force them to agree. No automatic invoice/account reconciliation, Supplier Statement or period close was added. [Evidence and limits](AUDIT-REFUND-SUPPLIER-2026-11-02.md).
+
+
 ## Correction / reversal — 25/10/2026
 Finance/BOD `claim_correct` requires an approved claim, final_approved_amount, expected_approved_cents (the loaded effective decision), evidence/reference/reason/request_key. It appends an immutable delta with previous/new amounts; original approval is unchanged. Effective approval must stay between net settled and original requested, and differ from current. A zero correction cancels the effective decision only after all settlements have been reversed. A corrected closed decision can reopen with evidence. Stale decisions fail; correction reference is unique per claim, case insensitive.
 `settlement_reverse` requires claim_id and settlement_id plus evidence/reference/reason/request_key. Full reversal once per original settlement; no deletion or mutation. OFFSET reversal appends an equal negative Balance entry atomically. REFUND_RECEIVED reversal changes receivable only: it corrects a mistaken receipt record, not an execution of a bank transfer. The original reference stays consumed; corrected execution needs its own evidence/reference. Partial correction is full reversal followed by a new correct settlement.

@@ -1,3 +1,6 @@
+## Owner continuation — 02/11/2026
+Admin/Finance both choose explicit negative Refund recovery via funded Balance or actual Bank receipt. Balance recovery must not overdraw or create Debt; bank receipt never changes Balance. Reuse linked RECOVERY/ADJUSTMENT_DEBIT, audit/idempotency and immutable Statement journal. Supplier deep UAT only: no Supplier Statement/period lock, unidentified-money book or spreadsheet enhancements. Manual Orders MAX 20 remains unchanged. [Behavior](14-refund-management.md), [verification](AUDIT-REFUND-SUPPLIER-2026-11-02.md).
+
 ## Owner continuation — 28/10/2026
 Manual entry MAX 20; larger Client batches use file import, other sheets retain their own limits. Negative Refund is an explicit signed obligation revision/overpayment state, never a negative actual payout or silent wallet debit. Admin wallet recovery and Finance recorded Bank recovery are separate, auditable commands. Old DB is TEST; no migration requested for a new verified test target. [Implementation and verification boundaries](AUDIT-LINKED-WORKFLOWS-2026-10-28.md).
 

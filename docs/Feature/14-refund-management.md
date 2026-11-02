@@ -1,3 +1,10 @@
+## Owner continuation — 02/11/2026
+This delta supersedes the role split and unfunded recovery behavior below. Admin and Finance can explicitly choose `recover` (Balance) or `recover_bank` (Bank), including atomic batches. Ordinary payouts remain Finance-only; Admin cannot hide a payout inside a recovery batch. Both roles can inspect Bank evidence; Client/Sales history stays redacted and report access is unchanged.
+
+Positive integer cents cannot exceed the remaining negative Client pool. Balance recovery additionally requires sufficient signed net Balance inside the immediate transaction; Credit Limit cannot fund it. The existing linked ADJUSTMENT_DEBIT and RECOVERY, notifications and actor-scoped receipt commit together. Actor/reason/reference are retained; an omitted Balance reference defaults to actor/request-key. Failure leaves no posting or success receipt and never creates Debt. Bank recovery requires actual date/accounts/reference/proof and never changes Balance. Decisions never collect automatically.
+
+UI offers both recovery channels to both roles. Existing immutable Statement journal, late-period postings and gross-paid versus recovered cash reporting are reused. No new engine/schema cutover; manual Orders MAX 20 is unchanged. [Verification and remaining limits](AUDIT-REFUND-SUPPLIER-2026-11-02.md).
+
 ## Signed revisions and explicit recovery channels — 28/10/2026
 A decision is still a new nonnegative approved total; its append-only **delta can be negative**, and approved minus actual paid plus recoveries can remain negative. No decision silently debits Balance or fabricates a negative payout. Existing Admin `recover` explicitly debits Balance. New Finance `recover_bank` records money actually received from the Client into DMD Bank: positive cents, completed date, reference, source/destination and proof required, at most the current negative Client pool. It adds one positive RECOVERY event with no wallet ledger link, no Payment/Debt posting and no commission/revenue event. Exact retry is idempotent even after the pool changes; batch invalidity rolls back both channels.
 

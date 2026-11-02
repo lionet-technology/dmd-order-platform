@@ -83,7 +83,7 @@ const invariant=label=>{eq(wallet(),expectedWallet,label+' independent wallet');
  now='2026-11-02T03:00:00.000Z';
  const bankRecovery={action:'recover_bank',client_id:client.id,amount_cents:150,reason:'Actual cash recovered after correction',reference:'BANK-RECOVERY',from_account:'Client bank',to_account:'DMD bank',paid_date:'2026-10-31',proof:'Received bank evidence',request_key:'linked-bank-recovery'};
  const beforeRecoveryCommission=commissionMonthlyReport(admin,'2026-11').refund_adjustments;
- reject(()=>refunds.execute(admin,bankRecovery),'Admin cannot record Finance bank receipt');
+ reject(()=>refunds.execute(sales,bankRecovery),'Sales cannot record Bank receipt');
  reject(()=>refunds.execute(fin,{...bankRecovery,amount_cents:451,request_key:'bank-excess'}),'Bank recovery bounded by current negative pool');
  reject(()=>refunds.execute(fin,{...bankRecovery,proof:'',request_key:'bank-no-proof'}),'Bank recovery needs receipt evidence');
  const received=refunds.execute(fin,bankRecovery);expectedRefund+=150;invariant('Actual Bank recovery never touches wallet');

@@ -22,7 +22,35 @@ const {chromium}=require(require.resolve('playwright',{paths:[process.env.DMD_BR
  check((await call('FINANCE','/api/refunds',{...partial,amount_cents:1,request_key:'zero-pool'})).status===400,'HTTP depleted pool blocked');
  browser=await chromium.launch({headless:true,executablePath:process.env.DMD_CHROME_PATH||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
  const context=await browser.newContext({viewport:{width:1440,height:1000}});await context.addCookies([{name:'dmd_session',value:tokens.BOD,url:base}]);const page=await context.newPage();page.setDefaultTimeout(12000);const errors=[];page.on('pageerror',e=>errors.push(String(e)));
- await page.goto(base);await page.getByRole('button',{name:'Chi tiêu nội bộ',exact:true}).click();await page.getByRole('heading',{name:'Chi tiêu nội bộ · VND'}).waitFor();check(true,'BOD opens module');
+ await page.goto(base);
+ const revised=await call('ADMIN','/api/claims',{action:'finalize',case_id:claim,refund_amount:0,compensation_amount:0,category:'OTHER',reason:'Negative Refund UAT',request_key:'uat-revise-negative'});check(revised.status===200,'HTTP decision correction creates negative pool');
+ for(const role of ['ADMIN','FINANCE']){
+  await context.addCookies([{name:'dmd_session',value:tokens[role],url:base}]);await page.reload();
+  if(role==='ADMIN'){await page.getByRole('button',{name:'Balance Ledger',exact:true}).click();await page.getByRole('button',{name:'Xem dòng tiền · CLIENT',exact:true}).click();await page.getByRole('button',{name:'Refund',exact:true}).click();}
+  else await page.getByRole('button',{name:'Refund Management',exact:true}).click();
+  await page.getByRole('heading',{name:'Refund Balance',exact:true}).waitFor();
+  const action=page.getByLabel('Hình thức dòng 1',{exact:true});
+  check(await action.locator('option[value="recover"]').count()===1&&await action.locator('option[value="recover_bank"]').count()===1,role+' sees both recovery channels');
+  if(role==='ADMIN')check(await action.locator('option[value="to_balance"]').count()===0,'Admin cannot choose ordinary payout');
+  const before=await call(role,'/api/refunds'),beforePool=before.data.items.find(c=>c.client_id===users.CLIENT.id).refund_balance_cents;
+  const beforeWallet=(await call('ADMIN','/api/financials?client_id='+users.CLIENT.id)).data.net_balance_cents;
+  await page.getByLabel('Client dòng 1',{exact:true}).selectOption(String(users.CLIENT.id));
+  await action.selectOption(role==='ADMIN'?'recover':'recover_bank');
+  await page.getByLabel('amount dòng 1',{exact:true}).fill('1.00');
+  await page.getByLabel('reference dòng 1',{exact:true}).fill('UAT-'+role);
+  await page.getByLabel('reason dòng 1',{exact:true}).fill('Explicit '+role+' recovery');
+  if(role==='FINANCE'){for(const [field,value] of Object.entries({from_account:'Client Bank',to_account:'DMD Bank',paid_date:day,proof:'Actual receipt evidence'}))await page.getByLabel(field+' dòng 1',{exact:true}).fill(value);}
+  else check(await page.getByLabel('proof dòng 1',{exact:true}).isDisabled(),'Balance recovery needs no Bank fields');
+  await page.getByRole('button',{name:'Xác nhận ghi',exact:true}).click();
+  await page.getByRole('status').filter({hasText:role==='ADMIN'?'Đã ghi thu hồi':'Đã ghi giao dịch'}).waitFor();
+  const after=await call(role,'/api/refunds'),afterWallet=(await call('ADMIN','/api/financials?client_id='+users.CLIENT.id)).data.net_balance_cents;
+  check(after.data.items.find(c=>c.client_id===users.CLIENT.id).refund_balance_cents===beforePool+100,role+' UI consumes exactly $1 negative pool');
+  check(afterWallet===beforeWallet-(role==='ADMIN'?100:0),role+' UI uses correct Balance/Bank posting');
+  await page.setViewportSize({width:390,height:844});check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),role+' Refund mobile no page overflow');
+  await page.setViewportSize({width:1440,height:1000});
+ }
+ await context.addCookies([{name:'dmd_session',value:tokens.BOD,url:base}]);await page.reload();
+ await page.getByRole('button',{name:'Chi tiêu nội bộ',exact:true}).click();await page.getByRole('heading',{name:'Chi tiêu nội bộ · VND'}).waitFor();check(true,'BOD opens module');
  await page.getByRole('button',{name:'Tạo khoản chi',exact:true}).click();await page.getByLabel('Tên khoản chi',{exact:true}).fill('IT UAT');await page.getByLabel('Phân loại',{exact:true}).selectOption('IT_PROJECT');await page.getByLabel('Tổng cam kết VND',{exact:true}).fill('1000000');await page.getByLabel('Ghi chú',{exact:true}).fill('Two IT milestones');await page.getByLabel('Số tiền đợt 1',{exact:true}).fill('600000');await page.getByRole('button',{name:'Thêm đợt',exact:true}).click();await page.getByLabel('Số tiền đợt 2',{exact:true}).fill('400000');await page.getByLabel('Lý do tạo / sửa',{exact:true}).fill('UAT creation');await page.getByRole('button',{name:'Lưu khoản chi',exact:true}).click();await page.getByRole('status').filter({hasText:'Đã ghi nhận.'}).waitFor();check(true,'BOD creates multistage expense');
  let listing=await call('BOD','/api/internal-expenses');let expense=listing.data.items[0];check(expense.installments.length===2&&expense.total_vnd===1000000,'HTTP saved schedule exact');
  await context.addCookies([{name:'dmd_session',value:tokens.FINANCE,url:base}]);await page.reload();await page.getByRole('button',{name:'Chi tiêu nội bộ',exact:true}).click();await page.getByRole('button',{name:'Sửa #'+expense.id,exact:true}).click();await page.getByLabel('Tên khoản chi',{exact:true}).fill('IT UAT revised');await page.getByLabel('Lý do tạo / sửa',{exact:true}).fill('Finance correction');await page.getByRole('button',{name:'Lưu khoản chi',exact:true}).click();await page.getByRole('status').filter({hasText:'Đã ghi nhận.'}).waitFor();check(true,'Finance edits BOD expense');

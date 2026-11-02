@@ -68,13 +68,25 @@ export class RefundService {
  }
  execute(user:Actor,b:Row){
   const id=Number(b.client_id);this.client(user,id);
-  if(b.action==='recover' ? user.role!=='ADMIN' : user.role!=='FINANCE')throw Error('Forbidden');
+  const recovery=b.action==='recover'||b.action==='recover_bank';
+  if(recovery ? !['ADMIN','FINANCE'].includes(user.role) : user.role!=='FINANCE')throw Error('Forbidden');
   if(!['to_balance','to_bank','recover','recover_bank'].includes(String(b.action)))throw Error('Action không hỗ trợ.');
   return this.receipt(user,b,()=>{
    this.ready(id);const cents=amount(b.amount_cents),reason=required(b.reason),before=this.balance(id),recovery=b.action==='recover'||b.action==='recover_bank';
    if(!recovery&&cents>Math.max(0,before))throw Error('Số tiền hoàn vượt Refund đã duyệt còn lại. Điều chỉnh Balance phải dùng Balance Adjustment.');
    if(recovery&&cents>Math.max(0,-before))throw Error('Thu hồi vượt Refund Balance âm.');
-   const bank=b.action==='to_bank'||b.action==='recover_bank',reference=recovery&&!bank?null:required(b.reference);
+   const bank=b.action==='to_bank'||b.action==='recover_bank',reference=recovery&&!bank?(b.reference?required(b.reference):user.id+':'+required(b.request_key)):required(b.reference);
+   if(recovery&&!bank){
+    // Match signed net Balance: historical restructured principal is excluded once.
+    // Credit limits and reserves are purchasing controls, never recovery funding.
+    const wallet=Number((this.db.prepare("SELECT COALESCE(SUM(CASE direction WHEN 'CREDIT' THEN ROUND(amount*100) ELSE -ROUND(amount*100) END),0) n FROM ledger_entries WHERE client_user_id=? AND entry_type!='SERVICE_COST'").get(id) as {n:number}).n);
+    const debts=this.db.prepare(`SELECT d.amount_cents,
+     COALESCE((SELECT SUM(amount_cents) FROM debt_daily_interest WHERE debt_id=d.id),0) interest,
+     COALESCE((SELECT SUM(amount_cents) FROM credit_allocations WHERE debt_id=d.id),0) paid
+     FROM credit_debts d WHERE client_id=?`).all(id) as {amount_cents:number;interest:number;paid:number}[];
+    const balance=wallet+debts.reduce((sum,d)=>sum+Math.max(0,d.amount_cents+d.interest-d.paid)-d.interest,0);
+    if(!Number.isSafeInteger(balance)||cents>Math.max(0,balance))throw Error('Balance không đủ để thu hồi Refund; không tự tạo Debt.');
+   }
    const from=bank?required(b.from_account):null,to=bank?required(b.to_account):null,paid=bank?date(b.paid_date):today(),proof=bank?required(b.proof):null;
    const warnings:string[]=[];
    let ledgerId:number|null=null;
@@ -86,7 +98,7 @@ export class RefundService {
   });
  }
  batch(user:Actor,b:Row){
-  if(user.role!=='FINANCE')throw Error('Forbidden');
+  if(!['ADMIN','FINANCE'].includes(user.role))throw Error('Forbidden');
   if(!Array.isArray(b.rows)||!b.rows.length||b.rows.length>100)throw Error('Chọn 1–100 dòng hoàn thực tế.');
   return this.receipt(user,b,()=>({items:(b.rows as Row[]).map((r,i)=>this.execute(user,{...r,request_key:required(b.request_key)+':'+i}))}));
  }
@@ -94,7 +106,7 @@ export class RefundService {
   if(user.role==='WAREHOUSE')throw Error('Forbidden');
   return (this.db.prepare("SELECT id client_id,display_name FROM users WHERE role='CLIENT' ORDER BY display_name,id").all() as {client_id:number;display_name:string}[]).flatMap(c=>{try{this.client(user,c.client_id)}catch{return []}return [{...c,refund_balance_cents:this.balance(c.client_id),migration_required:this.legacy(c.client_id)}];});
  }
- history(user:Actor,id:number){this.client(user,id);const privateBank=['FINANCE','BOD'].includes(user.role);return (this.db.prepare('SELECT * FROM refund_events WHERE client_id=? ORDER BY id DESC').all(id) as Row[]).map(r=>{if(privateBank)return r;const {from_account:_,to_account:__,proof:___,...safe}=r;return safe;});}
+ history(user:Actor,id:number){this.client(user,id);const privateBank=['ADMIN','FINANCE','BOD'].includes(user.role);return (this.db.prepare('SELECT * FROM refund_events WHERE client_id=? ORDER BY id DESC').all(id) as Row[]).map(r=>{if(privateBank)return r;const {from_account:_,to_account:__,proof:___,...safe}=r;return safe;});}
  notifications(user:Actor){return this.db.prepare(`SELECT n.id,e.kind,e.client_id,e.delta_cents,e.reason,e.created_at,EXISTS(SELECT 1 FROM refund_notification_reads r WHERE r.notification_id=n.id AND r.recipient_id=?) is_read FROM refund_notifications n JOIN refund_events e ON e.id=n.event_id WHERE n.recipient_id=? ORDER BY n.id DESC LIMIT 100`).all(user.id,user.id);}
  acknowledge(user:Actor,id:number){if(!this.db.prepare('SELECT id FROM refund_notifications WHERE id=? AND recipient_id=?').get(id,user.id))throw Error('Forbidden');this.db.prepare('INSERT OR IGNORE INTO refund_notification_reads(notification_id,recipient_id) VALUES (?,?)').run(id,user.id);return {id};}
  report(user:Actor,start:string,end:string){

@@ -51,7 +51,7 @@ async function main(){try{
  eq((await api.POST(req(finance,{...payload,request_key:'http-reject'}))).status,400,'HTTP rejects exceeding current obligation');decision(20);
  eq((await api.POST(req(finance,{...payload,request_key:'http-refund'}))).status,200,'HTTP Finance payout');eq((await api.POST(req(admin,{...payload,request_key:'http-admin-refund'}))).status,403,'HTTP Admin payout denied');
  eq((await api.GET(req(bod,null,'/api/refunds?view=report&start='+day+'&end='+day))).status,200,'HTTP BOD report');
- eq((await api.POST(req(finance,{action:'recover',client_id:client.id,amount_cents:1,reason:'bad',request_key:'http-finance-recovery'}))).status,403,'Finance cannot recover');
+ eq((await api.POST(req(finance,{action:'recover',client_id:client.id,amount_cents:1,reason:'bad',request_key:'http-finance-recovery'}))).status,400,'Finance recovery authorized but positive pool rejected');
  const {Worker}=require('node:worker_threads');
  const concurrent={...payload,amount_cents:123,request_key:'concurrent-refund'};
  const beforeConcurrent=wallet(client.id);
@@ -80,7 +80,9 @@ async function main(){try{
  eq(service.balance(client.id),-overpaid+recoveryAmount,'Only one recovery consumes negative pool');
  eq(wallet(client.id),walletBeforeRecovery-(recoveryResults[0]===1?recoveryAmount:0),'Bank winner never debits wallet');
  const bankRecovery={action:'recover_bank',client_id:client.id,amount_cents:1,...bank,reference:'BANK-IN-TEST',reason:'Actual received correction',request_key:'http-bank-recover'};
- eq((await api.POST(req(admin,bankRecovery))).status,403,'HTTP Admin cannot record Finance bank recovery');
+ const adminBank={...bankRecovery,request_key:'http-admin-bank-recover'};
+ eq((await api.POST(req(admin,adminBank))).status,200,'HTTP Admin can record Bank recovery');
+ eq((await api.POST(req(admin,adminBank))).status,200,'HTTP Admin Bank retry');
  eq((await api.POST(req(finance,{...bankRecovery,amount_cents:-1}))).status,400,'Negative actual Bank amount rejected');
  eq((await api.POST(req(finance,bankRecovery))).status,200,'HTTP Finance bank recovery');
  eq((await api.POST(req(finance,bankRecovery))).status,200,'HTTP Bank recovery exact retry');
@@ -90,6 +92,47 @@ async function main(){try{
  db.exec("CREATE TRIGGER injected_bank_recovery_failure BEFORE INSERT ON refund_notifications BEGIN SELECT RAISE(ABORT,'injected bank recovery'); END;");
  reject(()=>service.execute(finance,{...bankRecovery,request_key:'bank-recover-rollback'}),'Bank recovery notification failure rolls back cash event and receipt');
  db.exec('DROP TRIGGER injected_bank_recovery_failure');eq([wallet(client.id),service.balance(client.id)],beforeBankFailure,'No partial recovery after failure');
+ // Bank-paid overpayment with no wallet funds must never become a negative Balance.
+ const poor=create('recovery-no-funds','CLIENT',sales.id),poorClaim=cases.caseAction(poor,{action:'create',kind:'CLAIM',visibility:'PUBLIC',order_ids:[order(poor.id)],summary:'Bank overpayment'}).id;
+ service.decide(admin,{case_id:poorClaim,refund_cents:1000,compensation_cents:0,reason:'Approval',request_key:'poor-approve'});
+ service.execute(finance,{...bankRecovery,action:'to_bank',client_id:poor.id,amount_cents:1000,request_key:'poor-payout'});
+ service.decide(admin,{case_id:poorClaim,refund_cents:0,compensation_cents:0,reason:'Revised',request_key:'poor-revise'});
+ const recoverPoor={action:'recover',client_id:poor.id,amount_cents:1,reason:'Explicit recovery',reference:'Recovery evidence',request_key:'poor-recover'};
+ const untouched=()=>[wallet(poor.id),service.balance(poor.id),db.prepare('SELECT COUNT(*) n FROM credit_debts WHERE client_id=?').get(poor.id).n];
+ const poorBefore=untouched();
+ for(const actor of [admin,finance])reject(()=>service.execute(actor,recoverPoor),'No Balance funding: '+actor.role);
+ eq(untouched(),poorBefore,'Insufficient funds creates neither Balance debit nor Debt');
+ eq(db.prepare("SELECT COUNT(*) n FROM refund_receipts WHERE request_key='poor-recover'").get().n,0,'No success receipt on insufficient Balance');
+ // Credit Limit is not money; even a large limit cannot fund a recovery.
+ db.prepare('UPDATE users SET credit_limit_cents=100000 WHERE id=?').run(poor.id);
+ reject(()=>service.execute(finance,recoverPoor),'Credit limit cannot fund recovery');
+ db.prepare("INSERT INTO ledger_entries(client_user_id,occurred_at,entry_type,direction,amount,created_by_user_id) VALUES (?,?,'PAYMENT','CREDIT',5,?)").run(poor.id,day,finance.id);
+ const financed=service.execute(finance,{...recoverPoor,amount_cents:500,request_key:'finance-full-balance'});
+ eq(untouched(),[0,-500,0],'Finance may recover exact funded Balance without Debt');
+ const linked=service.history(finance,poor.id).find(e=>e.id===financed.id);
+ eq([linked.reference,linked.actor_id,linked.delta_cents],['Recovery evidence',finance.id,500],'Recovery stores evidence actor and positive amount');
+ eq(db.prepare('SELECT entry_type,direction,amount FROM ledger_entries WHERE id=?').get(linked.ledger_id),{entry_type:'ADJUSTMENT_DEBIT',direction:'DEBIT',amount:5},'Linked recovery debit posted exactly once');
+ eq(service.execute(finance,{...recoverPoor,amount_cents:500,request_key:'finance-full-balance'}),financed,'Replay after Balance exhausted');
+ reject(()=>service.batch(admin,{action:'batch',request_key:'admin-no-payout',rows:[{...recoverPoor,action:'recover_bank',...bank,amount_cents:100},{...recoverPoor,action:'to_balance',amount_cents:1}]}),'Admin batch cannot smuggle payout');
+ eq(untouched(),[0,-500,0],'Invalid Admin batch rolls back prior Bank recovery');
+ // Two independent funded recoveries compete for $3 Balance while $5 remains recoverable.
+ db.prepare("INSERT INTO ledger_entries(client_user_id,occurred_at,entry_type,direction,amount,created_by_user_id) VALUES (?,?,'PAYMENT','CREDIT',3,?)").run(poor.id,day,finance.id);
+ const fundingSignals=[admin,finance].map((actor,i)=>{const buffer=new SharedArrayBuffer(4);new Worker(path.join(__dirname,'refund-retry-worker.cjs'),{workerData:{file:process.env.DMD_DB_PATH,actor:{id:actor.id,role:actor.role},payload:{...recoverPoor,amount_cents:250,request_key:'funding-race-'+i},allow_rejection:true,signal:buffer}});return new Int32Array(buffer)});
+ const fundingResults=fundingSignals.map(signal=>{if(!Atomics.load(signal,0))Atomics.wait(signal,0,0,30000);return Atomics.load(signal,0)});
+ eq(fundingResults.sort(),[1,2],'Concurrent recoveries cannot overdraw funded Balance');
+ eq(untouched(),[50,-250,0],'Funding race conserves wallet Refund and Debt');
+ // Recovery uses net Balance after restructuring, rather than raw historical ledger.
+ db.prepare("INSERT INTO ledger_entries(client_user_id,occurred_at,entry_type,direction,amount,created_by_user_id) VALUES (?,?,'ORDER_CHARGE','DEBIT',3.50,?)").run(poor.id,day,admin.id);
+ const debt=Number(db.prepare("INSERT INTO credit_debts(client_id,amount_cents,deadline,reason) VALUES (?,300,'2099-12-31','Synthetic restructured principal')").run(poor.id).lastInsertRowid);
+ db.prepare("INSERT INTO debt_daily_interest(debt_id,day,principal_cents,daily_rate_pct,amount_cents) VALUES (?,?,300,10,30)").run(debt,day);
+ db.prepare("INSERT INTO ledger_entries(client_user_id,occurred_at,entry_type,direction,amount,created_by_user_id) VALUES (?,?,'REFUND','CREDIT',1,?)").run(poor.id,day,finance.id);
+ const net=()=>require('../src/lib/credit.ts').accountFinancials(poor.id,{readOnly:true,includeDetails:false}).net_balance_cents;
+ eq([wallet(poor.id),net()],[-200,100],'Debt excluded once and posted interest does not become wallet funds');
+ reject(()=>service.execute(finance,{...recoverPoor,amount_cents:101,request_key:'net-too-much'}),'Cannot spend principal or interest as extra Balance');
+ service.execute(finance,{...recoverPoor,amount_cents:100,request_key:'net-funded'});
+ eq([wallet(poor.id),net(),service.balance(poor.id)],[-300,0,-150],'Recovery consumes exact net Balance without rewriting Debt');
+ eq(db.prepare('SELECT amount_cents FROM credit_debts WHERE id=?').get(debt).amount_cents,300,'Existing Debt principal unchanged');
+ eq(db.prepare('SELECT amount_cents FROM debt_daily_interest WHERE debt_id=?').get(debt).amount_cents,30,'Existing interest unchanged');
  eq(db.prepare('PRAGMA foreign_key_check').all(),[],'Foreign keys intact');
  console.log('REFUNDS DOMAIN/API PASS ('+checks+' assertions)');
  }finally{db.close();fs.rmSync(dir,{recursive:true,force:true})}}

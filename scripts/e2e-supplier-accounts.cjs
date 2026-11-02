@@ -65,7 +65,7 @@ async function main(){
  console.log('Synthetic server ready; launching Chrome');
  browser=await chromium.launch({headless:true,channel:'chrome',args:['--disable-gpu']});
  console.log('Chrome ready');
- const evidence=path.join(root,'docs/Feature/evidence/supplier-continuation-20261025');fs.mkdirSync(evidence,{recursive:true});
+ const evidence=process.env.DMD_EVIDENCE_DIRECTORY||path.join(root,'docs/Feature/evidence/supplier-continuation-20261025');fs.mkdirSync(evidence,{recursive:true});
  const errors=[];
  const context=await browser.newContext({viewport:{width:1440,height:1000}});
  await context.addCookies([{name:'dmd_session',value:financeToken,url:base}]);
