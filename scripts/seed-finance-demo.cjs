@@ -54,7 +54,7 @@ const result=db.transaction(()=>{
  // Return oversized draft to an eligible weight before reserving.
  db.prepare('UPDATE orders SET weight=.2,length=10,width=5,height=3 WHERE id=?').run(o.id);
  db.prepare('UPDATE order_cartons SET weight=.2,length=10,width=5,height=3,chargeable_weight=.2 WHERE order_id=?').run(o.id);
- purchaseService(o.id,prepaid);
+ purchaseService(o.id,prepaid,true,require('../src/lib/route-pricing.ts').safePricing(require('../src/lib/route-pricing.ts').refreshDraft(o.id),'CLIENT')?.quote_key);
  if(i===1){credit.purchaseJobAction(admin,{action:'fail',order_id:o.id,reason:'Demo supplier timeout'});db.prepare("UPDATE purchase_reserves SET updated_at=? WHERE order_id=?").run(new Date(Date.now()-5*3600000).toISOString(),o.id);}
  }
  credit.financialAction(sales,prepaid.id,{action:'additional_fee',unit_price:2.5,quantity:2,note:'Demo repacking materials'});

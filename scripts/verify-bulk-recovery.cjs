@@ -13,7 +13,7 @@ let checks=0;const eq=(a,b,m)=>{checks++;assert.deepEqual(a,b,m)};
  async function post(rows){const r=await api.POST(new NextRequest('http://local/api/orders/tracking-queue',{method:'POST',headers:{cookie,'content-type':'application/json'},body:JSON.stringify({rows})}));return {status:r.status,data:await r.json()}}
  const make=name=>upsertOrder({client_user_id:client.id,customer:client.display_name,order_id:name,service:'ePacket',sub_service:'Standard',supplier:'DMD',country:'US',carton_count:1,weight:.5,length:10,width:5,height:3,item:'Shirt',material:'Cotton',declared_value:10,recipient_name:'Synthetic',address1:'42 Broadway',city:'New York',state:'NY',zip:'10001',phone:'2025550100'});
  const a=make('RECOVERY-A'),b=make('RECOVERY-B');
- for(const o of [a,b])purchaseService(o.id,{id:client.id,role:'CLIENT'});
+ for(const o of [a,b])purchaseService(o.id,{id:client.id,role:'CLIENT'},true,require('../src/lib/route-pricing.ts').safePricing(o,'CLIENT').quote_key);
  const row=(o,tracking)=>({order_pk:o.id,carton_slot:1,tracking,label_url:'https://labels.test/synthetic.pdf'});
  const snapshot=()=>({reserves:db.prepare('SELECT * FROM purchase_reserves WHERE order_id IN (?,?) ORDER BY order_id').all(a.id,b.id),charges:db.prepare("SELECT * FROM ledger_entries WHERE reference_type='ORDER' AND reference_id IN (?,?) ORDER BY id").all(String(a.id),String(b.id)),trackings:db.prepare('SELECT * FROM order_trackings WHERE order_id IN (?,?) ORDER BY id').all(a.id,b.id),events:db.prepare('SELECT * FROM order_events WHERE order_id IN (?,?) ORDER BY id').all(a.id,b.id)});
  const before=snapshot();
@@ -33,14 +33,14 @@ let checks=0;const eq=(a,b,m)=>{checks++;assert.deepEqual(a,b,m)};
  const {purchaseBatch}=require('../src/lib/client-bulk-purchase.ts');
  const good=make('PARTIAL-GOOD'),bad=make('PARTIAL-BAD');
  db.prepare('UPDATE orders SET weight=11 WHERE id=?').run(bad.id);
- const actor={id:client.id,role:'CLIENT'},batch=purchaseBatch([good.id,bad.id],actor);
+ const actor={id:client.id,role:'CLIENT'},batch=purchaseBatch([good.id,bad.id],actor,Object.fromEntries([good,bad].map(o=>[o.id,require('../src/lib/route-pricing.ts').safePricing(o,'CLIENT').quote_key])));
  eq([batch.succeeded,batch.failed],[1,1],'partial purchase retains valid order');
  eq(db.prepare('SELECT COUNT(*) n FROM purchase_reserves WHERE order_id=?').get(bad.id).n,0,'failed Draft has no reserve');
  db.prepare('UPDATE orders SET weight=.5 WHERE id=?').run(bad.id);
  // A read/reload after correcting data must not implicitly retry the failed Draft.
  const {accountFinancials}=require('../src/lib/credit.ts');accountFinancials(client.id);
  eq(db.prepare('SELECT service_purchased_at FROM orders WHERE id=?').get(bad.id).service_purchased_at,null,'correction/read does not auto purchase');
- eq(purchaseBatch([bad.id],actor).succeeded,1,'explicit failed Draft reselection');
+ eq(purchaseBatch([bad.id],actor,{[bad.id]:require('../src/lib/route-pricing.ts').safePricing(require('../src/lib/route-pricing.ts').refreshDraft(bad.id),'CLIENT').quote_key}).succeeded,1,'explicit failed Draft reselection');
  eq(db.prepare('SELECT COUNT(*) n FROM purchase_reserves WHERE order_id IN (?,?)').get(good.id,bad.id).n,2,'one reserve per successful selection');
  db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier,max_cartons_per_order,client_self_purchase) VALUES ('UPS','','DMD',2,1)").run();
  db.prepare("INSERT INTO client_service_settings(client_user_id,service,is_enabled,default_supplier) VALUES (?,'UPS',1,'DMD')").run(client.id);

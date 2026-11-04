@@ -1,3 +1,8 @@
+## Client confirmation enforcement — 04/11/2026
+This supersedes the 28/10 legacy/domain exemption below. Every new priced Purchase with actor CLIENT requires the displayed opaque quote key in `purchaseService`, within the same immediate transaction as Reserve. Missing/stale keys reject normally as DATA purchase items; reload Draft/Preview and explicitly reconfirm. `/api/client-orders` uses `expected_quotes`; legacy `/api/purchase-jobs` uses `expected_quote_key` and returns the same batch item shape for Client purchase. Admin/Sales behavior is unchanged. Accepted purchases replay the locked snapshot before checking a new key, including after prices change.
+
+Current policy is service/adapter based, not a configurable AUTO/MANUAL DB column: UPS and Chuyên tuyến use the approved unpriced service-request/manual Admin-price exception (no displayed monetary quote, Reserve or Charge at request). ePacket Standard/Eco DMD uses the versioned AUTO adapter. Unsupported ePacket/Yun combinations or missing active auto tables fail closed; no manual fallback or new Yun/UPS adapter was introduced. Regression: `verify-purchase-consent.cjs`, `verify-epacket.cjs`, `verify-client-carton-api.cjs`.
+
 # Service Route & Pricing
 
 ## Stale Client confirmation — 28/10/2026

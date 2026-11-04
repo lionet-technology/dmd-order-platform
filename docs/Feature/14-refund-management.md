@@ -1,3 +1,6 @@
+## Reserved funds protection — 04/11/2026
+Balance recovery requires positive funded net Balance remaining after all active Purchase reserves: `amount_cents <= max(0, net_balance_cents - reserved_cents)`. Credit Limit cannot fund recovery. The check, debit, Refund event and receipt are serialized in the existing immediate transaction. Accepted reservations cannot be consumed by a later recovery; a recovery accepted first reduces the room for a new Purchase. Bank recovery and accepted receipt replay are unchanged. Regression `verify-shared-funds-race.cjs`: independent Payment→Debt allocation, Refund recovery and Purchase writers, fixed and simultaneous schedules, integer-cent oracle.
+
 ## Owner continuation — 02/11/2026
 This delta supersedes the role split and unfunded recovery behavior below. Admin and Finance can explicitly choose `recover` (Balance) or `recover_bank` (Bank), including atomic batches. Ordinary payouts remain Finance-only; Admin cannot hide a payout inside a recovery batch. Both roles can inspect Bank evidence; Client/Sales history stays redacted and report access is unchanged.
 

@@ -1,3 +1,6 @@
+## Shared funds invariant — 04/11/2026
+Explicit Refund Balance recovery now respects active Purchase reserves as well as signed net Balance, excluding Credit Limit as funding. Debt Payment remains interest→principal→Balance and retries never allocate twice. [Recovery contract](14-refund-management.md#reserved-funds-protection--04112026); independent three-writer oracle: `scripts/verify-shared-funds-race.cjs`.
+
 ## Owner continuation — 27/10/2026 · Refund / Internal Expenses
 
 [Refund](14-refund-management.md) giữ pool Client có dấu, chặn toàn bộ khoản Bank/Balance vượt nghĩa vụ còn được duyệt; Balance Adjustment vẫn riêng. Giảm quyết định sau khi chi có thể tạo số âm; không sửa Statement đã finalize. [Chi tiêu nội bộ VND](22-internal-expenses.md) không ghi Client Balance/Statement.

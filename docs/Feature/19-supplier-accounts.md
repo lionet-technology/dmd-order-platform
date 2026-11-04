@@ -1,3 +1,8 @@
+## Channel and documentary reconciliation report — 04/11/2026
+Supplier Account report/API now exposes `claim_offset_cents` and `claim_bank_received_cents` (net active settlements, reversed records excluded), beside remaining `receivable_cents`. A $30 approved Claim, $20 Offset and $10 actual Bank receipt reports 2000/1000/0 cents. Neither settlement changes cost/revenue/Order GP; only Offset changes Account Balance.
+
+Per Supplier, `account_payable_cents=max(0,-balance_cents)`, `documentary_outstanding_cents` comes from nonvoid invoices less unreversed payment allocations, `documentary_minus_account_payable_cents` is their signed difference and `reconciliation_required` flags a mismatch. These are two views to reconcile, never two liabilities to add. Positive prepaid credit remains visible in signed Balance. This is a read-only documentary discrepancy report, not automatic matching, invoice mutation or a bank ledger; a zero difference alone does not prove document-level reconciliation. Existing posting/settlement engines and UI are retained. Oracle: `verify-supplier-accounting-oracle.cjs`.
+
 # Supplier accounts — Owner continuation 24/10/2026
 
 ## Accounting oracle — 02/11/2026

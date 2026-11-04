@@ -1,3 +1,6 @@
+## Purchase consent — 04/11/2026
+Priced Client purchases require quote confirmation in the domain engine across bulk and legacy API paths. Missing/stale confirmation is a normal FAILED/DATA item, permitting Draft reload/Preview/reconfirmation. Accepted retry remains idempotent. Approved UPS/Chuyên tuyến unpriced service requests remain unchanged. [Exact contract and route limitations](03-service-route-pricing.md#client-confirmation-enforcement--04112026). Tests: `verify-purchase-consent.cjs`, existing bulk/linked regressions.
+
 ## Owner continuation — 25/10/2026
 Current Sales snapshots, BOD monthly trends and Statement batch close: [approved behavior and integration](20-sales-monthly-close.md). This delta supersedes conflicting historical notes below. No background scheduler is configured.
 

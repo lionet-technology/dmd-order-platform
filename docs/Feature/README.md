@@ -1,3 +1,6 @@
+## Deep logic continuation — 04/11/2026
+UI remains deferred by Owner. Mandatory priced Client quote consent across legacy/bulk entrypoints, Reserve-safe Refund recovery, Supplier per-channel/documentary discrepancy report, independent-writer regression and honest remaining limits: [audit and evidence](AUDIT-CROSS-MODULE-2026-11-04.md). No operational DB reset or new financial engine.
+
 ## Refund Adjustment / Supplier UAT — 02/11/2026
 Admin/Finance choose funded Balance or actual Bank recovery using the existing Refund engine. [Behavior](14-refund-management.md), [independent Supplier oracle, checks and remaining limits](AUDIT-REFUND-SUPPLIER-2026-11-02.md). No Supplier period lock/Statement or spreadsheet expansion.
 

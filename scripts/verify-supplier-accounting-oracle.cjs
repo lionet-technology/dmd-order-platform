@@ -34,6 +34,9 @@ try{
  eq(snapshot(),[-4000,1000,10000,5000,5000,10000],'Supplier credit offset reduces payable only once');
  const cash={action:'claim_settle',claim_id:claim.id,settlement:'REFUND_RECEIVED',amount:10,evidence:'Actual Bank receipt',reference:'BANK-IN-10',request_key:'cash'};command(cash);command(cash);
  eq(snapshot(),[-4000,0,10000,5000,5000,10000],'Bank refund clears receivable without second credit or GP gain');
+ const report=supplierAccounts(bod).suppliers.find(s=>s.supplier===supplier);
+ eq([report.claim_offset_cents,report.claim_bank_received_cents,report.receivable_cents],[2000,1000,0],'Per-channel report: 20 offset and 10 cash clear 30 once');
+ eq([report.account_payable_cents,report.documentary_outstanding_cents,report.documentary_minus_account_payable_cents,report.reconciliation_required],[4000,10000,6000,true],'Documentary discrepancy explicit; never add liabilities');
  const immutable=db.prepare('SELECT * FROM supplier_account_entries WHERE source=?').get('COST:'+cost);
  const late={order_id:order,lot_number:1,action:'cost_adjustment',amount:15,reason:'Late supplier charge',request_key:'late-cost'};
  recon.reconciliationAction(fin,late);

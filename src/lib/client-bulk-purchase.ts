@@ -2,7 +2,7 @@ import {purchaseService,safePricing} from './route-pricing';
 import type {AuthUser} from './auth';
 
 export function purchaseErrorType(message:string):'DATA'|'SYSTEM'{
- return /balance|credit|công nợ|quá hạn|khóa mua|khoá mua|thiếu|trùng|cân|weight|carton|không có quyền|không được phép|dịch vụ|hold|route đang|đơn đã huỷ/i.test(message)&&!/chưa có bảng giá|base rate|chưa có giá|chưa (có )?cấu hình|lỗi hệ thống|purchase thất bại/i.test(message)?'DATA':'SYSTEM';
+ return /báo giá|balance|credit|công nợ|quá hạn|khóa mua|khoá mua|thiếu|trùng|cân|weight|carton|không có quyền|không được phép|dịch vụ|hold|route đang|đơn đã huỷ/i.test(message)&&!/chưa có bảng giá|base rate|chưa có giá|chưa (có )?cấu hình|lỗi hệ thống|purchase thất bại/i.test(message)?'DATA':'SYSTEM';
 }
 // Each Order owns its own immediate transaction. Errors never undo successful
 // reservations from earlier Orders, and the remaining Orders are still checked.

@@ -98,7 +98,7 @@ export function purchaseService(id:number,actor:{id:number;role:string},requireB
  if(!q)throw Error("Route chưa có bảng giá active.");
  if(actor.role==="CLIENT"&&!route?.client_self_purchase)throw Error("Route chưa cho phép Client tự đặt mua.");
  if(!q.eligible)throw Error("Không đủ điều kiện mua dịch vụ: "+q.reasons.join(" "));
- if(expectedQuoteKey&&quoteKey(q)!==expectedQuoteKey)throw Error("Báo giá đã thay đổi. Tải lại Draft, kiểm tra giá và xác nhận mua lại.");
+ if((actor.role==="CLIENT"&&(!expectedQuoteKey||typeof expectedQuoteKey!=="string"))||(expectedQuoteKey&&quoteKey(q)!==expectedQuoteKey))throw Error("Báo giá đã thay đổi. Tải lại Draft, kiểm tra giá và xác nhận mua lại.");
  for(const k of ["order_id","recipient_name","address1","city","state","zip","phone","item","material"])if(!String(o[k]||"").trim())throw Error("Thiếu thông tin bắt buộc: "+k);
  if(requireBalance)assertPurchasing(Number(o.client_user_id),q.total_charge);
  reservePurchase(id,Number(o.client_user_id),q.total_charge,actor.id);

@@ -78,14 +78,15 @@ export class RefundService {
    const bank=b.action==='to_bank'||b.action==='recover_bank',reference=recovery&&!bank?(b.reference?required(b.reference):user.id+':'+required(b.request_key)):required(b.reference);
    if(recovery&&!bank){
     // Match signed net Balance: historical restructured principal is excluded once.
-    // Credit limits and reserves are purchasing controls, never recovery funding.
+    // Recovery uses funded Balance left after accepted Purchase reservations, never credit.
     const wallet=Number((this.db.prepare("SELECT COALESCE(SUM(CASE direction WHEN 'CREDIT' THEN ROUND(amount*100) ELSE -ROUND(amount*100) END),0) n FROM ledger_entries WHERE client_user_id=? AND entry_type!='SERVICE_COST'").get(id) as {n:number}).n);
     const debts=this.db.prepare(`SELECT d.amount_cents,
      COALESCE((SELECT SUM(amount_cents) FROM debt_daily_interest WHERE debt_id=d.id),0) interest,
      COALESCE((SELECT SUM(amount_cents) FROM credit_allocations WHERE debt_id=d.id),0) paid
      FROM credit_debts d WHERE client_id=?`).all(id) as {amount_cents:number;interest:number;paid:number}[];
     const balance=wallet+debts.reduce((sum,d)=>sum+Math.max(0,d.amount_cents+d.interest-d.paid)-d.interest,0);
-    if(!Number.isSafeInteger(balance)||cents>Math.max(0,balance))throw Error('Balance không đủ để thu hồi Refund; không tự tạo Debt.');
+    const reserved=Number((this.db.prepare("SELECT COALESCE(SUM(amount_cents),0) n FROM purchase_reserves WHERE client_id=? AND status='RESERVED'").get(id) as {n:number}).n);
+    if(!Number.isSafeInteger(balance)||cents>Math.max(0,balance-reserved))throw Error('Balance không đủ để thu hồi Refund; không tự tạo Debt.');
    }
    const from=bank?required(b.from_account):null,to=bank?required(b.to_account):null,paid=bank?date(b.paid_date):today(),proof=bank?required(b.proof):null;
    const warnings:string[]=[];

@@ -1,0 +1,17 @@
+AssertionError [ERR_ASSERTION]: Missing confirmation is ordinary DATA failure
++ actual - expected
+
+  [
++   0,
++   undefined
+-   1,
+-   'DATA'
+  ]
+    at eq (/private/tmp/dmd-logic-audit-20261104/scripts/verify-purchase-consent.cjs:9:49)
+    at /private/tmp/dmd-logic-audit-20261104/scripts/verify-purchase-consent.cjs:20:32 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: [Array],
+  expected: [Array],
+  operator: 'deepStrictEqual'
+}

@@ -1,3 +1,6 @@
+## Account comparison — 04/11/2026
+The Supplier Account API reports documentary invoice outstanding beside Account payable and their signed difference, with a reconciliation-required flag. Invoice amounts/allocations remain documentary and never auto-post Account cost, bank payment or GP. [Fields and limits](19-supplier-accounts.md#channel-and-documentary-reconciliation-report--04112026).
+
 ## Supplier correction / reversal — 25/10/2026
 Supplier Account decisions now support immutable delta corrections and full linked settlement reversals, with compensating Balance entries only for Offset. Historical Payables invoices/payments remain separate. [Details](19-supplier-accounts.md#correction--reversal--25102026).
 

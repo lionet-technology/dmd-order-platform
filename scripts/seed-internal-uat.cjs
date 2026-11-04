@@ -31,7 +31,7 @@ const summary=db.transaction(()=>{
  if(n>=360)db.prepare("UPDATE orders SET workflow_status='SALES_DRAFT' WHERE id=?").run(o.id);
  if(multi){saveOrderShipmentStructure(o.id,{lot_count:2,cartons:[1,2,3].map(k=>({carton_number:k,lot_number:k===3?2:1,weight:.2,length:15,width:10,height:5,items:[{description:'Cotton shirt',material:'Cotton',quantity:1,unit_manufacturing_value:10}]}))});continue;}
  if(n>=360)continue;
- purchaseService(o.id,{...c,role:'CLIENT'});
+ purchaseService(o.id,{...c,role:'CLIENT'},true,require('../src/lib/route-pricing.ts').safePricing(o,'CLIENT')?.quote_key);
  if(n>=330)continue; // Queue for Admin spreadsheet UAT.
  const carton=db.prepare('SELECT id FROM order_cartons WHERE order_id=?').get(o.id);
  addOrderTracking({orderId:o.id,cartonId:carton.id,tracking:'UAT9400'+String(n).padStart(10,'0'),labelUrl:'/templates/demo-usps-label.svg',actorId:admin.id});

@@ -33,7 +33,7 @@ async function main(){
  response=await post("preview",[manual]);body=await response.json();check(response.status===200&&body.rows[0].pricing.eligible,"manual preview");check(body.rows[0].input.country==="US","preview normalization");check(!JSON.stringify(body).includes('"net"')&&!JSON.stringify(body).includes('"base"'),"preview doesn't disclose internals");
  response=await post("save",[manual]);body=await response.json();check(response.status===201,"client save");const id=body.orders[0].id;
  check(!db.prepare("SELECT id FROM ledger_entries WHERE reference_type='ORDER' AND reference_id=?").get(String(id)),"no draft charge");
- const purchased=r.purchaseService(id,{id:client.id,role:"CLIENT"}),snapshot=purchased.pricing_snapshot_json,charged=purchased.total_due;
+ const purchased=r.purchaseService(id,{id:client.id,role:"CLIENT"},true,r.safePricing(r.refreshDraft(id),"CLIENT").quote_key),snapshot=purchased.pricing_snapshot_json,charged=purchased.total_due;
  check(purchased.service_purchased_at&&purchased.workflow_status==="PENDING_PURCHASE","client purchase queue");
  r.purchaseService(id,{id:client.id,role:"CLIENT"});check(db.prepare("SELECT COUNT(*) n FROM ledger_entries WHERE reference_type='ORDER' AND reference_id=?").get(String(id)).n===0,"reserve does not charge before completion");
  check(db.prepare("SELECT COUNT(*) n FROM purchase_reserves WHERE order_id=? AND status='RESERVED'").get(id).n===1,"idempotent reserve");
@@ -55,7 +55,7 @@ async function main(){
  response=await post("preview",csvRows);body=await response.json();check(body.rows[0].pricing.eligible&&!body.rows[1].pricing.eligible,"import per-row eligibility");
  response=await post("save",csvRows);body=await response.json();check(response.status===201&&body.orders.length===2,"import invalid draft retained");
  const batchIds=body.orders.map(o=>o.id);
- response=await post('purchase',[],{order_ids:batchIds});body=await response.json();
+ response=await post('purchase',[],{order_ids:batchIds,expected_quotes:Object.fromEntries(body.orders.map(o=>[o.id,o.pricing.quote_key]))});body=await response.json();
  check(response.status===200&&body.succeeded===1&&body.failed===1,'partial batch purchases valid Order and reports invalid Order');
  check(body.results[0].status==='PURCHASED'&&body.results[1].status==='FAILED'&&body.results[1].error_type==='DATA','per Order purchase results and data error');
  check(db.prepare("SELECT COUNT(*) n FROM purchase_reserves WHERE order_id=? AND status='RESERVED'").get(batchIds[0]).n===1,'successful Order reserve retained');
@@ -77,7 +77,7 @@ async function main(){
  const beforeRoom=accountFinancials(client.id).available_to_buy_cents;
  const adjustment=Math.round(unitCents*2.5)-beforeRoom;
  db.prepare("INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount,customer) VALUES (?,'ADJUSTMENT',?,?,?)").run(client.id,adjustment>=0?'CREDIT':'DEBIT',Math.abs(adjustment)/100,client.display_name);
- response=await post('purchase',[],{order_ids:limitedIds});body=await response.json();
+ response=await post('purchase',[],{order_ids:limitedIds,expected_quotes:Object.fromEntries(limitedIds.map(id=>[id,r.safePricing(r.refreshDraft(id),"CLIENT").quote_key]))});body=await response.json();
  check(response.status===200&&body.succeeded===2&&body.failed===1,'limited Balance permits only first two purchases');
  check(body.results[2].error_type==='DATA'&&/Balance|credit/i.test(body.results[2].error),'insufficient Balance classified data error');
  check(db.prepare("SELECT COUNT(*) n FROM purchase_reserves WHERE order_id IN (?,?,?) AND status='RESERVED'").get(...limitedIds).n===2,'two successful reserves survive third failure');
@@ -90,7 +90,7 @@ async function main(){
  check(frozenQuote.pricing_version_id===JSON.parse(snapshot).pricing_version_id,"Ops quote uses purchased version after activation");
  response=await post("save",[{...manual,order_id:"INVALID-MISSING-ADDRESS",address1:""}]);body=await response.json();
  check(response.status===422&&!JSON.stringify(body).includes('"supplier"')&&!JSON.stringify(body).includes('"client_user_id"'),"validation error uses client-safe fields");
- const noBalance=clients[2];db.prepare("INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount) VALUES (?,'ADJUSTMENT_DEBIT','DEBIT',100000)").run(noBalance.id);const balanceDraft=db.prepare("SELECT * FROM orders WHERE client_user_id=? AND service_purchased_at IS NULL AND order_id NOT LIKE '%INVALID%' LIMIT 1").get(noBalance.id);throws(()=>r.purchaseService(balanceDraft.id,{id:noBalance.id,role:"CLIENT"}),/Balance/);
+ const noBalance=clients[2];db.prepare("INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount) VALUES (?,'ADJUSTMENT_DEBIT','DEBIT',100000)").run(noBalance.id);const balanceDraft=db.prepare("SELECT * FROM orders WHERE client_user_id=? AND service_purchased_at IS NULL AND order_id NOT LIKE '%INVALID%' LIMIT 1").get(noBalance.id);throws(()=>r.purchaseService(balanceDraft.id,{id:noBalance.id,role:"CLIENT"},true,r.safePricing(balanceDraft,"CLIENT").quote_key),/Balance/);
 
  const legacyId=Number(db.prepare("INSERT INTO orders(order_id,service,sub_service,supplier,workflow_status,sales_price,total_due,weight,carton_count,country) VALUES ('LEGACY-PAID','ePacket','Standard','DMD','PURCHASED',12.34,12.34,1,1,'US')").run().lastInsertRowid);
  check(r.refreshDraft(legacyId).sales_price===12.34&&r.safePricing(r.refreshDraft(legacyId),"CLIENT")===null,"legacy purchased order not repriced");
@@ -100,7 +100,7 @@ async function main(){
  check(db.prepare("SELECT COUNT(*) n FROM ledger_entries WHERE reference_type='ORDER' AND reference_id=?").get(String(apiId)).n===0,"API purchase reserves before completion");
  const jobsApi=require('../src/app/api/purchase-jobs/route.ts');
  response=await jobsApi.POST(req('POST',{action:'purchase',order_id:apiId},sales,'http://local/api/purchase-jobs'));body=await response.json();check(response.status===200&&!JSON.stringify(body).includes('"net"')&&!JSON.stringify(body).includes('"pricing_snapshot_json"'),'Sales purchase response hides Net');
- response=await jobsApi.POST(req('POST',{action:'purchase',order_id:apiId},clients[0],'http://local/api/purchase-jobs'));check(response.status===400,'Purchase jobs cannot bypass client scope');
+ response=await jobsApi.POST(req('POST',{action:'purchase',order_id:apiId},clients[0],'http://local/api/purchase-jobs'));body=await response.json();check(response.status===200&&body.failed===1&&body.results[0].status==='FAILED','Purchase jobs cannot bypass client scope');
  const invalidDraft=invalid[0];
  response=await post("save",[{...manual,id:invalidDraft.id,order_id:invalidDraft.order_id,weight:.5}]);check(response.status===400,"Client cannot edit another Client draft");
  response=await post("save",[{...manual,id:apiId,order_id:"EDIT-PAID"}]);check(response.status===400,"paid Client draft edit forbidden");

@@ -47,7 +47,7 @@ function seed(reset=false,preserveConfig=false){
  const order=upsertOrder({client_user_id:c.id,customer:c.display_name,sales:sales.display_name,order_id:code,service:"ePacket",sub_service:sub,supplier:"DMD",country:n%2?"United States of America":"U.S.",carton_count:1,weight:weights[n],length:n===4?80:n===3?60:10,width:5,height:3,item:"Cotton T-shirt",material:"Cotton",declared_value:15,recipient_name:["Emma Wilson","James Chen","Olivia Davis","Noah Kim","Ava Miller","Liam Brown"][n],address1:"120 Market Street",city,state,zip,phone:"20255501"+String(n).padStart(2,"0")});
  db.prepare("UPDATE orders SET sales_user_id=?,created_by_user_id=?,updated_by_user_id=? WHERE id=?").run(sales.id,admin.id,admin.id,order.id);
  if(n<4){
- purchaseService(order.id,{id:c.id,role:"CLIENT"});
+ purchaseService(order.id,{id:c.id,role:"CLIENT"},true,require("../src/lib/route-pricing.ts").safePricing(order,"CLIENT").quote_key);
  const carton=db.prepare("SELECT id FROM order_cartons WHERE order_id=?").get(order.id);
  addOrderTracking({orderId:order.id,cartonId:carton.id,tracking:"9400111899223"+String(order.id).padStart(9,"0"),labelUrl:"/templates/demo-usps-label.svg",actorId:admin.id});
  db.prepare("UPDATE orders SET workflow_status='PURCHASED',purchase_completed_at=? WHERE id=?").run(new Date().toISOString(),order.id);
