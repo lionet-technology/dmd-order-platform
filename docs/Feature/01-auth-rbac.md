@@ -42,7 +42,7 @@ Refund Management now has a dedicated authenticated API: Finance executes actual
 
 ## Bảo vệ dữ liệu trên server
 - Mọi JSON API qua financial-privacy.ts: lọc Net/GP-Net/margin, snapshot/coverage, audit ADMIN và JSON lồng dạng chuỗi. Ghi chú có timestamp được giữ.
-- Chỉ /api/costs, /api/reconciliation, /api/supplier-payables trả dữ liệu tài chính riêng cho BOD/FINANCE; /api/import chỉ cho họ nhập kind=costs và trả kết quả import.
+- `/api/costs` (GET/POST) và `/api/import` (kind=costs) cho Admin/Finance/BOD. `/api/costs` (PATCH) và `/api/costs/adjustments` cho Admin/Finance. Reconciliation và Supplier Payables vẫn giới hạn Finance/BOD. Finance/BOD chỉ được dùng kind=costs trên API import chung.
 - Chặn Excel placeholder lot.net_cost và placeholder ngoài allowlist, kể cả template cũ; không chỉ ẩn UI.
 - Màn hình tài chính riêng, không cấp lại quyền Orders/Control Tower cho Finance.
 - Password scrypt + salt; session cookie 7 ngày. Khóa/reset user giữ quy tắc hủy session hiện hành.

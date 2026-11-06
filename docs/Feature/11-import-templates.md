@@ -1,6 +1,6 @@
 ## Supplier Cost Excel — 06/11/2026
 
-Admin, Finance và BOD có thể nhập chứng từ Supplier Cost gốc. Dòng có Tracking trùng chuyển sang hàng chờ. Nhập lại cùng file nhận diện lại các dòng đã có theo khóa nguồn. Admin/Finance có template riêng [dmd-supplier-cost-adjustments.xlsx](../../public/templates/dmd-supplier-cost-adjustments.xlsx) gồm đúng ba cột **Tracking | Cost bổ sung | Lý do**. Giữ Tracking ở dạng text để bảo toàn số 0 đầu. Giới hạn file 10 MB, mỗi batch phụ phí 1–200 dòng. Dòng phụ phí đã có cùng Tracking, số cent và lý do chờ xác nhận riêng.
+Admin, Finance và BOD có thể nhập chứng từ Supplier Cost gốc. Dòng có Tracking trùng chứng từ ACTIVE chuyển sang hàng chờ. Nhập lại cùng file chứng từ gốc nhận diện dòng theo hash nội dung và số thứ tự lặp của dòng giống hệt. Phụ phí dùng khóa yêu cầu riêng cho retry kỹ thuật. Admin/Finance có template riêng [dmd-supplier-cost-adjustments.xlsx](../../public/templates/dmd-supplier-cost-adjustments.xlsx) gồm đúng ba cột **Tracking | Cost bổ sung | Lý do**. Giữ Tracking ở dạng text để bảo toàn số 0 đầu. Giới hạn file 10 MB, mỗi batch phụ phí 1–200 dòng. Dòng phụ phí đã có cùng Tracking, số cent và lý do chờ xác nhận riêng.
 
 # Import, mẫu mua & export
 

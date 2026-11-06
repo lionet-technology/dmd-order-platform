@@ -1,3 +1,8 @@
+## Supplier Cost — 06/11/2026
+- **Đã triển khai** ở `32423f0`: Pending khi Tracking trùng, giữ/nhận giá theo quyền, template phụ phí riêng, xác nhận phụ phí trùng, chống retry cùng key và audit. Xem [quy tắc và giới hạn](09-supplier-reconciliation.md).
+- **Còn mở**: UAT desktop/mobile hai luồng với chứng từ thật, rà soát dữ liệu trùng cũ vẫn ACTIVE, nghiệm thu cách giữ cả hai khoản thực tế khi Emergency dùng lại cùng Tracking, mapping component/FX và quy trình điều chỉnh Supplier Account khi chứng từ cũ đã hạch toán. Retry UI xuyên reload chưa giữ key cũ; nhập lại với key mới có thể thêm dòng chờ.
+- **DEFERRED**: phân loại phụ phí chi tiết, Supplier portal và tự phân bổ Cargo/Mid-mile.
+
 ## Owner continuation — 28/10/2026
 [Current linked-workflow audit](AUDIT-LINKED-WORKFLOWS-2026-10-28.md): lightweight manual MAX 20, linked financial oracle verification, stale quote/Supplier retry fixes and explicit Bank recovery. Old DB is TEST; no legacy migration requested for a fresh verified target. Unknown-funds allocation ledger and Supplier-period close/reopen model remain undefined; backup scheduling/monitoring and real-data acceptance remain deployment gates.
 
@@ -141,7 +146,8 @@ Claims/Refund API/UI and dedicated refund report are now implemented locally and
 - GĐ1 Cancellation đã có policy từng route, bỏ Admin approval, refund tổng đã charge gồm phụ phí, chống trùng và migration pending request.
 - Release còn cần policy thực tế từng Supplier, carrier cancellation workflow, migration/UAT; xem 06-cancellation và VERIFICATION-2026-10-15.
 
-## Delta 16/10/2026
+## Lịch sử tiến độ 16/10/2026
+Các mục dưới đây ghi lại mốc 16/10. Quyền hiện hành theo [RBAC](01-auth-rbac.md), phạm vi nội bộ Supplier theo [Supplier Account](19-supplier-accounts.md).
 - [Operational Flow](OPERATIONAL-FLOW.md) điều phối scope và acceptance mới. Cân đo kho là tùy chọn thủ công, không là gate bắt buộc GĐ1.
 - GĐ1 còn phải hoàn thiện auto surcharge cân hợp lệ, hold/reroute/return khi vượt service, quyền GP-Net BOD/finance và cost coverage ePacket tránh double count. Không coi các phần này đã hoàn thành chỉ vì có module/API.
 - FAILED tracking đã bổ sung local. Supplier portal/account và actual Mid-mile allocation thuộc giai đoạn sau, cần permission/cost allocation spec.
@@ -152,7 +158,7 @@ Claims/Refund API/UI and dedicated refund report are now implemented locally and
 ## Lượt tiếp tục 16/10 — D24
 - Sổ phải trả Supplier nội bộ (invoice/payment allocation/outstanding) nằm trong GĐ1 theo Owner, đã triển khai local và cần UAT. Portal/login vẫn DEFERRED.
 - Auto surcharge/invalid-service Hold có cho ePacket có bảng giá khóa; các route chưa có adapter, reroute/return còn thiếu.
-- Release blockers: Pricing D02 độc lập Net, quyền D22 BOD/finance, supplier coverage/FX, legacy/migration và UAT.
+- Release blockers ghi nhận ngày 16/10: Pricing D02 độc lập Net, tách quyền D22, supplier coverage/FX, legacy/migration và UAT. D22 đã có role Finance/BOD và giới hạn API cho các luồng nêu trong [RBAC](01-auth-rbac.md).
 
 ## Ưu tiên 19/10
 1. ePacket US pilot: giá Base/retail và cancellation policy thật được duyệt, carrier credentials/label/tracking, cost coverage/FX/chứng từ thật, migration/backup rehearsal và Owner acceptance.
