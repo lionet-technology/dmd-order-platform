@@ -1,3 +1,7 @@
+## Quyền xử lý Supplier Cost — 06/11/2026
+
+Admin và Finance có quyền xem/nhập chứng từ Supplier Cost, xử lý Tracking trùng, ghi/xác nhận Supplier Cost Adjustment và xem lịch sử trong hai màn hình chuyên biệt. Admin vẫn bị chặn khỏi báo cáo GP, API Reconciliation, Supplier Account và Supplier Payables. BOD giữ quyền xem/nhập chứng từ gốc và đối soát hiện có. Hai thao tác xử lý Tracking trùng và Supplier Cost Adjustment giới hạn ở Admin/Finance.
+
 ## Content egress continuation — 27/10/2026
 
 Sales/Client JSON projection now sanitizes catalogued Supplier names and explicitly labelled private financial values within prose, error bodies, string arrays and nested serialized JSON. Additional cost aliases and internal `source_code` are excluded. Private/inline Label or attachment URLs are withheld; ordinary safe links remain. Order notes retain safe text in the same paragraph, replacing confidential spans instead of dropping paragraphs. Admin Supplier operations and Finance/BOD endpoint permissions remain unchanged. Original audited rows are preserved. [Reproductions, exact coverage and remaining remote-document/content gates](AUDIT-EGRESS-BULK-2026-10-27.md).
@@ -30,7 +34,7 @@ Finance bulk confirmation/discrepancy is connected to real Payment ledger rows t
 Refund Management now has a dedicated authenticated API: Finance executes actual payouts, Admin alone decides/revises Claim obligations and recovers overpayment; BOD reports, Sales assigned-Client reads and Client own reads. Bank details are private to Finance/BOD. Legacy Payment permissions remain unchanged. See [Refund Management](14-refund-management.md) and [continuation evidence](VERIFICATION-REFUNDS-2026-10-20.md).
 
 ## Role và phạm vi
-- ADMIN: vận hành Orders/Tracking/kho/account/Client Balance; không xem Supplier Net/GP-Net, không gọi Supplier Costs, Reconciliation hoặc Supplier Payables.
+- ADMIN: vận hành Orders/Tracking/kho/account/Client Balance. Có quyền xem chứng từ và xử lý trong màn hình Supplier Cost. API Reconciliation, GP-Net và Supplier Payables dành cho BOD/Finance.
 - SALES, CLIENT, WAREHOUSE: giữ scope ownership/vận hành hiện có; không xem Supplier Net/GP-Net.
 - BOD và FINANCE: role riêng; chỉ đọc/ghi Supplier Costs, đối soát Lot, invoice/payment Supplier. Có import Excel **costs**. Không có quyền Admin khác, không sửa Client wallet hoặc import Orders/Balance/Tracking.
 - Root Owner cấp role BOD/FINANCE tường minh. Admin thường không được tạo, đổi role, reset password hoặc sửa tài khoản tài chính. Không tự nâng root thành BOD.

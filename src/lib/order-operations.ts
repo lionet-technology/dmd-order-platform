@@ -125,9 +125,9 @@ export function linkSupplierCostsForOrder(orderId:number){
   db.prepare(`UPDATE supplier_costs SET
     matched_order_id=?,
     matched_order_tracking_id=(SELECT ot.id FROM order_trackings ot WHERE ot.order_id=? AND ot.normalized_tracking=supplier_costs.normalized_tracking LIMIT 1)
-    WHERE normalized_tracking IN (SELECT normalized_tracking FROM order_trackings WHERE order_id=?)`).run(orderId,orderId,orderId);
+    WHERE import_status='ACTIVE' AND normalized_tracking IN (SELECT normalized_tracking FROM order_trackings WHERE order_id=?)`).run(orderId,orderId,orderId);
   const unaudited=db.prepare(`SELECT id,tracking,occurred_at,created_at,total_net_cost,extra_surcharge,import_tax,surcharge_type,note,supplier,service,sub_service
-    FROM supplier_costs WHERE matched_order_id=? AND audit_recorded_at IS NULL ORDER BY id`).all(orderId) as Array<Record<string,unknown>>;
+    FROM supplier_costs WHERE matched_order_id=? AND import_status='ACTIVE' AND audit_recorded_at IS NULL ORDER BY id`).all(orderId) as Array<Record<string,unknown>>;
   for(const cost of unaudited){
     logAdminEvent({orderId,eventType:"SUPPLIER_COST_MATCHED",summary:`Supplier Cost đã khớp Tracking ${String(cost.tracking)}.`,after:cost});
     db.prepare("UPDATE supplier_costs SET audit_recorded_at=CURRENT_TIMESTAMP WHERE id=?").run(cost.id);
@@ -156,7 +156,7 @@ export function recomputeOrderFinancials(orderId:number){
   if(order.pricing_snapshot_json || (order.pricing_eligibility_json && !order.service_purchased_at)){reconcileLots(orderId);return db.prepare("SELECT * FROM orders WHERE id=?").get(orderId);}
   if(order.client_user_id)syncStatements(Number(order.client_user_id));
   const totals=db.prepare(`SELECT COUNT(*) rows_count,COALESCE(SUM(total_net_cost),0) true_net_cost,COALESCE(SUM(extra_surcharge),0) extra_surcharge,COALESCE(SUM(import_tax),0) import_tax
-    FROM supplier_costs WHERE matched_order_id=?`).get(orderId) as {rows_count:number;true_net_cost:number;extra_surcharge:number;import_tax:number};
+    FROM supplier_costs WHERE matched_order_id=? AND import_status='ACTIVE'`).get(orderId) as {rows_count:number;true_net_cost:number;extra_surcharge:number;import_tax:number};
   const salesPrice=Number(order.sales_price||0); const baseSurcharge=Number(order.surcharge||0); const baseTax=Number(order.import_tax||0);
   const cancelled=order.workflow_status==="CANCELLED";
   const totalDue=cancelled?Number(order.total_due||0):money(salesPrice+baseSurcharge+baseTax);

@@ -26,8 +26,9 @@ response=await users.POST(req("/api/users",owner,{username:"owner.finance",displ
 for(const [url,module] of [["/api/costs","costs"],["/api/reconciliation","reconciliation"],["/api/supplier-payables","supplier-payables"]]){
  const api=require("../src/app/api/"+module+"/route.ts");
  for(const user of [undefined,ops,sales,client,warehouse,finance,bod]){
- response=await api.GET(req(url,user));check(response.status===(user?auth.isFinanceRole(user.role)?200:403:401),url+" role "+(user?.role||"anonymous"));
- if(!user||!auth.isFinanceRole(user.role)){response=await api.POST(req(url,user,{}));check(response.status===(user?403:401),url+" denied writes "+user?.role)}
+ const allowed=user&&(auth.isFinanceRole(user.role)||(module==="costs"&&user.role==="ADMIN"));
+ response=await api.GET(req(url,user));check(response.status===(user?allowed?200:403:401),url+" role "+(user?.role||"anonymous"));
+ if(!allowed){response=await api.POST(req(url,user,{}));check(response.status===(user?403:401),url+" denied writes "+user?.role)}
  }
 }
 for(const user of [finance,bod]){

@@ -11,7 +11,7 @@ type Row = unknown[];
 type ImportKind = "orders" | "sales_orders" | "costs" | "tracking_updates" | "balance";
 type SalesImportContext = { userId:number; displayName:string };
 
-async function workbookRows(buffer: Buffer): Promise<Row[][]> {
+export async function workbookRows(buffer: Buffer): Promise<Row[][]> {
   try {
     return (await readSheet(buffer, "Report")) as Row[][];
   } catch (error) {
@@ -238,11 +238,15 @@ function importCosts(rows: Row[][], batchId: number, actorId?:number) {
   const headers = headerMap(rows[h]);
   let imported = 0;
   const warnings: string[] = [];
+  const occurrences=new Map<string,number>();
 
   for (const row of rows.slice(h + 1)) {
     if (norm(row[0]).startsWith("rule:")) break;
     const tracking = text(pick(row, headers, "Tracking"));
     if (!tracking) continue;
+    const digest=createHash("sha256").update(JSON.stringify(row.map(value=>value instanceof Date?value.toISOString():String(value??"").trim()))).digest("hex");
+    const occurrence=(occurrences.get(digest)||0)+1;
+    occurrences.set(digest,occurrence);
     const result = addSupplierCost({
       supplier: text(pick(row, headers, "Supplier")),
       service: text(pick(row, headers, "Dịch vụ")),
@@ -262,11 +266,10 @@ function importCosts(rows: Row[][], batchId: number, actorId?:number) {
       import_tax: pick(row, headers, "Thuế NK") as string | number | null,
       note: text(pick(row, headers, "Note")),
       batch_id: batchId,
-      source_key:createHash("sha256").update(JSON.stringify(row.map(value=>value instanceof Date?value.toISOString():String(value??"").trim()))).digest("hex"),
-    });
+      source_key:occurrence===1?digest:digest+":"+occurrence,
+    },actorId);
     if (result.warning) warnings.push(`Tracking ${tracking}: ${result.warning}`);
     if(!result.duplicate){
-      db.prepare("UPDATE supplier_costs SET created_by_user_id=? WHERE id=?").run(actorId||null,result.id);
       const cost=db.prepare("SELECT matched_order_id,tracking,total_net_cost,extra_surcharge,import_tax,surcharge_type,note FROM supplier_costs WHERE id=?").get(result.id) as {matched_order_id:number|null;tracking:string;total_net_cost:number;extra_surcharge:number;import_tax:number;surcharge_type:string|null;note:string|null}|undefined;
       if(cost?.matched_order_id)logOrderEvent({orderId:cost.matched_order_id,eventType:"SUPPLIER_COST_IMPORTED",summary:`Cập nhật chi phí theo Tracking ${cost.tracking}: Net Cost True ${cost.total_net_cost} USD, phụ phí ${cost.extra_surcharge||0} USD, thuế NK ${cost.import_tax||0} USD.`,actorId,visibility:"ADMIN",source:"IMPORT",after:cost});
       imported++;
@@ -385,7 +388,7 @@ export async function importWorkbook(
   else result = importBalance(rows, batchId,options?.actorId);
   db.prepare("UPDATE import_batches SET imported_rows=?, warnings=? WHERE id=?").run(result.imported, JSON.stringify(result.warnings), batchId);
   return { batchId, ...result };
-  })();
+  }).immediate();
   if(kind==='balance'){const digest=createHash('sha256').update(buffer).digest('hex');return moneyCommand('balance-import:'+Number(options?.actorId||0),options?.requestKey||digest,{digest},()=>moneyCommand('balance-import-content:'+Number(options?.actorId||0),digest,{digest},execute));}
   return execute();
 }

@@ -1,3 +1,13 @@
+## Tracking trùng và Supplier Cost Adjustment — 06/11/2026
+
+- Một dòng Supplier Cost có Tracking chuẩn hóa trùng với giá đang áp dụng được lưu riêng ở trạng thái `PENDING`, kể cả khi Tracking chưa ghép Order hoặc được giữ lại qua Emergency reroute. Dòng chờ không tự ghép hoặc làm đổi Actual Cost, GP hay version đối soát. Retry cùng nguồn giữ cơ chế `source_key` và kiểm tra payload.
+- Admin/Finance xem giá hiện hành và chọn **Giữ giá cũ** hoặc **Nhận giá mới**. Giữ giá cũ đánh dấu dòng mới `DISCARDED`. Nhận giá mới đánh dấu các dòng cũ đang áp dụng của cùng Tracking `REPLACED` rồi tính lại Actual và GP theo giá mới. Các Tracking khác và điều chỉnh đã ghi trên Lot tiếp tục được tính. Chứng từ cũ, liên kết lịch sử, người xử lý, thời điểm và snapshot đối soát được lưu lại. Nếu người khác đã thay giá hiện hành, màn hình phải tải lại trước khi ra quyết định.
+- **Supplier Cost Adjustment** dùng Tracking, Cost bổ sung USD dương, Lý do. Tracking phải ghép được Lot đã có Actual Cost. Khoản ghi thành công được lưu append-only trên Lot, có Tracking, actor và lý do. GP Actual giảm theo phụ phí khi coverage đầy đủ. Lot quay lại Review và GP Finalized chờ đối soát lại. Giá bán, Client Charge, Statement và sổ Supplier giữ nguyên khi xử lý trùng hoặc ghi phụ phí.
+- So trùng theo Tracking chuẩn hóa, số cent và lý do sau khi chuẩn hóa khoảng trắng. Dòng trùng chờ xác nhận **Ghi thêm** hoặc **Bỏ qua**. Có thể ghi nhiều lần phát sinh thật bằng quyết định riêng. Batch 1–200 dòng có lỗi validation sẽ rollback. Các dòng hợp lệ trong batch được ghi hoặc đưa vào hàng chờ tùy kết quả so trùng.
+- `POST /api/costs` yêu cầu mã nguồn hoặc `request_key` để chống gửi lại. GET mặc định trả dòng đang áp dụng, lọc bằng `import_status` để xem hàng chờ/lịch sử. `PATCH /api/costs` nhận `id`, `decision` (`KEEP_OLD` hoặc `ACCEPT_NEW`) và `previous_ids` từ danh sách chờ. `POST /api/costs/adjustments` nhận JSON hoặc Excel với `request_key` bắt buộc. GET liệt kê dòng chờ hoặc lịch sử, PATCH xử lý `RECORD_AGAIN`/`SKIP`. Retry cùng key và payload trả kết quả đã lưu. Retry quyết định giống nhau không ghi lần hai.
+- Giá cũ đã hạch toán Supplier Account tiếp tục nằm trong sổ. Giá thay thế không được hạch toán lần nữa bằng Confirm Cost. Finance xử lý phần chênh qua chứng từ điều chỉnh sổ Supplier riêng.
+- Migration cộng thêm cột/bảng. Dữ liệu lịch sử đang áp dụng giữ trạng thái `ACTIVE`, gồm cả các dòng trùng cũ. Regression dùng `scripts/verify-supplier-cost-review.cjs` và `scripts/verify-emergency-hold.cjs`.
+
 ## Supplier source retry conflict — 28/10/2026
 A repeated supplier `source_key` is accepted only when its normalized source fields, amounts and direct Lot match. Reusing a key with changed cost/tax/surcharge/Supplier/route/date/evidence rejects atomically and requires an explicit signed cost adjustment; no silent successful acknowledgement of changed money. Batch IDs may differ on an exact reimport. A known exact source may replay with inactive enum values; new sources still require active values, and changed payloads still reject after deactivation. Late cost still reopens reconciliation review and never rewrites Client Charge or issued Statement.
 
@@ -22,7 +32,7 @@ Verified synthetic Debt/Reconciliation (66 assertions), Emergency (152), Supplie
 ## Continuation — 24/10/2026
 Reconciliation now stores `actual_gp` separately from approved/finalized GP. It uses the same commercial revenue and aggregate actual cost calculation (including old + new Supplier costs after Emergency Switch). Known loss remains visible during REVIEW without approving GP or charging the Client. Missing actual remains null. BOD/FINANCE can filter GP Orders by `loss_only=1` and `emergency_only=1`, independently of Lot filters, through UI/API. These filters do not rewrite history or Ledger. New field is removed from operational projections. Existing rows acquire values when normally reconciled; no historic backfill was run. Supplier Management, exports, payables integration and complete BOD/Add-on scope remain pending.
 
-## Quyền hiện hành 18/10/2026
+## Quyền trước cập nhật 06/11/2026 (mốc 18/10/2026)
 API Costs/Reconciliation và nhập Excel kind=costs chỉ BOD/FINANCE; Admin vận hành bị chặn. BOD/FINANCE không được import Orders/Balance/Tracking. Các hướng dẫn “Admin” phía dưới là thuật ngữ lịch sử cho người xử lý đối soát; quyền tài chính hiện hành xem feature 01. Không thay đổi scope coverage/FX đang pending.
 
 ## Chốt nghiệp vụ 14/10/2026 — backend đã cập nhật
