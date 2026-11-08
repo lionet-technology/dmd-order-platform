@@ -9,12 +9,14 @@ export function RoutePricingPanel({routeId}:{routeId:number}){
  useEffect(()=>{void load().catch(e=>setMsg(e.message))},[routeId]); // eslint-disable-line react-hooks/exhaustive-deps
  async function post(body:object|FormData){
  setBusy(true);setMsg("");try{const r=await fetch("/api/route-pricing",{method:"POST",...(body instanceof FormData?{body}:{headers:{"content-type":"application/json"},body:JSON.stringify({route_id:routeId,...body})})}),d=await r.json();if(!r.ok)throw Error(d.error);await load();if(d.version_number)setVersion(String(d.id));setMsg(d.version_number?"Đã tạo version "+d.version_number+"; chọn Activate để áp dụng.":"Đã lưu cấu hình có thời điểm hiệu lực.")}catch(e){setMsg((e as Error).message)}finally{setBusy(false)}}
- if(!data&&!msg)return <div className="panel loadingState">Đang tải cấu hình giá…</div>;
+ if(!data)return msg
+   ? <div className="settingsNotice" role="alert">{msg}</div>
+   : <div className="panel loadingState">Đang tải cấu hình giá…</div>;
  return <section className="routePricingPanel">
    <div className="settingsSectionHead"><div><span className="eyebrow">PRICING</span><h3>Bảng giá & phụ phí</h3><p>Nhập Base Rate do Owner duyệt; Retail và giá bán độc lập với Net Cost.</p></div><span className={data?.active?"status goodStatus":"status neutralStatus"}>{data?.active?"Đang áp dụng":"Chưa kích hoạt"}</span></div>
    <div className="settingsSection">
      <div className="settingsSectionTitle"><h3>Giá dịch vụ · USD</h3><p>CSV/XLSX gồm weight,net,base_rate. Chỉ kích hoạt bảng có Base Rate được Owner duyệt.</p></div>
-     <label className="settingToggle"><input type="checkbox" checked={!!data?.client_self_purchase} disabled={busy||!data} onChange={e=>void post({action:"self-purchase",enabled:e.target.checked})}/><span><b>Client tự đặt mua</b><small>Cho phép Client đặt mua dịch vụ bằng Balance.</small></span></label>
+     <label className="settingToggle"><input type="checkbox" checked={!!data?.client_self_purchase} disabled={busy} onChange={e=>void post({action:"self-purchase",enabled:e.target.checked})}/><span><b>Client tự đặt mua</b><small>Cho phép Client đặt mua dịch vụ bằng Balance.</small></span></label>
      <div className="settingsGrid">
        <label className="field"><span>Markup trên Base Rate (%)</span><input type="number" value={retail} onChange={e=>setRetail(e.target.value)}/></label>
        <label className="field"><span>Phiên bản bảng Base Rate</span><select value={version} onChange={e=>setVersion(e.target.value)}><option value="">Chọn version</option>{data?.versions.map(v=><option key={v.id} value={v.id}>v{v.version_number} · {v.created_at}</option>)}</select></label>

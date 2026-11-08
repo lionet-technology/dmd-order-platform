@@ -20,6 +20,7 @@ UPS/chuyên tuyến cho Client lên Order trước khi có bảng giá tự đ�
 ## ePacket Standard/Eco DMD
 - Version mới có weight,net,base_rate. Base Rate nhập độc lập; Net phục vụ cost.
 - Retail = Base Rate × (1 + markup%); Sales Price = Retail × (1 − discount%). Đổi Net không đổi Base/Retail/Sales Price.
+- Nếu API từ chối quyền hoặc không tải được cấu hình giá, tab Giá & phụ phí hiển thị lỗi tại chỗ và ẩn các điều khiển. API đọc và sửa Pricing (kể cả công tắc Client tự đặt mua) yêu cầu Root Owner.
 - Upload CSV/XLSX cần Root Owner, xác nhận bảng đã duyệt; Activate chỉ chấp nhận Base Rate dương. Không chấp nhận Base markup cũ.
 - Purchase mới bị chặn nếu active version cũ thiếu Base Rate. Không tự backfill giá từ Net.
 - Snapshot mua bất biến. Công thức Net→Base/Retail cũ chỉ giữ cho snapshot lịch sử/reweigh, không dùng để chấp nhận Purchase mới.
