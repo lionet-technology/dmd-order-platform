@@ -5,6 +5,8 @@
 ## Trạng thái hiện hành
 Code baseline `2302d06` có đăng nhập và phân quyền server-side, Client service scope, giá ePacket USD/Base Rate độc lập, UPS/custom manual, reserve/charge và ledger/Statement/Debt/Supplier workflows. Không còn dùng role toggle giả lập.
 
+Backend chuẩn bị V1 đã có cấu hình VNĐ bất biến, sequential pricing Review/Publish, UPS account Review/Publish và globals sau xác nhận; [bằng chứng 49 suite](artifacts/service-v1-2026-11-14/VERIFICATION.md). Các phần này chưa nối vào luồng mua/ledger vận hành.
+
 Service Architecture V1 đang triển khai; ePacket mục tiêu VNĐ và Net→Base→Retail tuần tự. Không coi luồng USD hiện hành là V1 đã hoàn tất. Chưa chứng nhận production.
 
 ## Tài liệu chuẩn

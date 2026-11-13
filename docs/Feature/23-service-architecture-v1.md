@@ -45,5 +45,6 @@ Account UPS staged save/review/publish đã được bổ sung vào Feature 26; 
 [Pricing staged backend](25-service-v1-pricing.md) và [UPS core/globals](26-ups-v1-core.md) đã có source/tests; chưa operational integration, currency cutover, rate acceptance, Fulfillment riêng hay Client Add-on. Giữ các gap tương ứng ở bảng trên.
 
 ## Verification
+[Final evidence at source 365e40e](../../artifacts/service-v1-2026-11-14/VERIFICATION.md): 49 domain suites, full lint, typecheck and isolated build PASS. Backend preparation only; no operational VNĐ/cutover or production acceptance.
 Source review is not browser/UAT/production acceptance. Baseline domain run and subsequent implementation evidence: artifacts/service-v1-2026-11-14/. Each report must name source commit, runtime and exact limits; do not infer all suites pass from partial output.
 Historical audit preserved at [archive](archive/FEATURE-23-AUDIT-2026-11-13.md).
