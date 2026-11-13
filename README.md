@@ -1,56 +1,24 @@
-# DMD Finance Ops
+# DMD Order Platform
 
-MVP platform to replace the linked DMD Excel workflow with one canonical data-entry system.
+Ứng dụng Next.js/SQLite quản lý Order, route/pricing, Purchase, kho/Manifest và Finance.
 
-## What it does
+## Trạng thái hiện hành
+Code baseline `2302d06` có đăng nhập và phân quyền server-side, Client service scope, giá ePacket USD/Base Rate độc lập, UPS/custom manual, reserve/charge và ledger/Statement/Debt/Supplier workflows. Không còn dùng role toggle giả lập.
 
-- Separate Admin / Sales login accounts with server-side permissions.
-- First-run Admin setup; Admin can create, lock/unlock and reset Sales/Admin accounts.
-- Sales sees and edits only orders assigned to its own account.
-- Manual Order entry for Sales/Admin.
-- Sales can bulk import its own Orders with a restricted Sales template.
-- Admin can bulk import Orders / Supplier Costs / Balance.
-- Both roles can download the correct .xlsx template directly from the import UI.
-- Manual Supplier Cost entry linked by Tracking.
-- Manual Balance ledger entry for payment/refund/service/error/adjustment.
-- Edit Order directly from the Orders table.
-- Keeps Excel import as a bulk/migration path.
-- Manual entry and Excel import use the same business logic.
-- Auto-links Order ↔ Supplier Cost ↔ Reconciliation ↔ Balance Ledger.
-- Supplier Cost can arrive before Order; it auto-links when the matching Tracking appears later.
-- Auto-reconciles Estimated Net Cost vs True Net Cost.
-- Admin/Sales views read from the same canonical Order record.
-- Auto pricing / chargeable weight / surcharge rules from the current DMD Report scope.
+Service Architecture V1 đang triển khai; ePacket mục tiêu VNĐ và Net→Base→Retail tuần tự. Không coi luồng USD hiện hành là V1 đã hoàn tất. Chưa chứng nhận production.
 
-## Run
+## Tài liệu chuẩn
+- [Feature Index](docs/Feature/README.md)
+- [V1 Approved Decisions](docs/Feature/SERVICE-V1-APPROVED-DECISIONS.md)
+- [V1 Specification](docs/Feature/DMD_Order_Platform_Service_Architecture_V1_Specification.md)
+- [V1 code gaps và acceptance](docs/Feature/23-service-architecture-v1.md)
 
-npm install
-npm run dev
+Tài liệu nằm tại `/Users/quan/Desktop/report`. Trạng thái lịch sử index được lưu riêng trong archive.
 
-Open http://localhost:3000.
+## Development
+`npm install`, `npm run dev`; mở http://localhost:3000.
+SQLite mặc định: `data/dmd-finance-ops.db`; target tùy chọn qua `DMD_DB_PATH`. Xác minh target trước mọi reset/migration; không chạy lên production. Dữ liệu demo có thể reset sau xác minh.
 
-SQLite is created automatically at data/dmd-finance-ops.db.
+Kiểm chứng: `npm test`, `npm run typecheck`, `npm run lint`, `npm run build`. Node và native better-sqlite3 phải cùng kiến trúc/ABI. Tests phải dùng DB tạm, không kế thừa DB vận hành. Không cần Jenkins.
 
-## Current workflow
-
-1. Sales creates an Order draft with Order ID.
-2. Admin edits the same record and adds Supplier / Tracking / Net Cost / Label.
-3. Supplier Cost is entered manually or imported and matched by Tracking.
-4. Reconciliation changes to PASS or REVIEW automatically.
-5. Supplemental surcharge/import tax update Total Due.
-6. ORDER_CHARGE in the Balance ledger is updated automatically.
-7. Payment/refund/service/error entries can be added manually or imported.
-
-## MVP boundaries
-
-- No authentication yet; Admin/Sales toggle is a view simulation.
-- No direct write to production DMD.
-- No secrets or production customer data are included.
-- Balance manual form supports Customer/User, but the old Excel Balance template still does not have that key.
-- Multi-carton merge is intentionally conservative: if one Order ID has multiple pending drafts, the system refuses automatic merge.
-
-For current business decisions, see [docs/Feature/README.md](docs/Feature/README.md) and [docs/Feature/DECISIONS-2026-10-13.md](docs/Feature/DECISIONS-2026-10-13.md). Earlier MVP rules are archived under `docs/legacy-logic/` and are not authoritative.
-
-## UI
-
-The MVP now uses a role-aware dashboard shell with sidebar navigation, separate operational modules, modal data-entry forms, backend search and server-side pagination for large data tables. Quick Order entry is a full-screen spreadsheet with paste, row cloning and resizable columns. Admin can manage shared master-data enums (Service, Sub-Service, Supplier, Country) through add/edit/activate/deactivate workflows; enum values are never deleted.
+Giá Net thật chỉ nhập từ Excel chuẩn của Owner; không suy giá từ ảnh/PDF hay activate fixture.
