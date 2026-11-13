@@ -24,7 +24,7 @@ export function upsLotBillable(cartons:Array<{weight_kg:number;length_cm:number;
  const carton_total_kg=safe(rows.reduce((sum,c)=>sum+c.billable_kg,0));
  return {cartons:rows,carton_total_kg,billable_kg:up(carton_total_kg,carton_total_kg<=policy.lot_threshold_kg?policy.lot_step_at_or_below_kg:policy.lot_step_above_kg)};
 }
-function validateRates(rates:UpsRate[]) {
+export function validateUpsRates(rates:UpsRate[]) {
  if(!Array.isArray(rates)||!rates.length)throw Error("Thiếu UPS rate card.");
  for(const r of rates) {
   if(typeof r.zone!=="string"||!r.zone.trim()||typeof r.min_inclusive!=="boolean"||typeof r.max_inclusive!=="boolean")throw Error("Cần zone và cận Min/Max rõ ràng.");
@@ -41,7 +41,7 @@ function validateRates(rates:UpsRate[]) {
 /** Unrounded calculation only. No rate data, destination mapping or discount defaults. */
 export function upsAccountNet(input:UpsAccountPricing,weightKg:number,variables:UpsGlobals) {
  if(!["VTT","SDS","JD"].includes(input.account))throw Error("UPS account chưa được hỗ trợ.");
- positive(weightKg,"Billable kg");validateRates(input.rates);
+ positive(weightKg,"Billable kg");validateUpsRates(input.rates);
  if(typeof input.zone!=="string"||!input.zone.trim())throw Error("Thiếu account zone.");
  const rate=input.rates.find(r=>r.zone===input.zone&&(weightKg>r.min_kg||(weightKg===r.min_kg&&r.min_inclusive))&&(weightKg<r.max_kg||(weightKg===r.max_kg&&r.max_inclusive)));
  if(!rate)throw Error("Thiếu rate phù hợp cho account/zone/kg.");

@@ -29,6 +29,14 @@ Service+Sub-Service+Supplier; Client enabled-service scope/discount; một Order
 - File /mnt/data không có trong workspace này; đã đọc bản sources/DMD_Report_Operational_Flow_Business_Rules_2026-10-16.md, read-only. Chưa chứng minh byte-identical với /mnt/data.
 - Specification giữ nội dung tham khảo chi tiết và OPEN; tài liệu này ưu tiên các xác nhận mới trên.
 
+## Nguồn bổ sung đã rà soát 14/11
+Danh sách ChatGPT history (50 chat gần nhất) đã được duyệt để tìm nguồn liên quan:
+- Định giá USPS UPS, 6ad875c6-3478-83ec-89d3-a82c0e614373: 5 lượt, hasMore=false. User b70c09fe-d13d-4528-84fe-4e87939a0b1e yêu cầu giải thích phụ phí thường gặp cho khách và giữ phương án phụ phí bổ sung sau vận chuyển cho ngoại lệ. Các giải pháp USPS Matrix/API/residential cache của assistant là PROPOSED; không có phê duyệt bảng giá DMD.
+- Giải thích giá USPS, 6adce8a0-e5d4-83ec-9c2d-f8ef11b109b3: 2 lượt. Hỏi về oz/lb; không cung cấp rate V1, không nâng giải thích assistant thành rule DMD.
+- Viết công thức tính giá, 6acdd0bb-7328-83ec-9b4d-8ad7d215d655: 2 lượt. User yêu cầu sheet lookup lên tier cân gần nhất trong bảng cụ thể; ảnh không được dùng suy số và không áp tier đó sang UPS quốc tế/ePacket V1.
+
+Không nguồn bổ sung nào khôi phục đủ catalogue Fulfillment, rounding tiền VNĐ hay mapping Shipment Surcharge/Lot. Không có cursor đọc trang cũ ở các chat này.
+
 ## OPEN / PROPOSED
 OPEN: giá/zone thực VTT/SDS/JD, cận Min/Max inclusive/exclusive, missing/overlap rates, tie-break, mapping shipment→Lot, scope surcharge và rounding tiền; ePacket ngưỡng oversize/non-cont cuối cùng bằng VNĐ và supplier-inclusive components; catalogue/phí Fulfillment riêng, Sheet/Zalo/PDF/Manifest automation chi tiết.
 PROPOSED: mọi mức AHC/LPS/OMS từ hội thoại UPS US; không import/activate. Tỷ giá 25.910 chỉ được audit cũ ghi nhận, chưa đọc được user turn gốc; không dùng nó tạo giá thật hoặc chạy migration ngầm.

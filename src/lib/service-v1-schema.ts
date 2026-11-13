@@ -65,6 +65,29 @@ export function installServiceV1Schema(db: Database.Database) {
  CREATE TRIGGER IF NOT EXISTS v1_ups_confirm_no_update BEFORE UPDATE ON service_v1_ups_global_confirmations BEGIN SELECT RAISE(ABORT,'Immutable UPS confirmation'); END;
  CREATE TRIGGER IF NOT EXISTS v1_ups_confirm_no_delete BEFORE DELETE ON service_v1_ups_global_confirmations BEGIN SELECT RAISE(ABORT,'Immutable UPS confirmation'); END;
 
+
+ CREATE TABLE IF NOT EXISTS service_v1_ups_account_versions(
+  id INTEGER PRIMARY KEY,route_id INTEGER NOT NULL REFERENCES service_route_configs(id),
+  config_id INTEGER NOT NULL REFERENCES service_v1_config_versions(id),
+  account TEXT NOT NULL CHECK(account IN ('VTT','SDS','JD')),
+  source_excel TEXT NOT NULL,body_json TEXT NOT NULL,
+  actor_id INTEGER NOT NULL REFERENCES users(id),
+  request_key TEXT NOT NULL UNIQUE,request_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+ );
+ CREATE TABLE IF NOT EXISTS service_v1_ups_account_events(
+  id INTEGER PRIMARY KEY,version_id INTEGER NOT NULL REFERENCES service_v1_ups_account_versions(id),
+  action TEXT NOT NULL CHECK(action IN ('REVIEW','PUBLISH')),
+  expected_previous_id INTEGER,actor_id INTEGER NOT NULL REFERENCES users(id),
+  request_key TEXT NOT NULL UNIQUE,request_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(version_id,action)
+ );
+ CREATE TRIGGER IF NOT EXISTS v1_ups_account_no_update BEFORE UPDATE ON service_v1_ups_account_versions BEGIN SELECT RAISE(ABORT,'Immutable UPS account'); END;
+ CREATE TRIGGER IF NOT EXISTS v1_ups_account_no_delete BEFORE DELETE ON service_v1_ups_account_versions BEGIN SELECT RAISE(ABORT,'Immutable UPS account'); END;
+ CREATE TRIGGER IF NOT EXISTS v1_ups_account_event_no_update BEFORE UPDATE ON service_v1_ups_account_events BEGIN SELECT RAISE(ABORT,'Immutable UPS account event'); END;
+ CREATE TRIGGER IF NOT EXISTS v1_ups_account_event_no_delete BEFORE DELETE ON service_v1_ups_account_events BEGIN SELECT RAISE(ABORT,'Immutable UPS account event'); END;
+
  CREATE TRIGGER IF NOT EXISTS service_v1_config_no_update BEFORE UPDATE ON service_v1_config_versions
  BEGIN SELECT RAISE(ABORT,'Immutable V1 configuration'); END;
  CREATE TRIGGER IF NOT EXISTS service_v1_config_no_delete BEFORE DELETE ON service_v1_config_versions

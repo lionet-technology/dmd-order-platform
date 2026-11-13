@@ -40,6 +40,8 @@ OPEN rules: Min/Max boundaries, rate overlap/tie-break; shipment/Lot charge scop
 ## CURRENT increment 14/11/2026
 [Configuration backend](24-service-v1-configuration.md): immutable staged VND config, Owner API, stale/retry/rollback checks; operational activation and UI still missing.
 
+Account UPS staged save/review/publish đã được bổ sung vào Feature 26; preview dùng published account + confirmed globals, chặn bỏ sót account và không promote pending account khi confirm global. Chưa có workbook parser/destination zone resolver/operational integration.
+
 [Pricing staged backend](25-service-v1-pricing.md) và [UPS core/globals](26-ups-v1-core.md) đã có source/tests; chưa operational integration, currency cutover, rate acceptance, Fulfillment riêng hay Client Add-on. Giữ các gap tương ứng ở bảng trên.
 
 ## Verification
