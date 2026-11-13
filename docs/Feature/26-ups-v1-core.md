@@ -6,7 +6,7 @@ ups-v1-calculator.ts supports VTT/SDS/JD, explicit account zone, Min/Max inclusi
 
 Per-kg only multiplies transportation. Net formula follows the Owner source in the V1 specification. Inputs explicitly state discounts and global variables; no defaults for missing values. Results are unrounded previews and do not post money.
 
-Lot billable calculator rounds actual/dimensional per carton, takes max each, sums carton billable then rounds Lot. Divisor, carton step, threshold and Lot steps are mandatory policy inputs. Test values 5000/0.5/20/1 are **synthetic test policy**, not activated DMD requirements. Final Sub-Service mapping, shipment surcharge scope, Broker destination scope and money rounding remain OPEN.
+Lot billable calculator rounds actual/dimensional per carton, takes max each, sums carton billable then rounds Lot. Divisor, carton step, threshold and Lot steps are mandatory policy inputs. Test values 5000/0.5/20/1 are **synthetic test policy**, not activated DMD requirements. Final Sub-Service weight-rounding mapping and Broker destination scope remain OPEN. Owner confirmed no money rounding and one Shipment Surcharge per Lot on 14/11.
 
 UPS globals API /api/service-v1/ups-globals is root Owner only, matching restricted pricing access until V1 RBAC is decided. SAVE stores immutable draft; CONFIRM requires confirmed=true and expected previous confirmed version. Fresh staged calculations use only the newest confirmed version. Pending globals do not apply. Request fingerprints support replay; stale confirmations reject; actor/time are retained. Confirmation cannot publish Net/account/selling documents or reprice purchased snapshots. This is staged auto-apply, not operational UPS auto-apply.
 
@@ -20,3 +20,6 @@ Preview calculates every published account supplied with an explicit verified zo
 Test verify-ups-v1-accounts.cjs covers draft/review/publish, retries, stale publish, global/account isolation, all-account coverage, source validation, SQL immutability, Hold and scoped access.
 
 Test: verify-ups-v1-core.cjs — independent formula oracle, FIXED/PER_KG and boundary tests, overlap/gap rejection, rank reversal after surcharge, per-carton rounding, global save/confirm/retry/stale/permissions and zero ledger effects.
+
+## Lot / Order rule — CONFIRMED and CURRENT 14/11
+Each Lot is one UPS purchase shipment. upsAccountNet is a single-Lot calculation; upsOrderNet sums separately rated Lots, applying Shipment Surcharge once for each Lot, without multiplying by carton count or charging it once for the whole DMD Order. It rejects duplicate/blank Lot IDs to prevent accidental double counting. Fractional VNĐ is retained; weight rounding remains separate. This pure aggregation is not yet operational Purchase integration.

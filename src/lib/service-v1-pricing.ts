@@ -51,7 +51,7 @@ export function createServiceV1Proposal(input:{route_id:number;config_id:number;
   const config=routeReady(input.route_id,actorId),net=publishedServiceV1Price(input.route_id,"NET",actorId);
   if(config.id!==input.config_id||!net||net.id!==input.net_id||net.config_id!==config.id)throw Error("Net/cấu hình published đã thay đổi hoặc chưa có.");
   const body={currency:"VND",net_markup:input.net_markup,base_markup:input.base_markup,
-   // Unrounded preview only: currency posting/rounding remains a separate integration gate.
+   // Owner 14/11: keep fractional VND without monetary rounding; operational posting is still gated.
    rows:(JSON.parse(net.body_json).rows as NetRow[]).map(row=>{
     const base_vnd=row.net_vnd*(1+input.net_markup),retail_vnd=base_vnd*(1+input.base_markup);
     if(!Number.isFinite(base_vnd)||!Number.isFinite(retail_vnd)||retail_vnd>Number.MAX_SAFE_INTEGER)throw Error("Giá vượt độ chính xác tính toán.");
@@ -84,7 +84,7 @@ export function serviceV1PriceEvent(input:{document_id:number;action:"REVIEW"|"P
 }
 export function serviceV1PriceWorkspace(routeId:number,actorId:number) {
  assertServiceV1Owner(actorId);
- return {staged:true,operational_cutover:false,rounding:"UNROUNDED_PREVIEW",net:publishedServiceV1Price(routeId,"NET",actorId)??null,selling:publishedServiceV1Price(routeId,"PROPOSAL",actorId)??null,
+ return {staged:true,operational_cutover:false,rounding:"NONE",net:publishedServiceV1Price(routeId,"NET",actorId)??null,selling:publishedServiceV1Price(routeId,"PROPOSAL",actorId)??null,
  documents:db.prepare("SELECT * FROM service_v1_price_documents WHERE route_id=? ORDER BY id DESC").all(routeId),
  events:db.prepare("SELECT e.* FROM service_v1_price_events e JOIN service_v1_price_documents d ON d.id=e.document_id WHERE d.route_id=? ORDER BY e.id DESC").all(routeId)};
 }

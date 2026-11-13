@@ -15,7 +15,7 @@ Nguồn: yêu cầu Owner phiên này; chat 6ad35267-1ad8-83ec-a691-9d80c58281df
 | YunExpress | Route/market/supplier riêng | Không fallback bảng ePacket; chỉ bật adapter có đủ cấu hình |
 | UPS | Account VTT/SDS/JD; Supplier route tách khỏi carrier account | Full Net rồi tối ưu; nhiều Carton/Lot; round theo Sub-Service |
 | Chuyên tuyến | Case-by-case, Supplier bắt buộc | Cấu hình/manual theo rule được duyệt |
-| Fulfillment | Module riêng trong kế hoạch | Catalogue/đơn vị/phí và automation riêng OPEN |
+| Fulfillment | Quy trình xử lý Order/bàn giao Supplier | Purchase → Tracking/Label → Manifest/bàn giao, dùng luồng vận hành hiện có |
 | Client Add-on | Phạm vi Client/Add-on được cấp | Revenue khóa, Cost/Supplier/Note sửa có history |
 
 Một Order một địa chỉ, nhiều Lot/Carton; n Lot cần n tracking tính phí/cost, không thêm xác nhận tracking đại diện. Không đồng nhất Supplier DMD/SGB/SBay với account VTT/SDS/JD.
@@ -23,7 +23,7 @@ Một Order một địa chỉ, nhiều Lot/Carton; n Lot cần n tracking tính
 ## 3. Service Configuration
 CONFIRMED: danh tính Service+Sub-Service+Supplier; Client chỉ thấy dịch vụ được cấp và discount riêng. Lifecycle/Hold, route market/limits, tracking/label, cancellation và templates phải nhất quán. Cân đo thủ công tùy chọn; giữ declared/measured riêng. Hàng khó phải kiểm Supplier theo route. Không kích hoạt giá mẫu hay đổi Supplier của Order lịch sử.
 CURRENT baseline 2302d06: service_route_configs, route_lifecycle, route variables, carton policy, cancellation/segmentation, client_service_settings đã tồn tại. Policy adapter hiện hardcoded, chưa có unified V1 configuration.
-OPEN: capability/market tables thực tế, scope catalogue Fulfillment, ma trận quyền cấu hình chi tiết.
+OPEN: capability/market tables thực tế, ma trận quyền cấu hình chi tiết.
 
 ## 4. Pricing Markup, Review & Publish
 CONFIRMED:
@@ -34,7 +34,8 @@ Sales = Retail × (1 − ClientDiscount)
 ```
 Tỷ lệ dạng thập phân. Ví dụ minh họa 100.000×1,10×1,20×0,95 = 125.400 VNĐ; không phải bảng giá.
 Hai markup đều Review & Publish; Net/Account changes Review & Publish. Pending không tham gia giá bán. Giữ Published V1, tính Proposal V2, Admin publish. Tách version Net hiện hành khỏi selling published. Snapshot đã mua bất biến; Actual Supplier Cost không sửa giá khách.
-OPEN: rounding tiền từng bước; scope từng component/discount; publish nguyên khối hay một phần; effective-time/rollback/tie-break proposal. Implementation phải lưu actor/version/thời gian, kiểm stale/concurrent publish và retry.
+CONFIRMED — Owner 14/11: không làm tròn tiền VNĐ, giữ phần thập phân qua Base/Retail/Sales và tổng cuối; không ép về đồng hoặc cents. Không thay rounding cân UPS.
+OPEN: scope từng component/discount; publish nguyên khối hay một phần; effective-time/rollback/tie-break proposal. Implementation phải lưu actor/version/thời gian, kiểm stale/concurrent publish và retry.
 CURRENT: route-pricing.ts yêu cầu Base Rate độc lập, cấm base_markup khác 0, currency USD; chưa V1. Không sửa đơn USD thành VNĐ bằng đổi nhãn.
 
 ## 5. UPS
@@ -53,7 +54,8 @@ NetCost = (1+Fuel) × (1+VAT)
           + USBroker×Td + CustomsPerKg×W
 ```
 Tỷ lệ dạng thập phân; Rate/shipment hoặc Rate/kg; W kg; ShipmentSurcharge VNĐ/shipment; WeightSurcharge và Customs VNĐ/kg. Không nhân W vào toàn NetCost. Nếu rate đã discount thì không discount lần hai.
-OPEN: shipment=Lot hay Order khi thu ShipmentSurcharge; phạm vi US Broker/Customs theo destination; component inclusive/exclusive. Không tự hardcode Broker 3%/Customs 10.000 từ ví dụ trợ lý.
+CONFIRMED — Owner 14/11: một UPS shipment là một Lot; Shipment Surcharge áp một lần mỗi Lot. Order DMD là đơn khách gửi tới một địa chỉ, nhiều Lot thì tính riêng từng Lot rồi cộng tổng, không thu một lần cho cả Order hoặc theo số carton.
+OPEN: phạm vi US Broker/Customs theo destination; component inclusive/exclusive. Không tự hardcode Broker 3%/Customs 10.000 từ ví dụ trợ lý.
 
 ### Rounding
 CONFIRMED: từng carton trước, cộng Lot, policy theo Sub-Service.
@@ -69,10 +71,11 @@ CONFIRMED: code VNĐ; Standard/Eco và EU dùng route riêng; oversize/non-cont 
 CURRENT: epacket-pricing.ts adapter DMD US USD, 1 carton, ≤10kg; tier/volumetric/oversize/non-cont hiện hành là code cũ, không phải V1 VNĐ.
 OPEN: Excel Net VNĐ chuẩn, Base/markup inputs, cuối cùng ngưỡng oversize, địa điểm non-cont được Supplier phục vụ và phí chính xác, provisional mid-mile components. Danh sách USPS/15 USD trong câu trả lời trợ lý không thay bảng DMD.
 
-## 7. Fulfillment và kho
+## 7. Fulfillment — quy trình xử lý Order và bàn giao
+CONFIRMED — Owner 14/11: Fulfillment ở đây là quy trình Order → mua dịch vụ Supplier → Tracking/Label → Manifest/bàn giao. Không yêu cầu catalogue dịch vụ kho tính phí riêng để hoàn thành phạm vi này.
 CONFIRMED từ Operational Flow: reserve khi mua, charge một lần tracking+label; lỗi mua release/rollback. Hold, route active, Client scope, credit và overdue Debt vẫn chặn; Client quote consent và snapshot bất biến.
 Kho Receive→optional measure→full-route classification→Carton/Bag Close→Manifest→Outbound. ePacket Standard/Eco riêng; EU/Yun→SGB, UPS→SBay theo route. Trội cân trong giới hạn tự phụ phí có chống trùng; vượt giới hạn Hold. Supplier cost per Lot; Actual>Estimated luôn Review; đủ mọi Lot mới Finalized.
-OPEN: catalogue/phí Fulfillment riêng, Sheet/Zalo/PDF automation chính xác. Không coi kho hiện có đã hoàn tất module Fulfillment riêng. Cargo/ETD engine và mid-mile allocation/usage services vẫn deferred theo nguồn chưa bị thay thế.
+OPEN: chi tiết tích hợp/bàn giao Sheet/Zalo/PDF nếu cần theo Supplier. Nghiệm thu luồng Fulfillment hiện có với giá V1 và từng Lot; không coi xác nhận phạm vi là nghiệm thu code. Cargo/ETD engine và mid-mile allocation/usage services vẫn deferred theo nguồn chưa bị thay thế.
 
 ## 8. Client Add-on / ledger / quyền
 CONFIRMED: Revenue ghi một lần và khóa, Cost pending khác finalized zero. Cost/Supplier/Note sửa được theo scope, có history/stale protection; sửa Cost đổi GP, không đổi Balance. Sales nhập Cost/Supplier riêng Add-on, không mở Cost/Net vận chuyển. Client API/export/history không lộ dữ liệu nội bộ.

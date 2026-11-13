@@ -1,3 +1,6 @@
+## Service V1 — Owner làm rõ 14/11/2026
+Fulfillment V1 chính là quy trình xử lý Order/mua Supplier/Tracking–Label/Manifest/bàn giao. Mỗi Lot là một shipment mua UPS, Shipment Surcharge một lần/Lot; Order DMD gom các Lot gửi cùng một địa chỉ. Tiền VNĐ giữ số lẻ; không thay rounding cân. Đây là target CONFIRMED; luồng vận hành USD hiện hành và Purchased snapshots chưa chuyển đổi. Xem [spec](DMD_Order_Platform_Service_Architecture_V1_Specification.md).
+
 ## Emergency đơn giản hóa — 24/10/2026
 Đổi Route trên Order gốc, Tracking/Label và Net Cost optional; blank giữ nguyên. Nếu thay Tracking thì thay đủ bộ ACTIVE. Cost Supplier cũ/mới tách chứng từ, không tự COMPLETE chỉ vì giữ label; cost import sau Switch không sửa Charge. Order upload lỗi còn HOLD, lưu alert để retry; từng Order thành công được giữ. Bất kỳ carton đã export Manifest thì toàn Order xử lý thủ công. [Quy tắc hiện hành](18-emergency-route-hold.md).
 

@@ -38,7 +38,7 @@ export function validateUpsRates(rates:UpsRate[]) {
   if(lo<hi||(lo===hi&&contains(a,lo)&&contains(b,lo)))throw Error("UPS rate card bị chồng khoảng cân.");
  }
 }
-/** Unrounded calculation only. No rate data, destination mapping or discount defaults. */
+/** One Lot calculation. Shipment surcharge is applied once per Lot; fractional VND is retained. */
 export function upsAccountNet(input:UpsAccountPricing,weightKg:number,variables:UpsGlobals) {
  if(!["VTT","SDS","JD"].includes(input.account))throw Error("UPS account chưa được hỗ trợ.");
  positive(weightKg,"Billable kg");validateUpsRates(input.rates);
@@ -53,6 +53,20 @@ export function upsAccountNet(input:UpsAccountPricing,weightKg:number,variables:
  const net_vnd=safe((1+g.fuel)*(1+g.vat)*(transportation_discounted_vnd+shipment_vnd+weight_vnd)+g.us_broker*transportation_discounted_vnd+g.customs_per_kg_vnd*weightKg);
  return {account:input.account,zone:input.zone,weight_kg:weightKg,rate,transportation_vnd,transportation_discounted_vnd,shipment_vnd,weight_vnd,net_vnd};
 }
+
+/** One UPS purchase shipment per Lot; Order total is the sum of separately rated Lots. */
+export function upsOrderNet(lots:Array<{lot_id:string;pricing:UpsAccountPricing;weight_kg:number}>,globals:UpsGlobals) {
+ if(!Array.isArray(lots)||!lots.length)throw Error("Order UPS cần Lot.");
+ const ids=new Set<string>();
+ const results=lots.map(lot=>{
+  if(typeof lot.lot_id!=="string"||!lot.lot_id.trim()||ids.has(lot.lot_id.trim()))throw Error("Lot ID phải có giá trị và không trùng.");
+  const lot_id=lot.lot_id.trim();ids.add(lot_id);
+  return {lot_id,...upsAccountNet(lot.pricing,lot.weight_kg,globals)};
+ });
+ // No monetary rounding: preserve fractional VND in each Lot and the Order total.
+ return {lots:results,net_vnd:safe(results.reduce((sum,lot)=>sum+lot.net_vnd,0)),shipment_surcharge_vnd:safe(results.reduce((sum,lot)=>sum+lot.shipment_vnd,0))};
+}
+
 export function optimizeUpsAccounts(accounts:UpsAccountPricing[],weightKg:number,globals:UpsGlobals) {
  if(!Array.isArray(accounts)||!accounts.length||new Set(accounts.map(a=>a.account)).size!==accounts.length)throw Error("Cần danh sách account không trùng.");
  // All supplied eligible accounts must calculate; missing data fails rather than silently selecting an incomplete set.

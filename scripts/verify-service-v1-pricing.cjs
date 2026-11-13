@@ -7,7 +7,7 @@ async function main(){
  const route=Number(db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier,active) VALUES ('ePacket','Standard','DMD',1)").run().lastInsertRowid);
  const c=config.saveServiceV1Config({route_id:route,expected_revision:0,request_key:"pricing-config-1",config:{currency:"VND",adapter:"EPACKET",markets:["US"]}},owner.id);
  let seq=0;const key=()=> "pricing-event-"+(++seq);
- const netInput={route_id:route,config_id:c.id,source_excel:"TEST-FIXTURE-NOT-ACTUAL-RATES.xlsx",rows:[{key:"TEST-ONLY",net_vnd:100000}],request_key:key()};
+ const netInput={route_id:route,config_id:c.id,source_excel:"TEST-FIXTURE-NOT-ACTUAL-RATES.xlsx",rows:[{key:"TEST-ONLY",net_vnd:100000},{key:"FRACTIONAL-TEST-ONLY",net_vnd:0.125}],request_key:key()};
  const n1=p.createServiceV1Net(netInput,owner.id);
  check(p.createServiceV1Net({...netInput},owner.id).id===n1.id,"net retry");
  check(!p.publishedServiceV1Price(route,"NET",owner.id),"draft does not publish net");
@@ -18,6 +18,9 @@ async function main(){
  const proposalInput={route_id:route,config_id:c.id,net_id:n1.id,net_markup:0.1,base_markup:0.2,request_key:key()};
  const s1=p.createServiceV1Proposal(proposalInput,owner.id),row=JSON.parse(s1.body_json).rows[0];
  check(Math.abs(row.base_vnd-110000)<1e-8&&Math.abs(row.retail_vnd-132000)<1e-8,"sequential markup independent oracle");
+ const fractional=JSON.parse(s1.body_json).rows[1];
+ check(Math.abs(fractional.base_vnd-0.1375)<1e-12&&Math.abs(fractional.retail_vnd-0.165)<1e-12,"fractional VND retained through both markups, no rounding to dong or cents");
+ check(p.serviceV1PriceWorkspace(route,owner.id).rounding==="NONE","money policy confirmed as no rounding");
  check(!p.publishedServiceV1Price(route,"PROPOSAL",owner.id),"proposal not selling before publish");
  event(s1.id,"REVIEW");event(s1.id,"PUBLISH");
  const s2=p.createServiceV1Proposal({...proposalInput,net_markup:0.5,request_key:key()},owner.id);

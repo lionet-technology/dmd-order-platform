@@ -14,10 +14,15 @@ Ngày: 14/11/2026. Nguồn ưu tiên: yêu cầu Owner trong phiên triển khai
 3. Net → Base → Retail là markup tuần tự: Base=Net×(1+mN); Retail=Base×(1+mB). Hai markup đều Review & Publish; Net/Account changes cũng Review & Publish. Published V1 vẫn phục vụ khi Proposal V2 chưa publish; Admin publish. Snapshot đã mua bất biến.
 4. UPS account VTT/SDS/JD; rate card có Min/Max kg, FIXED/PER_KG. FIXED là tổng transportation rate; PER_KG nhân W vào transportation trước công thức, không nhân cả NetCost.
 5. Tính đủ Net từng account theo account/zone/phụ phí rồi mới tối ưu. Round carton trước khi cộng Lot, theo Sub-Service. Global Fuel/VAT/US Broker/Customs auto apply sau xác nhận; pending account không tự apply cùng global.
-6. Fulfillment là module trong phạm vi V1; tái dùng Purchase/reserve/charge và snapshot, không bypass Balance/Credit/Debt.
+6. Fulfillment V1 là quy trình xử lý Order → mua dịch vụ từ Supplier → Tracking/Label → Manifest/bàn giao; tái dùng Purchase/reserve/charge và snapshot, không bypass Balance/Credit/Debt.
 7. Add-on Revenue khóa sau ghi nhận; Cost/Supplier/Note editable. Sales được nhập Cost/Supplier riêng Add-on theo scope, không mở quyền Net/Cost dịch vụ khác.
 8. Balance Adjustment được vượt limit, không tự sửa Revenue/GP hoặc thay đổi Credit Limit; Purchase vẫn giữ gate.
 9. Giá Net thật phải do Owner cung cấp Excel chuẩn khi đến phần phụ thuộc. Không đọc đoán số từ ảnh/PDF, không coi fixture là giá thật. Làm phần không phụ thuộc số liệu trước.
+
+## CONFIRMED — Owner làm rõ trong phiên 14/11/2026
+- “Không cần làm tròn tiền VNĐ, cứ để số lẻ”: giữ phần thập phân ở Base/Retail/Sales và tổng, không tự làm tròn về đồng hoặc hai chữ số thập phân. Rounding cân UPS là rule riêng.
+- UPS Shipment Surcharge tính một lần mỗi Lot. Mỗi Lot là một Order gửi lên mua UPS; Order trong DMD là đơn của khách gửi một địa chỉ, có thể nhiều Lot.
+- Fulfillment V1 là “Quy trình xử lý Order/bàn giao”. Catalogue dịch vụ kho tính phí riêng không phải yêu cầu của phần Fulfillment đã chốt; bỏ khỏi blocker V1.
 
 ## CONFIRMED — nguồn Operational Flow 16/10 chưa bị thay thế
 Service+Sub-Service+Supplier; Client enabled-service scope/discount; một Order một địa chỉ, nhiều Lot/Carton; Express reserve lúc mua và charge tracking+label đúng một lần; optional warehouse measurement; immutable purchased price; Supplier cost reconciliation per Lot; cost transport chỉ BOD/Finance. Rule tài chính mới hơn trong feature tương ứng được ưu tiên hơn bản 16/10.
@@ -35,10 +40,10 @@ Danh sách ChatGPT history (50 chat gần nhất) đã được duyệt để t�
 - Giải thích giá USPS, 6adce8a0-e5d4-83ec-9c2d-f8ef11b109b3: 2 lượt. Hỏi về oz/lb; không cung cấp rate V1, không nâng giải thích assistant thành rule DMD.
 - Viết công thức tính giá, 6acdd0bb-7328-83ec-9b4d-8ad7d215d655: 2 lượt. User yêu cầu sheet lookup lên tier cân gần nhất trong bảng cụ thể; ảnh không được dùng suy số và không áp tier đó sang UPS quốc tế/ePacket V1.
 
-Không nguồn bổ sung nào khôi phục đủ catalogue Fulfillment, rounding tiền VNĐ hay mapping Shipment Surcharge/Lot. Không có cursor đọc trang cũ ở các chat này.
+Các nguồn bổ sung này chưa có ba chi tiết trên; Owner đã làm rõ trực tiếp trong phiên tiếp tục, như phần CONFIRMED mới. Không có cursor đọc trang cũ ở các chat này.
 
 ## OPEN / PROPOSED
-OPEN: giá/zone thực VTT/SDS/JD, cận Min/Max inclusive/exclusive, missing/overlap rates, tie-break, mapping shipment→Lot, scope surcharge và rounding tiền; ePacket ngưỡng oversize/non-cont cuối cùng bằng VNĐ và supplier-inclusive components; catalogue/phí Fulfillment riêng, Sheet/Zalo/PDF/Manifest automation chi tiết.
+OPEN: giá/zone thực VTT/SDS/JD, cận Min/Max inclusive/exclusive, missing/overlap rates, tie-break, scope phụ phí khác; ePacket ngưỡng oversize/non-cont cuối cùng bằng VNĐ và supplier-inclusive components; chi tiết bàn giao Sheet/Zalo/PDF/Manifest nếu cần ngoài quy trình đã có.
 PROPOSED: mọi mức AHC/LPS/OMS từ hội thoại UPS US; không import/activate. Tỷ giá 25.910 chỉ được audit cũ ghi nhận, chưa đọc được user turn gốc; không dùng nó tạo giá thật hoặc chạy migration ngầm.
 
 ## CURRENT — source audit baseline 2302d06

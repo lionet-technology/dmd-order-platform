@@ -1,5 +1,7 @@
 # Service Architecture V1 — implementation handoff, 14/11/2026
 
+Historical snapshot: Owner later resolved monetary rounding, UPS Shipment/Lot mapping and Fulfillment scope. See [current clarification](OWNER-CLARIFICATION.md); those three questions below are superseded.
+
 ## Delivered code increments
 | Commit | Scope |
 |---|---|

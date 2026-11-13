@@ -1,3 +1,6 @@
+## Service V1 — Owner làm rõ 14/11/2026
+Fulfillment V1 chính là quy trình xử lý Order/mua Supplier/Tracking–Label/Manifest/bàn giao. Mỗi Lot là một shipment mua UPS, Shipment Surcharge một lần/Lot; Order DMD gom các Lot gửi cùng một địa chỉ. Tiền VNĐ giữ số lẻ; không thay rounding cân. Đây là target CONFIRMED; luồng vận hành USD hiện hành và Purchased snapshots chưa chuyển đổi. Xem [spec](DMD_Order_Platform_Service_Architecture_V1_Specification.md).
+
 ## Purchase consent — 04/11/2026
 Priced Client purchases require quote confirmation in the domain engine across bulk and legacy API paths. Missing/stale confirmation is a normal FAILED/DATA item, permitting Draft reload/Preview/reconfirmation. Accepted retry remains idempotent. Approved UPS/Chuyên tuyến unpriced service requests remain unchanged. [Exact contract and route limitations](03-service-route-pricing.md#client-confirmation-enforcement--04112026). Tests: `verify-purchase-consent.cjs`, existing bulk/linked regressions.
 

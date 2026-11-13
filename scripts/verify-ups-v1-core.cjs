@@ -11,6 +11,13 @@ async function main(){
  const full={...account("VTT",{...rate,unit:"PER_KG"}),net_discount:0.5,shipment_surcharge_vnd:20000,shipment_discount:0.25,weight_surcharge_vnd_per_kg:1000,weight_discount:0.2};
  // Independent arithmetic: Td=1,250,000; shipment=15,000; weight=20,000.
  near(u.upsAccountNet(full,25,{fuel:0.2,vat:0.1,us_broker:0.03,customs_per_kg_vnd:10000}).net_vnd,1983700,"full formula oracle");
+ const lotPricing={...account(),shipment_surcharge_vnd:2.125};
+ const order=u.upsOrderNet([{lot_id:"L1",pricing:lotPricing,weight_kg:2},{lot_id:"L2",pricing:lotPricing,weight_kg:3}],zero);
+ near(order.shipment_surcharge_vnd,4.25,"two Lots incur shipment surcharge twice, not once per Order");
+ near(order.net_vnd,200004.25,"Order sums complete Lot cost including fractional VND");
+ near(u.upsOrderNet([{lot_id:"L1",pricing:lotPricing,weight_kg:5}],zero).shipment_surcharge_vnd,2.125,"one Lot incurs shipment surcharge once");
+ throws(()=>u.upsOrderNet([{lot_id:"L1",pricing:lotPricing,weight_kg:2},{lot_id:"L1",pricing:lotPricing,weight_kg:3}],zero),/không trùng/);
+ throws(()=>u.upsOrderNet([],zero),/cần Lot/);
  const a={...account("VTT"),shipment_surcharge_vnd:80000},b=account("SDS",{...rate,rate_vnd:120000});
  check(u.optimizeUpsAccounts([a,b],5,zero).selected.account==="SDS","optimize full net instead of transportation");
  throws(()=>u.optimizeUpsAccounts([account(),account("JD")],5,zero),/tie-break/);
@@ -27,6 +34,7 @@ async function main(){
  const carton=(w,l=10,h=10,d=10)=>({weight_kg:w,length_cm:l,width_cm:h,height_cm:d});
  const lot=u.upsLotBillable([carton(3.2,50,41,10),carton(5.7),carton(10.3)],policy);
  near(lot.billable_kg,21,"carton max then lot sum");
+ near(u.upsOrderNet([{lot_id:"MULTI-CARTON-LOT",pricing:lotPricing,weight_kg:lot.billable_kg}],zero).shipment_surcharge_vnd,2.125,"three cartons in one Lot still incur only one shipment surcharge");
  near(u.upsLotBillable([carton(20)],policy).billable_kg,20,"threshold at");
  near(u.upsLotBillable([carton(20.1)],policy).billable_kg,21,"threshold above");
  near(u.upsLotBillable([carton(2.1),carton(0.1,50,30,10)],policy).billable_kg,5.5,"max per carton not max aggregate");
