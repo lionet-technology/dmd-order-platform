@@ -1,3 +1,4 @@
+import { logAdminEvent } from "./order-audit";
 import { refreshDraft,activePricing,routeFor } from "./route-pricing";
 import { db } from "./db";
 import {allocateFIFO} from "./credit";
@@ -464,10 +465,10 @@ export function upsertOrder(input: OrderInput) {
   return db.prepare("SELECT * FROM orders WHERE id=?").get(id);
 }
 
-export function addSupplierCost(input: SupplierCostInput) {
- return db.transaction(()=>addSupplierCostOnce(input)).immediate();
+export function addSupplierCost(input: SupplierCostInput, actorId?:number) {
+ return db.transaction(()=>addSupplierCostOnce(input,actorId)).immediate();
 }
-function addSupplierCostOnce(input: SupplierCostInput) {
+function addSupplierCostOnce(input: SupplierCostInput, actorId?:number) {
   const tracking = text(input.tracking);
   const direct=input.order_id!==undefined||input.lot_number!==undefined;
   let lot:{id:number}|undefined;
@@ -480,6 +481,7 @@ function addSupplierCostOnce(input: SupplierCostInput) {
     if(tracking)throw Error("Chi phí theo Lot không cần Tracking; không nhập hai cách ghép cùng lúc.");
   }else if (!tracking) throw new Error("Cần số Lot + Order ID hoặc Tracking để link chi phí.");
   const normalizedTracking=normalizeTracking(tracking);
+  if(!direct&&!normalizedTracking)throw Error("Tracking không hợp lệ.");
   if(lot&&db.prepare('SELECT lot_id FROM lot_cost_components WHERE lot_id=?').get(lot.id))throw Error('Lot dùng component; cần mapping supplier component trước khi import aggregate.');
   const previous=input.source_key?db.prepare("SELECT * FROM supplier_costs WHERE source_key=?").get(input.source_key) as Record<string,unknown>|undefined:undefined;
   const enumValues = validateSupplierCostEnums(input,{allowInactive:!!previous});
@@ -494,7 +496,6 @@ function addSupplierCostOnce(input: SupplierCostInput) {
   if(!explicitTotal&&!totalNet)throw Error("Cần Total Net Cost hoặc các thành phần chi phí.");
 
   const owner=findTrackingOwner(tracking);
-  if(owner&&db.prepare('SELECT c.lot_id FROM lot_cost_components c JOIN order_lots l ON l.id=c.lot_id WHERE l.order_id=? LIMIT 1').get(owner.order_id))throw Error('Order dùng component; aggregate tracking feed cần mapping component.');
   const extraSurcharge=money(num(input.extra_surcharge));const importTax=money(num(input.import_tax));
   const surchargeType=extraSurcharge?(text(input.surcharge_type)||"phụ phí bổ sung"):"";
   const occurredAt=normalizeDateInput(input.occurred_at, "Ngày chi phí");
@@ -503,20 +504,28 @@ function addSupplierCostOnce(input: SupplierCostInput) {
       const expected:Record<string,unknown>={supplier:enumValues.supplier,service:enumValues.service,sub_service:enumValues.sub_service,normalized_tracking:normalizedTracking,occurred_at:occurredAt,item:text(input.item),destination:text(input.destination),weight:num(input.weight),net_price:netPrice,fee,export_customs:exportCustoms,import_customs:importCustoms,total_net_cost:totalNet,extra_surcharge:extraSurcharge,import_tax:importTax,surcharge_type:surchargeType,note:text(input.note)};
       const conflict=Object.entries(expected).some(([key,value])=>typeof value==='number'?Number(previous[key]||0)!==value:String(previous[key]||'')!==String(value||''));
       if(conflict||(lot&&Number(previous.order_lot_id)!==lot.id)||(!lot&&!tracking))throw Error("Supplier source_key đã tồn tại với dữ liệu khác. Dùng điều chỉnh cost có lý do, không ghi đè nguồn cũ.");
-      return {id:Number(previous.id),tracking,matched:Boolean(previous.matched_order_id),total_net_cost:Number(previous.total_net_cost),duplicate:true,warning:"Dòng này đã được import trước đó nên không ghi nhận lại."};
+      return {id:Number(previous.id),tracking,matched:Boolean(previous.matched_order_id),total_net_cost:Number(previous.total_net_cost),duplicate:true,import_status:String(previous.import_status),warning:"Dòng này đã được import trước đó nên không ghi nhận lại."};
     }
   }
+  const pending=Boolean(normalizedTracking&&db.prepare("SELECT id FROM supplier_costs WHERE normalized_tracking=? AND import_status='ACTIVE' LIMIT 1").get(normalizedTracking));
+  if(!pending&&owner&&db.prepare('SELECT c.lot_id FROM lot_cost_components c JOIN order_lots l ON l.id=c.lot_id WHERE l.order_id=? LIMIT 1').get(owner.order_id))throw Error('Order dùng component; aggregate tracking feed cần mapping component.');
+  const importStatus=pending?"PENDING":"ACTIVE";
   const result = db.prepare(`
     INSERT INTO supplier_costs(
       supplier,service,sub_service,tracking,normalized_tracking,matched_order_id,matched_order_tracking_id,occurred_at,item,destination,weight,net_price,fee,
-      export_customs,import_customs,total_net_cost,extra_surcharge,import_tax,surcharge_type,note,batch_id,source_key
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      export_customs,import_customs,total_net_cost,extra_surcharge,import_tax,surcharge_type,note,batch_id,source_key,import_status,created_by_user_id
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
-    enumValues.supplier, enumValues.service, enumValues.sub_service, tracking,normalizedTracking,owner?.order_id||null,owner?.id||null, occurredAt,
+    enumValues.supplier, enumValues.service, enumValues.sub_service, tracking,normalizedTracking,pending?null:owner?.order_id||null,pending?null:owner?.id||null, occurredAt,
     text(input.item), text(input.destination), num(input.weight), netPrice, fee, exportCustoms, importCustoms,
-    totalNet,extraSurcharge,importTax,surchargeType,text(input.note), input.batch_id || null,input.source_key||null
+    totalNet,extraSurcharge,importTax,surchargeType,text(input.note), input.batch_id || null,input.source_key||null,importStatus,actorId||null
   );
 
+  const id=Number(result.lastInsertRowid);
+  if(pending){
+    if(owner)logAdminEvent({orderId:owner.order_id,eventType:"SUPPLIER_COST_PENDING",summary:`Supplier Cost trùng Tracking ${tracking} đang chờ xử lý.`,actorId,after:{id,tracking,total_net_cost:totalNet}});
+    return {id,tracking,matched:false,total_net_cost:totalNet,duplicate:false,import_status:importStatus,warning:"Tracking đã có Supplier Cost. Giá mới đang chờ xử lý."};
+  }
   const matched=Boolean(owner||lot);
   if(lot){db.prepare("UPDATE supplier_costs SET matched_order_id=?,order_lot_id=? WHERE id=?").run(input.order_id,lot.id,result.lastInsertRowid);matchSupplierCostsForOrder(Number(input.order_id));}
   else if(owner)matchSupplierCostsForOrder(owner.order_id);
@@ -527,6 +536,7 @@ function addSupplierCostOnce(input: SupplierCostInput) {
     matched,
     total_net_cost: totalNet,
     duplicate:false,
+    import_status:importStatus,
     warning: matched ? null : "Chưa có Order cùng Tracking; chi phí được giữ lại và sẽ tự link khi Tracking xuất hiện.",
   };
 }

@@ -259,8 +259,12 @@ let checks=0;function eq(a,b,m){assert.deepEqual(a,b,m);checks++}function reject
  // Real cost ingestion path, including its legacy financial recomputation hook.
  const {addSupplierCost}=require('../src/lib/finance.ts');
  const incoming={supplier:'Replacement',service:'Emergency',sub_service:'New',tracking:'KEEP-TRACK',total_net_cost:9,source_key:'route-only-invoice'};
- addSupplierCost(incoming);
- eq(db.prepare('SELECT actual_cost_coverage,true_net_cost FROM orders WHERE id=?').get(routeOnly),{actual_cost_coverage:'COMPLETE',true_net_cost:15},'Old and new costs remain distinct and summed');
+ const pendingInvoice=addSupplierCost(incoming);
+ eq(pendingInvoice.import_status,'PENDING','Reused Tracking requires cost review even after Emergency reroute');
+ eq(db.prepare('SELECT actual_cost_coverage,true_net_cost FROM orders WHERE id=?').get(routeOnly),{actual_cost_coverage:'PARTIAL',true_net_cost:null},'Pending invoice cannot close the Emergency gap');
+ const priorCosts=db.prepare("SELECT id FROM supplier_costs WHERE normalized_tracking='KEEPTRACK' AND import_status='ACTIVE' ORDER BY id").all();
+ require('../src/lib/supplier-cost-review.ts').reviewSupplierCost(admin,{id:pendingInvoice.id,decision:'ACCEPT_NEW',previous_ids:priorCosts.map(row=>row.id).join(',')});
+ eq(db.prepare('SELECT actual_cost_coverage,true_net_cost FROM orders WHERE id=?').get(routeOnly),{actual_cost_coverage:'COMPLETE',true_net_cost:9},'Accepted invoice replaces old Tracking costs');
  eq(db.prepare('SELECT * FROM ledger_entries').all(),before,'Later supplier invoice cannot create or edit Charge');
  eq(addSupplierCost(incoming).duplicate,true,'Supplier invoice retry is idempotent');
  const routeOnlyReport=await reconApi.GET(new NextRequest('http://localhost/api/reconciliation?emergency_only=1&supplier=Synthetic',{headers:{cookie:'dmd_session='+financeToken}}));
@@ -268,7 +272,7 @@ let checks=0;function eq(a,b,m){assert.deepEqual(a,b,m);checks++}function reject
  const routeLotReport=await reconApi.GET(new NextRequest('http://localhost/api/reconciliation?granularity=lot',{headers:{cookie:'dmd_session='+financeToken}}));
  const oldLot=(await routeLotReport.json()).items.find(l=>l.order_id===routeOnly);
  eq(JSON.parse(oldLot.historical_suppliers_json).includes('Synthetic'),true,'Route-only historical Supplier retained for UI scope');
- eq(reconcileLots(routeOnly)[0].reconciliation_status,'REVIEW','Multiple Suppliers never auto finalize even when all Actual arrives');
+ eq(reconcileLots(routeOnly)[0].cost_suppliers,['Replacement'],'Replaced suppliers are historical, not part of current reconciliation');
  eq(db.prepare('SELECT * FROM statement_v2_snapshots').all(),statementBefore);
  undoEmergencyHold(admin,route,keepHold.id);
  // Mixed Excel: one success, one bad formula, one partial tracking replacement.

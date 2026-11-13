@@ -1,3 +1,7 @@
+## Supplier Cost Excel — 06/11/2026
+
+Admin, Finance và BOD có thể nhập chứng từ Supplier Cost gốc. Dòng có Tracking trùng chứng từ ACTIVE chuyển sang hàng chờ. Nhập lại cùng file chứng từ gốc nhận diện dòng theo hash nội dung và số thứ tự lặp của dòng giống hệt. Phụ phí dùng khóa yêu cầu riêng cho retry kỹ thuật. Admin/Finance có template riêng [dmd-supplier-cost-adjustments.xlsx](../../public/templates/dmd-supplier-cost-adjustments.xlsx) gồm đúng ba cột **Tracking | Cost bổ sung | Lý do**. Giữ Tracking ở dạng text để bảo toàn số 0 đầu. Giới hạn file 10 MB, mỗi batch phụ phí 1–200 dòng. Dòng phụ phí đã có cùng Tracking, số cent và lý do chờ xác nhận riêng.
+
 # Import, mẫu mua & export
 
 ## Manual batch / file boundary — 28/10/2026
@@ -18,7 +22,7 @@ Owner chốt: **một dòng Excel = một Carton**, mọi dòng bắt buộc `Cl
 
 
 ## Delta 18/10/2026
-Supplier Cost Excel chỉ BOD/FINANCE. Không cấp họ import Orders/Balance/Tracking. File tối đa 10 MB. Net Cost không được xuất qua lot.net_cost hoặc placeholder ngoài allowlist trong template vận hành. API JSON có projection bảo vệ cost cả list/detail/mutation và chuỗi JSON lồng.
+Quyền Supplier Cost Excel theo cập nhật 06/11/2026 ở trên. Không cấp họ import Orders/Balance/Tracking. File tối đa 10 MB. Net Cost không được xuất qua lot.net_cost hoặc placeholder ngoài allowlist trong template vận hành. API JSON có projection bảo vệ cost cả list/detail/mutation và chuỗi JSON lồng.
 
 **Trạng thái:** Có triển khai trong repository, không đồng nghĩa đã được nghiệm thu production. **Rà soát:** 2026-10-13 (đọc code và tài liệu; chưa chạy E2E). **Quy tắc:** code + automated tests là bằng chứng hành vi hiện tại; yêu cầu chưa triển khai ghi riêng, không mô tả như đã chạy.
 

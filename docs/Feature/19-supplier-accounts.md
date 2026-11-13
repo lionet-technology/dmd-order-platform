@@ -1,3 +1,7 @@
+## Thay giá Supplier Cost đã hạch toán — 06/11/2026
+
+Chấp nhận chứng từ thay thế chỉ cập nhật Actual Cost và đối soát Order/Lot. Supplier Account giữ nguyên bút toán cũ. Confirm Cost chặn ghi toàn bộ giá thay thế nếu một chứng từ tiền nhiệm đã được hạch toán. Dùng điều chỉnh số dư có chứng từ đối soát cho phần chênh. Phụ phí qua Supplier Cost Adjustment ghi vào Lot trước, không tự phân bổ hoặc ghi sổ Supplier.
+
 ## Channel and documentary reconciliation report — 04/11/2026
 Supplier Account report/API now exposes `claim_offset_cents` and `claim_bank_received_cents` (net active settlements, reversed records excluded), beside remaining `receivable_cents`. A $30 approved Claim, $20 Offset and $10 actual Bank receipt reports 2000/1000/0 cents. Neither settlement changes cost/revenue/Order GP; only Offset changes Account Balance.
 

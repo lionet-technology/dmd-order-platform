@@ -44,7 +44,10 @@ for(const u of [users.SALES,users.CLIENT,users.WAREHOUSE,users.FINANCE,users.BOD
  const r=await call(route,url,u,method,method==='POST'?{order_ids:[order]}:undefined);check(r.status===403,'denied '+u.role+' '+url);scan(await r.text(),'denial '+u.role+' '+url);
 }
 for(const u of [users.SALES,users.CLIENT,users.ADMIN,users.WAREHOUSE])for(const route of ['costs','reconciliation','supplier-payables']){
- const r=await call(route,'/api/'+route,u);check(r.status===403,'private Finance denial '+u.role+route);scan(await r.text(),'private denial');
+ const r=await call(route,'/api/'+route,u);
+ const allowed=u.role==='ADMIN'&&route==='costs';
+ check(r.status===(allowed?200:403),'private Finance access '+u.role+route);
+ scan(await r.text(),allowed?'Admin costs must omit order GP/estimate':'private denial');
 }
 const outside=await call('orders/[id]','/api/orders/'+order,other,'GET',undefined,order);check(outside.status===403,'unassigned Order denied');
 const outsideCases=await call('cases','/api/cases',other);check(!(await outsideCases.text()).includes('Recipient needs help'),'unassigned Case excluded');

@@ -1,3 +1,15 @@
+# Supplier Cost & Reconciliation
+
+## Tracking trùng và Supplier Cost Adjustment — 06/11/2026
+
+- Một dòng Supplier Cost có Tracking chuẩn hóa trùng với giá đang áp dụng được lưu riêng ở trạng thái `PENDING`, kể cả khi Tracking chưa ghép Order hoặc được giữ lại qua Emergency reroute. Dòng chờ không tự ghép hoặc làm đổi Actual Cost, GP hay version đối soát. Dòng mới có Tracking chưa có chứng từ ACTIVE được ghi bình thường và có thể chờ ghép Order. Nhập trực tiếp theo Order/Lot là đường nhập riêng, không qua kiểm tra trùng Tracking. Retry cùng nguồn dùng `source_key` và kiểm tra payload.
+- Admin/Finance xem giá hiện hành và chọn **Giữ giá cũ** hoặc **Nhận giá mới**. Giữ giá cũ đánh dấu dòng mới `DISCARDED`. Nhận giá mới đánh dấu các dòng cũ đang áp dụng của cùng Tracking `REPLACED` rồi tính lại Actual và GP theo giá mới. Các Tracking khác và điều chỉnh đã ghi trên Lot tiếp tục được tính. Nếu dòng trùng thực chất là phụ phí, chọn **Giữ giá cũ** rồi ghi phụ phí ở màn riêng. Nhận giá mới bị chặn nếu Order đã dùng cost components. Chứng từ cũ, liên kết lịch sử, người xử lý và thời điểm được lưu lại. Khi Tracking đã ghép Order, hệ thống ghi audit Order cho việc đưa vào hàng chờ và xử lý trùng. Nếu người khác đã thay giá hiện hành, màn hình phải tải lại trước khi ra quyết định.
+- **Supplier Cost Adjustment** dùng Tracking, Cost bổ sung USD dương, Lý do. Tracking phải ghép được Lot đã có Actual Cost. Khoản ghi thành công được lưu append-only trên Lot, có Tracking, actor và lý do. GP Actual giảm theo phụ phí khi coverage đầy đủ. Lot quay lại Review và GP Finalized chờ đối soát lại. Giá bán, Client Charge, Statement và sổ Supplier giữ nguyên khi xử lý trùng hoặc ghi phụ phí.
+- So trùng theo ID của Tracking tra bằng giá trị chuẩn hóa, số cent và lý do sau khi chuẩn hóa khoảng trắng. So lý do có phân biệt hoa/thường. Dòng trùng chờ xác nhận **Ghi thêm** hoặc **Bỏ qua**. Có thể ghi nhiều lần phát sinh thật bằng quyết định riêng. **Bỏ qua** lưu người xử lý và thời điểm trong lịch sử phụ phí. **Ghi thêm** lưu cả quyết định và audit Order của khoản mới, gồm tham chiếu khoản trùng. Batch 1–200 dòng có lỗi validation sẽ rollback. Các dòng hợp lệ trong batch được ghi hoặc đưa vào hàng chờ tùy kết quả so trùng.
+- `POST /api/costs` yêu cầu mã nguồn hoặc `request_key` để chống gửi lại. GET mặc định trả dòng đang áp dụng, lọc bằng `import_status` để xem hàng chờ/lịch sử. Admin, Finance và BOD được xem/nhập chứng từ gốc. Chỉ Admin/Finance được xử lý trùng và sử dụng API Adjustment. `PATCH /api/costs` nhận `id`, `decision` (`KEEP_OLD` hoặc `ACCEPT_NEW`) và `previous_ids` từ danh sách chờ. `POST /api/costs/adjustments` nhận JSON hoặc Excel với `request_key` bắt buộc. GET liệt kê dòng chờ hoặc lịch sử, PATCH xử lý `RECORD_AGAIN`/`SKIP`. Retry cùng key và payload trả kết quả đã lưu. Đổi payload với cùng key bị từ chối. Retry cùng quyết định trên cùng dòng không ghi lần hai. Form giữ key trong phiên màn hình nếu lần gửi lỗi. Tải lại trang hoặc nhập lại bằng key mới có thể tạo thêm dòng chờ cho khoản đã ghi, vẫn cần xác nhận riêng trước khi cộng cost.
+- Giá cũ đã hạch toán Supplier Account tiếp tục nằm trong sổ. Giá thay thế không được hạch toán lần nữa bằng Confirm Cost. Finance xử lý phần chênh qua chứng từ điều chỉnh sổ Supplier riêng.
+- Migration cộng thêm cột/bảng. Dữ liệu lịch sử đang áp dụng giữ trạng thái `ACTIVE`, gồm cả các dòng trùng cũ. Audit 06/11 chạy 45 suite trên DB tạm. `verify-supplier-cost-review.cjs` xác minh handler, template, RBAC, GP, ledger, lịch sử và retry. `verify-emergency-hold.cjs` đạt 154 assertions, có case giữ Tracking qua reroute. UAT giao diện với chứng từ thật còn mở.
+
 ## Supplier source retry conflict — 28/10/2026
 A repeated supplier `source_key` is accepted only when its normalized source fields, amounts and direct Lot match. Reusing a key with changed cost/tax/surcharge/Supplier/route/date/evidence rejects atomically and requires an explicit signed cost adjustment; no silent successful acknowledgement of changed money. Batch IDs may differ on an exact reimport. A known exact source may replay with inactive enum values; new sources still require active values, and changed payloads still reject after deactivation. Late cost still reopens reconciliation review and never rewrites Client Charge or issued Statement.
 
@@ -17,13 +29,11 @@ Verified synthetic Debt/Reconciliation (66 assertions), Emergency (152), Supplie
 ## Emergency đơn giản hóa — 24/10/2026
 Đổi Route trên Order gốc, Tracking/Label và Net Cost optional; blank giữ nguyên. Nếu thay Tracking thì thay đủ bộ ACTIVE. Cost Supplier cũ/mới tách chứng từ, không tự COMPLETE chỉ vì giữ label; cost import sau Switch không sửa Charge. Order upload lỗi còn HOLD, lưu alert để retry; từng Order thành công được giữ. Bất kỳ carton đã export Manifest thì toàn Order xử lý thủ công. [Quy tắc hiện hành](18-emergency-route-hold.md).
 
-# Supplier Cost & Reconciliation
-
 ## Continuation — 24/10/2026
-Reconciliation now stores `actual_gp` separately from approved/finalized GP. It uses the same commercial revenue and aggregate actual cost calculation (including old + new Supplier costs after Emergency Switch). Known loss remains visible during REVIEW without approving GP or charging the Client. Missing actual remains null. BOD/FINANCE can filter GP Orders by `loss_only=1` and `emergency_only=1`, independently of Lot filters, through UI/API. These filters do not rewrite history or Ledger. New field is removed from operational projections. Existing rows acquire values when normally reconciled; no historic backfill was run. Supplier Management, exports, payables integration and complete BOD/Add-on scope remain pending.
+Reconciliation now stores `actual_gp` separately from approved/finalized GP. It uses the same commercial revenue and aggregate actual cost calculation (including both old and new ACTIVE sources when they remain eligible after Emergency Switch, subject to the same-Tracking replacement rule above). Known loss remains visible during REVIEW without approving GP or charging the Client. Missing actual remains null. BOD/FINANCE can filter GP Orders by `loss_only=1` and `emergency_only=1`, independently of Lot filters, through UI/API. These filters do not rewrite history or Ledger. New field is removed from operational projections. Existing rows acquire values when normally reconciled; no historic backfill was run. Supplier Management, exports, payables integration and complete BOD/Add-on scope remain pending.
 
-## Quyền hiện hành 18/10/2026
-API Costs/Reconciliation và nhập Excel kind=costs chỉ BOD/FINANCE; Admin vận hành bị chặn. BOD/FINANCE không được import Orders/Balance/Tracking. Các hướng dẫn “Admin” phía dưới là thuật ngữ lịch sử cho người xử lý đối soát; quyền tài chính hiện hành xem feature 01. Không thay đổi scope coverage/FX đang pending.
+## Phạm vi quyền đối soát
+API Reconciliation dành cho Finance/BOD. Các hướng dẫn “Admin” trong mốc 14/10 mô tả vai trò ở thời điểm đó. Xem [ma trận quyền hiện hành](01-auth-rbac.md).
 
 ## Chốt nghiệp vụ 14/10/2026 — backend đã cập nhật
 - Đối soát theo Order + số Lot, không cần tracking đại diện. Supplier feed tracking vẫn được ghép vào Lot khi có mapping carton; thiếu mapping không tự đoán Lot.
@@ -36,7 +46,7 @@ API Costs/Reconciliation và nhập Excel kind=costs chỉ BOD/FINANCE; Admin v�
 ## API
 - `POST /api/costs`: `{order_id: <DB ID>, lot_number, total_net_cost, ...}` không cần tracking; không nhập đồng thời tracking và Lot. Feed theo tracking hiện hành vẫn được hỗ trợ.
 - `GET /api/reconciliation?granularity=lot`: Lot, estimate/actual cent, version, status, decision/reason. GET mặc định giữ shape Order cho màn hình hiện có.
-- `POST /api/reconciliation`: `{request_key, order_id, lot_number, action, amount?, reason, public_note?}` hoặc `{request_key, items:[...]}`. Actions: `estimate`, `replacement_cost`, `absorb_loss`, `customer_surcharge`, `cost_adjustment` (amount USD có dấu, cost sau điều chỉnh không âm, request_key bắt buộc). Chỉ Admin.
+- `POST /api/reconciliation`: `{request_key, order_id, lot_number, action, amount?, reason, public_note?}` hoặc `{request_key, items:[...]}`. Actions: `estimate`, `replacement_cost`, `absorb_loss`, `customer_surcharge`, `cost_adjustment` (amount USD có dấu, cost sau điều chỉnh không âm, request_key bắt buộc). API dành cho Finance/BOD. Điều chỉnh Lot có dấu là tác vụ đối soát riêng với phụ phí theo Tracking.
 - `src/lib/reconciliation.ts`, `src/lib/order-operations.ts`, `src/lib/order-shipments.ts`, `src/lib/finance.ts`; test `scripts/verify-debt-reconciliation.cjs`.
 
 
@@ -48,20 +58,21 @@ API Costs/Reconciliation và nhập Excel kind=costs chỉ BOD/FINANCE; Admin v�
 - Phải phân biệt chi phí nội bộ, tiền thu Client, phụ phí bán lại, thuế, và Supplier Recovery; việc supplier trả tiền không tự động credit Client.
 ## Nguồn
 - `src/app/api/costs/`, `src/app/api/reconciliation/`, `src/lib/order-operations.ts`, `src/lib/finance.ts`, `docs/legacy-logic/logic.md` (legacy).
-## Chưa chốt
+## Còn mở
 - Chuẩn hóa cost feed inclusive/fee/tax: backend dùng total_net_cost như cost thương mại đã chuẩn hóa; không tự cộng các cột phí thu khách vào cost tránh double count. Cần mapping supplier cụ thể/FX trước release.
 - Màn UI Admin Lot/bulk/nhập cost đã bổ sung, cần browser UAT; báo cáo estimated/finalized đồng bộ toàn hệ thống, phân kỳ báo cáo GP đã khóa và export revision chưa nghiệm thu. Version audit hiện có không thay thế quy trình đóng kỳ báo cáo.
-- Feed retry theo source_key giữ cơ chế hiện hành; cần bổ sung acceptance payload conflict và quy tắc chỉnh giảm/hoàn phụ phí đã thu. Không tự refund khi cost giảm.
+- Quy tắc chỉnh giảm/hoàn phụ phí đã thu của Client còn mở. Cost giảm không tự tạo refund. Kiểm tra payload conflict khi retry chứng từ đã triển khai, xem mốc 28/10.
 
 ## Lịch sử / late adjustments
-- `GET /api/reconciliation?history_lot_id=<Lot DB ID>` trả các version bất biến cho Admin.
+- `GET /api/reconciliation?history_lot_id=<Lot DB ID>` trả các version bất biến cho Finance/BOD.
 - `lot_cost_adjustments` append-only ghi tăng/giảm cost đến muộn, có actor/reason; không sửa supplier feed gốc. Cost sau điều chỉnh không âm; tổng cost đổi làm đánh giá lại trạng thái và giữ version cũ.
 - `estimated_gp`/`estimated_margin_pct` riêng với finalized; ưu tiên tổng estimate Lot nếu đủ, fallback estimate Order. Pending không xác nhận finalized. Các cột GP legacy giữ số ước tính cho tương thích; báo cáo phải dùng trường finalized + status khi xác nhận lợi nhuận.
 
 ## Cancellation revenue — 15/10/2026
 - Khi Order đã huỷ, phụ phí đã charge được tính trong refundable total và số tiền giữ lại; GP không cộng lại surcharge Lot lần hai. Actual Supplier Cost không tự thay đổi bởi cancellation/support credit. Regression Cancellation và Debt/Reconciliation được chạy lại.
 
-## Delta 16/10 — cost coverage và phạm vi quyền
+## Lịch sử 16/10 — cost coverage và phạm vi quyền
+Các trạng thái quyền và Supplier nội bộ dưới đây là ghi nhận tại ngày 16/10. Xem [RBAC hiện hành](01-auth-rbac.md) và [Supplier Account](19-supplier-accounts.md) cho phần đã triển khai sau đó.
 - IMPLEMENTED local: component/coverage model đã bổ sung sau delta đầu ngày; ePacket dùng estimate cho thành phần thiếu actual và không cộng chồng cùng phạm vi. Aggregate ePacket chưa mapping vẫn UNKNOWN; xem phần Cost components bên dưới. Mapping/UAT vẫn APPROVED chưa hoàn tất.
 - Last-mile gắn Tracking, phí kho theo carton; actual Mid-mile Manifest/Air Cargo phân bổ chargeable weight Order/Lot DEFERRED. Thay placeholder tương ứng khi actual có, giữ chứng từ/tổng phân bổ/revision và chống trùng.
 - D15 Supplier Cost surcharge vẫn cần Admin xử lý; D19 auto surcharge cân đo là trigger riêng.
@@ -69,7 +80,7 @@ API Costs/Reconciliation và nhập Excel kind=costs chỉ BOD/FINANCE; Admin v�
 - Xem [Operational Flow](OPERATIONAL-FLOW.md), không tự kích hoạt Cargo hay Supplier portal.
 
 
-## Cost components triển khai local — 16/10/2026
+## Lịch sử triển khai cost components — 16/10/2026
 - Additive schema: lot_cost_components (LAST_MILE, MID_MILE, WAREHOUSE, OTHER), version.cost_snapshot_json; Order.actual_cost_coverage, effective_net_cost, cost_coverage_json. Không reset/xoá dữ liệu hoặc sửa pricing snapshot. Không backfill finalized GP lịch sử: phải reconcile trước khi xác nhận fully actual trên báo cáo cũ.
 - POST reconciliation action cost_components cần Admin, reason, request_key, đủ bốn components `{component, estimated, actual: number|null, reference}`. Tổng estimate bằng estimate Lot. Reference cho tracking/Lot, allocation chứng từ tương lai, carton/order, other supplier. Không ép nhập decomposition trong UI GĐ1; UI vẫn nhập tổng estimate/actual, thêm nhãn coverage.
 - Effective cost = tổng actual từng component nếu có, fallback estimate phần thiếu; zero actual hợp lệ. Actual Mid-mile thay estimate cùng phần, không cộng trùng. Thiếu component actual: PARTIAL, finalized GP null. Đủ actual: COMPLETE. PASS đối soát riêng với fully actual profit; finalized GP chỉ PASS + COMPLETE.
@@ -86,7 +97,7 @@ API Costs/Reconciliation và nhập Excel kind=costs chỉ BOD/FINANCE; Admin v�
 ## Delta lượt tiếp tục 16/10/2026
 Sổ [phải trả Supplier](13-supplier-payables.md) được Owner đưa vào GĐ1 D24, đã có module/API/UI local; không suy thanh toán từ cost hoặc tạo lại cost từ invoice. Reconciliation revenue bổ sung WEIGHT_ADJUSTMENT thực charge; cancellation revenue không cộng lại. Orders payload non-Admin đã lọc các trường GP/cost mới; D22 vẫn blocker.
 
-## Internal UAT tiếp tục 18/10 — tìm và chọn dữ liệu Finance
+## Lịch sử Internal UAT 18/10 — tìm và chọn dữ liệu Finance
 
 - Supplier Cost: search Order/DMD ID/Tracking/khách/service, filter Supplier và trạng thái đối soát hoặc chưa ghép Order, phân trang 50 dòng. GET costs thêm `system_order_code`, `lot_number`; direct Lot cost không còn mất ngữ cảnh khi tracking trống. Các quyền BOD/FINANCE giữ nguyên.
 - Lot: search không dấu theo Order/DMD ID/khách/route, dán danh sách ID ngăn bởi dòng mới, dấu phẩy hoặc chấm phẩy (match bất kỳ ID). Filter status/route/coverage kết hợp AND. 50 Lot mỗi trang, chọn cả trang, tối đa 200 Lot; đổi filter bỏ selection cũ. Chọn trang khác giữ selection, tổng selection hiển thị rõ; action áp dụng toàn bộ Lot đã chọn.

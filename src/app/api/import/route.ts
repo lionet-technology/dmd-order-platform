@@ -14,7 +14,7 @@ async function handlePOST(req: NextRequest) {
     const kind = String(form.get("kind") || "") as "orders" | "sales_orders" | "costs" | "tracking_updates" | "balance";
     const file = form.get("file");
     const adminKinds = ["orders","tracking_updates","balance"];
-    const allowed = isFinanceRole(auth.user.role)?kind==="costs":auth.user.role==="ADMIN" ? adminKinds.includes(kind) : auth.user.role==="SALES" && kind==="sales_orders";
+    const allowed = isFinanceRole(auth.user.role)?kind==="costs":auth.user.role==="ADMIN" ? kind==="costs"||adminKinds.includes(kind) : auth.user.role==="SALES" && kind==="sales_orders";
     if (!allowed) return NextResponse.json({ error: "Bạn không có quyền import loại dữ liệu này." }, { status: 403 });
     if(file instanceof File&&file.size>10*1024*1024)return NextResponse.json({error:"File tối đa 10 MB."},{status:400});
     if (!(file instanceof File)) return NextResponse.json({ error: "File is required" }, { status: 400 });

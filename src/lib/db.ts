@@ -479,6 +479,10 @@ ensureColumn("supplier_costs", "created_by_user_id", "created_by_user_id INTEGER
 ensureColumn("supplier_costs", "normalized_tracking", "normalized_tracking TEXT");
 ensureColumn("supplier_costs", "matched_order_id", "matched_order_id INTEGER");
 ensureColumn("supplier_costs", "matched_order_tracking_id", "matched_order_tracking_id INTEGER");
+ensureColumn("supplier_costs", "import_status", "import_status TEXT NOT NULL DEFAULT 'ACTIVE'");
+ensureColumn("supplier_costs", "resolved_by_user_id", "resolved_by_user_id INTEGER");
+ensureColumn("supplier_costs", "resolved_at", "resolved_at TEXT");
+ensureColumn("supplier_costs", "replaced_by_cost_id", "replaced_by_cost_id INTEGER");
 ensureColumn("supplier_costs", "source_key", "source_key TEXT");
 ensureColumn("supplier_costs", "surcharge_type", "surcharge_type TEXT");
 ensureColumn("supplier_costs", "public_note_recorded_at", "public_note_recorded_at TEXT");
@@ -510,6 +514,7 @@ db.exec("CREATE INDEX IF NOT EXISTS idx_ledger_client_user ON ledger_entries(cli
 db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_ledger_cancellation_refund ON ledger_entries(reference_id) WHERE entry_type='REFUND' AND reference_type='ORDER_CANCELLATION'");
 db.exec("CREATE INDEX IF NOT EXISTS idx_supplier_costs_normalized_tracking ON supplier_costs(normalized_tracking)");
 db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_supplier_costs_source_key ON supplier_costs(source_key) WHERE source_key IS NOT NULL");
+db.exec("CREATE INDEX IF NOT EXISTS idx_supplier_costs_replacement ON supplier_costs(replaced_by_cost_id) WHERE replaced_by_cost_id IS NOT NULL");
 db.exec("CREATE INDEX IF NOT EXISTS idx_supplier_costs_order_lot ON supplier_costs(order_lot_id)");
 db.prepare("UPDATE supplier_costs SET normalized_tracking=UPPER(REPLACE(REPLACE(TRIM(tracking),' ',''),'-','')) WHERE normalized_tracking IS NULL OR normalized_tracking=''").run();
 // One-time compatibility migration: every legacy Order tracking becomes the first

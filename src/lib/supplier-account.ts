@@ -58,9 +58,14 @@ export function supplierAccountAction(u:AuthUser,b:Row){
  const reason=text(b.reason),reference=text(b.reference||b.reason);
  const post=(kind:string,source:string,delta:number,revenue=0,cost=0,order:number|null=null)=>{const id=Number(db.prepare('INSERT INTO supplier_account_entries(supplier,kind,source,delta_cents,revenue_cents,cost_cents,order_id,reason,reference,service,due_date,actor_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').run(supplier,kind,source,delta,revenue,cost,order,reason,reference,b.action==='addon'?String(b.service):null,date(b.due_date),u.id).lastInsertRowid);return {id};};
  if(b.action==='confirm_cost'){
- const c=db.prepare('SELECT c.*,l.cost_status,l.order_id FROM supplier_costs c JOIN order_lots l ON l.id=c.order_lot_id WHERE c.id=?').get(Number(b.cost_id)) as Row|undefined;
+ const c=db.prepare('SELECT c.*,l.cost_status,l.order_id FROM supplier_costs c JOIN order_lots l ON l.id=c.order_lot_id WHERE c.id=? AND c.import_status=\'ACTIVE\'').get(Number(b.cost_id)) as Row|undefined;
  const reconciled=c?reconcileLots(Number(c.order_id)).find(l=>Number(l.id)===Number(c.order_lot_id)):undefined;
  if(!c||c.supplier!==supplier||reconciled?.reconciliation_status!=='PASS'||reconciled.actual_cents===null)throw Error('Cần Actual Cost cùng Supplier đã đối soát PASS.');
+ const postedPredecessor=db.prepare(`WITH RECURSIVE predecessors(id) AS (
+   SELECT id FROM supplier_costs WHERE replaced_by_cost_id=?
+   UNION ALL SELECT sc.id FROM supplier_costs sc JOIN predecessors p ON sc.replaced_by_cost_id=p.id
+ ) SELECT 1 FROM predecessors p JOIN supplier_account_entries e ON e.source='COST:'||p.id LIMIT 1`).get(c.id);
+ if(postedPredecessor)throw Error('Giá cũ đã ghi sổ Supplier. Dùng điều chỉnh Supplier có đối soát để ghi phần chênh.');
  // A component/adjustment allocation cannot safely be guessed across Suppliers.
  if(db.prepare('SELECT id FROM lot_cost_adjustments WHERE lot_id=? LIMIT 1').get(c.order_lot_id))throw Error('Cost có adjustment cần phân bổ chứng từ riêng trước khi ghi.');
  const n=cents(c.total_net_cost,true);return post('ACTUAL_COST','COST:'+c.id,-n,0,0,Number(c.order_id));

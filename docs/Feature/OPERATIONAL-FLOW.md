@@ -1,5 +1,12 @@
 # DMD Report — Luồng vận hành và business rules
 
+## Supplier Cost và phụ phí theo Tracking — 06/11/2026
+
+1. Admin/Finance/BOD nhập chứng từ tổng. Tracking trùng chứng từ đang áp dụng vào hàng **Chờ xử lý**. Actual Cost và GP giữ nguyên trong lúc chờ.
+2. Admin/Finance chọn **Giữ giá cũ** để loại dòng mới hoặc **Nhận giá mới** để thay giá đang áp dụng của Tracking và tính lại đối soát. Khi chứng từ mới là phụ phí, chọn **Giữ giá cũ**, rồi mở **Supplier Cost Adjustment**.
+3. Admin/Finance nhập tay hoặc dùng template **Tracking | Cost bổ sung | Lý do**. Dòng mới hợp lệ được ghi vào Lot. Dòng trùng phụ phí đã ghi cần chọn **Xác nhận ghi thêm** hoặc **Bỏ qua**. Xem người nhập và người xử lý trong lịch sử.
+4. Finance/BOD đối soát lại nếu Lot vào Review. Chứng từ, phụ phí Supplier và điều chỉnh sổ Supplier là các tác vụ riêng. Xem [đối soát](09-supplier-reconciliation.md), [template](11-import-templates.md) và [sổ Supplier](19-supplier-accounts.md).
+
 ## Owner 23/10 — tuổi nợ và ưu tiên công việc
 Tuổi nợ gốc lấy từ Statement Finalized cũ nhất còn bị nghĩa vụ hiện tại bao phủ; khoản tăng mới theo kỳ được chốt thành immutable aging index, không phân bổ Payment vào từng Statement và không ghi gì khi GET Balance. Credit Term tính từ cuối kỳ; kỳ mở giảm sức mua nhưng không tự tạo quá hạn; lãi chưa ghi sổ không làm tuổi nợ gốc dài hơn. Thiếu lịch sử: Admin xác nhận mốc opening/cents có audit một lần, không thay Balance/Debt. Dashboard Admin có hàng chờ giá thủ công UPS/chuyên tuyến (ưu tiên kỳ đã kết thúc), Label một phần và Client thiếu tuổi nợ. Finalize Statement vẫn phải tuần tự, không bỏ qua đơn thiếu giá. Xem `VERIFICATION-DEBT-AGING-2026-10-23.md`.
 
@@ -215,11 +222,11 @@ D03/D15 vẫn đúng cho Supplier Cost: cost feed không tự thu thêm tiền k
 
 **APPROVED — release blocker:** GP-Net chỉ BOD/authorized finance; Sales, Admin vận hành, CSKH thông thường không được xem. Không đồng nhất ADMIN với BOD. Cần bảo vệ API/detail/list/export/dashboard, pricing snapshot và derived margin/cost có thể suy ra Net. Ẩn cột UI không đủ. GP-Base phục vụ Sales là chỉ tiêu riêng.
 
-**As-is xung đột:** `auth.ts` chỉ có ADMIN/SALES/CLIENT/WAREHOUSE; `orders/route.ts` trả payload đầy đủ cho ADMIN, `safePricing` cho ADMIN toàn quote, Reconciliation chỉ kiểm ADMIN; chưa có quyền BOD/finance chuyên biệt. **Đã sửa payload Orders local:** stripPricingInternals loại estimated_gp, estimated_margin_pct, finalized_gp, finalized_margin_pct, effective_net_cost, cost_coverage_json cho non-Admin ở list/detail/Sales create. RBAC regression API dùng giá trị non-null kiểm tra 65 assertions PASS. Đây chỉ đóng lỗ hổng đã xác định; ADMIN hiện vẫn có quyền Net và chưa đáp ứng D22. Chưa tự cấp quyền finance cho mọi Admin hay chuyển `is_root_admin` thành BOD khi chưa có ma trận quyền được chốt. Không xác nhận đáp ứng bảo mật trước khi sửa toàn bộ đường xuất dữ liệu và kiểm thử role.
+**Lịch sử audit 16/10, trước khi có role Finance/BOD.** Xem [RBAC hiện hành](01-auth-rbac.md). Tại thời điểm audit, `auth.ts` chỉ có ADMIN/SALES/CLIENT/WAREHOUSE; `orders/route.ts` trả payload đầy đủ cho ADMIN, `safePricing` cho ADMIN toàn quote, Reconciliation chỉ kiểm ADMIN; chưa có quyền BOD/finance chuyên biệt. **Đã sửa payload Orders local:** stripPricingInternals loại estimated_gp, estimated_margin_pct, finalized_gp, finalized_margin_pct, effective_net_cost, cost_coverage_json cho non-Admin ở list/detail/Sales create. RBAC regression API dùng giá trị non-null kiểm tra 65 assertions PASS. Đây chỉ đóng lỗ hổng đã xác định; ADMIN hiện vẫn có quyền Net và chưa đáp ứng D22. Chưa tự cấp quyền finance cho mọi Admin hay chuyển `is_root_admin` thành BOD khi chưa có ma trận quyền được chốt. Không xác nhận đáp ứng bảo mật trước khi sửa toàn bộ đường xuất dữ liệu và kiểm thử role.
 
 **DEFERRED:** Supplier là account/login riêng, có phạm vi dữ liệu riêng cho balance, statements/công nợ, reconciliation, missing-cost, claims và payments. Supplier trong enum/route và Supplier Recovery hiện tại không phải Supplier portal. Không tái sử dụng Client Balance làm Supplier Balance.
 
-**Supplier payables — APPROVED GĐ1 theo D24; IMPLEMENTED local:** Owner chọn đưa sổ invoice/thanh toán/còn phải trả vào hệ thống. Có invoice USD, partial/full payment allocation, outstanding theo Supplier, reversal, void invoice chưa trả, chứng từ/reason/audit và idempotency; không sinh lại Order cost hay trừ Client Balance. UI tại Supplier Costs & Phải trả. Portal/login Supplier vẫn DEFERRED. Quyền đang theo ADMIN Finance Controls, chưa đáp ứng tách BOD/finance D22; UAT/migration và mapping chứng từ cost chưa nghiệm thu. Xem [Supplier Payables](13-supplier-payables.md).
+**Supplier payables — APPROVED GĐ1 theo D24; IMPLEMENTED local:** Owner chọn đưa sổ invoice/thanh toán/còn phải trả vào hệ thống. Có invoice USD, partial/full payment allocation, outstanding theo Supplier, reversal, void invoice chưa trả, chứng từ/reason/audit và idempotency; không sinh lại Order cost hay trừ Client Balance. UI tại Supplier Costs & Phải trả. Portal/login Supplier vẫn DEFERRED. Quyền hiện hành theo [RBAC](01-auth-rbac.md). UAT với chứng từ thật và mapping chứng từ cost vẫn cần nghiệm thu. Xem [Supplier Payables](13-supplier-payables.md).
 
 Permission spec cần trước triển khai: ai mời/khóa Supplier, user ↔ Supplier, xem/nhập cost hay được sửa, ai duyệt/phản hồi tranh chấp, xem chứng từ thanh toán, cách ly Supplier khác/Client pricing/GP, audit và export. Đây là việc còn thiếu đặc tả quyền, không phải logic Supplier account còn chưa được Owner đồng ý.
 
@@ -238,7 +245,7 @@ Permission spec cần trước triển khai: ai mời/khóa Supplier, user ↔ S
 | Debt/payment allocation; Lot reconciliation | IMPLEMENTED | `credit.ts`, `debt-interest.ts`, `reconciliation.ts`; UAT/migration còn thiếu |
 | Component/placeholder Mid-mile | IMPLEMENTED local; APPROVED mapping/UAT | Fallback estimate, actual thay cùng phần, PARTIAL/COMPLETE/UNKNOWN; không trộn aggregate; chưa Cargo allocation |
 | Warehouse theo Carton/Order | IMPLEMENTED chỗ lưu; APPROVED flow tính phí | Component theo Lot có reference; chưa tự tính/phân bổ theo carton/order |
-| Supplier payables | APPROVED GĐ1, IMPLEMENTED local | Invoice/payment/allocation/outstanding/reversal/audit; quyền finance/UAT còn pending; portal DEFERRED |
+| Supplier payables | APPROVED GĐ1, IMPLEMENTED | Invoice/payment/allocation/outstanding/reversal/audit; quyền Finance/BOD đã tách, UAT chứng từ thực còn mở; portal DEFERRED |
 | GP-Net restricted BOD/finance | APPROVED | Permission model và mọi đường đọc/export cần sửa trước launch |
 | Actual Mid-mile allocation / Cargo | DEFERRED | Sau GĐ1; không đưa vào acceptance GĐ1 |
 | Supplier login/portal/Balance/Statements | DEFERRED | Lập permission spec trước triển khai |

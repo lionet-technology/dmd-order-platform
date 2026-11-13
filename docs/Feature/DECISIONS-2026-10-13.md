@@ -1,3 +1,6 @@
+## Owner chốt Supplier Cost — 06/11/2026
+Chứng từ tổng theo Tracking trùng tự chờ xử lý, giữ nguyên Actual Cost và GP. Admin/Finance chỉ chọn giữ giá cũ hoặc nhận giá mới. Quyết định này thay phương án cũ cho cộng hai giá ngay trong luồng xử lý trùng. Khi giá mới thực chất là phụ phí, giữ giá cũ và dùng template riêng **Tracking | Cost bổ sung | Lý do**. Phụ phí trùng Tracking, số tiền và lý do chờ Admin/Finance xác nhận ghi thêm hoặc bỏ qua. Một lần gửi lại cùng thao tác phải dùng cùng khóa kỹ thuật, còn lần phát sinh thật cần xác nhận riêng. Lưu audit và áp dụng RBAC trên server. Phân loại phụ phí chi tiết hoãn. [Hành vi hiện hành](09-supplier-reconciliation.md).
+
 ## Owner continuation — 02/11/2026
 Admin/Finance both choose explicit negative Refund recovery via funded Balance or actual Bank receipt. Balance recovery must not overdraw or create Debt; bank receipt never changes Balance. Reuse linked RECOVERY/ADJUSTMENT_DEBIT, audit/idempotency and immutable Statement journal. Supplier deep UAT only: no Supplier Statement/period lock, unidentified-money book or spreadsheet enhancements. Manual Orders MAX 20 remains unchanged. [Behavior](14-refund-management.md), [verification](AUDIT-REFUND-SUPPLIER-2026-11-02.md).
 

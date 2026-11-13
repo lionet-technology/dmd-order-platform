@@ -19,6 +19,21 @@ export function reconciliationSchema(){
  CREATE TRIGGER IF NOT EXISTS immutable_lot_adjustment_delete BEFORE DELETE ON lot_cost_adjustments BEGIN SELECT RAISE(ABORT,'Cost adjustment history is immutable'); END;
  CREATE TRIGGER IF NOT EXISTS immutable_lot_version_update BEFORE UPDATE ON lot_reconciliation_versions BEGIN SELECT RAISE(ABORT,'Reconciliation history is immutable'); END;
  CREATE TRIGGER IF NOT EXISTS immutable_lot_version_delete BEFORE DELETE ON lot_reconciliation_versions BEGIN SELECT RAISE(ABORT,'Reconciliation history is immutable'); END;`);
+ if(!(db.prepare('PRAGMA table_info(lot_cost_adjustments)').all() as Row[]).some(r=>r.name==='tracking_id'))db.exec('ALTER TABLE lot_cost_adjustments ADD COLUMN tracking_id INTEGER REFERENCES order_trackings(id)');
+ db.exec(`CREATE INDEX IF NOT EXISTS idx_tracking_cost_adjustments ON lot_cost_adjustments(tracking_id,delta_cents,reason) WHERE tracking_id IS NOT NULL;
+ CREATE TABLE IF NOT EXISTS supplier_cost_adjustment_pending(
+   id INTEGER PRIMARY KEY,
+   tracking_id INTEGER NOT NULL REFERENCES order_trackings(id),
+   lot_id INTEGER NOT NULL REFERENCES order_lots(id),
+   amount_cents INTEGER NOT NULL CHECK(amount_cents>0),
+   reason TEXT NOT NULL,
+   duplicate_of INTEGER NOT NULL REFERENCES lot_cost_adjustments(id),
+   created_by_user_id INTEGER NOT NULL REFERENCES users(id),
+   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+   resolved_by_user_id INTEGER REFERENCES users(id),
+   resolved_at TEXT,
+   recorded_adjustment_id INTEGER REFERENCES lot_cost_adjustments(id)
+ );`);
  if(!(db.prepare('PRAGMA table_info(lot_reconciliation_versions)').all() as Row[]).some(r=>r.name==='cost_snapshot_json'))db.exec('ALTER TABLE lot_reconciliation_versions ADD COLUMN cost_snapshot_json TEXT');
  }).immediate();
 }
@@ -29,14 +44,14 @@ export function reconcileLots(orderId:number){
  const lots=db.prepare('SELECT * FROM order_lots WHERE order_id=? ORDER BY lot_number').all(orderId) as Row[];
  const results=lots.map(lot=>{
  const settings=db.prepare('SELECT * FROM lot_reconciliation_settings WHERE lot_id=?').get(lot.id) as Row|undefined;
- const cost=db.prepare('SELECT COUNT(*) n,SUM(ROUND(total_net_cost*100)) actual FROM supplier_costs WHERE order_lot_id=?').get(lot.id) as {n:number;actual:number|null};
+ const cost=db.prepare('SELECT COUNT(*) n,SUM(ROUND(total_net_cost*100)) actual FROM supplier_costs WHERE import_status=\'ACTIVE\' AND order_lot_id=?').get(lot.id) as {n:number;actual:number|null};
  const pendingNewSupplierCost=(db.prepare(`SELECT COUNT(*) n FROM emergency_switch_cost_pending ep
   JOIN order_trackings ot ON ot.id=ep.new_tracking_id
   WHERE ep.order_id=? AND ep.lot_number=? AND ot.cost_match_type NOT IN ('NOT_BILLED','INCLUDED_IN_PARENT')
-  AND NOT EXISTS(SELECT 1 FROM supplier_costs sc WHERE sc.matched_order_tracking_id=ep.new_tracking_id AND sc.supplier=ep.new_supplier COLLATE NOCASE AND sc.order_lot_id=? )`).get(orderId,lot.lot_number,lot.id) as {n:number}).n;
+  AND NOT EXISTS(SELECT 1 FROM supplier_costs sc WHERE sc.import_status='ACTIVE' AND sc.matched_order_tracking_id=ep.new_tracking_id AND sc.supplier=ep.new_supplier COLLATE NOCASE AND sc.order_lot_id=? )`).get(orderId,lot.lot_number,lot.id) as {n:number}).n;
  const pendingRouteOnlyCost=(db.prepare(`SELECT COUNT(*) n FROM emergency_route_only_cost_pending ep
   WHERE ep.order_id=? AND ep.lot_number=? AND NOT EXISTS(
-   SELECT 1 FROM supplier_costs sc WHERE sc.order_lot_id=? AND sc.supplier=ep.new_supplier COLLATE NOCASE
+   SELECT 1 FROM supplier_costs sc WHERE sc.import_status='ACTIVE' AND sc.order_lot_id=? AND sc.supplier=ep.new_supplier COLLATE NOCASE
    AND sc.id>ep.cost_id_after AND (ep.tracking_id=0 OR sc.matched_order_tracking_id=ep.tracking_id))`).get(orderId,lot.lot_number,lot.id) as {n:number}).n;
  const pendingEmergencyCost=pendingNewSupplierCost+pendingRouteOnlyCost;
  const estimated=settings?.estimated_cents??(lots.length===1&&order.est_net_cost!=null?cents(order.est_net_cost):null);
@@ -51,7 +66,7 @@ export function reconcileLots(orderId:number){
  const actual=baseActual===null||pendingEmergencyCost?null:Number(baseActual)+adjustment;
  if(actual!==null&&actual<0)throw Error('Cost điều chỉnh không được âm.');
  const previous=db.prepare('SELECT * FROM lot_reconciliation_versions WHERE lot_id=? ORDER BY id DESC LIMIT 1').get(lot.id) as Row|undefined;
- const sources=db.prepare('SELECT id,supplier,total_net_cost,matched_order_tracking_id,source_key FROM supplier_costs WHERE order_lot_id=? ORDER BY id').all(lot.id) as Row[];
+ const sources=db.prepare('SELECT id,supplier,total_net_cost,matched_order_tracking_id,source_key FROM supplier_costs WHERE import_status=\'ACTIVE\' AND order_lot_id=? ORDER BY id').all(lot.id) as Row[];
  const adjustments=db.prepare('SELECT id,delta_cents FROM lot_cost_adjustments WHERE lot_id=? ORDER BY id').all(lot.id);
  const suppliers=Array.from(new Set(sources.map(s=>String(s.supplier||'').trim().toLowerCase())));
  const reviewReasons=[...(suppliers.length>1?['MULTIPLE_SUPPLIERS']:[]),...(lots.length>1?['MULTIPLE_LOTS']:[]),...(adjustments.length?['COST_ADJUSTMENT']:[])];
@@ -104,7 +119,7 @@ export function reconciliationAction(user:AuthUser,input:Row){
  const action=String(row.action);
  if(action==='cost_components'){
  if(!input.request_key||!Array.isArray(row.components)||row.components.length!==4)throw Error('Cần request_key và đủ bốn component.');
- if(db.prepare('SELECT id FROM supplier_costs WHERE order_lot_id=? LIMIT 1').get(lot.id)||db.prepare('SELECT id FROM lot_cost_adjustments WHERE lot_id=? LIMIT 1').get(lot.id)||db.prepare('SELECT replacement_cents FROM lot_reconciliation_settings WHERE lot_id=? AND replacement_cents IS NOT NULL').get(lot.id))throw Error('Lot đã có aggregate cost; cần mapping supplier trước khi chuyển component.');
+ if(db.prepare('SELECT id FROM supplier_costs WHERE import_status=\'ACTIVE\' AND order_lot_id=? LIMIT 1').get(lot.id)||db.prepare('SELECT id FROM lot_cost_adjustments WHERE lot_id=? LIMIT 1').get(lot.id)||db.prepare('SELECT replacement_cents FROM lot_reconciliation_settings WHERE lot_id=? AND replacement_cents IS NOT NULL').get(lot.id))throw Error('Lot đã có aggregate cost; cần mapping supplier trước khi chuyển component.');
  const names=new Set<string>();let total=0;
  for(const item of row.components as Row[]){
  const component=String(item.component),reference=String(item.reference||'').trim();
@@ -119,7 +134,7 @@ export function reconciliationAction(user:AuthUser,input:Row){
  const amount=cents(row.amount);
  db.prepare('INSERT OR IGNORE INTO lot_reconciliation_settings(lot_id) VALUES (?)').run(lot.id);
  if(action==='estimate')db.prepare('UPDATE lot_reconciliation_settings SET estimated_cents=? WHERE lot_id=?').run(amount,lot.id);
- else {if(db.prepare('SELECT id FROM supplier_costs WHERE order_lot_id=? LIMIT 1').get(lot.id))throw Error('Cost thay thế chỉ dùng khi thiếu giá supplier.');db.prepare('UPDATE lot_reconciliation_settings SET replacement_cents=?,replacement_reason=? WHERE lot_id=?').run(amount,reason,lot.id);}
+ else {if(db.prepare('SELECT id FROM supplier_costs WHERE import_status=\'ACTIVE\' AND order_lot_id=? LIMIT 1').get(lot.id))throw Error('Cost thay thế chỉ dùng khi thiếu giá supplier.');db.prepare('UPDATE lot_reconciliation_settings SET replacement_cents=?,replacement_reason=? WHERE lot_id=?').run(amount,reason,lot.id);}
  }else if(action==='cost_adjustment'){
  const value=Number(row.amount);if(!Number.isFinite(value)||!value||!input.request_key||before.actual_cents===null)throw Error('Điều chỉnh cần amount có dấu, cost hiện tại và request_key.');
  const delta=cents(Math.abs(value))*Math.sign(value);if(!delta||Number(before.actual_cents)+delta<0)throw Error('Cost sau điều chỉnh không được âm.');

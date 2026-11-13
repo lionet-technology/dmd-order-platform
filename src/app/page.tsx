@@ -1,9 +1,10 @@
 "use client";
 import {MANUAL_ORDER_LIMIT,MANUAL_ORDER_LIMIT_MESSAGE} from "@/lib/manual-order-limit";
 import { FinanceWorkspace } from "./finance-role-workspace";
+import {SupplierCostWorkspace} from "./supplier-cost-workspace";
+import {SupplierCostAdjustmentWorkspace} from "./supplier-cost-adjustment-workspace";
 import { normalizeCountry } from "@/lib/epacket-pricing";
 import { OperationsWorkspace } from "./operations-workspace";
-import { SupplierPayablesWorkspace } from "./supplier-payables-workspace";
 import { ReconciliationWorkspace } from "./reconciliation-workspace";
 import { FinanceHub } from "./finance-hub";
 import { AdminActionDashboard } from './admin-action-dashboard';
@@ -21,8 +22,8 @@ type RowData = Record<string, string | number | null>;
 type PagedRows = { items:RowData[]; total:number; page:number; pageSize:number; totalPages:number };
 type AppSection = "dashboard"|"orders"|"manifest"|"shipping"|"costs"|"recon"|"ledger"|"accounts"|"masterdata"|"operations";
 type Summary = { orders:number; review:number; unmatched:number; ledger:number; receivable:number };
-type ManualKind = "order" | "cost" | "balance";
-type ImportKind = "orders"|"sales_orders"|"costs"|"tracking_updates"|"balance";
+type ManualKind = "order" | "balance";
+type ImportKind = "orders"|"sales_orders"|"tracking_updates"|"balance";
 type EnumType = "SERVICE"|"SUB_SERVICE"|"SUPPLIER"|"COUNTRY";
 type EnumRow = {
   id:number; enum_type:EnumType; value:string; parent_value:string; active:number;
@@ -478,24 +479,6 @@ function EntrySheet({title,hint,columns,blank,storageKey,validate,save,onDone,op
   </div>;
 }
 
-function CostSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>void}){
-  const columns:SheetColumn[]=[
-    {key:"occurred_at",label:"Ngày",width:115,type:"dateText"},{key:"tracking",label:"Tracking *",width:150},
-    {key:"supplier",label:"Supplier",width:130,type:"combo",options:enumOptions(enums,"SUPPLIER")},
-    {key:"service",label:"Dịch vụ",width:140,type:"combo",options:enumOptions(enums,"SERVICE")},
-    {key:"sub_service",label:"Sub-Service",width:140,type:"combo"},
-    {key:"net_price",label:"Net Price",width:95,type:"number"},{key:"fee",label:"Phụ phí",width:90,type:"number"},
-    {key:"export_customs",label:"HQ Xuất",width:90,type:"number"},{key:"import_customs",label:"HQ Nhập",width:90,type:"number"},
-    {key:"total_net_cost",label:"Total Net",width:100,type:"number"},{key:"extra_surcharge",label:"Phụ phí BS",width:100,type:"number"},
-    {key:"surcharge_type",label:"Loại phụ phí",width:150},{key:"import_tax",label:"Thuế NK",width:90,type:"number"},{key:"note",label:"Private Note",width:180},
-  ];
-  const blank=()=>({occurred_at:today(),tracking:"",supplier:"",service:"",sub_service:"",net_price:"",fee:"",export_customs:"",import_customs:"",total_net_cost:"",extra_surcharge:"",surcharge_type:"",import_tax:"",note:""});
-  return <EntrySheet title="Nhập Supplier Cost" hint="Paste nhiều dòng · Tracking là khóa link Order" columns={columns} blank={blank} storageKey="dmd.costSheetWidths"
-    optionsFor={(row,col)=>col.key==="sub_service"?enumOptions(enums,"SUB_SERVICE",row.service):(col.options||[])}
-    validate={row=>!row.tracking.trim()?"Thiếu Tracking":row.occurred_at&&!isValidDateText(row.occurred_at)?"Ngày sai định dạng":row.service&&!enumIsValid(enums,"SERVICE",row.service)?"Dịch vụ không hợp lệ":row.sub_service&&!enumIsValid(enums,"SUB_SERVICE",row.sub_service,row.service)?"Sub-Service không hợp lệ":row.supplier&&!enumIsValid(enums,"SUPPLIER",row.supplier)?"Supplier không hợp lệ":""}
-    save={row=>postJson("/api/costs",row)} onDone={onDone}/>;
-}
-
 const BALANCE_TYPES=[
   {value:"ADDITIONAL_FEE",label:"Additional fee (-)"},{value:"PAYMENT",label:"Payment (+)"},{value:"REFUND",label:"Refund (+)"},{value:"SERVICE_COST",label:"Service Cost (-)"},
   {value:"ERROR_PROCESSING",label:"Processing (+)"},{value:"ERROR_REFUND",label:"Error Refund (+)"},{value:"ERROR_CHARGEABLE",label:"Chargeable (-)"},
@@ -522,7 +505,7 @@ function BalanceSheet({clients,onDone,role}:{clients:User[];onDone:()=>void;role
 }
 
 function ImportCard({ kind, title, detail, templateHref, onDone }:{
-  kind:"orders"|"sales_orders"|"costs"|"tracking_updates"|"balance"; title:string; detail:string; templateHref:string; onDone:()=>void
+  kind:"orders"|"sales_orders"|"tracking_updates"|"balance"; title:string; detail:string; templateHref:string; onDone:()=>void
 }) {
   const [file,setFile]=useState<File|null>(null); const [busy,setBusy]=useState(false); const [msg,setMsg]=useState("");
   async function upload(){
@@ -992,7 +975,6 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   const endpointFor=(target:AppSection)=>{
     if(target==="orders")return "/api/orders";
     if(target==="shipping")return "/api/shipment-status";
-    if(target==="costs")return "/api/costs";
     if(target==="recon")return "/api/reconciliation";
     return "";
   };
@@ -1024,12 +1006,12 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
 
   useEffect(()=>{void loadSummary();void loadUsers();void loadEnums();void loadRecent()},[loadSummary,loadUsers,loadEnums,loadRecent]);
   useEffect(()=>{const refresh=()=>{void loadSummary()};window.addEventListener('dmd-financial-updated',refresh);return ()=>window.removeEventListener('dmd-financial-updated',refresh)},[loadSummary]);
-  useEffect(()=>{if(["orders","shipping","costs","recon"].includes(section))void loadSection(section,page,debouncedSearch)},[section,page,debouncedSearch,loadSection]);
+  useEffect(()=>{if(["orders","shipping","recon"].includes(section))void loadSection(section,page,debouncedSearch)},[section,page,debouncedSearch,loadSection]);
 
   const refresh=useCallback(async()=>{
     await Promise.all([loadSummary(),loadUsers(),loadEnums(),loadRecent()]);
     if(section==="ledger")window.dispatchEvent(new Event("dmd-financial-updated"));
-    if(["orders","shipping","costs","recon"].includes(section))await loadSection(section,page,debouncedSearch);
+    if(["orders","shipping","recon"].includes(section))await loadSection(section,page,debouncedSearch);
   },[loadSummary,loadUsers,loadEnums,loadRecent,loadSection,section,page,debouncedSearch]);
 
   useEffect(()=>{window.scrollTo(0,0)},[section]);
@@ -1059,7 +1041,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
     {key:"shipping",label:"Theo dõi vận chuyển",icon:"⌁",roles:["ADMIN"]},
     {key:"operations",label:"Control Tower",icon:"◎",roles:["ADMIN","SALES","CLIENT","WAREHOUSE"]},
     {key:"ledger",label:"Balance Ledger",icon:"≋",roles:["ADMIN","SALES","CLIENT"]},
-    {key:"costs",label:"Supplier Costs",icon:"$ ",roles:[]},
+    {key:"costs",label:"Supplier Costs",icon:"$ ",roles:["ADMIN"]},
     {key:"recon",label:"Reconciliation",icon:"✓",roles:[]},
     {key:"masterdata",label:"Dịch vụ",icon:"☷",roles:["ADMIN"]},
     {key:"accounts",label:"Tài khoản",icon:"♙",roles:["ADMIN"]},
@@ -1157,14 +1139,9 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
         </>}
 
         {role==="ADMIN"&&section==="costs"&&<>
-          <PageHeader eyebrow="FINANCE" title="Supplier Costs & Phải trả" description="Theo dõi chi phí thực tế và trạng thái link với Orders."
-            actions={<><button className="secondaryBtn" onClick={()=>setImportKind("costs")}>⇩ Import</button><button className="primaryBtn" onClick={()=>openEntry("cost")}>＋ Nhập Cost</button></>}/>
-          <SupplierPayablesWorkspace suppliers={enumOptions(enums,"SUPPLIER").map(s=>s.value)}/>
-          <div className="panel dataPanel">
-            <div className="dataToolbar"><SearchBar value={search} onChange={setSearch} placeholder="Tìm Tracking, supplier, service, Order ID..."/><span>{data.total} records</span></div>
-            {loading?<div className="loadingState">Đang tải dữ liệu…</div>:<Table rows={data.items} cols={["occurred_at","tracking","matched","order_id","customer","supplier","service","total_net_cost","reconciliation_status"]}/>}
-            <Pager data={data} onPage={setPage}/>
-          </div>
+          <PageHeader eyebrow="FINANCE" title="Supplier Costs" description="Nhập chứng từ, xử lý Tracking trùng và ghi phụ phí Supplier."/>
+          <SupplierCostWorkspace role={role}/>
+          <SupplierCostAdjustmentWorkspace/>
         </>}
 
         {role==="ADMIN"&&section==="recon"&&<>
@@ -1204,11 +1181,10 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
 
     {role==="ADMIN"&&bulkReplacement&&<Modal size="fullscreen" title="Đổi Tracking & Label hàng loạt" onClose={()=>setBulkReplacement(false)}><TrackingReplacementSheet onDone={refresh}/></Modal>}
 
-    {(role==="ADMIN"||role==="SALES")&&importKind&&<Modal size="compact" title={importKind==="costs"?"Import Supplier Costs":importKind==="tracking_updates"?"Import đổi Tracking & Label":importKind==="balance"?"Import Balance":role==="ADMIN"?"Import Orders Admin":"Import Orders Sales"} onClose={()=>setImportKind(null)}>
+    {(role==="ADMIN"||role==="SALES")&&importKind&&<Modal size="compact" title={importKind==="tracking_updates"?"Import đổi Tracking & Label":importKind==="balance"?"Import Balance":role==="ADMIN"?"Import Orders Admin":"Import Orders Sales"} onClose={()=>setImportKind(null)}>
       <div className="importModalContent">
         {importKind==="orders"&&<ImportCard kind="orders" title="Orders Admin" detail="Import nhiều Order với đầy đủ field vận hành và finance." templateHref="/templates/dmd-admin-orders.xlsx" onDone={()=>{setImportKind(null);void refresh()}}/>}
         {importKind==="sales_orders"&&<ImportCard kind="sales_orders" title="Orders Sales" detail="Import nhiều Order của account đang đăng nhập; không nhận field finance Admin." templateHref="/templates/dmd-sales-orders.xlsx" onDone={()=>{setImportKind(null);void refresh()}}/>}
-        {importKind==="costs"&&<ImportCard kind="costs" title="Supplier Costs" detail="True cost, surcharge và import tax theo Tracking." templateHref="/templates/dmd-supplier-costs.xlsx" onDone={()=>{setImportKind(null);void refresh()}}/>}
         {importKind==="tracking_updates"&&<ImportCard kind="tracking_updates" title="Đổi Tracking & Label" detail="Match Tracking cũ, giữ lịch sử và thay bằng Tracking/Label mới." templateHref="/templates/dmd-tracking-updates.xlsx" onDone={()=>{setImportKind(null);void refresh()}}/>}
         {importKind==="balance"&&<ImportCard kind="balance" title="Balance" detail="Payment, service cost và error adjustments." templateHref="/templates/dmd-balance.xlsx" onDone={()=>{setImportKind(null);void refresh()}}/>}
       </div>
@@ -1216,9 +1192,8 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
 
     {role==="ADMIN"&&purchaseOrder&&<Modal size="wide" title="Xử lý mua đơn & Tracking" onClose={()=>setPurchaseOrder(null)}><PurchaseOrderPanel order={purchaseOrder} enums={enums} onClose={()=>setPurchaseOrder(null)} onDone={refresh}/></Modal>}
 
-    {role!=="CLIENT"&&entry&&<Modal size="fullscreen" title={editOrder?"Chỉnh sửa Order":entry==="order"?"Tạo Orders":entry==="cost"?"Nhập Supplier Cost":"Ghi Balance"} onClose={closeEntry}>
+    {role!=="CLIENT"&&entry&&<Modal size="fullscreen" title={editOrder?"Chỉnh sửa Order":entry==="order"?"Tạo Orders":"Ghi Balance"} onClose={closeEntry}>
       {entry==="order"&&<QuickOrderSheet role={role} clients={clients} enums={enums} onDone={entryDone} edit={editOrder}/>}
-      {entry==="cost"&&role==="ADMIN"&&<CostSheet enums={enums} onDone={entryDone}/>}
       {entry==="balance"&&(role==="ADMIN"||role==="SALES")&&<BalanceSheet clients={clients} role={role} onDone={entryDone}/>}
     </Modal>}
   </div>;
