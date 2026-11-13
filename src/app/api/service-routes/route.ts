@@ -82,6 +82,7 @@ async function handlePOST(req:NextRequest){
         if(previousState==="DELETED"||previousState==="ARCHIVED")throw Error("Route đã Archived/Deleted; dùng tác vụ đổi trạng thái trước khi sửa.");
         // Historic order identities must stay immutable, not merely manifest references.
         const renaming=[service,subService,supplier].some((value,index)=>value.toLowerCase()!==String(previous[["service","sub_service","supplier"][index]]).toLowerCase());
+        if(renaming&&db.prepare("SELECT id FROM service_v1_config_versions WHERE route_id=? LIMIT 1").get(id))throw Error("Route đã có cấu hình V1; tạo route mới để giữ lịch sử.");
         if(renaming&&db.prepare("SELECT id FROM orders WHERE service=? COLLATE NOCASE AND sub_service=? COLLATE NOCASE AND supplier=? COLLATE NOCASE LIMIT 1").get(previous.service,previous.sub_service,previous.supplier))throw Error("Route đã gắn Order; hãy tạo Route mới để bảo toàn lịch sử tài chính.");
         if(renaming&&db.prepare("SELECT id FROM manifest_cartons WHERE route_config_id=? LIMIT 1").get(id))throw new Error("Route đã gắn với thùng kho. Hãy tạo route mới để giữ lịch sử thùng.");
         if(variables){

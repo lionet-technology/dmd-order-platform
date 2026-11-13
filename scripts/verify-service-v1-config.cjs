@@ -36,6 +36,10 @@ async function main(){
  const ownerCookie=cookie(owner.id),salesCookie=cookie(sales.id),adminCookie=cookie(admin.id);
  function req(method,body,c){return new NextRequest("http://local/api/service-v1/configuration?route_id="+route,{method,headers:{...(c?{cookie:c}:{}),"content-type":"application/json"},...(body?{body:JSON.stringify(body)}:{})});}
  check((await api.GET(req("GET",null,ownerCookie))).status===200,"Owner API");
+ const routeApi=require("../src/app/api/service-routes/route.ts");
+ for(const [type,value,parent] of [["SERVICE","UPS",""],["SUB_SERVICE","Saver","UPS"],["SUPPLIER","OtherSupplier",""]])db.prepare("INSERT OR IGNORE INTO enum_values(enum_type,value,parent_value,active,sort_order) VALUES (?,?,?,1,100)").run(type,value,parent);
+ const renamed=await routeApi.POST(new NextRequest("http://local/api/service-routes",{method:"POST",headers:{cookie:ownerCookie,"content-type":"application/json"},body:JSON.stringify({id:route,service:"UPS",sub_service:"Saver",supplier:"OtherSupplier"})}));
+ check(renamed.status===400&&(await renamed.text()).includes("V1"),"route rename preserves V1 config history");
  for(const c of [salesCookie,adminCookie,undefined]){
   check((await api.GET(req("GET",null,c))).status>=400,"private config read denied");
   check((await api.POST(req("POST",payload,c))).status>=400,"private config write denied");

@@ -10,4 +10,6 @@ Root Owner permission follows existing pricing access pending detailed V1 RBAC d
 
 Source: service-v1-config.ts, service-v1-schema.ts, /api/service-v1/configuration/route.ts; schema installed additively by db.ts.
 Regression: scripts/verify-service-v1-config.cjs (disposable SQLite: idempotency, stale edits, validation, rollback, immutable SQL, no live-route mutation, HTTP authorization, restart).
+Route identity rename is now rejected once V1 config exists, including before an Order is created; create a new route to retain immutable config history. Related staged pricing: [Feature 25](25-service-v1-pricing.md).
+
 Still missing: UI configuration, adapter integration/activation, actual Excel rates and VNĐ financial cutover. [Target](DMD_Order_Platform_Service_Architecture_V1_Specification.md).

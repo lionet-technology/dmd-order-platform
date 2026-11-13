@@ -1,3 +1,6 @@
+## V1 staged pricing — 14/11/2026
+[Immutable Net/Proposal, sequential markup and Review/Publish backend](25-service-v1-pricing.md). Operational USD pricing described below remains CURRENT until verified VNĐ cutover. No change to purchased prices.
+
 ## Client confirmation enforcement — 04/11/2026
 This supersedes the 28/10 legacy/domain exemption below. Every new priced Purchase with actor CLIENT requires the displayed opaque quote key in `purchaseService`, within the same immediate transaction as Reserve. Missing/stale keys reject normally as DATA purchase items; reload Draft/Preview and explicitly reconfirm. `/api/client-orders` uses `expected_quotes`; legacy `/api/purchase-jobs` uses `expected_quote_key` and returns the same batch item shape for Client purchase. Admin/Sales behavior is unchanged. Accepted purchases replay the locked snapshot before checking a new key, including after prices change.
 

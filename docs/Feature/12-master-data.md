@@ -1,5 +1,5 @@
 ## Service V1 foundation — 14/11/2026
-[Staged configuration API and immutable revisions](24-service-v1-configuration.md). CURRENT backend only; no operational VNĐ activation.
+[Staged configuration API and immutable revisions](24-service-v1-configuration.md). CURRENT backend only; no operational VNĐ activation. A route with V1 config history cannot be renamed; create a new route.
 
 # Danh mục & cấu hình dùng chung
 

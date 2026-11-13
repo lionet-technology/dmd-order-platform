@@ -14,6 +14,39 @@ export function installServiceV1Schema(db: Database.Database) {
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(route_id,revision)
  );
+
+ CREATE TABLE IF NOT EXISTS service_v1_price_documents(
+  id INTEGER PRIMARY KEY,
+  route_id INTEGER NOT NULL REFERENCES service_route_configs(id),
+  kind TEXT NOT NULL CHECK(kind IN ('NET','PROPOSAL')),
+  config_id INTEGER NOT NULL REFERENCES service_v1_config_versions(id),
+  source_net_id INTEGER REFERENCES service_v1_price_documents(id),
+  body_json TEXT NOT NULL,
+  actor_id INTEGER NOT NULL REFERENCES users(id),
+  request_key TEXT NOT NULL UNIQUE,
+  request_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+ );
+ CREATE TABLE IF NOT EXISTS service_v1_price_events(
+  id INTEGER PRIMARY KEY,
+  document_id INTEGER NOT NULL REFERENCES service_v1_price_documents(id),
+  action TEXT NOT NULL CHECK(action IN ('REVIEW','PUBLISH')),
+  expected_published_id INTEGER,
+  actor_id INTEGER NOT NULL REFERENCES users(id),
+  request_key TEXT NOT NULL UNIQUE,
+  request_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(document_id,action)
+ );
+ CREATE TRIGGER IF NOT EXISTS service_v1_price_document_no_update BEFORE UPDATE ON service_v1_price_documents
+ BEGIN SELECT RAISE(ABORT,'Immutable V1 price document'); END;
+ CREATE TRIGGER IF NOT EXISTS service_v1_price_document_no_delete BEFORE DELETE ON service_v1_price_documents
+ BEGIN SELECT RAISE(ABORT,'Immutable V1 price document'); END;
+ CREATE TRIGGER IF NOT EXISTS service_v1_price_event_no_update BEFORE UPDATE ON service_v1_price_events
+ BEGIN SELECT RAISE(ABORT,'Immutable V1 price event'); END;
+ CREATE TRIGGER IF NOT EXISTS service_v1_price_event_no_delete BEFORE DELETE ON service_v1_price_events
+ BEGIN SELECT RAISE(ABORT,'Immutable V1 price event'); END;
+
  CREATE TRIGGER IF NOT EXISTS service_v1_config_no_update BEFORE UPDATE ON service_v1_config_versions
  BEGIN SELECT RAISE(ABORT,'Immutable V1 configuration'); END;
  CREATE TRIGGER IF NOT EXISTS service_v1_config_no_delete BEFORE DELETE ON service_v1_config_versions
