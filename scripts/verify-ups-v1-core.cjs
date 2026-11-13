@@ -1,0 +1,62 @@
+require("./service-v1-test-env.cjs");
+const assert=require("node:assert/strict"),{db}=require("../src/lib/db.ts"),{createUser,createSession}=require("../src/lib/auth.ts"),u=require("../src/lib/ups-v1-calculator.ts"),g=require("../src/lib/ups-v1-globals.ts"),api=require("../src/app/api/service-v1/ups-globals/route.ts"),{NextRequest}=require("next/server");
+let checks=0;const check=(v,m)=>{checks++;assert.ok(v,m)},throws=(f,r)=>{checks++;assert.throws(f,r)},near=(a,b,m)=>check(Math.abs(a-b)<1e-7,m);
+const zero={fuel:0,vat:0,us_broker:0,customs_per_kg_vnd:0}; // TEST ONLY, never seeded/activated on an operational database.
+const rate={zone:"TEST-ZONE",min_kg:0,max_kg:100,min_inclusive:false,max_inclusive:true,unit:"FIXED",rate_vnd:100000};
+const account=(name="VTT",r=rate)=>({account:name,zone:"TEST-ZONE",rates:[r],net_discount:0,shipment_surcharge_vnd:0,shipment_discount:0,weight_surcharge_vnd_per_kg:0,weight_discount:0});
+async function main(){
+ const owner=createUser({username:"ups.owner",display_name:"Owner",password:"TestPass123!",role:"ADMIN",is_root_admin:true}),sales=createUser({username:"ups.sales",display_name:"Sales",password:"TestPass123!",role:"SALES"});
+ near(u.upsAccountNet(account(),25,zero).net_vnd,100000,"fixed not multiplied by weight");
+ near(u.upsAccountNet(account("VTT",{...rate,unit:"PER_KG"}),25,zero).net_vnd,2500000,"per kg multiplied into transportation");
+ const full={...account("VTT",{...rate,unit:"PER_KG"}),net_discount:0.5,shipment_surcharge_vnd:20000,shipment_discount:0.25,weight_surcharge_vnd_per_kg:1000,weight_discount:0.2};
+ // Independent arithmetic: Td=1,250,000; shipment=15,000; weight=20,000.
+ near(u.upsAccountNet(full,25,{fuel:0.2,vat:0.1,us_broker:0.03,customs_per_kg_vnd:10000}).net_vnd,1983700,"full formula oracle");
+ const a={...account("VTT"),shipment_surcharge_vnd:80000},b=account("SDS",{...rate,rate_vnd:120000});
+ check(u.optimizeUpsAccounts([a,b],5,zero).selected.account==="SDS","optimize full net instead of transportation");
+ throws(()=>u.optimizeUpsAccounts([account(),account("JD")],5,zero),/tie-break/);
+ throws(()=>u.upsAccountNet({...account(),zone:"MISSING"},5,zero),/Thiếu rate/);
+ throws(()=>u.upsAccountNet({...account(),rates:[rate,{...rate,min_kg:50}]},5,zero),/chồng/);
+ const bands=[{...rate,max_kg:20},{...rate,min_kg:20,min_inclusive:false,unit:"PER_KG"}];
+ near(u.upsAccountNet({...account(),rates:bands},20,zero).transportation_vnd,100000,"explicit max boundary fixed");
+ near(u.upsAccountNet({...account(),rates:bands},21,zero).transportation_vnd,2100000,"explicit min excluded next per kg");
+ throws(()=>u.upsAccountNet({...account(),rates:bands.map(r=>({...r,max_inclusive:false}))},20,zero),/Thiếu rate/);
+ throws(()=>u.upsAccountNet({...account(),net_discount:1.01},5,zero),/tỷ lệ/);
+ throws(()=>u.upsAccountNet(account(),0,zero),/lớn hơn/);
+ throws(()=>u.upsAccountNet(account("OTHER"),5,zero),/account/);
+ const policy={divisor:5000,carton_step_kg:0.5,lot_threshold_kg:20,lot_step_at_or_below_kg:0.5,lot_step_above_kg:1}; // TEST policy, not an approved DMD default.
+ const carton=(w,l=10,h=10,d=10)=>({weight_kg:w,length_cm:l,width_cm:h,height_cm:d});
+ const lot=u.upsLotBillable([carton(3.2,50,41,10),carton(5.7),carton(10.3)],policy);
+ near(lot.billable_kg,21,"carton max then lot sum");
+ near(u.upsLotBillable([carton(20)],policy).billable_kg,20,"threshold at");
+ near(u.upsLotBillable([carton(20.1)],policy).billable_kg,21,"threshold above");
+ near(u.upsLotBillable([carton(2.1),carton(0.1,50,30,10)],policy).billable_kg,5.5,"max per carton not max aggregate");
+ throws(()=>u.upsLotBillable([],policy),/carton/);
+ throws(()=>u.upsLotBillable([carton(1)],{...policy,divisor:0}),/lớn hơn/);
+ throws(()=>u.upsLotBillable([carton(1)],{}),/không âm/);
+ throws(()=>g.quoteUpsV1WithConfirmedGlobals([account()],5,owner.id),/Chưa xác nhận/);
+ const v1=g.saveUpsV1Globals({variables:zero,request_key:"ups-global-save-1"},owner.id);
+ check(!g.confirmedUpsV1Globals(owner.id),"save does not apply");
+ check(g.saveUpsV1Globals({variables:zero,request_key:"ups-global-save-1"},owner.id).id===v1.id,"save retry");
+ throws(()=>g.confirmUpsV1Globals({version_id:v1.id,expected_previous_id:null,confirmed:false,request_key:"ups-global-no-1"},owner.id),/xác nhận/);
+ const confirmation={version_id:v1.id,expected_previous_id:null,confirmed:true,request_key:"ups-global-confirm-1"};
+ g.confirmUpsV1Globals(confirmation,owner.id);
+ const snapshot=g.quoteUpsV1WithConfirmedGlobals([account()],5,owner.id);
+ near(snapshot.selected.net_vnd,100000,"confirmed globals selected");
+ const v2=g.saveUpsV1Globals({variables:{...zero,fuel:0.1},request_key:"ups-global-save-2"},owner.id);
+ check(g.quoteUpsV1WithConfirmedGlobals([account()],5,owner.id).global_version_id===v1.id,"pending global isolated");
+ throws(()=>g.confirmUpsV1Globals({version_id:v2.id,expected_previous_id:null,confirmed:true,request_key:"ups-global-stale-2"},owner.id),/đã thay đổi/);
+ g.confirmUpsV1Globals({version_id:v2.id,expected_previous_id:v1.id,confirmed:true,request_key:"ups-global-confirm-2"},owner.id);
+ near(g.quoteUpsV1WithConfirmedGlobals([account()],5,owner.id).selected.net_vnd,110000,"new calculation auto uses confirmed globals");
+ near(snapshot.selected.net_vnd,100000,"previous result snapshot unchanged");
+ check(g.confirmUpsV1Globals(confirmation,owner.id),"retry prior confirm after version advance");
+ throws(()=>g.saveUpsV1Globals({variables:zero,request_key:"ups-global-denied"},sales.id),/Owner/);
+ throws(()=>g.saveUpsV1Globals({variables:{...zero,fuel:NaN},request_key:"ups-global-invalid"},owner.id),/không âm/);
+ throws(()=>db.prepare("UPDATE service_v1_ups_global_versions SET variables_json='{}'").run(),/Immutable/);
+ check(db.prepare("SELECT COUNT(*) n FROM service_v1_price_events").get().n===0,"global confirmation cannot publish account/net/selling documents");
+ check(db.prepare("SELECT COUNT(*) n FROM ledger_entries").get().n===0,"globals do not post money");
+ const cookie="dmd_session="+createSession(sales.id).token;
+ check((await api.GET(new NextRequest("http://local/api/service-v1/ups-globals",{headers:{cookie}}))).status===403,"Sales globals read denied");
+ check((await api.POST(new NextRequest("http://local/api/service-v1/ups-globals",{method:"POST",headers:{cookie}}))).status===403,"Sales globals write denied");
+ db.close();console.log("UPS V1 CORE PASS ("+checks+" checks; synthetic rates/policies TEST ONLY)");
+}
+main().catch(e=>{console.error(e);process.exitCode=1});

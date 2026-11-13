@@ -40,6 +40,8 @@ OPEN rules: Min/Max boundaries, rate overlap/tie-break; shipment/Lot charge scop
 ## CURRENT increment 14/11/2026
 [Configuration backend](24-service-v1-configuration.md): immutable staged VND config, Owner API, stale/retry/rollback checks; operational activation and UI still missing.
 
+[Pricing staged backend](25-service-v1-pricing.md) và [UPS core/globals](26-ups-v1-core.md) đã có source/tests; chưa operational integration, currency cutover, rate acceptance, Fulfillment riêng hay Client Add-on. Giữ các gap tương ứng ở bảng trên.
+
 ## Verification
 Source review is not browser/UAT/production acceptance. Baseline domain run and subsequent implementation evidence: artifacts/service-v1-2026-11-14/. Each report must name source commit, runtime and exact limits; do not infer all suites pass from partial output.
 Historical audit preserved at [archive](archive/FEATURE-23-AUDIT-2026-11-13.md).

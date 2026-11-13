@@ -47,6 +47,24 @@ export function installServiceV1Schema(db: Database.Database) {
  CREATE TRIGGER IF NOT EXISTS service_v1_price_event_no_delete BEFORE DELETE ON service_v1_price_events
  BEGIN SELECT RAISE(ABORT,'Immutable V1 price event'); END;
 
+
+ CREATE TABLE IF NOT EXISTS service_v1_ups_global_versions(
+  id INTEGER PRIMARY KEY,variables_json TEXT NOT NULL,
+  actor_id INTEGER NOT NULL REFERENCES users(id),
+  request_key TEXT NOT NULL UNIQUE,request_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+ );
+ CREATE TABLE IF NOT EXISTS service_v1_ups_global_confirmations(
+  id INTEGER PRIMARY KEY,version_id INTEGER NOT NULL UNIQUE REFERENCES service_v1_ups_global_versions(id),
+  expected_previous_id INTEGER,actor_id INTEGER NOT NULL REFERENCES users(id),
+  request_key TEXT NOT NULL UNIQUE,request_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+ );
+ CREATE TRIGGER IF NOT EXISTS v1_ups_globals_no_update BEFORE UPDATE ON service_v1_ups_global_versions BEGIN SELECT RAISE(ABORT,'Immutable UPS globals'); END;
+ CREATE TRIGGER IF NOT EXISTS v1_ups_globals_no_delete BEFORE DELETE ON service_v1_ups_global_versions BEGIN SELECT RAISE(ABORT,'Immutable UPS globals'); END;
+ CREATE TRIGGER IF NOT EXISTS v1_ups_confirm_no_update BEFORE UPDATE ON service_v1_ups_global_confirmations BEGIN SELECT RAISE(ABORT,'Immutable UPS confirmation'); END;
+ CREATE TRIGGER IF NOT EXISTS v1_ups_confirm_no_delete BEFORE DELETE ON service_v1_ups_global_confirmations BEGIN SELECT RAISE(ABORT,'Immutable UPS confirmation'); END;
+
  CREATE TRIGGER IF NOT EXISTS service_v1_config_no_update BEFORE UPDATE ON service_v1_config_versions
  BEGIN SELECT RAISE(ABORT,'Immutable V1 configuration'); END;
  CREATE TRIGGER IF NOT EXISTS service_v1_config_no_delete BEFORE DELETE ON service_v1_config_versions

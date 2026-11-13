@@ -13,4 +13,4 @@ All documents/events immutable; immediate transactions, request fingerprint repl
 Configuration history now blocks route identity rename; create a new route instead. Route lifecycle/Hold gate still applies. This affects /api/service-routes; docs Feature 12 and 24 cover it.
 
 Source: service-v1-pricing.ts, service-v1-schema.ts, API service-v1/pricing.
-Test: verify-service-v1-pricing.cjs covers sequential oracle, Net/selling independence, stale source/publish, retries, rollback, SQL immutability, permissions and no operational activation/money movement. Configuration and legacy route tests run as regression.
+Test: verify-service-v1-pricing.cjs covers sequential oracle, Net/selling independence, stale source/publish, retries, rollback, SQL immutability, permissions and no operational activation/money movement. Two independent SQLite writer processes race to publish: exactly one succeeds and the stale rival rejects. Configuration and legacy route tests run as regression.

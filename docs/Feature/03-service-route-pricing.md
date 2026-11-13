@@ -1,3 +1,6 @@
+## UPS V1 core — 14/11/2026
+[Calculation and staged global confirmation](26-ups-v1-core.md). No operational UPS optimizer/price cutover yet.
+
 ## V1 staged pricing — 14/11/2026
 [Immutable Net/Proposal, sequential markup and Review/Publish backend](25-service-v1-pricing.md). Operational USD pricing described below remains CURRENT until verified VNĐ cutover. No change to purchased prices.
 

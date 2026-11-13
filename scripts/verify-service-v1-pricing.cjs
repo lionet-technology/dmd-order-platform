@@ -1,4 +1,4 @@
-require("./service-v1-test-env.cjs");
+const {temp}=require("./service-v1-test-env.cjs");
 const assert=require("node:assert/strict"),{db}=require("../src/lib/db.ts"),{createUser,createSession}=require("../src/lib/auth.ts"),config=require("../src/lib/service-v1-config.ts"),p=require("../src/lib/service-v1-pricing.ts"),api=require("../src/app/api/service-v1/pricing/route.ts"),{NextRequest}=require("next/server");
 let checks=0;const check=(v,m)=>{checks++;assert.ok(v,m)},throws=(fn,rx)=>{checks++;assert.throws(fn,rx)};
 async function main(){
@@ -47,6 +47,20 @@ async function main(){
  const req=()=>new NextRequest("http://local/api/service-v1/pricing?route_id="+route,{headers:{cookie}});
  check((await api.GET(req())).status===403,"Sales cannot read net/pricing API");
  check((await api.POST(req())).status===403,"Sales cannot mutate pricing API");
+ const s4=p.createServiceV1Proposal({...proposalInput,net_id:n2.id,net_markup:0.3,request_key:key()},owner.id);
+ const s5=p.createServiceV1Proposal({...proposalInput,net_id:n2.id,net_markup:0.4,request_key:key()},owner.id);
+ event(s4.id,"REVIEW",s3.id);event(s5.id,"REVIEW",s3.id);
+ const {spawn}=require("node:child_process"),path=require("node:path");
+ const worker=id=>new Promise((resolve,reject)=>{
+  const body={document_id:id,action:"PUBLISH",expected_published_id:s3.id,request_key:"independent-publish-"+id};
+  const code="try {require('./src/lib/service-v1-pricing.ts').serviceV1PriceEvent("+JSON.stringify(body)+","+owner.id+");console.log('PUBLISHED')}catch(e){console.log(e.message);process.exitCode=2}";
+  const child=spawn(process.execPath,["-r","./scripts/verify-typescript-loader.cjs","-e",code],{cwd:path.resolve(__dirname,".."),env:{...process.env,NODE_ENV:"test",DMD_DB_PATH:path.join(temp,"test.db")}});
+  let output="";child.stdout.on("data",data=>output+=data);child.stderr.on("data",data=>output+=data);
+  child.on("error",reject);child.on("close",status=>resolve({status,output}));
+ });
+ const writers=await Promise.all([worker(s4.id),worker(s5.id)]);
+ check(writers.filter(w=>w.status===0).length===1&&writers.filter(w=>w.status===2&&w.output.includes("Published version")).length===1,"independent SQLite writers: exactly one publish, stale rival rejected: "+JSON.stringify(writers));
+ check([s4.id,s5.id].includes(p.publishedServiceV1Price(route,"PROPOSAL",owner.id).id),"winner persisted");
  check(db.prepare("SELECT COUNT(*) n FROM ledger_entries").get().n===0,"staged publishing posts no money");
  check(db.prepare("SELECT COUNT(*) n FROM route_pricing_activations").get().n===0,"legacy pricing not activated");
  console.log("SERVICE V1 PRICING PASS ("+checks+" checks; all amounts TEST ONLY)");
