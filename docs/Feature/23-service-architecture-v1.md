@@ -37,6 +37,9 @@ Configuration → Pricing/Publish → UPS → Fulfillment → Add-on/ledger. Tes
 Excel needed before actual rate import/price acceptance: Net ePacket VNĐ and UPS account/service/zone Min/Max/unit/discount/surcharge inputs. No image/PDF number guessing, no fake actual rate.
 OPEN rules: Min/Max boundaries, rate overlap/tie-break; shipment/Lot charge scope; final rounding mapping; ePacket surcharge thresholds/list/component inclusions; separate Fulfillment catalogue/automation. Do independent scaffolding first.
 
+## CURRENT increment 14/11/2026
+[Configuration backend](24-service-v1-configuration.md): immutable staged VND config, Owner API, stale/retry/rollback checks; operational activation and UI still missing.
+
 ## Verification
 Source review is not browser/UAT/production acceptance. Baseline domain run and subsequent implementation evidence: artifacts/service-v1-2026-11-14/. Each report must name source commit, runtime and exact limits; do not infer all suites pass from partial output.
 Historical audit preserved at [archive](archive/FEATURE-23-AUDIT-2026-11-13.md).

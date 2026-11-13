@@ -1,3 +1,6 @@
+## Service V1 foundation — 14/11/2026
+[Staged configuration API and immutable revisions](24-service-v1-configuration.md). CURRENT backend only; no operational VNĐ activation.
+
 # Danh mục & cấu hình dùng chung
 
 **Trạng thái:** Có triển khai trong repository, không đồng nghĩa đã được nghiệm thu production. **Rà soát:** 2026-10-13 (đọc code và tài liệu; chưa chạy E2E). **Quy tắc:** code + automated tests là bằng chứng hành vi hiện tại; yêu cầu chưa triển khai ghi riêng, không mô tả như đã chạy.

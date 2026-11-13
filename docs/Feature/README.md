@@ -2,6 +2,7 @@
 Cập nhật 14/11/2026. **CONFIRMED** = quyết định có nguồn; **CURRENT** = hành vi kiểm qua code; **PROPOSED** = chưa duyệt; **OPEN** = thiếu rule/bằng chứng/số liệu. Không nhãn nào tự chứng nhận production.
 
 ## Service Architecture V1
+- [CURRENT staged configuration increment](24-service-v1-configuration.md)
 - [Approved Decisions và nguồn](SERVICE-V1-APPROVED-DECISIONS.md)
 - [Specification chi tiết](DMD_Order_Platform_Service_Architecture_V1_Specification.md)
 - [Feature 23: CURRENT, gaps, acceptance và thứ tự triển khai](23-service-architecture-v1.md)

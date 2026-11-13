@@ -796,3 +796,6 @@ db.exec(`CREATE TABLE IF NOT EXISTS route_pricing_audit(
 installEmergencySchema(db);
 installRouteLifecycleSchema(db);
 installSalesAttributionSchema(db);
+
+import {installServiceV1Schema} from "./service-v1-schema";
+installServiceV1Schema(db);
