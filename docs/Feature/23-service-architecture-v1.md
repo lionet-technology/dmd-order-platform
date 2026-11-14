@@ -5,6 +5,15 @@
 [Approved Decisions](SERVICE-V1-APPROVED-DECISIONS.md) · [Specification](DMD_Order_Platform_Service_Architecture_V1_Specification.md).
 CONFIRMED = Owner source; CURRENT = code-audited; PROPOSED/OPEN giữ riêng. Không nhãn approved tổng quát.
 
+## CONFIRMED — Owner continuation 14/11/2026 (supersedes older OPEN labels)
+Source: direct Owner request in the current continuation of chat 6ad35267-1ad8-83ec-a691-9d80c58281df.
+- UPS Express/Saver: round each carton actual/dimensional up to 0.5kg, take the carton maximum, sum cartons; Lot ≤20kg rounds up to 0.5kg. Expedited rounds carton/Lot up to 1kg. Every Lot >20kg rounds up to 1kg. Dimensional divisor remains an explicit input; no new divisor decision is inferred.
+- UPS Rate Card: FIXED ≤20kg; PER_KG ≥21kg, bands 21–44, 45–70, 71–99, 100+. Unit must match billable weight; do not multiply the whole NetCost by weight. Exact Excel tiers/zone mapping and missing/overlap handling require source validation; optimizer ties still reject.
+- Broker = 3% of discounted UPS transportation Net (Td); Customs = 10,000 VND/kg. Both remain Global variables under explicit save/confirm/versioning, not per-account constants or silent seeds. Destination scope beyond the existing US formula remains OPEN.
+- ePacket oversize uses longest side >55cm and >75cm (strict comparisons); non-cont: AK HI PR GU VI AS MP AA AE AP. Actual VND surcharge amounts/approved USD conversion and inclusive supplier components remain OPEN. No amount is inferred.
+- UPS Shipment Surcharge once per Lot.
+- Owner follow-up: complete work independent of actual rate cards first; Excel/rate-dependent work deferred for later input.
+
 ## CURRENT vs TARGET V1 và gaps
 | Module | CURRENT code/source | V1 gap |
 |---|---|---|
@@ -35,7 +44,14 @@ Nguồn trực tiếp và công thức nằm trong Approved Decisions/Specificat
 ## Execution and dependencies
 Configuration → Pricing/Publish → UPS → Fulfillment → Add-on/ledger. Tests + docs in each behavior commit; no Jenkins.
 Excel needed before actual rate import/price acceptance: Net ePacket VNĐ and UPS account/service/zone Min/Max/unit/discount/surcharge inputs. No image/PDF number guessing, no fake actual rate.
-OPEN rules: Min/Max boundaries, rate overlap/tie-break; final rounding mapping; ePacket surcharge thresholds/list/component inclusions. Công việc tiếp theo: tích hợp xử lý Order/bàn giao Supplier. Do independent scaffolding first.
+OPEN rules: chi tiết dòng Excel Min/Max, rate overlap/tie-break; ePacket surcharge amounts/FX/component inclusions. Rounding, rate-unit bands, oversize thresholds/non-cont list đã CONFIRMED ở trên. Công việc tiếp theo: tích hợp xử lý Order/bàn giao Supplier. Do independent scaffolding first.
+
+## Continuation increment 14/11/2026
+CURRENT: approved UPS rounding helper; rate validation enforces FIXED ≤20kg, PER_KG ≥21kg and no cross-band PER_KG intervals; equal Min/Max supported only with both bounds inclusive. Optimizer ties still fail. No guessed zone/price. ePacket V1 classification implements strict longest-side >55/>75cm and confirmed non-cont list, returning surcharge_vnd=null/price_ready=false until VND amounts supplied. Legacy USD adapter untouched.
+
+[Selected-row quotes](27-service-v1-quotes.md) connect current configuration + published selling row + Client Discount into immutable VND quote/history with Client/assigned Sales/Admin scope and redacted responses. Draft automatic mapping, Purchase/Reserve/Charge/ledger/Statement VND cutover and full-flow history are still missing. This is a partial backend increment, no UI/UAT or production activation.
+
+Owner deferred actual rate-card dependent work. Next: receive Excel and VND surcharge values, validate mappings/coverage, then integrate operational quote consent and money flow with isolated currency rehearsal. No Jenkins.
 
 ## CURRENT increment 14/11/2026
 [Configuration backend](24-service-v1-configuration.md): immutable staged VND config, Owner API, stale/retry/rollback checks; operational activation and UI still missing.

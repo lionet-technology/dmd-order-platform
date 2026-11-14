@@ -2,35 +2,56 @@ require("./service-v1-test-env.cjs");
 const assert=require("node:assert/strict"),{db}=require("../src/lib/db.ts"),{createUser,createSession}=require("../src/lib/auth.ts"),u=require("../src/lib/ups-v1-calculator.ts"),g=require("../src/lib/ups-v1-globals.ts"),api=require("../src/app/api/service-v1/ups-globals/route.ts"),{NextRequest}=require("next/server");
 let checks=0;const check=(v,m)=>{checks++;assert.ok(v,m)},throws=(f,r)=>{checks++;assert.throws(f,r)},near=(a,b,m)=>check(Math.abs(a-b)<1e-7,m);
 const zero={fuel:0,vat:0,us_broker:0,customs_per_kg_vnd:0}; // TEST ONLY, never seeded/activated on an operational database.
-const rate={zone:"TEST-ZONE",min_kg:0,max_kg:100,min_inclusive:false,max_inclusive:true,unit:"FIXED",rate_vnd:100000};
+const rate={zone:"TEST-ZONE",min_kg:0,max_kg:20,min_inclusive:false,max_inclusive:true,unit:"FIXED",rate_vnd:100000};
 const account=(name="VTT",r=rate)=>({account:name,zone:"TEST-ZONE",rates:[r],net_discount:0,shipment_surcharge_vnd:0,shipment_discount:0,weight_surcharge_vnd_per_kg:0,weight_discount:0});
 async function main(){
  const owner=createUser({username:"ups.owner",display_name:"Owner",password:"TestPass123!",role:"ADMIN",is_root_admin:true}),sales=createUser({username:"ups.sales",display_name:"Sales",password:"TestPass123!",role:"SALES"});
- near(u.upsAccountNet(account(),25,zero).net_vnd,100000,"fixed not multiplied by weight");
- near(u.upsAccountNet(account("VTT",{...rate,unit:"PER_KG"}),25,zero).net_vnd,2500000,"per kg multiplied into transportation");
- const full={...account("VTT",{...rate,unit:"PER_KG"}),net_discount:0.5,shipment_surcharge_vnd:20000,shipment_discount:0.25,weight_surcharge_vnd_per_kg:1000,weight_discount:0.2};
+ near(u.upsAccountNet(account(),20,zero).net_vnd,100000,"fixed not multiplied by weight");
+ near(u.upsAccountNet(account("VTT",{...rate,min_kg:21,max_kg:44,min_inclusive:true,unit:"PER_KG"}),25,zero).net_vnd,2500000,"per kg multiplied into transportation");
+ const full={...account("VTT",{...rate,min_kg:21,max_kg:44,min_inclusive:true,unit:"PER_KG"}),net_discount:0.5,shipment_surcharge_vnd:20000,shipment_discount:0.25,weight_surcharge_vnd_per_kg:1000,weight_discount:0.2};
  // Independent arithmetic: Td=1,250,000; shipment=15,000; weight=20,000.
  near(u.upsAccountNet(full,25,{fuel:0.2,vat:0.1,us_broker:0.03,customs_per_kg_vnd:10000}).net_vnd,1983700,"full formula oracle");
- const lotPricing={...account(),shipment_surcharge_vnd:2.125};
+ const lotPricing={...account(),rates:[rate,{...rate,min_kg:21,max_kg:44,min_inclusive:true,unit:"PER_KG"}],shipment_surcharge_vnd:2.125};
  const order=u.upsOrderNet([{lot_id:"L1",pricing:lotPricing,weight_kg:2},{lot_id:"L2",pricing:lotPricing,weight_kg:3}],zero);
  near(order.shipment_surcharge_vnd,4.25,"two Lots incur shipment surcharge twice, not once per Order");
  near(order.net_vnd,200004.25,"Order sums complete Lot cost including fractional VND");
  near(u.upsOrderNet([{lot_id:"L1",pricing:lotPricing,weight_kg:5}],zero).shipment_surcharge_vnd,2.125,"one Lot incurs shipment surcharge once");
  throws(()=>u.upsOrderNet([{lot_id:"L1",pricing:lotPricing,weight_kg:2},{lot_id:"L1",pricing:lotPricing,weight_kg:3}],zero),/không trùng/);
  throws(()=>u.upsOrderNet([],zero),/cần Lot/);
+ for(const name of ["Express","Saver","Expedited"]) {
+  const approved=u.upsSubServiceRounding(name,5000);
+  near(u.upsLotBillable([cartonInput(1.1)],approved).billable_kg,name==="Expedited"?2:1.5,"approved "+name+" rounding");
+  near(u.upsLotBillable([cartonInput(20.1)],approved).billable_kg,21,"above20 "+name);
+ }
+ function cartonInput(w){return {weight_kg:w,length_cm:10,width_cm:10,height_cm:10}}
+ throws(()=>u.upsSubServiceRounding("UNKNOWN",5000),/chưa có/);
+ for(const [w,band] of [[20,"LE20"],[21,"21–44"],[44,"21–44"],[45,"45–70"],[70,"45–70"],[71,"71–99"],[99,"71–99"],[100,"100+"], [150,"100+"]])check(u.upsRateBand(w).band===band,"approved band "+w);
+ throws(()=>u.upsRateBand(20.5),/rounding/);
+ throws(()=>u.validateUpsRates([{...rate,max_kg:21}]),/FIXED/);
+ throws(()=>u.validateUpsRates([{...rate,min_kg:21,max_kg:45,unit:"PER_KG"}]),/PER_KG/);
+ throws(()=>u.validateUpsRates([{...rate,min_kg:20,max_kg:44,unit:"PER_KG"}]),/PER_KG/);
+ u.validateUpsRates([{...rate,min_kg:20,max_kg:20,min_inclusive:true}]);
+ const e=require("../src/lib/epacket-v1-policy.ts");
+ for(const [length,tier] of [[55,"STANDARD"],[55.01,"OVER55"],[75,"OVER55"],[75.01,"OVER75"]]) {
+  const result=e.classifyEPacketV1({country:"US",state:"CA",length_cm:10,width_cm:length,height_cm:10});
+  check(result.oversize_tier===tier&&result.surcharge_vnd===null&&!result.price_ready,"longest-side strict threshold "+length);
+ }
+ for(const state of e.EPACKET_V1_NON_CONT)check(e.classifyEPacketV1({country:"US",state,length_cm:10,width_cm:10,height_cm:10}).non_cont,"non-cont "+state);
+ check(!e.classifyEPacketV1({country:"CA",state:"AK",length_cm:10,width_cm:10,height_cm:10}).non_cont,"country scope");
+ throws(()=>e.classifyEPacketV1({country:"US",state:"CA",length_cm:0,width_cm:10,height_cm:10}),/Kích thước/);
  const a={...account("VTT"),shipment_surcharge_vnd:80000},b=account("SDS",{...rate,rate_vnd:120000});
  check(u.optimizeUpsAccounts([a,b],5,zero).selected.account==="SDS","optimize full net instead of transportation");
  throws(()=>u.optimizeUpsAccounts([account(),account("JD")],5,zero),/tie-break/);
  throws(()=>u.upsAccountNet({...account(),zone:"MISSING"},5,zero),/Thiếu rate/);
- throws(()=>u.upsAccountNet({...account(),rates:[rate,{...rate,min_kg:50}]},5,zero),/chồng/);
- const bands=[{...rate,max_kg:20},{...rate,min_kg:20,min_inclusive:false,unit:"PER_KG"}];
+ throws(()=>u.upsAccountNet({...account(),rates:[rate,{...rate,min_kg:10}]},5,zero),/chồng/);
+ const bands=[{...rate,max_kg:20},{...rate,min_kg:21,max_kg:44,min_inclusive:true,unit:"PER_KG"}];
  near(u.upsAccountNet({...account(),rates:bands},20,zero).transportation_vnd,100000,"explicit max boundary fixed");
  near(u.upsAccountNet({...account(),rates:bands},21,zero).transportation_vnd,2100000,"explicit min excluded next per kg");
  throws(()=>u.upsAccountNet({...account(),rates:bands.map(r=>({...r,max_inclusive:false}))},20,zero),/Thiếu rate/);
  throws(()=>u.upsAccountNet({...account(),net_discount:1.01},5,zero),/tỷ lệ/);
  throws(()=>u.upsAccountNet(account(),0,zero),/lớn hơn/);
  throws(()=>u.upsAccountNet(account("OTHER"),5,zero),/account/);
- const policy={divisor:5000,carton_step_kg:0.5,lot_threshold_kg:20,lot_step_at_or_below_kg:0.5,lot_step_above_kg:1}; // TEST policy, not an approved DMD default.
+ const policy={divisor:5000,carton_step_kg:0.5,lot_threshold_kg:20,lot_step_at_or_below_kg:0.5,lot_step_above_kg:1}; // Approved weight steps; explicit divisor is a TEST input.
  const carton=(w,l=10,h=10,d=10)=>({weight_kg:w,length_cm:l,width_cm:h,height_cm:d});
  const lot=u.upsLotBillable([carton(3.2,50,41,10),carton(5.7),carton(10.3)],policy);
  near(lot.billable_kg,21,"carton max then lot sum");

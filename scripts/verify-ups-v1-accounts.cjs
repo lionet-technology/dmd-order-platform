@@ -5,7 +5,7 @@ async function main(){
  const owner=createUser({username:"account.owner",display_name:"Owner",password:"TestPass123!",role:"ADMIN",is_root_admin:true}),sales=createUser({username:"account.sales",display_name:"Sales",password:"TestPass123!",role:"SALES"});
  const route=Number(db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier,active) VALUES ('UPS','Saver','SBay',1)").run().lastInsertRowid);
  const config=saveServiceV1Config({route_id:route,expected_revision:0,request_key:"account-config-1",config:{currency:"VND",adapter:"UPS",markets:["US"]}},owner.id);
- const pricing={account:"VTT",rates:[{zone:"TEST-ZONE",min_kg:0,max_kg:100,min_inclusive:false,max_inclusive:true,unit:"FIXED",rate_vnd:100000}],net_discount:0,shipment_surcharge_vnd:0,shipment_discount:0,weight_surcharge_vnd_per_kg:0,weight_discount:0};
+ const pricing={account:"VTT",rates:[{zone:"TEST-ZONE",min_kg:0,max_kg:20,min_inclusive:false,max_inclusive:true,unit:"FIXED",rate_vnd:100000}],net_discount:0,shipment_surcharge_vnd:0,shipment_discount:0,weight_surcharge_vnd_per_kg:0,weight_discount:0};
  const body={route_id:route,config_id:config.id,source_excel:"TEST-ONLY-ACCOUNT.xlsx",pricing,request_key:"account-save-v1"};
  const first=a.saveUpsV1Account(body,owner.id);
  check(a.saveUpsV1Account(body,owner.id).id===first.id,"draft replay");

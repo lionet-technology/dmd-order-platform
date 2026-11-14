@@ -2,6 +2,15 @@
 
 Cập nhật 14/11/2026. [Approved Decisions](SERVICE-V1-APPROVED-DECISIONS.md) là nguồn ưu tiên; [bản phục hồi chi tiết trước chuẩn hóa](archive/SERVICE-V1-RECOVERY-2026-11-13.md) giữ nội dung nguồn/tham khảo, không phải trạng thái hiện hành.
 
+## CONFIRMED — Owner continuation 14/11/2026 (supersedes older OPEN labels)
+Source: direct Owner request in the current continuation of chat 6ad35267-1ad8-83ec-a691-9d80c58281df.
+- UPS Express/Saver: round each carton actual/dimensional up to 0.5kg, take the carton maximum, sum cartons; Lot ≤20kg rounds up to 0.5kg. Expedited rounds carton/Lot up to 1kg. Every Lot >20kg rounds up to 1kg. Dimensional divisor remains an explicit input; no new divisor decision is inferred.
+- UPS Rate Card: FIXED ≤20kg; PER_KG ≥21kg, bands 21–44, 45–70, 71–99, 100+. Unit must match billable weight; do not multiply the whole NetCost by weight. Exact Excel tiers/zone mapping and missing/overlap handling require source validation; optimizer ties still reject.
+- Broker = 3% of discounted UPS transportation Net (Td); Customs = 10,000 VND/kg. Both remain Global variables under explicit save/confirm/versioning, not per-account constants or silent seeds. Destination scope beyond the existing US formula remains OPEN.
+- ePacket oversize uses longest side >55cm and >75cm (strict comparisons); non-cont: AK HI PR GU VI AS MP AA AE AP. Actual VND surcharge amounts/approved USD conversion and inclusive supplier components remain OPEN. No amount is inferred.
+- UPS Shipment Surcharge once per Lot.
+- Owner follow-up: complete work independent of actual rate cards first; Excel/rate-dependent work deferred for later input.
+
 ## 1. Bằng chứng và trạng thái
 CONFIRMED = quyết định trực tiếp Owner hoặc APPROVED trong Operational Flow chưa bị thay thế. CURRENT = code-audited, không tự chứng nhận tests/production. PROPOSED = phương án chưa duyệt. OPEN = thiếu quyết định hoặc số liệu. Không dùng lời của trợ lý để thay phê duyệt.
 
@@ -55,11 +64,11 @@ NetCost = (1+Fuel) × (1+VAT)
 ```
 Tỷ lệ dạng thập phân; Rate/shipment hoặc Rate/kg; W kg; ShipmentSurcharge VNĐ/shipment; WeightSurcharge và Customs VNĐ/kg. Không nhân W vào toàn NetCost. Nếu rate đã discount thì không discount lần hai.
 CONFIRMED — Owner 14/11: một UPS shipment là một Lot; Shipment Surcharge áp một lần mỗi Lot. Order DMD là đơn khách gửi tới một địa chỉ, nhiều Lot thì tính riêng từng Lot rồi cộng tổng, không thu một lần cho cả Order hoặc theo số carton.
-OPEN: phạm vi US Broker/Customs theo destination; component inclusive/exclusive. Không tự hardcode Broker 3%/Customs 10.000 từ ví dụ trợ lý.
+OPEN: phạm vi US Broker/Customs theo destination; component inclusive/exclusive. Owner continuation đã xác nhận Broker 3% Td và Customs 10.000 VNĐ/kg; giữ Global confirm/version, không tự seed.
 
 ### Rounding
 CONFIRMED: từng carton trước, cộng Lot, policy theo Sub-Service.
-PROPOSED/nguồn tham khảo assistant 41f3c594-8a67-4b70-8c22-e956a48d868c: divisor 5.000; Express/Saver round actual/dim UP 0,5kg, max từng carton, cộng shipment ≤20kg UP 0,5kg, >20kg UP 1kg; Expedited UP 1kg cho carton/tổng. Không coi các bước số này là DMD policy đã duyệt khi chưa có mapping cuối. Không max hai tổng actual/dim.
+CONFIRMED Owner continuation: Express/Saver carton actual/dim UP 0,5kg, max từng carton, cộng Lot ≤20kg UP 0,5kg, >20kg UP 1kg; Expedited UP 1kg carton/tổng. Không max hai tổng actual/dim. Divisor 5.000 trong nguồn cũ chưa nâng thành quyết định mới; caller phải cung cấp divisor đã xác minh.
 
 ### Global variables
 CONFIRMED: Fuel/VAT/US Broker/Customs auto apply sau xác nhận; save/upload chưa apply. Không lẫn account draft Pending. Lưu actor/time/version; không reprice snapshot đã mua.
@@ -69,7 +78,7 @@ PROPOSED: AHC/LPS/OMS trong chat UPS nội địa US; không activate ngưỡng/
 ## 6. ePacket VNĐ
 CONFIRMED: code VNĐ; Standard/Eco và EU dùng route riêng; oversize/non-cont cần rule cuối theo supplier, không double count inclusive Net. Không suy số từ ảnh/PDF.
 CURRENT: epacket-pricing.ts adapter DMD US USD, 1 carton, ≤10kg; tier/volumetric/oversize/non-cont hiện hành là code cũ, không phải V1 VNĐ.
-OPEN: Excel Net VNĐ chuẩn, Base/markup inputs, cuối cùng ngưỡng oversize, địa điểm non-cont được Supplier phục vụ và phí chính xác, provisional mid-mile components. Danh sách USPS/15 USD trong câu trả lời trợ lý không thay bảng DMD.
+OPEN: Excel Net VNĐ chuẩn, Base/markup inputs, mức VNĐ/FX cho ngưỡng oversize >55/>75cm đã chốt, coverage Supplier cho danh sách non-cont đã chốt và phí chính xác, provisional mid-mile components. Danh sách USPS/15 USD trong câu trả lời trợ lý không thay bảng DMD.
 
 ## 7. Fulfillment — quy trình xử lý Order và bàn giao
 CONFIRMED — Owner 14/11: Fulfillment ở đây là quy trình Order → mua dịch vụ Supplier → Tracking/Label → Manifest/bàn giao. Không yêu cầu catalogue dịch vụ kho tính phí riêng để hoàn thành phạm vi này.

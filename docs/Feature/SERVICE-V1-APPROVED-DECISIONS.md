@@ -2,6 +2,15 @@
 
 Ngày: 14/11/2026. Nguồn ưu tiên: yêu cầu Owner trong phiên triển khai hiện tại; tiếp theo là quyết định trực tiếp truy xuất được và Operational Flow 16/10. Không dùng lời khẳng định của trợ lý làm phê duyệt.
 
+## CONFIRMED — Owner continuation 14/11/2026 (supersedes older OPEN labels)
+Source: direct Owner request in the current continuation of chat 6ad35267-1ad8-83ec-a691-9d80c58281df.
+- UPS Express/Saver: round each carton actual/dimensional up to 0.5kg, take the carton maximum, sum cartons; Lot ≤20kg rounds up to 0.5kg. Expedited rounds carton/Lot up to 1kg. Every Lot >20kg rounds up to 1kg. Dimensional divisor remains an explicit input; no new divisor decision is inferred.
+- UPS Rate Card: FIXED ≤20kg; PER_KG ≥21kg, bands 21–44, 45–70, 71–99, 100+. Unit must match billable weight; do not multiply the whole NetCost by weight. Exact Excel tiers/zone mapping and missing/overlap handling require source validation; optimizer ties still reject.
+- Broker = 3% of discounted UPS transportation Net (Td); Customs = 10,000 VND/kg. Both remain Global variables under explicit save/confirm/versioning, not per-account constants or silent seeds. Destination scope beyond the existing US formula remains OPEN.
+- ePacket oversize uses longest side >55cm and >75cm (strict comparisons); non-cont: AK HI PR GU VI AS MP AA AE AP. Actual VND surcharge amounts/approved USD conversion and inclusive supplier components remain OPEN. No amount is inferred.
+- UPS Shipment Surcharge once per Lot.
+- Owner follow-up: complete work independent of actual rate cards first; Excel/rate-dependent work deferred for later input.
+
 ## Trạng thái thống nhất
 - CONFIRMED: quyết định Owner có nguồn; không có nghĩa code đã triển khai.
 - CURRENT: hành vi xác minh qua code tại commit cụ thể; test ghi riêng.
@@ -43,7 +52,7 @@ Danh sách ChatGPT history (50 chat gần nhất) đã được duyệt để t�
 Các nguồn bổ sung này chưa có ba chi tiết trên; Owner đã làm rõ trực tiếp trong phiên tiếp tục, như phần CONFIRMED mới. Không có cursor đọc trang cũ ở các chat này.
 
 ## OPEN / PROPOSED
-OPEN: giá/zone thực VTT/SDS/JD, cận Min/Max inclusive/exclusive, missing/overlap rates, tie-break, scope phụ phí khác; ePacket ngưỡng oversize/non-cont cuối cùng bằng VNĐ và supplier-inclusive components; chi tiết bàn giao Sheet/Zalo/PDF/Manifest nếu cần ngoài quy trình đã có.
+OPEN: giá/zone thực VTT/SDS/JD, chi tiết cận Min/Max từng dòng Excel, missing/overlap rates, tie-break, scope phụ phí khác; ePacket mức phí VNĐ/FX và supplier-inclusive components (ngưỡng/danh sách đã CONFIRMED ở trên); chi tiết bàn giao Sheet/Zalo/PDF/Manifest nếu cần ngoài quy trình đã có.
 PROPOSED: mọi mức AHC/LPS/OMS từ hội thoại UPS US; không import/activate. Tỷ giá 25.910 chỉ được audit cũ ghi nhận, chưa đọc được user turn gốc; không dùng nó tạo giá thật hoặc chạy migration ngầm.
 
 ## CURRENT — source audit baseline 2302d06

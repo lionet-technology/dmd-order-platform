@@ -1,6 +1,6 @@
 # Service V1 pricing workspace — CURRENT backend increment 14/11/2026
 
-Staged VND documents and API /api/service-v1/pricing; **not connected to quote/Purchase or the USD ledger**. Published in this workspace means reviewed V1 configuration, not operational cutover.
+Staged VND documents and API /api/service-v1/pricing; **connected to selected-row V1 quote previews only; not operational Draft/Purchase or the USD ledger**. Published in this workspace means reviewed V1 configuration, not operational cutover.
 
 Net draft explicitly references an Excel filename and keyed Net VND rows. A filename is provenance metadata, not proof of verified Excel contents; actual file parser/import and Owner acceptance remain OPEN. No bundled actual rates. Test inputs are named TEST-FIXTURE-NOT-ACTUAL-RATES.xlsx.
 

@@ -2,6 +2,7 @@
 Cập nhật 14/11/2026. **CONFIRMED** = quyết định có nguồn; **CURRENT** = hành vi kiểm qua code; **PROPOSED** = chưa duyệt; **OPEN** = thiếu rule/bằng chứng/số liệu. Không nhãn nào tự chứng nhận production.
 
 ## Service Architecture V1
+- [CURRENT selected-row VND quotes, Client Discount and immutable history; operational Purchase pending](27-service-v1-quotes.md)
 Owner 14/11 đã chốt: giữ số lẻ VNĐ; UPS Shipment Surcharge một lần/Lot; Fulfillment là xử lý Order/bàn giao. [Cập nhật và kiểm chứng](../../artifacts/service-v1-2026-11-14/OWNER-CLARIFICATION.md).
 - [CURRENT UPS calculator, account Review/Publish and global confirmation](26-ups-v1-core.md)
 - [CURRENT staged pricing increment](25-service-v1-pricing.md)

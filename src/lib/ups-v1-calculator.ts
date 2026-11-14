@@ -10,7 +10,22 @@ function safe(value:number) {if(!Number.isFinite(value)||value>Number.MAX_SAFE_I
 export function validateUpsGlobals(input:UpsGlobals):UpsGlobals {
  return {fuel:nonnegative(input.fuel,"Fuel"),vat:nonnegative(input.vat,"VAT"),us_broker:nonnegative(input.us_broker,"US Broker"),customs_per_kg_vnd:nonnegative(input.customs_per_kg_vnd,"Customs")};
 }
-/** The caller must supply an approved Sub-Service policy. There are no carrier-policy defaults. */
+/** Owner 14/11: rounding is approved; divisor remains an explicit verified input. */
+export function upsSubServiceRounding(subService:string,divisor:number):UpsRoundingPolicy {
+ positive(divisor,"Divisor");
+ const name=subService.trim().toUpperCase();
+ if(!["EXPRESS","SAVER","EXPEDITED"].includes(name))throw Error("UPS Sub-Service chưa có rounding được duyệt.");
+ const step=name==="EXPEDITED"?1:0.5;
+ return {divisor,carton_step_kg:step,lot_threshold_kg:20,lot_step_at_or_below_kg:step,lot_step_above_kg:1};
+}
+/** Rate unit follows the approved billable-weight band, never a guessed price. */
+export function upsRateBand(weightKg:number) {
+ positive(weightKg,"Billable kg");
+ if(weightKg<=20)return {unit:"FIXED" as const,band:"LE20"};
+ if(!Number.isInteger(weightKg))throw Error("Lot trên 20kg cần rounding 1kg trước tra giá.");
+ return {unit:"PER_KG" as const,band:weightKg<=44?"21–44":weightKg<=70?"45–70":weightKg<=99?"71–99":"100+"};
+}
+/** Caller supplies the verified dimensional divisor. */
 export function upsLotBillable(cartons:Array<{weight_kg:number;length_cm:number;width_cm:number;height_cm:number}>,policy:UpsRoundingPolicy) {
  if(!Array.isArray(cartons)||!cartons.length)throw Error("Lot cần carton.");
  for(const [key,value] of Object.entries(policy))positive(value,key);
@@ -29,7 +44,10 @@ export function validateUpsRates(rates:UpsRate[]) {
  for(const r of rates) {
   if(typeof r.zone!=="string"||!r.zone.trim()||typeof r.min_inclusive!=="boolean"||typeof r.max_inclusive!=="boolean")throw Error("Cần zone và cận Min/Max rõ ràng.");
   nonnegative(r.min_kg,"Min kg");positive(r.max_kg,"Max kg");nonnegative(r.rate_vnd,"Rate");
-  if(r.min_kg>=r.max_kg||!["FIXED","PER_KG"].includes(r.unit))throw Error("UPS rate interval/unit không hợp lệ.");
+  if(r.min_kg>r.max_kg||(r.min_kg===r.max_kg&&(!r.min_inclusive||!r.max_inclusive))||!["FIXED","PER_KG"].includes(r.unit))throw Error("UPS rate interval/unit không hợp lệ.");
+  if(r.unit==="FIXED"&&r.max_kg>20)throw Error("FIXED chỉ dùng ≤20kg.");
+  if(r.unit==="PER_KG"&&(r.min_kg<21||!Number.isInteger(r.min_kg)||!Number.isInteger(r.max_kg)||upsRateBand(r.min_kg).band!==upsRateBand(r.max_kg).band))
+   throw Error("PER_KG cần dải 21–44, 45–70, 71–99 hoặc 100+.");
  }
  for(let i=0;i<rates.length;i++)for(let j=i+1;j<rates.length;j++) {
   const a=rates[i],b=rates[j];if(a.zone!==b.zone)continue;
@@ -46,6 +64,8 @@ export function upsAccountNet(input:UpsAccountPricing,weightKg:number,variables:
  const rate=input.rates.find(r=>r.zone===input.zone&&(weightKg>r.min_kg||(weightKg===r.min_kg&&r.min_inclusive))&&(weightKg<r.max_kg||(weightKg===r.max_kg&&r.max_inclusive)));
  if(!rate)throw Error("Thiếu rate phù hợp cho account/zone/kg.");
  const g=validateUpsGlobals(variables);
+ const band=upsRateBand(weightKg);
+ if(rate.unit!==band.unit)throw Error("Rate unit phải FIXED ≤20kg, PER_KG ≥21kg.");
  const transportation_vnd=safe(rate.rate_vnd*(rate.unit==="PER_KG"?weightKg:1));
  const transportation_discounted_vnd=transportation_vnd*(1-discount(input.net_discount,"Net discount"));
  const shipment_vnd=nonnegative(input.shipment_surcharge_vnd,"Shipment surcharge")*(1-discount(input.shipment_discount,"Shipment discount"));
