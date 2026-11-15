@@ -1,9 +1,10 @@
+import {currentServiceV1Fx} from './service-v1-fx';
 import {createHash} from "node:crypto";
 import {db} from "./db";
 import {assertServiceV1Owner,readServiceV1Config,serviceV1Key} from "./service-v1-config";
 import {routeState} from "./route-lifecycle";
 type Row={id:number;route_id:number;kind:"NET"|"PROPOSAL";config_id:number;source_net_id:number|null;body_json:string;actor_id:number;request_key:string;request_hash:string};
-type NetRow={key:string;net_vnd:number};
+type NetRow={key:string;net_vnd:number;net_usd?:number};
 const fingerprint=(value:unknown)=>createHash("sha256").update(JSON.stringify(value)).digest("hex");
 function routeReady(routeId:number,actorId:number) {
  const config=readServiceV1Config(routeId,actorId);
@@ -23,21 +24,31 @@ function replay(table:"service_v1_price_documents"|"service_v1_price_events",key
  if(db.prepare("SELECT id FROM "+other+" WHERE request_key=?").get(key))throw Error("Request key đã dùng cho tác vụ khác.");
  return row;
 }
-export function createServiceV1Net(input:{route_id:number;config_id:number;source_excel:string;rows:NetRow[];request_key:string},actorId:number):Row {
+export function createServiceV1Net(input:{route_id:number;config_id:number;source_excel:string;source_currency?:"USD"|"VND";rows:Array<{key:string;net_vnd?:number;net_usd?:number}>;request_key:string},actorId:number):Row {
  assertServiceV1Owner(actorId);
  if(!input||!Array.isArray(input.rows)||!input.rows.length||input.rows.length>10000)throw Error("Cần dòng Net.");
  if(typeof input.source_excel!=="string"||!input.source_excel.trim()||input.source_excel.length>500||! /\.xlsx?$/i.test(input.source_excel))throw Error("Cần tham chiếu Excel Net chuẩn.");
- const rows=input.rows.map(row=>{
-  if(!row||typeof row.key!=="string"||!row.key.trim()||row.key.length>120||typeof row.net_vnd!=="number"||!Number.isFinite(row.net_vnd)||row.net_vnd<0)throw Error("Dòng Net không hợp lệ.");
-  return {key:row.key.trim(),net_vnd:row.net_vnd};
+ const sourceCurrency=input.source_currency??'VND';
+ if(!['USD','VND'].includes(sourceCurrency))throw Error('Source currency không hợp lệ.');
+ // Resolve the rate inside the same transaction as the document write below.
+ const rawRows=input.rows.map(row=>{
+  const value=sourceCurrency==='USD'?row?.net_usd:row?.net_vnd;
+  if(!row||typeof row.key!=='string'||!row.key.trim()||row.key.length>120||typeof value!=='number'||!Number.isFinite(value)||value<0)throw Error('Dòng Net không hợp lệ.');
+  if(sourceCurrency==='USD'&&row.net_vnd!==undefined||sourceCurrency==='VND'&&row.net_usd!==undefined)throw Error('Dòng Net chứa hai đơn vị tiền.');
+  return {key:row.key.trim(),value};
  });
- if(new Set(rows.map(row=>row.key)).size!==rows.length)throw Error("Trùng key Net.");
- const key=serviceV1Key(input.request_key),body={currency:"VND",source_excel:input.source_excel.trim(),rows};
- const hash=fingerprint({route_id:input.route_id,config_id:input.config_id,body});
+ if(new Set(rawRows.map(row=>row.key)).size!==rawRows.length)throw Error('Trùng key Net.');
+ const key=serviceV1Key(input.request_key);
+ const hash=sourceCurrency==='VND'?fingerprint({route_id:input.route_id,config_id:input.config_id,body:{currency:'VND',source_excel:input.source_excel.trim(),rows:rawRows.map(row=>({key:row.key,net_vnd:row.value}))}}):fingerprint({route_id:input.route_id,config_id:input.config_id,source_excel:input.source_excel.trim(),sourceCurrency,rawRows});
  return db.transaction(()=>{
   const existing=replay("service_v1_price_documents",key,hash,actorId);if(existing)return existing as Row;
   const config=routeReady(input.route_id,actorId);
   if(config.id!==input.config_id)throw Error("Cấu hình V1 đã thay đổi.");
+  const fx=sourceCurrency==='USD'?currentServiceV1Fx():undefined;
+  if(sourceCurrency==='USD'&&JSON.parse(config.config_json).adapter!=='EPACKET')throw Error('Net USD chỉ hỗ trợ ePacket.');
+  if(sourceCurrency==='USD'&&!fx)throw Error('Chưa xác nhận Rate USD–VND.');
+  const rows=rawRows.map(row=>{const net_vnd=row.value*(fx?.usd_vnd??1);if(!Number.isFinite(net_vnd)||net_vnd>Number.MAX_SAFE_INTEGER)throw Error('Net vượt độ chính xác.');return {key:row.key,net_vnd,...(fx?{net_usd:row.value}:{})};});
+  const body={currency:'VND',source_currency:sourceCurrency,source_excel:input.source_excel.trim(),...(fx?{fx_version_id:fx.id,usd_vnd:fx.usd_vnd}:{}),rows};
   const result=db.prepare("INSERT INTO service_v1_price_documents(route_id,kind,config_id,body_json,actor_id,request_key,request_hash) VALUES (?,'NET',?,?,?,?,?)").run(input.route_id,config.id,JSON.stringify(body),actorId,key,hash);
   return db.prepare("SELECT * FROM service_v1_price_documents WHERE id=?").get(result.lastInsertRowid) as Row;
  }).immediate();
@@ -50,12 +61,15 @@ export function createServiceV1Proposal(input:{route_id:number;config_id:number;
   const existing=replay("service_v1_price_documents",key,hash,actorId);if(existing)return existing as Row;
   const config=routeReady(input.route_id,actorId),net=publishedServiceV1Price(input.route_id,"NET",actorId);
   if(config.id!==input.config_id||!net||net.id!==input.net_id||net.config_id!==config.id)throw Error("Net/cấu hình published đã thay đổi hoặc chưa có.");
-  const body={currency:"VND",net_markup:input.net_markup,base_markup:input.base_markup,
+  const source=JSON.parse(net.body_json),fx=source.source_currency==='USD'?currentServiceV1Fx():undefined;
+  if(source.source_currency==='USD'&&!fx)throw Error('Chưa xác nhận Rate USD–VND.');
+  const body={currency:"VND",net_markup:input.net_markup,base_markup:input.base_markup,...(fx?{fx_version_id:fx.id,usd_vnd:fx.usd_vnd}:{}),
    // Owner 14/11: keep fractional VND without monetary rounding; operational posting is still gated.
-   rows:(JSON.parse(net.body_json).rows as NetRow[]).map(row=>{
-    const base_vnd=row.net_vnd*(1+input.net_markup),retail_vnd=base_vnd*(1+input.base_markup);
+   rows:(source.rows as NetRow[]).map(row=>{
+    const net_vnd=fx?Number(row.net_usd)*fx.usd_vnd:row.net_vnd;
+    const base_vnd=net_vnd*(1+input.net_markup),retail_vnd=base_vnd*(1+input.base_markup);
     if(!Number.isFinite(base_vnd)||!Number.isFinite(retail_vnd)||retail_vnd>Number.MAX_SAFE_INTEGER)throw Error("Giá vượt độ chính xác tính toán.");
-    return {...row,base_vnd,retail_vnd};
+    return {...row,net_vnd,base_vnd,retail_vnd};
    })};
   const result=db.prepare("INSERT INTO service_v1_price_documents(route_id,kind,config_id,source_net_id,body_json,actor_id,request_key,request_hash) VALUES (?,'PROPOSAL',?,?,?,?,?,?)").run(input.route_id,config.id,net.id,JSON.stringify(body),actorId,key,hash);
   return db.prepare("SELECT * FROM service_v1_price_documents WHERE id=?").get(result.lastInsertRowid) as Row;

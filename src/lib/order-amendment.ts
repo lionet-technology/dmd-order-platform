@@ -11,6 +11,7 @@ export function amendOrderBeforeTracking(input:Input,actor:AuthUser,write?:()=>u
  if(actor.role!=='ADMIN')throw Error('Forbidden');
  return db.transaction(()=>{
  const old=input.id?db.prepare('SELECT * FROM orders WHERE id=?').get(Number(input.id)) as Record<string,unknown>|undefined:undefined;
+ if(old&&(String(old.tracking||'').trim()||String(old.label||'').trim()||db.prepare('SELECT id FROM order_trackings WHERE order_id=? LIMIT 1').get(Number(old.id))))throw Error('Order đã có Tracking/Label; phải huỷ theo policy để tạo đơn mới.');
  if(!old?.pricing_snapshot_json)return write?write():upsertOrder(input);
  const id=Number(old.id),beforeStructure=getOrderShipmentStructure(Number(old.id),false);
  if(db.prepare('SELECT id FROM order_trackings WHERE order_id=? LIMIT 1').get(id)||old.purchase_completed_at||old.fulfillment_started_at)throw Error('Order đã có Tracking hoặc fulfillment; dữ liệu nhạy cảm đã khóa.');

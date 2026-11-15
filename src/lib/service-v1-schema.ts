@@ -3,6 +3,19 @@ import type Database from "better-sqlite3";
 /** Additive, staged V1 configuration. No operational price/currency cutover. */
 export function installServiceV1Schema(db: Database.Database) {
  db.exec(`
+ CREATE TABLE IF NOT EXISTS service_v1_fx_versions(
+  id INTEGER PRIMARY KEY,usd_vnd REAL NOT NULL CHECK(usd_vnd>0),actor_id INTEGER NOT NULL REFERENCES users(id),
+  request_key TEXT NOT NULL UNIQUE,request_hash TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+ );
+ CREATE TABLE IF NOT EXISTS service_v1_fx_confirmations(
+  id INTEGER PRIMARY KEY,version_id INTEGER NOT NULL UNIQUE REFERENCES service_v1_fx_versions(id),
+  expected_previous_id INTEGER,actor_id INTEGER NOT NULL REFERENCES users(id),
+  request_key TEXT NOT NULL UNIQUE,request_hash TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+ );
+ CREATE TRIGGER IF NOT EXISTS v1_fx_no_update BEFORE UPDATE ON service_v1_fx_versions BEGIN SELECT RAISE(ABORT,'Immutable FX version'); END;
+ CREATE TRIGGER IF NOT EXISTS v1_fx_no_delete BEFORE DELETE ON service_v1_fx_versions BEGIN SELECT RAISE(ABORT,'Immutable FX version'); END;
+ CREATE TRIGGER IF NOT EXISTS v1_fx_confirmation_no_update BEFORE UPDATE ON service_v1_fx_confirmations BEGIN SELECT RAISE(ABORT,'Immutable FX confirmation'); END;
+ CREATE TRIGGER IF NOT EXISTS v1_fx_confirmation_no_delete BEFORE DELETE ON service_v1_fx_confirmations BEGIN SELECT RAISE(ABORT,'Immutable FX confirmation'); END;
  CREATE TABLE IF NOT EXISTS service_v1_quotes(
   id INTEGER PRIMARY KEY,
   route_id INTEGER NOT NULL REFERENCES service_route_configs(id),

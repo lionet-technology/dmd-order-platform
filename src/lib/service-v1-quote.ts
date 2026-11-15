@@ -1,3 +1,4 @@
+import {currentServiceV1Fx} from './service-v1-fx';
 import {createHash} from "node:crypto";
 import {db} from "./db";
 import {serviceV1Key} from "./service-v1-config";
@@ -14,7 +15,7 @@ function publicQuote(row:Row) {
  const q=JSON.parse(String(row.snapshot_json));
  return {id:row.id,created_at:row.created_at,route_id:row.route_id,client_id:row.client_id,
   currency:"VND",rounding:"NONE",config_version_id:q.config_version_id,price_version_id:q.price_version_id,
-  rate_key:q.rate_key,discount_percent:q.discount_percent,sales_vnd:q.sales_vnd,
+  rate_key:q.rate_key,...(q.fx_version_id?{fx_version_id:q.fx_version_id}:{}),discount_percent:q.discount_percent,sales_vnd:q.sales_vnd,
   operational_cutover:false,purchase_eligible:false,notice:"Báo giá theo dòng đã chọn; chưa tra cân/zone hoặc phụ phí và chưa dùng để Purchase."};
 }
 /** Explicit row preview only. Server order→rate mapping and VND ledger cutover are separate gates. */
@@ -39,12 +40,17 @@ export function createServiceV1Quote(input:{route_id:number;client_id:number;rat
   const discount=Number(setting.discount_percent);
   if(!Number.isFinite(discount)||discount<0||discount>100)throw Error("Client Discount không hợp lệ.");
   const body=JSON.parse(String(price.body_json));
-  const rate=(body.rows as Array<{key:string;retail_vnd:number}>).find(r=>r.key===input.rate_key);
+  const rate=(body.rows as Array<{key:string;retail_vnd:number;net_usd?:number}>).find(r=>r.key===input.rate_key);
   if(body.currency!=="VND"||!rate)throw Error("Thiếu dòng Published Price.");
-  const sales=rate.retail_vnd*(1-discount/100);
+  const fx=rate.net_usd!==undefined?currentServiceV1Fx():undefined;
+  if(rate.net_usd!==undefined&&!fx)throw Error('Chưa xác nhận Rate USD–VND.');
+  const convertedNet=fx?Number(rate.net_usd)*fx.usd_vnd:undefined;
+  const convertedBase=fx?Number(convertedNet)*(1+body.net_markup):undefined;
+  const retail=fx?Number(convertedBase)*(1+body.base_markup):rate.retail_vnd;
+  const sales=retail*(1-discount/100);
   if(!Number.isFinite(sales)||sales<0||sales>Number.MAX_SAFE_INTEGER)throw Error("Giá vượt độ chính xác.");
   const snapshot={currency:"VND",config_version_id:config.id,price_version_id:price.id,net_version_id:price.source_net_id,
-   config:JSON.parse(String(config.config_json)),rate_key:rate.key,price_row:rate,client_setting:setting,
+   config:JSON.parse(String(config.config_json)),rate_key:rate.key,price_row:fx?{...rate,net_vnd:convertedNet,base_vnd:convertedBase,retail_vnd:retail}:rate,client_setting:setting,...(fx?{fx_version_id:fx.id,usd_vnd:fx.usd_vnd}:{}),
    discount_percent:discount,sales_vnd:sales,rounding:"NONE"};
   const result=db.prepare("INSERT INTO service_v1_quotes(route_id,client_id,actor_id,snapshot_json,request_key,request_hash) VALUES (?,?,?,?,?,?)").run(input.route_id,input.client_id,actorId,JSON.stringify(snapshot),key,hash);
   return publicQuote(db.prepare("SELECT * FROM service_v1_quotes WHERE id=?").get(result.lastInsertRowid) as Row);

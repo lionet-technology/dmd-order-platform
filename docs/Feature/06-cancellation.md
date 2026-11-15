@@ -1,3 +1,6 @@
+## Owner Edit Order V1 — 16/11/2026
+Confirmed target, current legacy issuance-lock hardening and remaining VND/consent/replacement gaps: [Feature 28](28-order-edit-v1.md). Duplicate must be a new processing Purchase Request, never Draft; existing cancellation policy still applies. Full workflow is not enabled by this change.
+
 # Huỷ đơn & hoàn tiền — GĐ1
 
 ## Emergency Hold — 23/10/2026

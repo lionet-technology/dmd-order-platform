@@ -1,3 +1,6 @@
+## Rate USD–VND — 16/11/2026
+[Current versioned Rate and ePacket USD-source conversion](29-service-v1-fx.md): Admin save/confirm, new VND quote snapshots, immutable history. Operational VND Purchase/ledger cutover remains incomplete.
+
 ## UPS V1 core — 14/11/2026
 [Calculation and staged global confirmation](26-ups-v1-core.md). No operational UPS optimizer/price cutover yet.
 

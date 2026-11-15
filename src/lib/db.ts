@@ -783,6 +783,7 @@ DROP TRIGGER IF EXISTS immutable_order_price;
 CREATE TRIGGER immutable_order_price BEFORE UPDATE OF pricing_snapshot_json,pricing_version_id,pricing_config_version_id,service_purchased_at ON orders
  WHEN OLD.pricing_snapshot_json IS NOT NULL AND NOT (
  EXISTS(SELECT 1 FROM order_amendment_context c JOIN users u ON u.id=c.actor_id WHERE c.order_id=OLD.id AND u.role='ADMIN')
+ AND trim(COALESCE(OLD.tracking,''))='' AND trim(COALESCE(OLD.label,''))=''
  AND NOT EXISTS(SELECT 1 FROM order_trackings t WHERE t.order_id=OLD.id)
  AND NOT EXISTS(SELECT 1 FROM ledger_entries e WHERE e.reference_type='ORDER' AND e.reference_id=CAST(OLD.id AS TEXT) AND e.entry_type IN ('ORDER_CHARGE','PURCHASE_DELTA'))
  AND OLD.purchase_completed_at IS NULL AND OLD.fulfillment_started_at IS NULL

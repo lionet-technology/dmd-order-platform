@@ -1,3 +1,6 @@
+## Rate USD–VND — 16/11/2026
+[Current versioned Rate and ePacket USD-source conversion](29-service-v1-fx.md): Admin save/confirm, new VND quote snapshots, immutable history. Operational VND Purchase/ledger cutover remains incomplete.
+
 # Service V1 published-row quotes — partial backend
 14/11/2026. Source: service-v1-quote.ts, service-v1-schema.ts, /api/service-v1/quotes. Regression: verify-service-v1-quotes.cjs.
 

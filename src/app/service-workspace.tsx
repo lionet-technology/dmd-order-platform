@@ -2,6 +2,7 @@
 
 import {EmergencyHoldPanel} from "./emergency-hold-panel";
 import {CancellationPolicyPanel} from "./cancellation-policy-panel";
+import {ServiceV1FxPanel} from './service-v1-fx-panel';
 import { RoutePricingPanel } from "./route-pricing-panel";
 import { useCallback,useEffect,useRef,useState } from "react";
 
@@ -167,6 +168,7 @@ export function ServiceConfigurationPanel({enums}:{enums:EnumRow[]}){
   const subServices=form.service?options(enums,"SUB_SERVICE",form.service):[];
   const suppliers=options(enums,"SUPPLIER");
   return <div className="serviceConfigWorkspace">
+    <ServiceV1FxPanel/>
     <section className="routeConfigCard">
       <div className="configHead"><div><b>Cấu hình dịch vụ</b><span>Quản lý giá, phụ phí và file xuất theo Service / Sub-Service / Supplier.</span></div></div>
       <details className="routeCreateDisclosure settingsDisclosure"><summary>＋ Thêm cấu hình dịch vụ</summary><div className="routeCreate">

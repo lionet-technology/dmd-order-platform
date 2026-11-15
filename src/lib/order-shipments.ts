@@ -81,9 +81,9 @@ function cartonComplete(carton:ShipmentCartonInput){
 }
 
 export function saveOrderShipmentStructure(orderId:number,input:{lot_count?:number;cartons:ShipmentCartonInput[]}){
-  const order=db.prepare("SELECT id,workflow_status,pricing_snapshot_json,service,sub_service,supplier FROM orders WHERE id=?").get(orderId) as {id:number;workflow_status:string;pricing_snapshot_json?:string;service:string;sub_service:string;supplier:string}|undefined;
+  const order=db.prepare("SELECT id,workflow_status,pricing_snapshot_json,service,sub_service,supplier,tracking,label FROM orders WHERE id=?").get(orderId) as {id:number;workflow_status:string;pricing_snapshot_json?:string;tracking?:string;label?:string;service:string;sub_service:string;supplier:string}|undefined;
   if(!order)throw new Error("Order không tồn tại.");
-  if(db.prepare("SELECT id FROM order_trackings WHERE order_id=? LIMIT 1").get(orderId))throw new Error("Dữ liệu kiện đã khóa sau Tracking.");
+  if(String(order.tracking||"").trim()||String(order.label||"").trim()||db.prepare("SELECT id FROM order_trackings WHERE order_id=? LIMIT 1").get(orderId))throw new Error("Dữ liệu kiện đã khóa sau Tracking/Label.");
   if(order.pricing_snapshot_json)throw new Error("Dữ liệu kiện đã khóa khi đặt mua dịch vụ.");
   if(order.workflow_status==="CANCELLED")throw new Error("Đơn đã huỷ; không thể sửa khai báo kiện hàng.");
   const cartons=Array.isArray(input.cartons)?input.cartons:[];

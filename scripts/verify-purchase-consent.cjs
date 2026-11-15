@@ -40,6 +40,18 @@ let checks=0;const eq=(a,b,m)=>{checks++;assert.deepEqual(a,b,m)};
   assert.throws(()=>require('../src/lib/order-shipments.ts').saveOrderShipmentStructure(o.id,{lot_count:2,cartons:[]}),/khóa|Tracking|tracking|đặt mua/);checks++;eq(truth(),posted,'Lot changes after posting preserve financial truth');
 
  }
+ // Legacy Order columns must lock edits even without a normalized Tracking row.
+ for(const field of ['tracking','label']){
+  const legacy=make('LEGACY-'+field);
+  db.prepare('UPDATE orders SET '+field+'=? WHERE id=?').run(field==='label'?'https://labels.test/legacy.pdf':'LEGACY-TRACK',legacy.id);
+  const truth=()=>JSON.stringify({order:db.prepare('SELECT * FROM orders WHERE id=?').get(legacy.id),structure:require('../src/lib/order-shipments.ts').getOrderShipmentStructure(legacy.id,false),ledger:db.prepare('SELECT * FROM ledger_entries ORDER BY id').all(),reserves:db.prepare('SELECT * FROM purchase_reserves ORDER BY order_id').all()});
+  const before=truth();let wrote=false;
+  assert.throws(()=>finance.upsertOrder({id:legacy.id,recipient_name:'Changed'}),/khóa/);checks++;
+  assert.throws(()=>require('../src/lib/order-amendment.ts').amendOrderBeforeTracking({id:legacy.id},admin,()=>{wrote=true}),/Tracking\/Label/);checks++;
+  eq(wrote,false,'Issued legacy Order cannot enter amendment write callback');
+  assert.throws(()=>require('../src/lib/order-shipments.ts').saveOrderShipmentStructure(legacy.id,{lot_count:2,cartons:[]}),/khóa/);checks++;
+  eq(truth(),before,'Legacy '+field+' lock preserves shipment and financial state');
+ }
  const o=make('DIRECT');assert.throws(()=>pricing.purchaseService(o.id,client),/Báo giá/);checks++;
  // Current policy is service/adapter based: no AUTO adapter for UPS/Yun/custom.
  for(const service of ['UPS','Chuyên tuyến','YunExpress','ePacket']){

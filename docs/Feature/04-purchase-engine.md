@@ -1,3 +1,6 @@
+## Owner Edit Order V1 — 16/11/2026
+Confirmed target, current legacy issuance-lock hardening and remaining VND/consent/replacement gaps: [Feature 28](28-order-edit-v1.md). Duplicate must be a new processing Purchase Request, never Draft; existing cancellation policy still applies. Full workflow is not enabled by this change.
+
 ## Service V1 — Owner làm rõ 14/11/2026
 Fulfillment V1 chính là quy trình xử lý Order/mua Supplier/Tracking–Label/Manifest/bàn giao. Mỗi Lot là một shipment mua UPS, Shipment Surcharge một lần/Lot; Order DMD gom các Lot gửi cùng một địa chỉ. Tiền VNĐ giữ số lẻ; không thay rounding cân. Đây là target CONFIRMED; luồng vận hành USD hiện hành và Purchased snapshots chưa chuyển đổi. Xem [spec](DMD_Order_Platform_Service_Architecture_V1_Specification.md).
 

@@ -57,3 +57,20 @@ PROPOSED: mọi mức AHC/LPS/OMS từ hội thoại UPS US; không import/activ
 
 ## CURRENT — source audit baseline 2302d06
 route-pricing.ts vẫn USD, Base Rate độc lập, base_markup bị cấm; ePacket adapter Standard/Eco DMD, UPS/custom manual USD; route identity/lifecycle/Client settings và reserve/charge có sẵn. Client Add-on V1 chưa có; Supplier BUY/SELL không thay thế. Xem [gap và acceptance matrix](23-service-architecture-v1.md). CURRENT không chứng minh production readiness.
+
+## CONFIRMED — Owner continuation 16/11/2026: Edit Order / replacement
+Source: direct Owner implementation request continuing chat 6ad35267-1ad8-83ec-a691-9d80c58281df. Supersedes assistant proposal to duplicate into Draft.
+- Edit shipping input, Service and Order Selling Price only before ANY Tracking/Label, including partial issuance. Confirm Service then Selling Price within one editing session; final save is atomic and rechecks issuance.
+- Issued Order Edit offers Cancel and Cancel & Duplicate only under current cancellation/refund policy. Denied cancellation cannot silently cancel or mark replacement complete.
+- Duplicate receives a new DMD ID, source ID link and suitable shipping/carton/service input only; no old tracking, label, Net, Supplier Account or price snapshot. New Order is PURCHASING / PURCHASE REQUESTED, never Draft; new purchase is processing, conditional on current eligibility and financial gates, with supplier/charge/ledger idempotency.
+- Recalculate against current VND prices. Demo/test permission does not authorize production access. Owner says Work processed Net Excel; the corresponding handoff/commit is not present in the inspected HEAD, and its location has been requested. Do not infer missing rates or convert USD silently.
+- Purchased but unissued price changes require Price Confirmation Required, Client confirmation or Admin/assigned Sales override. Preserve Purchase Request identity. Auto-priced Draft uses current price. Tracking/Label remains a separate workflow.
+- IMPLEMENTATION STATUS: legacy Tracking/Label edit-lock hardening plus versioned Rate UI/API and ePacket selected-row quote conversion in this continuation. Full consent, UI, replacement and VND financial integration are pending; see [audit](28-order-edit-v1.md).
+
+### Owner clarification during implementation — 16/11/2026
+All operational prices are VND. ePacket source Net table is USD; a Rate USD–VND variable converts Net to VND before sequential Net Cost → Base Cost → Retail Price. This supersedes treating ePacket source Net as necessarily VND. The current HEAD has no operational FX variable implementation. The final Owner answers below resolve Rate versioning and separate source cancellation from new-purchase eligibility. Do not infer a numeric rate from historical assistant audits.
+
+### Owner final answers — 16/11/2026
+- Cancel & Duplicate: when cancellation is allowed, cancel the source with 100% refund (net of prior refunds; release only if uncharged). New price goes through the approved charging/financial eligibility flow. This supersedes the earlier policy refund percentage **for this combined action only**; cancellation eligibility and ordinary Cancel policy remain. A failed new purchase must not be represented as a completed replacement or silently bypass money conditions.
+- Rate USD–VND: Admin enters and confirms a version, retained in price snapshots; applies to new quotes/Purchases. No retrospective mutation of accepted snapshots. Numeric rate is configured, never inferred from old audits.
+- CURRENT increment: [Rate UI/API and USD-source conversion](29-service-v1-fx.md). This is not yet operational VND ledger cutover or full Edit/Cancel & Duplicate implementation.
