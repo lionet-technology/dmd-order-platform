@@ -1,3 +1,4 @@
+import {isVndClient} from './vnd-operational';
 import {db} from './db';
 import {completeReserve,audit} from './credit';
 import {assertRouteCartons} from './carton-policy';
@@ -10,6 +11,7 @@ export function isManualPriceRoute(service:unknown){return /^(UPS|Chuyên tuyế
 export function setManualOrderPrice(orderId:number,amount:unknown,actorId:number){
  return db.transaction(()=>{
   const order=db.prepare('SELECT * FROM orders WHERE id=?').get(orderId) as Record<string,unknown>|undefined;
+  if(order&&isVndClient(Number(order.client_user_id)))throw Error('Dùng offer VNĐ riêng tại /vnd.');
   if(!order||!isManualPriceRoute(order.service))throw Error('Route không hỗ trợ giá thủ công.');
   const purchasing=canPurchase(order);
   if((!purchasing.allowed&&!['PURCHASED','RECONCILED'].includes(String(order.workflow_status)))||!order.service_purchased_at)throw Error('Client chưa gửi yêu cầu mua hoặc Order không được phép cấp dịch vụ.');

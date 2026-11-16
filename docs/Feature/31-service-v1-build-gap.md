@@ -1,3 +1,7 @@
+## Operational VNĐ increment — 16/11/2026
+[Feature 33](33-vnd-manual-purchase.md) now delivers a **bounded Chuyên tuyến Manual Quote slice** for explicitly activated, empty Client accounts: Purchase Request → price consent/scoped override → atomic Reserve/Awaiting Funds/FIFO → complete Tracking+Label charge → exact VNĐ ledger → Order correction/fees/tax → route-policy cancellation and Supplier follow-up. Existing USD data is never converted or relabelled. This does **not** complete automatic-service Purchase, Statements/Debt/reporting cutover, shipping Edit, Cancel & Duplicate or Client Add-on.
+This section supersedes older blanket “no operational VNĐ/consent/FIFO/correction delivery” statements only within that scope. All wider gaps remain.
+
 # Service V1 — source reconciliation and build gap
 Reviewed 16/11/2026 at HEAD 7491a726d953cdf6f6784ef76e604ced729db961, main. Fetch origin succeeded; HEAD equals origin/main. Existing AGENTS.md modification and untracked Codex/ are unrelated and preserved.
 Status: PARTIAL. No operational VND cutover or production acceptance.

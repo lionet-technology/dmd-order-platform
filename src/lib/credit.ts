@@ -1,3 +1,4 @@
+import {isVndClient,completeVndReserve} from "./vnd-operational";
 import { db } from "./db";
 import {deriveDebtAge,type AgeEvent,type AgeBucket} from "./debt-age";
 import {RefundService} from "./refunds";
@@ -30,6 +31,8 @@ export function creditSchema(){
  CREATE INDEX IF NOT EXISTS idx_credit_allocations_ledger ON credit_allocations(ledger_id);`);
 }
 creditSchema();
+for(const [table,column] of [['purchase_reserves','client_id'],['credit_debts','client_id']])for(const op of ['INSERT','UPDATE'])db.exec(`CREATE TRIGGER IF NOT EXISTS vnd_no_legacy_${table}_${op} BEFORE ${op} ON ${table} WHEN EXISTS(SELECT 1 FROM vnd_accounts WHERE client_id=NEW.${column}) BEGIN SELECT RAISE(ABORT,'Use VND Purchase/Finance'); END;`);
+
 export function statementSchema(){
 for (const [table, columns] of Object.entries({
  credit_statements: { lifecycle: "TEXT NOT NULL DEFAULT 'OPEN'", issued_at: "TEXT" },
@@ -131,7 +134,7 @@ export function allocateFIFO(clientId:number){return db.transaction(()=>{
  if(left>0)db.prepare('INSERT OR IGNORE INTO credit_settlement_wallet_freezes(ledger_id,client_id,reason) VALUES (?,?,?)').run(e.id,clientId,'Posted Payment surplus retained in Balance');
  }
  }).immediate();}
-export function accountFinancials(clientId:number,options:{readOnly?:boolean;includeDetails?:boolean;includeTransactions?:boolean}={}){return db.transaction(()=>{
+export function accountFinancials(clientId:number,options:{readOnly?:boolean;includeDetails?:boolean;includeTransactions?:boolean}={}){if(isVndClient(clientId))throw Error("Tài khoản VNĐ: mở /vnd để xem sổ tiền chính xác.");return db.transaction(()=>{
  if(!options.readOnly)allocateFIFO(clientId);const r=receivables(clientId,options.includeDetails!==false&&options.includeTransactions!==false),c=db.prepare("SELECT credit_limit_cents,credit_term_days,purchase_locked,purchase_lock_reason FROM users WHERE id=?").get(clientId) as Row;
  const balance=Number((db.prepare("SELECT COALESCE(SUM(CASE WHEN direction='CREDIT' THEN ROUND(amount*100) ELSE -ROUND(amount*100) END),0) n FROM ledger_entries WHERE client_user_id=? AND entry_type!='SERVICE_COST'").get(clientId) as {n:number}).n);
  const reserved=Number((db.prepare("SELECT COALESCE(SUM(amount_cents),0) n FROM purchase_reserves WHERE client_id=? AND status='RESERVED'").get(clientId) as {n:number}).n);
@@ -184,6 +187,7 @@ export function reservePurchase(orderId:number,clientId:number,amount:number,act
  audit(clientId,actorId,"PURCHASE_RESERVED",{orderId,amount,previous_reserved_cents:existing?.status==="RESERVED"?Number(existing.amount_cents):0});
 }).immediate();}
 export function completeReserve(orderId:number,actorId:number){return db.transaction(()=>{
+ if(completeVndReserve(orderId,actorId))return;
  const r=db.prepare("SELECT * FROM purchase_reserves WHERE order_id=? AND status='RESERVED'").get(orderId) as Row|undefined;if(!r)return;
  const o=db.prepare("SELECT * FROM orders WHERE id=?").get(orderId) as Row;
  if(Number(o.client_user_id)!==Number(r.client_id))throw Error('Reserve Client mismatch.');

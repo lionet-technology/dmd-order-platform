@@ -1,3 +1,7 @@
+## Operational VNĐ increment — 16/11/2026
+[Feature 33](33-vnd-manual-purchase.md) now delivers a **bounded Chuyên tuyến Manual Quote slice** for explicitly activated, empty Client accounts: Purchase Request → price consent/scoped override → atomic Reserve/Awaiting Funds/FIFO → complete Tracking+Label charge → exact VNĐ ledger → Order correction/fees/tax → route-policy cancellation and Supplier follow-up. Existing USD data is never converted or relabelled. This does **not** complete automatic-service Purchase, Statements/Debt/reporting cutover, shipping Edit, Cancel & Duplicate or Client Add-on.
+This section supersedes older blanket “no operational VNĐ/consent/FIFO/correction delivery” statements only within that scope. All wider gaps remain.
+
 ## Current reserve implementation — 16/11/2026
 [Atomic reserve and retry](04-purchase-engine.md) now serializes direct low-level writes, accounts for the existing reserve only once and restores the original on failed replacement. No change to Balance, credit limits, Debt, Claim refunds, Statement or currency semantics.
 

@@ -1,3 +1,4 @@
+import {vndRequest} from "@/lib/vnd-operational";
 import {hasPartialLabelOverride,labelFingerprint} from "@/lib/partial-label";
 import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import { orderQuote,purchaseService } from "@/lib/route-pricing";
@@ -70,10 +71,12 @@ async function handlePOST(req:NextRequest,{params}:{params:Promise<{id:string}>}
         else addOrderTracking({orderId:id,tracking:raw.tracking,labelUrl:raw.label_url,lotNumber:raw.lot_number,cartonId,actorId:auth.user.id,costMatchType:raw.cost_match_type,costParentTrackingId:raw.cost_parent_tracking_id});
       }
       const active=(db.prepare("SELECT COUNT(*) c FROM order_trackings WHERE order_id=? AND status='ACTIVE'").get(id) as {c:number}).c;
-      const complete=Boolean(body.complete);
+      const vnd=vndRequest(id);
+      const complete=Boolean(body.complete)||vnd?.status==="CHARGED";
       const labelled=(db.prepare("SELECT COUNT(DISTINCT carton_id) c FROM order_trackings WHERE order_id=? AND status='ACTIVE' AND TRIM(COALESCE(label_url,''))<>'' ").get(id) as {c:number}).c;
       const coverage=(db.prepare("SELECT COUNT(DISTINCT carton_id) c FROM order_trackings WHERE order_id=? AND status='ACTIVE'").get(id) as {c:number}).c;
       const cartonCount=Math.max(1,Number(access.order?.carton_count||1));
+      if(vnd&&complete&&(coverage<cartonCount||labelled<cartonCount))throw new Error("VNĐ cần đủ Tracking và Label toàn Order để charge.");
       if(complete&&(coverage<cartonCount||labelled<cartonCount)&&!hasPartialLabelOverride(id)){
         if(!body.partial_label_override||!String(body.override_reason||'').trim()||!active||!labelled)throw new Error("INCOMPLETE: cần đủ Tracking/Label hoặc Admin xác nhận ngoại lệ có lý do.");
         logOrderEvent({orderId:id,eventType:'PARTIAL_LABEL_OVERRIDE',summary:String(body.override_reason),actorId:auth.user.id,after:{active,labelled,cartonCount,fingerprint:labelFingerprint(id)}});

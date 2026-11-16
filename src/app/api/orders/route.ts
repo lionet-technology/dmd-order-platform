@@ -1,3 +1,4 @@
+import {isVndClient,vndRequest} from "@/lib/vnd-operational";
 import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import { refreshDraft,safePricing,stripPricingInternals } from "@/lib/route-pricing";
 import { NextRequest, NextResponse } from "next/server";
@@ -68,7 +69,8 @@ async function handleGET(req: NextRequest) {
     const trackings=listOrderTrackings(Number(order.id),auth.user.role==="ADMIN");
     const visible=auth.user.role==="ADMIN"?trackings:trackings.filter(row=>row.status==="ACTIVE").map(publicOrderTracking);
     const active=visible.filter(row=>row.status==="ACTIVE");
-    const payload={...order,pricing:safePricing(order,auth.user.role),tracking:active.find(row=>row.is_primary)?.tracking||active[0]?.tracking||null,tracking_count:active.length,tracking_data:JSON.stringify(visible),trackings:visible};
+    const vr=isVndClient(Number(order.client_user_id))?vndRequest(Number(order.id)):undefined;
+    const payload={...order,...(isVndClient(Number(order.client_user_id))?{money_currency:"VND",sales_price_vnd:vr?.offer??null}:{}),pricing:safePricing(order,auth.user.role),tracking:active.find(row=>row.is_primary)?.tracking||active[0]?.tracking||null,tracking_count:active.length,tracking_data:JSON.stringify(visible),trackings:visible};
     if(auth.user.role==="ADMIN")return payload;
     const safe:Record<string,unknown>=stripPricingInternals({...payload});
     safe.public_note=publicNoteText(Number(order.id));

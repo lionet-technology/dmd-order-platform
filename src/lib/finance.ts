@@ -1,3 +1,4 @@
+import {isVndClient,vndRequest} from "./vnd-operational";
 import { logAdminEvent } from "./order-audit";
 import { refreshDraft,activePricing,routeFor } from "./route-pricing";
 import { db } from "./db";
@@ -270,6 +271,7 @@ export function upsertOrder(input: OrderInput) {
   if(existing&&(String(existing.tracking||"").trim()||String(existing.label||"").trim()||db.prepare("SELECT id FROM order_trackings WHERE order_id=? LIMIT 1").get(existing.id)))throw new Error("Order đã có Tracking/Label; dữ liệu nhạy cảm đã khóa.");
   if(existing?.pricing_snapshot_json)throw new Error("Đơn đã đặt mua; giá và dữ liệu kiện đã khóa.");
   if(existing?.workflow_status==="CANCELLED")throw new Error("Đơn đã huỷ; không thể sửa hoặc tạo lại trên cùng record.");
+  if(existing&&vndRequest(existing.id))throw Error("Order VNĐ đã Purchase; dùng offer/correction riêng.");
   const clientUserId = input.client_user_id !== undefined && input.client_user_id !== null && input.client_user_id !== ""
     ? Number(input.client_user_id)
     : Number(existing?.client_user_id || 0) || null;
@@ -320,6 +322,10 @@ export function upsertOrder(input: OrderInput) {
     if(!cartonCount||cartonCount<1)throw new Error("Số lượng carton phải từ 1 trở lên.");
     if(!weight||weight<=0)throw new Error("Tổng khối lượng phải lớn hơn 0 kg.");
     if(!volume||volume<=0)throw new Error("Hãy nhập đủ kích thước hoặc thể tích tổng của lô hàng.");
+  }
+  if(isVndClient(Number(clientUserId))&&service.toLowerCase()!=="chuyên tuyến")throw Error("VNĐ vận hành hiện hỗ trợ Chuyên tuyến.");
+  if(isVndClient(Number(clientUserId)))for(const key of ["est_net_cost","base_cost","retail","sales_price","surcharge","import_tax","total_due"] as const){
+    if(input[key]!==undefined&&num(input[key])!==0)throw Error("VNĐ: nhập giá bằng offer/Financial Posting riêng, không nhập vào cột tiền legacy.");
   }
   const estNet=numericValue(input,"est_net_cost",existing);
   const supplier=enumValues.supplier;

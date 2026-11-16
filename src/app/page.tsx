@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import {SupplierCancellationWorkspace} from './supplier-cancellation-workspace';
 import {MANUAL_ORDER_LIMIT,MANUAL_ORDER_LIMIT_MESSAGE} from "@/lib/manual-order-limit";
 import { FinanceWorkspace } from "./finance-role-workspace";
@@ -1057,6 +1058,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
     <aside className="sidebar">
       <div className="brand"><div className="brandMark">D</div><div><b>DMD Finance</b><span>Operations</span></div></div>
       <nav className="sideNav">
+        {role!=="WAREHOUSE"&&<Link href="/vnd">Chuyên tuyến · Sổ VNĐ</Link>}
         {nav.filter(n=>n.roles.includes(role)).map(n=><button key={n.key} aria-label={n.label} title={n.label} className={section===n.key?"active":""} onClick={()=>navigate(n.key)}>
           <i>{n.icon}</i><span>{n.label}</span>
           {n.key==="operations"&&claimAttention>0&&<em aria-label="Claims cần lưu tâm">{claimAttention}</em>}
@@ -1254,7 +1256,7 @@ function Table({rows,cols,onView,onEdit,onPurchase,compact=false}:{rows:RowData[
   return <div className={compact?"tableWrap compactTable":"tableWrap"}><table><thead><tr>{hasActions&&<th>Thao tác</th>}{cols.map(c=><th key={c} className={["amount","est_net_cost","true_net_cost","base_cost","retail","sales_price","surcharge","import_tax","extra_surcharge","extra_import_tax","total_due","reconciliation_delta","total_net_cost","gross_margin_pct","chargeable_weight"].includes(c)?"numericCell":undefined}>{label(c)}</th>)}</tr></thead><tbody>
     {rows.length===0?<tr><td colSpan={cols.length+(hasActions?1:0)} className="empty">Chưa có dữ liệu.</td></tr>
     :rows.map((r,i)=><tr key={String(r.id||r.tracking||r.order_id||i)}>
-      {hasActions&&<td className="actionCell"><div className="rowActions">{onView&&<button className="rowAction" onClick={()=>onView(r)}>View</button>}{onEdit&&r.workflow_status!=="CANCELLED"&&r.workflow_status!=="PURCHASED"&&!r.service_purchased_at&&!r.purchase_completed_at&&<button className="rowAction" onClick={()=>onEdit(r)}>Sửa</button>}{onPurchase&&r.workflow_status!=="CANCELLED"&&<button className="rowAction primaryRowAction" onClick={()=>onPurchase(r)}>{Number(r.tracking_count||0)>0?"Tracking":"Mua đơn"}</button>}</div></td>}
+      {hasActions&&<td className="actionCell"><div className="rowActions">{onView&&(r.money_currency==="VND"?<Link href="/vnd">View VNĐ</Link>:<button className="rowAction" onClick={()=>onView(r)}>View</button>)}{onEdit&&r.workflow_status!=="CANCELLED"&&r.workflow_status!=="PURCHASED"&&!r.service_purchased_at&&!r.purchase_completed_at&&<button className="rowAction" onClick={()=>onEdit(r)}>Sửa</button>}{onPurchase&&r.money_currency==="VND"&&<Link href="/vnd">Purchase VNĐ</Link>}{onPurchase&&r.money_currency!=="VND"&&r.workflow_status!=="CANCELLED"&&<button className="rowAction primaryRowAction" onClick={()=>onPurchase(r)}>{Number(r.tracking_count||0)>0?"Tracking":"Mua đơn"}</button>}</div></td>}
       {cols.map(c=>{
         if(c==="workflow_status"&&r.pricing_eligibility_json&&!r.service_purchased_at){
           let eligibility:{eligible?:boolean;reasons?:string[]}={};try{eligibility=JSON.parse(String(r.pricing_eligibility_json))}catch{}
@@ -1263,7 +1265,7 @@ function Table({rows,cols,onView,onEdit,onPurchase,compact=false}:{rows:RowData[
         const v=r[c];
         const isMoney=["amount","est_net_cost","true_net_cost","base_cost","retail","sales_price","surcharge","import_tax","extra_surcharge","extra_import_tax","total_due","reconciliation_delta","total_net_cost"].includes(c);
         const isStatus=["workflow_status","margin_status","reconciliation_status","direction","matched"].includes(c);
-        const display=c==="matched"?(Number(v)?"Linked":"Waiting"):isMoney?money(v):["created_at","occurred_at"].includes(c)?(v?displayDate(v):"—"):String(v??"—");
+        const display=c==="matched"?(Number(v)?"Linked":"Waiting"):isMoney?(r.money_currency==="VND"?(c==="sales_price"?(r.sales_price_vnd===null?"Chờ báo giá":String(r.sales_price_vnd)+" VNĐ"):"Xem sổ VNĐ"):money(v)):["created_at","occurred_at"].includes(c)?(v?displayDate(v):"—"):String(v??"—");
         if(c==="tracking"){
           let trackingRows:Array<{id?:number;tracking?:string;label_url?:string;status?:string;lot_number?:number}>=[];
           try{trackingRows=JSON.parse(String(r.tracking_data||"[]"))}catch{}

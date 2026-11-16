@@ -1,3 +1,5 @@
+import {sumVnd} from "./vnd-money";
+import {vndRequest,cancelVndMoney,resumeVndPurchases} from "./vnd-operational";
 import {readCancellationRules} from "./cancellation-config";
 import {recordSupplierCancellation} from "./supplier-cancellation";
 import {canCancelOrder} from "./order-transition-guards";
@@ -61,7 +63,10 @@ export function cancelOrder(orderId:number,user:AuthUser,options:{refund_percent
       const client=order.client_user_id?getClientAccount(order.client_user_id):undefined;
       if(!client||!canAccessClient(user,client))throw new CancellationError("Không có quyền huỷ Order này.",403);
     }
-    if(order.workflow_status==="CANCELLED")return {cancelled:true,already_cancelled:true,...cancellationPolicy(order)};
+    if(order.workflow_status==="CANCELLED"){
+      if(vndRequest(orderId))return {cancelled:true,already_cancelled:true,currency:'VND',refund_amount:sumVnd((db.prepare("SELECT delta FROM vnd_ledger WHERE order_id=? AND kind='CANCELLATION_REFUND'").all(orderId) as {delta:string}[]).map(e=>e.delta))};
+      return {cancelled:true,already_cancelled:true,...cancellationPolicy(order)};
+    }
     const policy=cancellationPolicy(order);
     if(!policy.allowed)throw new CancellationError(policy.reason);
     const adminSupport100=policy.refund_percent<100&&options.refund_percent===100;
@@ -74,6 +79,14 @@ export function cancelOrder(orderId:number,user:AuthUser,options:{refund_percent
       policy.refund_amount=Math.max(0,Math.min(money((policy.charged_amount||0)-(policy.previous_refunds||0)),money((policy.charged_amount||0)*percent/100-(policy.previous_refunds||0))));
     }
     recordSupplierCancellation(order,user,reason);
+    if(vndRequest(orderId)){
+      const result=cancelVndMoney(orderId,policy.refund_percent,reason,user.id)!;
+      db.prepare("UPDATE orders SET workflow_status='CANCELLED',cancelled_at=CURRENT_TIMESTAMP,cancelled_by_user_id=?,cancellation_reason=?,cancellation_refund_percent=?,updated_by_user_id=? WHERE id=?").run(user.id,reason,policy.refund_percent,user.id,orderId);
+      db.prepare("UPDATE order_trackings SET status='CANCELLED',is_primary=0 WHERE order_id=? AND status='ACTIVE'").run(orderId);
+      publishPublicNote({orderId,eventType:'REFUND',summary:'Huỷ Order VNĐ; hoàn '+result.refund+' VNĐ.',actorId:user.id,publicData:{currency:'VND',amount:result.refund,refund_percent:policy.refund_percent}});
+      resumeVndPurchases(Number(order.client_user_id),user.id);
+      return {cancelled:true,already_cancelled:false,currency:'VND',refund_amount:result.refund,retained_amount:result.retained};
+    }
     const charged=chargedOrderAmount(orderId);
     const retained=Math.max(0,money(charged-policy.refund_amount-(policy.previous_refunds||0)));
     const at=new Date().toISOString();

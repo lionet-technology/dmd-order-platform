@@ -1,3 +1,4 @@
+import {isVndClient,assertVndIssuance} from "./vnd-operational";
 import {isManualPriceRoute} from "./manual-route-price";
 import { completeReserve, localDay, audit, syncStatements } from "./credit";
 import { assertConfiguredPurchase,orderQuote,purchaseService } from "./route-pricing";
@@ -85,6 +86,7 @@ export function addOrderTracking(input:Parameters<typeof addOrderTrackingRaw>[0]
 
 export function updateOrderTracking(input:{orderId:number;id:number;labelUrl?:unknown;lotNumber?:unknown;cartonId?:number|null;costMatchType?:CostMatchType;costParentTrackingId?:number|null;isPrimary?:boolean}){
   assertOrderOpen(input.orderId);
+  if(isVndClient(Number((db.prepare("SELECT client_user_id FROM orders WHERE id=?").get(input.orderId) as Record<string,unknown>)?.client_user_id)))assertVndIssuance(input.orderId);
   const row=db.prepare("SELECT * FROM order_trackings WHERE id=? AND order_id=?").get(input.id,input.orderId) as OrderTracking|undefined;
   if(!row)throw new Error("Tracking không thuộc Order này.");
   const carton=input.cartonId?db.prepare("SELECT c.id,l.lot_number FROM order_cartons c LEFT JOIN order_lots l ON l.id=c.order_lot_id WHERE c.id=? AND c.order_id=?").get(input.cartonId,input.orderId) as {id:number;lot_number:number|null}|undefined:undefined;
@@ -146,6 +148,7 @@ export function findTrackingOwner(tracking:unknown){
 export function recomputeOrderFinancials(orderId:number){
   const order=db.prepare("SELECT * FROM orders WHERE id=?").get(orderId) as Record<string,unknown>|undefined;
   if(!order)return null;
+  if(isVndClient(Number(order.client_user_id)))return order;
   // An Emergency reroute preserves its original sale/Charge for every later cost import too.
   if(db.prepare("SELECT 1 FROM emergency_hold_orders WHERE order_id=? AND resolved_at IS NOT NULL LIMIT 1").get(orderId)){
     reconcileLots(orderId);return db.prepare("SELECT * FROM orders WHERE id=?").get(orderId);

@@ -1,3 +1,7 @@
+## Operational VNĐ increment — 16/11/2026
+[Feature 33](33-vnd-manual-purchase.md) now delivers a **bounded Chuyên tuyến Manual Quote slice** for explicitly activated, empty Client accounts: Purchase Request → price consent/scoped override → atomic Reserve/Awaiting Funds/FIFO → complete Tracking+Label charge → exact VNĐ ledger → Order correction/fees/tax → route-policy cancellation and Supplier follow-up. Existing USD data is never converted or relabelled. This does **not** complete automatic-service Purchase, Statements/Debt/reporting cutover, shipping Edit, Cancel & Duplicate or Client Add-on.
+This section supersedes older blanket “no operational VNĐ/consent/FIFO/correction delivery” statements only within that scope. All wider gaps remain.
+
 # Service Architecture V1 — Approved Decisions
 Current requirements reviewed 16/11/2026. APPROVED means a business decision, not delivered code.
 Primary source: [full attached handoff](DMD_Service_Architecture_V1_Implementation_Handoff_2026-11-16.md). [Implementation gap and evidence](31-service-v1-build-gap.md). [Earlier decision history](archive/SERVICE-V1-APPROVED-DECISIONS-BEFORE-HANDOFF-2026-11-16.md) is archived, not a second active specification.

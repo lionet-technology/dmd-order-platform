@@ -1,3 +1,4 @@
+import {isVndClient,vndRequest,assertVndIssuance} from "./vnd-operational";
 import {createHash} from "node:crypto";
 import {canPurchase} from "./order-transition-guards";
 import {hasCaseHold} from "./cases";
@@ -47,6 +48,7 @@ export function routeFor(o:Row){
  return db.prepare("SELECT * FROM service_route_configs WHERE lower(service)=lower(?) AND lower(sub_service)=lower(?) AND lower(supplier)=lower(?)").get(String(o.service||""),String(o.sub_service||""),String(o.supplier||"")) as Row|undefined;
 }
 export function orderQuote(o:Row){
+ if(isVndClient(Number(o.client_user_id)))return null;
  if(!o.pricing_snapshot_json&&(o.purchase_completed_at||["PURCHASED","RECONCILED"].includes(String(o.workflow_status))))return null;
  const route=routeFor(o);if(!route||!isEPacket(o))return null;
  const active=activePricing(Number(route.id));if(!active)return null;
@@ -65,6 +67,7 @@ export function orderQuote(o:Row){
 export function refreshDraft(id:number){
  const o=db.prepare("SELECT * FROM orders WHERE id=?").get(id) as Row;
  if(!o)throw Error("Order không tồn tại.");
+ if(isVndClient(Number(o.client_user_id)))return o;
  if(o.pricing_snapshot_json||o.purchase_completed_at||["PURCHASED","RECONCILED","CANCELLED"].includes(String(o.workflow_status)))return o;
  const q=orderQuote(o);if(!q)return o;
  db.prepare("UPDATE orders SET est_net_cost=?,base_cost=?,retail=?,sales_price=?,surcharge=?,total_due=?,chargeable_weight=?,dimensional_divisor=5000,gross_profit_base=?,gross_profit_net=?,commission_amount=?,auto_pricing=1,pricing_eligibility_json=? WHERE id=?")
@@ -77,6 +80,7 @@ function quoteKey(q:ReturnType<typeof orderQuote>){return createHash("sha256").u
 export function purchaseService(id:number,actor:{id:number;role:string},requireBalance=true,expectedQuoteKey?:string){
  return db.transaction(()=>{
  const o=refreshDraft(id);
+ if(isVndClient(Number(o.client_user_id)))throw Error("Tài khoản VNĐ: mua tại /vnd.");
  if((actor.role==="CLIENT"&&Number(o.client_user_id)!==actor.id)||(actor.role==="SALES"&&!db.prepare("SELECT id FROM users WHERE id=? AND sales_user_id=?").get(Number(o.client_user_id),actor.id)))throw Error("Không có quyền mua Order này.");
  if(!["CLIENT","ADMIN","SALES"].includes(actor.role))throw Error("Không có quyền mua dịch vụ.");
  if(o.workflow_status==="CANCELLED")throw Error("Đơn đã huỷ.");
@@ -111,6 +115,7 @@ export function purchaseService(id:number,actor:{id:number;role:string},requireB
  }).immediate();
 }
 export function safePricing(o:Row,role:string){
+ if(isVndClient(Number(o.client_user_id))){const r=vndRequest(Number(o.id));return {currency:'VND',eligible:r?.status==='RESERVED',reasons:[],manual_price_pending:!r?.offer,total_charge:r?.offer??null,service_price:r?.offer??null,purchase_state:r?.status??'DRAFT',notice:'Giao dịch VNĐ tại /vnd.'};}
  const q=o.pricing_snapshot_json?JSON.parse(String(o.pricing_snapshot_json)):orderQuote(o);
  if(!q){if(isManualPriceRoute(o.service))return {eligible:true,reasons:[],notice:'Admin sẽ nhập giá bán khi cấp Tracking/Label.',currency:'USD',total_charge:0,manual_price_pending:true};return null;}
  if(o.workflow_status==="CANCELLED"){q.eligible=false;q.reasons=["Đơn đã huỷ."]}
@@ -131,6 +136,7 @@ export function clientDraftAwaitingPurchase(o:Row){
  return !o.service_purchased_at&&db.prepare("SELECT id FROM users WHERE id=? AND role='CLIENT'").get(Number(o.created_by_user_id||0));
 }
 export function assertConfiguredPurchase(o:Row){
+ if(isVndClient(Number(o.client_user_id))){if(!assertVndIssuance(Number(o.id)))throw Error("Client chưa Purchase VNĐ.");return;}
  if(isManualPriceRoute(o.service)&&!o.pricing_snapshot_json){if(!o.service_purchased_at)throw Error('Client chưa đặt mua dịch vụ.');const route=routeFor(o);if(!route?.active||route.warehouse_hold||o.workflow_status==='HOLD'||hasCaseHold(Number(o.id))||db.prepare('SELECT id FROM warehouse_order_holds WHERE order_id=? AND released_at IS NULL').get(Number(o.id)))throw Error('Order / route chưa active hoặc đang Hold.');assertRouteCartons(o.service,route.max_cartons_per_order,o.carton_count);return;}
  if(o.client_user_id&&!o.pricing_snapshot_json&&!o.tracking&&!o.purchase_completed_at)assertPurchasing(Number(o.client_user_id),0);
  if(clientDraftAwaitingPurchase(o))throw Error("Client chưa đặt mua dịch vụ cho Draft này.");

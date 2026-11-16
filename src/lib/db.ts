@@ -805,3 +805,5 @@ installSalesAttributionSchema(db);
 
 import {installServiceV1Schema} from "./service-v1-schema";
 installServiceV1Schema(db);
+import {installVndOperationalSchema} from "./vnd-operational-schema";
+installVndOperationalSchema(db);

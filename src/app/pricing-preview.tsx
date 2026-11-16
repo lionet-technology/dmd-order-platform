@@ -1,8 +1,10 @@
 "use client";
+import Link from "next/link";
 export type Preview={quote_key?:string;eligible:boolean;reasons:string[];currency:string;manual_price_pending?:boolean;notice?:string;service_price?:number;sale_price?:number;discount_percent:number;surcharge:number;total_charge:number;volumetric_weight:number;chargeable_weight:number;tier:number|null;surcharge_breakdown:Array<{code:string;amount:number;note:string}>;guidance?:{floor:number;base:number;retail:number}};
 const money=(n:number)=>Number(n||0).toFixed(2)+" USD";
 export function PricingPreview({pricing}:{pricing:Preview|null}){
  if(!pricing)return <p>Chưa thể tính giá · Nhập đủ dữ liệu và chọn dịch vụ.</p>;
+ if(pricing.currency==="VND")return <div className="pricingPreview"><p>Giá Order: {pricing.total_charge===null?"Chờ báo giá":String(pricing.total_charge)+" VNĐ"}. {pricing.notice}</p><Link href="/vnd">Purchase và xác nhận giá VNĐ</Link></div>;
  if(pricing.manual_price_pending)return <div className="pricingPreview"><b className={pricing.eligible?'status goodStatus':'status badStatus'}>{pricing.eligible?'Chờ Admin nhập giá bán':'Cần sửa thông tin Order'}</b><p>UPS/Chuyên tuyến: Admin sẽ nhập giá bán tổng Order khi cấp Tracking/Label. Chưa có số tiền chính thức và chưa phát sinh Reserve/Charge.</p>{pricing.reasons.map((reason,i)=><p className="error" key={i}>{reason}</p>)}</div>;
  return <div className="pricingPreview"><b className={pricing.eligible?"status goodStatus":"status badStatus"}>{pricing.eligible?"Đủ điều kiện mua":"Không đủ điều kiện mua dịch vụ"}</b>
  <p>Cân thể tích: {pricing.volumetric_weight.toFixed(4)} kg · Chargeable: {pricing.chargeable_weight.toFixed(4)} kg · Bậc: {pricing.tier??"—"} kg</p>

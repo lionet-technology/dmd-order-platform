@@ -1,3 +1,4 @@
+import {isVndClient,vndBalance} from "@/lib/vnd-operational";
 import {guardManualOrderRows} from "@/lib/manual-order-limit";
 import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import {accountFinancials} from "@/lib/credit";
@@ -22,6 +23,7 @@ async function handleGET(req:NextRequest){
  const setting=db.prepare("SELECT * FROM client_service_settings WHERE client_user_id=? AND lower(service)=lower(?) AND (lower(sub_service)=lower(?) OR sub_service='') ORDER BY CASE WHEN lower(sub_service)=lower(?) THEN 0 ELSE 1 END LIMIT 1").get(auth.user.id,String(r.service),String(r.sub_service),String(r.sub_service)) as Row|undefined;
  return setting?.is_enabled?{id:r.id,service:r.service,sub_service:r.sub_service,discount_percent:setting.discount_percent,currency:"USD",max_cartons_per_order:maxCartonsForService(r.service,r.max_cartons_per_order)}:null}).filter(Boolean);
  const balance=(db.prepare("SELECT COALESCE(SUM(CASE WHEN direction='CREDIT' THEN amount ELSE -amount END),0) balance FROM ledger_entries WHERE client_user_id=?").get(auth.user.id) as {balance:number}).balance;
+ if(isVndClient(auth.user.id))return NextResponse.json({routes:routes.filter(r=>r?.service==='Chuyên tuyến').map(r=>({...r,currency:'VND'})),balance:vndBalance(auth.user.id).balance,currency:'VND',financials:null});
  return NextResponse.json({routes,balance,financials:accountFinancials(auth.user.id,{readOnly:true})});
 }
 async function handlePOST(req:NextRequest){
