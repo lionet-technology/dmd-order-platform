@@ -1,3 +1,8 @@
+## VND continuation — 17/11/2026
+New VND shipping edit/Cancel & Duplicate are explicitly Admin-only. Add-on writes are Sales/Admin/BOD scoped to the Client; Sales cost/supplier visibility is limited to that Client's Add-ons through the dedicated endpoint. Client projections omit Add-on cost/supplier and private history. VND enterprise monthly report remains BOD-only; configuration remains root Admin pending broader target reconciliation.
+
+[Current implementation, acceptance and remaining boundaries](35-service-v1-completion.md). This delta supersedes earlier delivery-status statements below only within the named new-account VND scope; broader V1 completion is not claimed.
+
 ## Current requirements — handoff 16/11/2026
 [Canonical full handoff](DMD_Service_Architecture_V1_Implementation_Handoff_2026-11-16.md) and [audited HEAD gaps](31-service-v1-build-gap.md) supersede contrary dated requirements below. Earlier dated sections are historical where inconsistent, not concurrent current rules.
 - APPROVED: cancellation policy per Service/Sub-Service/Supplier route; no global 90/100. Admin may support 100%, never bypass shipment denial. Claim refund is separate. Combined Duplicate uses policy with optional Admin support, not unconditional 100%.

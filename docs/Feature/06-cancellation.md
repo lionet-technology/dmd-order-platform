@@ -1,3 +1,8 @@
+## VND continuation — 17/11/2026
+Admin-only VND Cancel & Duplicate reuses service-route policy and supplier follow-up. It cancels/refunds the current collected total, including correction/surcharge/tax, creates a linked Purchasing replacement without issuance or money snapshots, and keeps valid source cancellation when replacement price/funds are pending. Receipt retries are idempotent; SQLite failures roll back both.
+
+[Current implementation, acceptance and remaining boundaries](35-service-v1-completion.md). This delta supersedes earlier delivery-status statements below only within the named new-account VND scope; broader V1 completion is not claimed.
+
 ## Operational VNĐ increment — 16/11/2026
 [Feature 33](33-vnd-manual-purchase.md) now delivers a **bounded Chuyên tuyến Manual Quote slice** for explicitly activated, empty Client accounts: Purchase Request → price consent/scoped override → atomic Reserve/Awaiting Funds/FIFO → complete Tracking+Label charge → exact VNĐ ledger → Order correction/fees/tax → route-policy cancellation and Supplier follow-up. Existing USD data is never converted or relabelled. This does **not** complete automatic-service Purchase, Statements/Debt/reporting cutover, shipping Edit, Cancel & Duplicate or Client Add-on.
 This section supersedes older blanket “no operational VNĐ/consent/FIFO/correction delivery” statements only within that scope. All wider gaps remain.

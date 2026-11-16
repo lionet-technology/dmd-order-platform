@@ -1,3 +1,8 @@
+## VND continuation — 17/11/2026
+The new-account VND book now also supports shipping edit, linked replacement Purchasing, scoped Add-on, manual Debt, immutable Statements and BOD monthly projection. Its unchanged consent/atomic FIFO/reserve/charge engine is reused by UPS. No legacy USD account migration.
+
+[Current implementation, acceptance and remaining boundaries](35-service-v1-completion.md). This delta supersedes earlier delivery-status statements below only within the named new-account VND scope; broader V1 completion is not claimed.
+
 ## Final-source automatic Purchase increment — 17/11/2026
 [Feature 34](34-service-v1-final-source-purchase.md) extends new-account VNĐ Purchase to ePacket Standard/Eco/EU and Yun via final Excel (2), existing Review/Publish and exact Reserve/FIFO/Charge. It supersedes earlier blanket statements that only Chuyên tuyến is admitted. UPS has a source resolver only; operational UPS, auto EU routing, Shipping Edit, Duplicate, Add-on and financial reporting cutover remain pending. [Source index](SERVICE-V1-SOURCE-INDEX.md) closes source identity and fixed-VND ePacket fee/FX relation only.
 

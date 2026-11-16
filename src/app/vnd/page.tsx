@@ -1,9 +1,10 @@
 "use client";
 import Link from 'next/link';
+import VndTools from '../vnd-tools';
 import {useEffect,useRef,useState} from 'react';
 type Purchase={order_id:number;status:string;offer:string|null;revision:number;reserve:string;pricing_error?:string|null;cartons:Array<{id:number;carton_number:number}>};
 type Entry={id:number;kind:string;delta:string;reason:string;created_at:string};
-type Account={currency:string;balance:string;reserved:string;available:string;credit_limit:string;requests:Purchase[];ledger:Entry[]};
+type Account={currency:string;balance:string;reserved:string;available:string;credit_limit:string;debt?:{principal:string;interest:string;projected_interest:string;deadline:string|null;overdue:boolean};requests:Purchase[];ledger:Entry[]};
 type User={id:number;role:string};
 const labels:Record<string,string>={AWAITING_QUOTE:'Chờ báo giá',PRICE_CONFIRMATION_REQUIRED:'Chờ xác nhận giá',AWAITING_FUNDS:'Chờ sức mua',RESERVED:'Đã giữ tiền',CHARGED:'Đã thu tiền',CANCELLED:'Đã huỷ'};
 export default function VndWorkspace(){
@@ -39,13 +40,14 @@ export default function VndWorkspace(){
  const admin=user&&['ADMIN','BOD'].includes(user.role),finance=admin||user?.role==='FINANCE',operator=user&&['ADMIN','SALES'].includes(user.role);
  return <main style={{maxWidth:1100,margin:'30px auto',padding:24}}>
   <Link href="/">← Về màn hình chính</Link><h1>Dịch vụ · tài khoản VNĐ</h1>
-  <p>ePacket/Yun dùng bảng giá đã phát hành; Chuyên tuyến dùng báo giá thủ công. Tiền giữ nguyên số lẻ. Tạo Order và khai báo kiện trong màn hình Orders trước khi gửi yêu cầu mua.</p>
+  <p>ePacket/Yun/UPS dùng bảng giá đã phát hành; Chuyên tuyến dùng báo giá thủ công. Tiền giữ nguyên số lẻ. Tạo Order và khai báo kiện trong màn hình Orders trước khi gửi yêu cầu mua.</p>
   {!user?<p>Đăng nhập ở màn hình chính để tiếp tục.</p>:<>
    <label>Client ID <input aria-label="Client ID" value={client} disabled={user.role==='CLIENT'||busy} onChange={e=>{setClient(e.target.value);setAccount(null);}}/></label>
    <button disabled={busy||!client} onClick={load}>Tải tài khoản</button>
    {account&&<><h2>Sức mua</h2><p>Balance: {account.balance} VNĐ · Credit Limit: {account.credit_limit} VNĐ · Reserve: {account.reserved} VNĐ · Còn lại: {account.available} VNĐ</p>
     {account.available.startsWith("-")&&<p role="alert">Sức mua đang âm. Posting đã ghi nhận; Purchase mới tiếp tục chờ đủ sức mua. Không tự tạo Debt.</p>}
-    <h2>Yêu cầu mua</h2><table><thead><tr><th>Order</th><th>Trạng thái</th><th>Giá VNĐ</th><th>Reserve VNĐ</th><th>Revision</th><th>Chọn</th></tr></thead><tbody>{account.requests.map(r=><tr key={r.order_id}><td>{r.order_id}</td><td>{labels[r.status]}</td><td>{r.offer??'Chưa báo'}{r.pricing_error&&<p role="alert">Cần xử lý giá: {r.pricing_error}</p>}</td><td>{r.reserve}</td><td>{r.revision}</td><td><button onClick={()=>{setOrder(String(r.order_id));setCarton(String(r.cartons[0]?.id??''));setRevision(String(r.revision));setAmount(r.offer??'');}}>Chọn Order</button></td></tr>)}</tbody></table>
+    <p>Debt gốc: {account.debt?.principal??'0'} VNĐ · Lãi đã ghi: {account.debt?.interest??'0'} · Lãi tạm tính: {account.debt?.projected_interest??'0'} · Hạn: {account.debt?.deadline??'Không có Debt'}{account.debt?.overdue?' · Đã quá hạn':''}</p>
+    <h2>Yêu cầu mua</h2><div style={{overflowX:'auto',maxWidth:'100%'}}><table><thead><tr><th>Order</th><th>Trạng thái</th><th>Giá VNĐ</th><th>Reserve VNĐ</th><th>Revision</th><th>Chọn</th></tr></thead><tbody>{account.requests.map(r=><tr key={r.order_id}><td>{r.order_id}</td><td>{labels[r.status]}</td><td>{r.offer??'Chưa báo'}{r.pricing_error&&<p role="alert">Cần xử lý giá: {r.pricing_error}</p>}</td><td>{r.reserve}</td><td>{r.revision}</td><td><button onClick={()=>{setOrder(String(r.order_id));setCarton(String(r.cartons[0]?.id??''));setRevision(String(r.revision));setAmount(r.offer??'');}}>Chọn Order</button></td></tr>)}</tbody></table></div>
    </>}
    <h2>Thao tác</h2>
    <form onSubmit={e=>{e.preventDefault();void submit();}} style={{display:'grid',gap:12,maxWidth:600}}>
@@ -68,7 +70,8 @@ export default function VndWorkspace(){
     <button type="button" disabled={busy} onClick={()=>{receipt.current=null;setMessage('Đã bắt đầu thao tác mới.');}}>Bắt đầu thao tác mới</button>
    </form>
    <p role="status">{message}</p>
-   {account&&<><h2>Sổ giao dịch VNĐ</h2><table><thead><tr><th>Thời điểm</th><th>Loại</th><th>Biến động VNĐ</th><th>Lý do</th></tr></thead><tbody>{account.ledger.map(e=><tr key={e.id}><td>{e.created_at}</td><td>{e.kind}</td><td>{e.delta}</td><td>{e.reason}</td></tr>)}</tbody></table></>}
+   <VndTools key={client} client={client} user={user} onChange={()=>void load()}/>
+   {account&&<><h2>Sổ giao dịch VNĐ</h2><div style={{overflowX:'auto',maxWidth:'100%'}}><table><thead><tr><th>Thời điểm</th><th>Loại</th><th>Biến động VNĐ</th><th>Lý do</th></tr></thead><tbody>{account.ledger.map(e=><tr key={e.id}><td>{new Date(e.created_at.replace(' ','T')+'Z').toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}</td><td>{e.kind}</td><td>{e.delta}</td><td>{e.reason}</td></tr>)}</tbody></table></div></>}
   </>}
  </main>;
 }

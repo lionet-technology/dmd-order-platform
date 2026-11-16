@@ -1,3 +1,4 @@
+import {vndEpacketDestination} from "./vnd-routing";
 import {isVndClient,vndRequest} from "./vnd-operational";
 import { logAdminEvent } from "./order-audit";
 import { refreshDraft,activePricing,routeFor } from "./route-pricing";
@@ -291,10 +292,14 @@ export function upsertOrder(input: OrderInput) {
   const effectiveSupplier=!existing&&!String(input.supplier??"").trim()&&primarySetting?.default_supplier
     ? primarySetting.default_supplier
     : input.supplier;
+  if(isVndClient(Number(clientUserId))){
+    const selected=vndEpacketDestination(Number(clientUserId),requestedService,String(effectiveSubService??existing?.sub_service??''),String(effectiveSupplier??existing?.supplier??''),String(input.country??existing?.country??''));
+    input={...input,...selected};
+  }
   const enumValues = validateOrderEnums({
     service: input.service,
-    sub_service: effectiveSubService,
-    supplier: effectiveSupplier,
+    sub_service: isVndClient(Number(clientUserId))?input.sub_service:effectiveSubService,
+    supplier: isVndClient(Number(clientUserId))?input.supplier:effectiveSupplier,
     country: input.country,
   }, existing);
   const service = enumValues.service;
@@ -323,7 +328,7 @@ export function upsertOrder(input: OrderInput) {
     if(!weight||weight<=0)throw new Error("Tổng khối lượng phải lớn hơn 0 kg.");
     if(!volume||volume<=0)throw new Error("Hãy nhập đủ kích thước hoặc thể tích tổng của lô hàng.");
   }
-  if(isVndClient(Number(clientUserId))&&!["chuyên tuyến","epacket","yun express","yunexpress"].includes(service.toLowerCase()))throw Error("Dịch vụ chưa nối Purchase VNĐ.");
+  if(isVndClient(Number(clientUserId))&&!["chuyên tuyến","epacket","yun express","yunexpress","ups"].includes(service.toLowerCase()))throw Error("Dịch vụ chưa nối Purchase VNĐ.");
   if(isVndClient(Number(clientUserId)))for(const key of ["est_net_cost","base_cost","retail","sales_price","surcharge","import_tax","total_due"] as const){
     if(input[key]!==undefined&&num(input[key])!==0)throw Error("VNĐ: nhập giá bằng offer/Financial Posting riêng, không nhập vào cột tiền legacy.");
   }

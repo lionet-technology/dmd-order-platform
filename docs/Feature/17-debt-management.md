@@ -1,3 +1,8 @@
+## VND continuation — 17/11/2026
+New-account VND Debt now mirrors the approved manual-transfer boundary: only negative net Balance, one account, independent deadline, prospective rate changes, completed-Vietnam-day simple interest without money rounding, immutable daily entries and Payment interest→principal→Balance. Reads project without posting. Transfer excludes principal once from net Balance; no fake Payment or double release.
+
+[Current implementation, acceptance and remaining boundaries](35-service-v1-completion.md). This delta supersedes earlier delivery-status statements below only within the named new-account VND scope; broader V1 completion is not claimed.
+
 # Debt Management
 
 ## Owner correction — 23/10/2026 (supersedes combined aging below)

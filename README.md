@@ -1,3 +1,7 @@
+## V1 VNĐ continuation — 17/11/2026
+
+Current new-account implementation and verification boundaries: [Feature 35](docs/Feature/35-service-v1-completion.md). UPS Purchase, ePacket EU destination routing, shipping edit, linked replacement, Client Add-on, VND Statement/Debt and BOD monthly projection are implemented in the bounded VND book. This is not full V1/production acceptance or legacy USD migration.
+
 # DMD Order Platform
 
 Ứng dụng Next.js/SQLite quản lý Order, route/pricing, Purchase, kho/Manifest và Finance.

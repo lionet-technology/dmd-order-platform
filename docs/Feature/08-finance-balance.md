@@ -1,3 +1,8 @@
+## VND continuation — 17/11/2026
+New-account VND now has exact Add-on revenue/cost revisions, manual Debt transfer and prospective interest, Payment interest→principal→Balance settlement, immutable consecutive Statements with journal cursors and late posting carry-forward. Financial posting can exceed credit with no automatic Debt. Claim Refund Balance is explicitly unavailable until its separate VND cutover.
+
+[Current implementation, acceptance and remaining boundaries](35-service-v1-completion.md). This delta supersedes earlier delivery-status statements below only within the named new-account VND scope; broader V1 completion is not claimed.
+
 ## Operational VNĐ increment — 16/11/2026
 [Feature 33](33-vnd-manual-purchase.md) now delivers a **bounded Chuyên tuyến Manual Quote slice** for explicitly activated, empty Client accounts: Purchase Request → price consent/scoped override → atomic Reserve/Awaiting Funds/FIFO → complete Tracking+Label charge → exact VNĐ ledger → Order correction/fees/tax → route-policy cancellation and Supplier follow-up. Existing USD data is never converted or relabelled. This does **not** complete automatic-service Purchase, Statements/Debt/reporting cutover, shipping Edit, Cancel & Duplicate or Client Add-on.
 This section supersedes older blanket “no operational VNĐ/consent/FIFO/correction delivery” statements only within that scope. All wider gaps remain.

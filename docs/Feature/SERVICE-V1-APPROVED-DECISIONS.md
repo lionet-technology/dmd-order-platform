@@ -1,3 +1,8 @@
+## VND continuation — 17/11/2026
+Owner answered the remaining manual-offer Service-change decision: require explicit NEW_OFFER or AUTOMATIC selection, then price consent; retain existing reserve while pending. Decisions already approved are unchanged. Implementation status is now recorded in Feature 35.
+
+[Current implementation, acceptance and remaining boundaries](35-service-v1-completion.md). This delta supersedes earlier delivery-status statements below only within the named new-account VND scope; broader V1 completion is not claimed.
+
 ## Source update — 16/11/2026 final (2)
 [Authoritative source index](SERVICE-V1-SOURCE-INDEX.md) supersedes earlier (1)(1), UPS Zone PDF and USD surcharge descriptions. Verified fixed-VND fees are 135000 / 285000 noncumulative oversize and 405000 non-cont, independent of FX. Source availability and fee-FX relation are CLOSED; operational integration requires separate verification.
 

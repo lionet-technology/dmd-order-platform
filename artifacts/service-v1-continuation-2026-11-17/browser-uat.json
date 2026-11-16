@@ -1,0 +1,14 @@
+{
+  "status": "PASS",
+  "checks": 13,
+  "roles": [
+    "ADMIN",
+    "SALES",
+    "CLIENT",
+    "FINANCE",
+    "BOD"
+  ],
+  "database": "owned disposable",
+  "scope": "Add-on posting/privacy, Statement finalize, BOD report authorization, shipping edit, desktop/mobile render",
+  "errors": []
+}

@@ -17,7 +17,7 @@ export const PURCHASE_PLACEHOLDERS=[
   "order.recipient_name","order.address_1","order.address_2","order.city","order.state","order.postal_code",
   "order.country","order.phone","order.recipient_email","order.recipient_address","order.client_order_id","order.dmd_order_id","order.client","order.service",
   "order.sub_service","order.supplier","order.carton_count","order.lot_count","order.total_manufacturing_value",
-  "lot.number","lot.total_manufacturing_value",
+  "supplier_account","lot.supplier_account","lot.number","lot.total_manufacturing_value",
   "carton.number","carton.weight","carton.weight_g","carton.length","carton.width","carton.height","carton.volume",
   "carton.chargeable_weight","carton.tracking","carton.label_url","carton.total_manufacturing_value",
   "item.sku","item.description","item.quantity","item.material","item.unit_manufacturing_value","item.total_manufacturing_value",
@@ -74,6 +74,11 @@ function exportData(orderId:number):{order:DataRow;lots:DataRow[];cartons:DataRo
   const order=db.prepare("SELECT * FROM orders WHERE id=?").get(orderId) as DataRow|undefined;
   if(!order)throw new Error("Order không tồn tại.");
   const lots=db.prepare("SELECT * FROM order_lots WHERE order_id=? ORDER BY lot_number").all(orderId) as DataRow[];
+  const vndQuote=db.prepare('SELECT snapshot_json FROM vnd_auto_quotes WHERE order_id=?').get(orderId) as {snapshot_json:string}|undefined;
+  if(vndQuote&&String(order.service).toUpperCase()==='UPS'){
+   const snapshot=JSON.parse(vndQuote.snapshot_json) as {lots?:Array<{lot_id:number;selected:{account:string}}>};
+   for(const lot of lots)lot.supplier_account=snapshot.lots?.find(l=>l.lot_id===lot.id)?.selected.account??'';
+  }
   const cartons=db.prepare(
     "SELECT c.*,l.lot_number,ot.tracking,ot.label_url FROM order_cartons c "+
     "LEFT JOIN order_lots l ON l.id=c.order_lot_id "+
@@ -141,7 +146,7 @@ function valueFor(token:string,context:ExportContext,routeVariables:RouteVariabl
     chargeable_weight:carton?.chargeable_weight||order.chargeable_weight,carton_count:order.carton_count,
     carton_slot:carton?.carton_number,lot_count:order.expected_lot_count,lot_number:lot?.lot_number,
     client_order_id:order.order_id,dmd_order_id:order.system_order_code,client:order.customer,service:order.service,
-    sub_service:order.sub_service,supplier:order.supplier,tracking:carton?.tracking||order.tracking,label_url:carton?.label_url||order.label,
+    sub_service:order.sub_service,supplier:order.supplier,supplier_account:lot?.supplier_account??'',tracking:carton?.tracking||order.tracking,label_url:carton?.label_url||order.label,
     order_total_manufacturing_value:order.total_manufacturing_value,lot_total_manufacturing_value:lot?.total_manufacturing_value,
     carton_total_manufacturing_value:carton?.total_manufacturing_value,
   };
@@ -300,8 +305,9 @@ export async function generateManifestFiles(orderIds:number[]){return generateRo
 export function genericPurchaseRows(orderIds:number[]){
   const rows:Array<Record<string,unknown>>=[];
   for(const orderId of [...new Set(orderIds)]){
+    const candidate=db.prepare('SELECT * FROM orders WHERE id=?').get(orderId) as DataRow;
+    assertConfiguredPurchase(candidate);
     const data=exportData(orderId);
-    assertConfiguredPurchase(data.order);
     for(const carton of data.cartons){
       const cartonItems=data.items.filter(item=>Number(item.carton_id)===Number(carton.id));
       if(!cartonItems.length)cartonItems.push({description:data.order.item,material:data.order.material,quantity:1,unit_manufacturing_value:data.order.declared_value,total_manufacturing_value:data.order.declared_value});
@@ -309,7 +315,7 @@ export function genericPurchaseRows(orderIds:number[]){
         dmd_id:data.order.system_order_code,client_order_id:data.order.order_id,client:data.order.customer,
         recipient_name:data.order.recipient_name,address_1:data.order.address1,address_2:data.order.address2,city:data.order.city,
         state:data.order.state,postal_code:data.order.zip,country:data.order.country,phone:data.order.phone,recipient_email:data.order.recipient_email,
-        lot_number:carton.lot_number,carton_count:data.order.carton_count,carton_slot:carton.carton_number,
+        supplier_account:data.lots.find(lot=>Number(lot.id)===Number(carton.order_lot_id))?.supplier_account??'',lot_number:carton.lot_number,carton_count:data.order.carton_count,carton_slot:carton.carton_number,
         sku:item.sku,item:item.description,quantity:item.quantity,material:item.material,
         unit_manufacturing_value:item.unit_manufacturing_value,line_manufacturing_value:item.total_manufacturing_value,
         order_total_manufacturing_value:data.order.total_manufacturing_value,lot_total_manufacturing_value:data.lots.find(lot=>Number(lot.id)===Number(carton.order_lot_id))?.total_manufacturing_value,

@@ -1,3 +1,8 @@
+## VND continuation — 17/11/2026
+UPS VND generic Purchase export now includes supplier_account per carton/Lot; configured templates may use supplier_account or lot.supplier_account in Lot/Carton contexts. Export requires accepted valid reserve, refreshes unissued price/Net, and reads the selected account snapshot. It never sends a file to Supplier automatically.
+
+[Current implementation, acceptance and remaining boundaries](35-service-v1-completion.md). This delta supersedes earlier delivery-status statements below only within the named new-account VND scope; broader V1 completion is not claimed.
+
 ## Supplier Cost Excel — 06/11/2026
 
 Admin, Finance và BOD có thể nhập chứng từ Supplier Cost gốc. Dòng có Tracking trùng chứng từ ACTIVE chuyển sang hàng chờ. Nhập lại cùng file chứng từ gốc nhận diện dòng theo hash nội dung và số thứ tự lặp của dòng giống hệt. Phụ phí dùng khóa yêu cầu riêng cho retry kỹ thuật. Admin/Finance có template riêng [dmd-supplier-cost-adjustments.xlsx](../../public/templates/dmd-supplier-cost-adjustments.xlsx) gồm đúng ba cột **Tracking | Cost bổ sung | Lý do**. Giữ Tracking ở dạng text để bảo toàn số 0 đầu. Giới hạn file 10 MB, mỗi batch phụ phí 1–200 dòng. Dòng phụ phí đã có cùng Tracking, số cent và lý do chờ xác nhận riêng.

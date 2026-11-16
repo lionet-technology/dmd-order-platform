@@ -4,7 +4,7 @@ import {assertServiceV1Owner,readServiceV1Config,serviceV1Key} from "./service-v
 import {routeState} from "./route-lifecycle";
 import {validateUpsRates,upsAccountNet,type UpsAccount,type UpsAccountPricing} from "./ups-v1-calculator";
 import {quoteUpsV1WithConfirmedGlobals} from "./ups-v1-globals";
-type AccountBody=Omit<UpsAccountPricing,"zone">;
+export type AccountBody=Omit<UpsAccountPricing,"zone"> & {unavailable?:boolean;zone_components?:Record<string,{weight_surcharge_vnd_per_kg:number;weight_discount:number}>};
 type Version={id:number;route_id:number;config_id:number;account:UpsAccount;body_json:string;actor_id:number;request_hash:string};
 const fingerprint=(v:unknown)=>createHash("sha256").update(JSON.stringify(v)).digest("hex");
 function ready(routeId:number,configId:number,actorId:number) {
@@ -27,11 +27,20 @@ export function saveUpsV1Account(input:{route_id:number;config_id:number;source_
  if(typeof input.source_excel!=="string"||input.source_excel.length>500||! /\.xlsx?$/i.test(input.source_excel.trim()))throw Error("Cần nguồn Excel account.");
  const pricing=input.pricing;
  if(!pricing||!["VTT","SDS","JD"].includes(pricing.account))throw Error("Account không hợp lệ.");
- validateUpsRates(pricing.rates);
+ if(!(pricing.unavailable===true&&Array.isArray(pricing.rates)&&pricing.rates.length===0))validateUpsRates(pricing.rates);
  // Normalize all supported fields and validate components using each band's interior point.
- const body:AccountBody={account:pricing.account,rates:pricing.rates.map(r=>({zone:r.zone,min_kg:r.min_kg,max_kg:r.max_kg,min_inclusive:r.min_inclusive,max_inclusive:r.max_inclusive,unit:r.unit,rate_vnd:r.rate_vnd})),net_discount:pricing.net_discount,shipment_surcharge_vnd:pricing.shipment_surcharge_vnd,shipment_discount:pricing.shipment_discount,weight_surcharge_vnd_per_kg:pricing.weight_surcharge_vnd_per_kg,weight_discount:pricing.weight_discount};
+ const body:AccountBody={...(pricing.unavailable===true?{unavailable:true}:{}),account:pricing.account,rates:pricing.rates.map(r=>({zone:r.zone,min_kg:r.min_kg,max_kg:r.max_kg,min_inclusive:r.min_inclusive,max_inclusive:r.max_inclusive,unit:r.unit,rate_vnd:r.rate_vnd})),net_discount:pricing.net_discount,shipment_surcharge_vnd:pricing.shipment_surcharge_vnd,shipment_discount:pricing.shipment_discount,weight_surcharge_vnd_per_kg:pricing.weight_surcharge_vnd_per_kg,weight_discount:pricing.weight_discount};
+ for(const field of ['net_discount','shipment_discount','weight_discount'] as const)if(!Number.isFinite(body[field])||body[field]<0||body[field]>1)throw Error('Discount phải là số không âm từ 0 đến 1.');
+ for(const field of ['shipment_surcharge_vnd','weight_surcharge_vnd_per_kg'] as const)if(!Number.isFinite(body[field])||body[field]<0)throw Error('Surcharge phải không âm.');
+ if(pricing.zone_components){
+   body.zone_components={};
+   for(const [zone,component] of Object.entries(pricing.zone_components)){
+    if(!zone.trim()||!Number.isFinite(component.weight_surcharge_vnd_per_kg)||component.weight_surcharge_vnd_per_kg<0||!Number.isFinite(component.weight_discount)||component.weight_discount<0||component.weight_discount>1)throw Error("Zone surcharge không hợp lệ.");
+    body.zone_components[zone]={weight_surcharge_vnd_per_kg:component.weight_surcharge_vnd_per_kg,weight_discount:component.weight_discount};
+   }
+  }
  const r=body.rates[0];
- upsAccountNet({...body,zone:r.zone},r.unit==="PER_KG"?r.min_kg+1:r.min_kg+(r.max_kg-r.min_kg)/2,{fuel:0,vat:0,us_broker:0,customs_per_kg_vnd:0});
+ if(r)upsAccountNet({...body,zone:r.zone},r.unit==="PER_KG"?r.min_kg+1:r.min_kg+(r.max_kg-r.min_kg)/2,{fuel:0,vat:0,us_broker:0,customs_per_kg_vnd:0});
  const key=serviceV1Key(input.request_key),source=input.source_excel.trim(),hash=fingerprint({route_id:input.route_id,config_id:input.config_id,source,body});
  return db.transaction(()=>{
   const existing=replay("service_v1_ups_account_versions",key,hash,actorId);if(existing)return existing as Version;
@@ -70,6 +79,6 @@ export function quotePublishedUpsV1(routeId:number,zones:Array<{account:UpsAccou
   ready(routeId,version.config_id,actorId);
   return {version,pricing:{...JSON.parse(version.body_json),zone:entry.zone} as UpsAccountPricing};
  });
- const quote=quoteUpsV1WithConfirmedGlobals(versions.map(v=>v.pricing),weightKg,actorId);
+ const quote=quoteUpsV1WithConfirmedGlobals(versions.filter(v=>!JSON.parse(v.version.body_json).unavailable).map(v=>v.pricing),weightKg,actorId);
  return {...quote,account_versions:versions.map(v=>({account:v.version.account,version_id:v.version.id}))};
 }

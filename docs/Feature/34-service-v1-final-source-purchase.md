@@ -1,3 +1,8 @@
+## VND continuation — 17/11/2026
+UPS is now connected to new-account VND Purchase through published account versions and separate selling publications; pending account versions cannot activate via confirmed globals. ePacket non-US Standard/Eco creation/edit now selects exactly one configured eligible ePacket EU route or fails explicitly. No Yun substitution.
+
+[Current implementation, acceptance and remaining boundaries](35-service-v1-completion.md). This delta supersedes earlier delivery-status statements below only within the named new-account VND scope; broader V1 completion is not claimed.
+
 # Feature 34 — Final (2) source and automatic VNĐ Purchase increment
 
 Status: PARTIAL V1. [Authoritative workbook and audited cells](SERVICE-V1-SOURCE-INDEX.md). Source reconciliation committed first at 7916b14.

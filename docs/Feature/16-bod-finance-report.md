@@ -1,3 +1,8 @@
+## VND continuation — 17/11/2026
+A separate BOD-only VND monthly projection now reads VND ledger and purchase snapshots, separates Order purchase-period revenue from posting-period cash flow and marks unreconciled Actual GP and missing manual estimates as unavailable. Legacy USD report is not relabelled. Full commission/refund-group reporting remains incomplete.
+
+[Current implementation, acceptance and remaining boundaries](35-service-v1-completion.md). This delta supersedes earlier delivery-status statements below only within the named new-account VND scope; broader V1 completion is not claimed.
+
 ## Cash correction — 28/10/2026
 Refund Bank payouts and explicit Bank recoveries are separate positive cash totals; net cash is payout minus recovery. Recovery changes Refund obligation only, never Client Balance, commercial revenue, GP or Commission. Bank cash uses executed date; Statement journal uses posting date and carries late corrections forward. Old issued Statement bytes are unchanged.
 

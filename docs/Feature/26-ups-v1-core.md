@@ -1,3 +1,8 @@
+## VND continuation — 17/11/2026
+Operational UPS now uses published accounts, confirmed globals, final source country/zone, full exact-decimal formula, carton/Lot rounding, unavailable o exclusion and deterministic SDS→VTT→JD optimization per Lot. Current Estimated Net and published selling-account basis are separate; issued snapshots freeze. Account and global UI plus account-bearing exports are implemented.
+
+[Current implementation, acceptance and remaining boundaries](35-service-v1-completion.md). This delta supersedes earlier delivery-status statements below only within the named new-account VND scope; broader V1 completion is not claimed.
+
 # UPS V1 calculation and confirmed globals
 ## Current delta — handoff 16/11/2026
 Implemented in ups-v1-calculator.ts: V1 divisor 5000, strict rate intervals (min,max], FIXED ≤20kg and integer PER_KG bands starting above 20kg, and deterministic equal-full-Net priority SDS → VTT → JD independent of input ordering. Preview includes account_priority in its result snapshot. Full formula/rounding/confirmed-global/pending-account isolation are unchanged.

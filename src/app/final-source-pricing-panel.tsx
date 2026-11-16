@@ -1,18 +1,22 @@
 "use client";
+import {UpsGlobalControls} from "./ups-global-controls";
 import {useCallback,useEffect,useRef,useState} from 'react';
 type Doc={id:number;kind:string;config_id:number;body_json:string};
 type Workspace={net:Doc|null;selling:Doc|null;documents:Doc[]};
+type UpsVersion={id:number;account:string;config_id:number;body_json:string};
 type Config={id:number;revision:number;config_json:string};
 export function FinalSourcePricingPanel({routeId,service}:{routeId:number;service:string}){
  const [data,setData]=useState<Workspace|null>(null),[config,setConfig]=useState<Config|null>(null),[markets,setMarkets]=useState('US'),[netMarkup,setNetMarkup]=useState(service.toLowerCase()==='epacket'?'6':'12'),[baseMarkup,setBaseMarkup]=useState(service.toLowerCase()==='epacket'?'16':'32'),[message,setMessage]=useState(''),[busy,setBusy]=useState(false);
+ const [ups,setUps]=useState<{versions:UpsVersion[];accounts:Array<UpsVersion|null>}>({versions:[],accounts:[]});
  const pending=useRef<{payload:string;key:string}|null>(null);
  const load=useCallback(async()=>{
   const responses=await Promise.all([fetch('/api/service-v1/pricing?route_id='+routeId),fetch('/api/service-v1/configuration?route_id='+routeId)]);
   const [pricing,cfg]=await Promise.all(responses.map(r=>r.json()));
   if(!responses[0].ok||!responses[1].ok)throw Error(pricing.error||cfg.error);
   setData(pricing);setConfig(cfg.configuration);
+  if(service.toUpperCase()==='UPS'){const r=await fetch('/api/service-v1/ups-accounts?route_id='+routeId);const u=await r.json();if(!r.ok)throw Error(u.error);setUps(u);}
   if(cfg.configuration)setMarkets(JSON.parse(cfg.configuration.config_json).markets.join(', '));
- },[routeId]);
+ },[routeId,service]);
  useEffect(()=>{void load().catch(e=>setMessage(e.message));},[load]);
  async function command(url:string,body:Record<string,unknown>){
   setBusy(true);setMessage('');
@@ -30,7 +34,8 @@ export function FinalSourcePricingPanel({routeId,service}:{routeId:number;servic
   <h3>Bảng giá VNĐ · Excel cuối (2)</h3>
   <p>Áp dụng cho tài khoản VNĐ đã mở. Nhập Net từ nguồn đã kiểm chứng, sau đó kiểm tra và phát hành Net, Base và Retail.</p>
   <label className="field"><span>Quốc gia được phép (mã hai chữ, cách nhau bằng dấu phẩy)</span><input value={markets} disabled={busy} onChange={e=>setMarkets(e.target.value)}/></label>
-  <button className="secondaryBtn" disabled={busy||!data} onClick={()=>void command('/api/service-v1/configuration',{route_id:routeId,expected_revision:config?.revision??0,config:{currency:'VND',adapter:service.toLowerCase()==='epacket'?'EPACKET':'YUNEXPRESS',markets:markets.split(',').map(s=>s.trim().toUpperCase()).filter(Boolean)}})}>Lưu cấu hình quốc gia</button>
+  <button className="secondaryBtn" disabled={busy||!data} onClick={()=>void command('/api/service-v1/configuration',{route_id:routeId,expected_revision:config?.revision??0,config:{currency:'VND',adapter:service.toLowerCase()==='epacket'?'EPACKET':service.toUpperCase()==='UPS'?'UPS':'YUNEXPRESS',markets:markets.split(',').map(s=>s.trim().toUpperCase()).filter(Boolean)}})}>Lưu cấu hình quốc gia</button>
+  {service.toUpperCase()==='UPS'&&<><UpsGlobalControls/><p>Nhập và phát hành đủ account trước khi nhập Net. Biến Fuel/VAT/Broker/Customs phải được xác nhận riêng.</p><button disabled={busy||!config} onClick={()=>void command('/api/service-v1/source',{action:'import-ups-accounts',route_id:routeId})}>Nhập account UPS từ Excel (2)</button>{ups.versions.slice(0,12).map(v=><details key={v.id}><summary>Account {v.account} #{v.id} · cấu hình #{v.config_id}</summary><p>{JSON.parse(v.body_json).rates.length} dòng giá; account unavailable được giữ riêng, không giá 0.</p><button disabled={busy||ups.accounts.some(a=>a?.id===v.id)} onClick={()=>void command('/api/service-v1/ups-accounts',{version_id:v.id,action:'REVIEW',expected_previous_id:ups.accounts.find(a=>a?.account===v.account)?.id??null})}>Đã kiểm tra account #{v.id}</button><button disabled={busy||ups.accounts.some(a=>a?.id===v.id)} onClick={()=>void command('/api/service-v1/ups-accounts',{version_id:v.id,action:'PUBLISH',expected_previous_id:ups.accounts.find(a=>a?.account===v.account)?.id??null})}>Phát hành account #{v.id}</button></details>)}</>}
   <p>Net đang phát hành: {data?.net?'#'+data.net.id:'Chưa có'} · Giá bán đang phát hành: {data?.selling?'#'+data.selling.id:'Chưa có'}.</p>
   <button className="secondaryBtn" disabled={busy||!config} onClick={()=>void command('/api/service-v1/source',{action:'import',route_id:routeId})}>Nhập Net từ Excel (2)</button>
   <div className="settingsGrid">

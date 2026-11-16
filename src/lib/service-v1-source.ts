@@ -6,13 +6,13 @@ import {upsLotBillable,upsSubServiceRounding,UPS_V1_ACCOUNT_PRIORITY} from './up
 type Rate={service:string;market:string;max_kg:string;rate:string;currency:string;cell:string};
 type UpsRate={sub_service:string;account:string;zone:string;min_kg:string;max_kg:string;unit:string;rate:string|null;cell:string};
 type Market={country:string;market:string;cell:string};
-type Book={source:{path:string;sha256:string};rates:Rate[];epacket_markets:Market[];yun_markets:Market[];ups_rates:UpsRate[];ups_zones:Array<{code:string;country:string;zone:string;cell:string}>;ups_weight_surcharges:Array<{account:string;zone:string;rate:string;discount:string;cell:string}>;markups:Record<string,{net_base:string;base_retail:string}>;epacket_surcharges:{over55_vnd:string;over75_vnd:string;noncont_vnd:string}};
+export type Book={source:{path:string;sha256:string};rates:Rate[];epacket_markets:Market[];yun_markets:Market[];ups_rates:UpsRate[];ups_zones:Array<{code:string;country:string;zone:string;cell:string}>;ups_weight_surcharges:Array<{account:string;zone:string;rate:string;discount:string;cell:string}>;markups:Record<string,{net_base:string;base_retail:string}>;epacket_surcharges:{over55_vnd:string;over75_vnd:string;noncont_vnd:string}};
 export const FINAL_SOURCE_SHA='a41d4e540f8e0023b859b32c6b415d744a6c9e095dd3f3b3a4590327b9fb68d2';
 export function finalServiceBook():Book {
  const data=readFileSync(join(process.cwd(),'docs/data/service-v1/net-cost-final-2.json'),'utf8');
  if(createHash('sha256').update(data).digest('hex')!=='9c1accd230b1ab8f52d724cfc872c43c4fb267ba60ef546563faecaebd314679')throw Error('Dữ liệu import không khớp bản đã kiểm chứng.');
  const book=JSON.parse(data) as Book;
- if(book.source.sha256!==FINAL_SOURCE_SHA||createHash('sha256').update(readFileSync(join(process.cwd(),book.source.path))).digest('hex')!==FINAL_SOURCE_SHA)throw Error('Nguồn giá cuối (2) không khớp checksum.');
+ if(book.source.sha256!==FINAL_SOURCE_SHA||createHash('sha256').update(readFileSync(join(process.cwd(),'docs/data/service-v1/net-cost-final-2.xlsx'))).digest('hex')!==FINAL_SOURCE_SHA)throw Error('Nguồn giá cuối (2) không khớp checksum.');
  return book;
 }
 export const normalizeDestination=(s:string)=>s.normalize('NFKC').replace(/[*#+]/g,'').trim().replace(/\s+/g,' ').toUpperCase();
@@ -34,7 +34,7 @@ export function sourceUpsZone(book:Book,country:string,chinaRegion?:'SOUTH'|'OTH
  if(zones.length!==1)throw Error('Không có mapping quốc gia/UPS zone duy nhất trong Excel (2).');
  return {zone:zones[0],source_cells:rows.map(r=>r.cell)};
 }
-type Carton={id:number;lot_id:number;weight:number;length:number;width:number;height:number};
+export type Carton={id:number;lot_id:number;weight:number;length:number;width:number;height:number};
 export type SourceShipment={service:'EPACKET_US'|'EPACKET_EU'|'YUN'|'UPS';sub_service:string;country:string;state:string;cartons:Carton[];china_region?:'SOUTH'|'OTHER'};
 export type SourceGlobals={fx?:string;fuel?:string;vat?:string;us_broker?:string;customs_per_kg_vnd?:string};
 const onePlus=(x:string)=>addVnd('1',x);

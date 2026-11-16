@@ -1,4 +1,5 @@
 import {db} from './db';
+import {publishedUpsAccountIds,upsVndShipment} from './ups-vnd-quote';
 import {currentServiceV1Fx} from './service-v1-fx';
 import {finalServiceBook,sourceShipmentQuote,type SourceShipment} from './service-v1-source';
 import {addVnd,multiplyVnd,subtractVnd,vnd} from './vnd-money';
@@ -19,7 +20,15 @@ export function importFinalServiceNet(routeId:number,actorId:number,requestKey:s
  const config=db.prepare('SELECT * FROM service_v1_config_versions WHERE route_id=? ORDER BY revision DESC LIMIT 1').get(routeId) as Row|undefined;
  if(!r||!config)throw Error('Thiếu route/cấu hình V1.');
  const kind=automaticSourceKind(String(r.service),String(r.sub_service));
- if(!kind||kind==='UPS')throw Error('Import Net chuẩn hiện hỗ trợ ePacket/Yun; UPS cần account/zone publication riêng.');
+ if(!kind)throw Error('Dịch vụ chưa có nguồn.');
+ if(kind==='UPS'){
+  const ids=publishedUpsAccountIds(routeId,Number(config.id));
+  const rows=ids.flatMap(id=>{
+   const v=db.prepare('SELECT account,body_json FROM service_v1_ups_account_versions WHERE id=?').get(id) as {account:string;body_json:string};
+   return (JSON.parse(v.body_json).rates as Array<{zone:string;min_kg:number;max_kg:number;rate_vnd:number}>).map(rate=>({key:v.account+':'+rate.zone+':'+rate.min_kg+':'+rate.max_kg,net_vnd:rate.rate_vnd}));
+  });
+  return createServiceV1Net({route_id:routeId,config_id:Number(config.id),source_excel:finalServiceBook().source.path,rows,ups_account_version_ids:ids,request_key:requestKey},actorId);
+ }
  const source=finalServiceBook(),currency=kind==='EPACKET_US'?'USD':'VND';
  const rows=source.rates.filter(x=>x.service===kind&&(kind!=='EPACKET_US'||x.market===subKey(String(r.sub_service)))).map(x=>({key:kind+':'+x.market+':'+x.max_kg,...(currency==='USD'?{net_usd:Number(x.rate)}:{net_vnd:Number(x.rate)})}));
  return createServiceV1Net({route_id:routeId,config_id:Number(config.id),source_excel:source.source.path,source_currency:currency,rows,request_key:requestKey},actorId);
@@ -30,14 +39,14 @@ export function automaticVndOrderQuote(orderId:number){
  const o=db.prepare('SELECT * FROM orders WHERE id=?').get(orderId) as Row|undefined;
  if(!o)throw Error('Order không tồn tại.');
  const kind=automaticSourceKind(String(o.service),String(o.sub_service));
- if(!kind||kind==='UPS')throw Error('Chưa nối Purchase VNĐ cho dịch vụ này.');
+ if(!kind)throw Error('Chưa nối Purchase VNĐ cho dịch vụ này.');
  const r=db.prepare('SELECT * FROM service_route_configs WHERE service=? COLLATE NOCASE AND sub_service=? COLLATE NOCASE AND supplier=? COLLATE NOCASE').get(o.service,String(o.sub_service||''),o.supplier) as Row|undefined;
  if(!r)throw Error('Không có route.');
  const config=db.prepare('SELECT * FROM service_v1_config_versions WHERE route_id=? ORDER BY revision DESC LIMIT 1').get(r.id) as Row|undefined;
  const price=db.prepare("SELECT d.* FROM service_v1_price_events e JOIN service_v1_price_documents d ON d.id=e.document_id WHERE d.route_id=? AND d.kind='PROPOSAL' AND e.action='PUBLISH' ORDER BY e.id DESC LIMIT 1").get(r.id) as Row|undefined;
  if(!config||!price||price.config_id!==config.id)throw Error('Chưa có Published Price theo cấu hình hiện hành.');
  const cfg=JSON.parse(String(config.config_json));
- if(cfg.adapter!==(kind==='YUN'?'YUNEXPRESS':'EPACKET'))throw Error('Adapter không khớp dịch vụ.');
+ if(cfg.adapter!==(kind==='YUN'?'YUNEXPRESS':kind==='UPS'?'UPS':'EPACKET'))throw Error('Adapter không khớp dịch vụ.');
  const setting=db.prepare("SELECT * FROM client_service_settings WHERE client_user_id=? AND service=? COLLATE NOCASE AND (sub_service=? COLLATE NOCASE OR sub_service='') ORDER BY length(sub_service) DESC LIMIT 1").get(o.client_user_id,o.service,String(o.sub_service||'')) as Row|undefined;
  const discount=Number(setting?.discount_percent);
  if(!setting?.is_enabled||!Number.isFinite(discount)||discount<0||discount>100)throw Error('Client không có dịch vụ/discount hợp lệ.');
@@ -46,6 +55,19 @@ export function automaticVndOrderQuote(orderId:number){
  const netBody=JSON.parse(String(netDoc.body_json)),body=JSON.parse(String(price.body_json));
  const book=finalServiceBook();
  if(netBody.source_excel!==book.source.path)throw Error('Published Price chưa dùng Excel cuối (2).');
+ if(kind==='UPS'){
+  const cartons=(db.prepare('SELECT * FROM order_cartons WHERE order_id=? ORDER BY id').all(orderId) as Row[]).map(c=>({id:Number(c.id),lot_id:Number(c.order_lot_id),weight:Number(c.weight),length:Number(c.length),width:Number(c.width),height:Number(c.height)}));
+  const destination=db.prepare('SELECT china_region FROM vnd_destinations WHERE order_id=?').get(orderId) as {china_region:'SOUTH'|'OTHER'}|undefined;
+  if(!cfg.markets.includes(String(o.country).trim().toUpperCase()))throw Error('Quốc gia chưa nằm trong market cấu hình route.');
+  const input={route_id:Number(r.id),config_id:Number(config.id),country:String(o.country),china_region:destination?.china_region,sub_service:String(o.sub_service).toUpperCase(),cartons};
+  const resolved=upsVndShipment({...input,account_ids:publishedUpsAccountIds(Number(r.id),Number(config.id))});
+  if(!Array.isArray(netBody.ups_account_version_ids))throw Error('Published Price chưa có UPS account snapshot.');
+  const sellingSource=upsVndShipment({...input,account_ids:netBody.ups_account_version_ids});
+  const base=multiplyVnd(sellingSource.net_vnd,addVnd('1',serviceV1DecimalNumber(body.net_markup)));
+  const retail=multiplyVnd(base,addVnd('1',serviceV1DecimalNumber(body.base_markup)));
+  const selling=multiplyVnd(retail,subtractVnd('1',multiplyVnd(serviceV1DecimalNumber(discount),'0.01')));
+  return {...resolved,selling_lots:sellingSource.lots,config_version_id:config.id,price_version_id:price.id,net_version_id:netDoc.id,fx_version_id:null,usd_vnd:null,base_vnd:base,retail_vnd:retail,selling_vnd:selling,total_vnd:selling,discount_percent:discount};
+ }
  const expectedRates=book.rates.filter(x=>x.service===kind&&(kind!=='EPACKET_US'||x.market===subKey(String(o.sub_service))));
  const importedRows=netBody.rows as Array<{key:string;net_usd?:number;net_vnd:number}>;
  if(!Array.isArray(importedRows)||importedRows.length!==expectedRates.length||expectedRates.some(x=>{

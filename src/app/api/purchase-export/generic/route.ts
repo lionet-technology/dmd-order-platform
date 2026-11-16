@@ -14,7 +14,7 @@ const columns=[
   ["unit_manufacturing_value","Unit Manufacturing Value"],["line_manufacturing_value","Line Manufacturing Value"],
   ["order_total_manufacturing_value","Order Total Manufacturing Value"],["lot_total_manufacturing_value","Lot Total Manufacturing Value"],
   ["weight","Weight"],["length","Length"],["width","Width"],["height","Height"],["volume","Volume"],["chargeable_weight","Chargeable Weight"],
-  ["service","Service"],["sub_service","Sub-Service"],["supplier","Supplier"],["expected_lot_count","Expected Lot Count"],
+  ["service","Service"],["sub_service","Sub-Service"],["supplier","Supplier"],["supplier_account","Supplier Account"],["expected_lot_count","Expected Lot Count"],
   ["tracking","Tracking"],["label_url","URL Label"],
 ] as const;
 

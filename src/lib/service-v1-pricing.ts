@@ -33,7 +33,7 @@ function replay(table:"service_v1_price_documents"|"service_v1_price_events",key
  if(db.prepare("SELECT id FROM "+other+" WHERE request_key=?").get(key))throw Error("Request key đã dùng cho tác vụ khác.");
  return row;
 }
-export function createServiceV1Net(input:{route_id:number;config_id:number;source_excel:string;source_currency?:"USD"|"VND";rows:Array<{key:string;net_vnd?:number;net_usd?:number}>;request_key:string},actorId:number):Row {
+export function createServiceV1Net(input:{route_id:number;config_id:number;source_excel:string;source_currency?:"USD"|"VND";rows:Array<{key:string;net_vnd?:number;net_usd?:number}>;ups_account_version_ids?:number[];request_key:string},actorId:number):Row {
  assertServiceV1Owner(actorId);
  if(!input||!Array.isArray(input.rows)||!input.rows.length||input.rows.length>10000)throw Error("Cần dòng Net.");
  if(typeof input.source_excel!=="string"||!input.source_excel.trim()||input.source_excel.length>500||! /\.xlsx?$/i.test(input.source_excel))throw Error("Cần tham chiếu Excel Net chuẩn.");
@@ -48,7 +48,7 @@ export function createServiceV1Net(input:{route_id:number;config_id:number;sourc
  });
  if(new Set(rawRows.map(row=>row.key)).size!==rawRows.length)throw Error('Trùng key Net.');
  const key=serviceV1Key(input.request_key);
- const hash=sourceCurrency==='VND'?fingerprint({route_id:input.route_id,config_id:input.config_id,body:{currency:'VND',source_excel:input.source_excel.trim(),rows:rawRows.map(row=>({key:row.key,net_vnd:row.value}))}}):fingerprint({route_id:input.route_id,config_id:input.config_id,source_excel:input.source_excel.trim(),sourceCurrency,rawRows});
+ const hash=sourceCurrency==='VND'?fingerprint({route_id:input.route_id,config_id:input.config_id,body:{...(input.ups_account_version_ids?{ups_account_version_ids:input.ups_account_version_ids}:{}),currency:'VND',source_excel:input.source_excel.trim(),rows:rawRows.map(row=>({key:row.key,net_vnd:row.value}))}}):fingerprint({route_id:input.route_id,config_id:input.config_id,source_excel:input.source_excel.trim(),sourceCurrency,rawRows,ups_account_version_ids:input.ups_account_version_ids});
  return db.transaction(()=>{
   const existing=replay("service_v1_price_documents",key,hash,actorId);if(existing)return existing as Row;
   const config=routeReady(input.route_id,actorId);
@@ -57,7 +57,17 @@ export function createServiceV1Net(input:{route_id:number;config_id:number;sourc
   if(sourceCurrency==='USD'&&JSON.parse(config.config_json).adapter!=='EPACKET')throw Error('Net USD chỉ hỗ trợ ePacket.');
   if(sourceCurrency==='USD'&&!fx)throw Error('Chưa xác nhận Rate USD–VND.');
   const rows=rawRows.map(row=>{const net_vnd=row.value*(fx?.usd_vnd??1);if(!Number.isFinite(net_vnd)||net_vnd>Number.MAX_SAFE_INTEGER)throw Error('Net vượt độ chính xác.');return {key:row.key,net_vnd,...(fx?{net_usd:row.value}:{})};});
-  const body={currency:'VND',source_currency:sourceCurrency,source_excel:input.source_excel.trim(),...(fx?{fx_version_id:fx.id,usd_vnd:fx.usd_vnd}:{}),rows};
+  const upsIds=input.ups_account_version_ids;
+  if(upsIds){
+   if(JSON.parse(config.config_json).adapter!=='UPS'||upsIds.length!==3||new Set(upsIds).size!==3)throw Error('Cần đủ ba published UPS account.');
+   const accounts=new Set<string>();
+   for(const id of upsIds){
+    const row=db.prepare("SELECT v.* FROM service_v1_ups_account_versions v WHERE v.id=? AND v.route_id=? AND v.config_id=? AND EXISTS(SELECT 1 FROM service_v1_ups_account_events e WHERE e.version_id=v.id AND e.action='PUBLISH')").get(id,input.route_id,config.id) as {account:string}|undefined;
+    if(!row||accounts.has(row.account))throw Error('Account chưa Publish/không khớp route.');
+    accounts.add(row.account);
+   }
+  }
+  const body={...(upsIds?{ups_account_version_ids:upsIds}:{}),currency:'VND',source_currency:sourceCurrency,source_excel:input.source_excel.trim(),...(fx?{fx_version_id:fx.id,usd_vnd:fx.usd_vnd}:{}),rows};
   const result=db.prepare("INSERT INTO service_v1_price_documents(route_id,kind,config_id,body_json,actor_id,request_key,request_hash) VALUES (?,'NET',?,?,?,?,?)").run(input.route_id,config.id,JSON.stringify(body),actorId,key,hash);
   return db.prepare("SELECT * FROM service_v1_price_documents WHERE id=?").get(result.lastInsertRowid) as Row;
  }).immediate();

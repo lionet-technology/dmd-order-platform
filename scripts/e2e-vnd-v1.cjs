@@ -1,0 +1,41 @@
+// Owned synthetic DB and localhost Chrome only; never use the operator DB.
+process.env.DMD_UAT_SETUP='1';
+const fixture=require('./verify-vnd-continuation.cjs'),fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),{spawn}=require('node:child_process');
+const {chromium}=require(require.resolve('playwright',{paths:[process.env.DMD_BROWSER_NODE_MODULES||'/Users/quan/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules']}));
+const root=path.resolve(__dirname,'..'),dir=path.dirname(fixture.dbPath),output=path.join(root,'artifacts/service-v1-continuation-2026-11-17');
+fs.mkdirSync(output,{recursive:true});let server,browser,checks=0;const check=(v,m)=>{checks++;assert.ok(v,m)};
+(async()=>{try{
+ const port=await new Promise(resolve=>{const s=require('node:net').createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p));});}),base='http://127.0.0.1:'+port,log=fs.openSync(path.join(dir,'uat-server.log'),'a');
+ server=spawn(process.execPath,[path.join(root,'node_modules/next/dist/bin/next'),'start','-H','127.0.0.1','-p',String(port)],{cwd:root,env:{...process.env,NODE_ENV:'production',DMD_DB_PATH:fixture.dbPath},stdio:['ignore',log,log]});
+ let ready=false;
+ for(let i=0;i<100;i++){if(server.exitCode!==null)throw Error(fs.readFileSync(path.join(dir,'uat-server.log'),'utf8'));try{if((await fetch(base+'/api/auth/status')).ok){ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,200));}
+ check(ready,'server ready');
+ const chromeWrapper=path.join(dir,'chrome-arm64.sh');fs.writeFileSync(chromeWrapper,'#!/bin/sh\nexec /usr/bin/arch -arm64 \'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\' "$@"\n',{mode:0o700});
+ browser=await chromium.launch({headless:true,executablePath:chromeWrapper,timeout:20000,args:['--disable-gpu']});
+ const context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(String(e)));page.setDefaultTimeout(12000);
+ const role=async r=>{await context.addCookies([{name:'dmd_session',value:fixture.tokens[r],url:base}]);await page.goto(base+'/vnd');await page.getByRole('heading',{name:'Dịch vụ · tài khoản VNĐ',exact:true}).waitFor();if(r!=='CLIENT')await page.getByLabel('Client ID',{exact:true}).fill(String(fixture.client.id));await page.getByRole('button',{name:'Tải tài khoản',exact:true}).click();await page.getByRole('heading',{name:'Sức mua',exact:true}).waitFor();};
+ const tools=page.getByRole('region',{name:'Công cụ tài khoản VNĐ',exact:true});
+ const action=()=>tools.getByRole('combobox',{name:'Thao tác',exact:true});
+ await role('ADMIN');
+ await action().selectOption('addon');await tools.getByLabel('Tên dịch vụ',{exact:true}).fill('Chrome UAT add-on');await tools.getByLabel('Doanh thu VNĐ',{exact:true}).fill('100000.123456');await tools.getByLabel('Cost VNĐ (trống = chờ cost)',{exact:true}).fill('123.000001');await tools.getByLabel('Supplier tự nhập',{exact:true}).fill('TEST private vendor');await tools.getByLabel('Lý do / tham chiếu',{exact:true}).fill('TEST Chrome financial posting');await tools.getByRole('button',{name:'Thực hiện',exact:true}).click();await tools.getByRole('status').filter({hasText:'Đã ghi nhận.'}).waitFor();
+ await tools.getByRole('button',{name:'Xem Add-on',exact:true}).click();await tools.getByText('Chrome UAT add-on',{exact:true}).waitFor();check(await tools.getByText('TEST private vendor',{exact:true}).count()===1,'Admin addon creation posts');
+ await page.screenshot({path:path.join(output,'uat-admin-desktop.png'),fullPage:true});
+ await role('SALES');await tools.getByRole('button',{name:'Xem Add-on',exact:true}).click();await tools.getByText('TEST private vendor',{exact:true}).waitFor();check(await tools.getByText('123.000001',{exact:true}).count()===1,'assigned Sales addon cost exception');
+ const request=await context.request.get(base+'/api/service-v1/source',{failOnStatusCode:false});check(request.status()!==200,'unsupported GET cannot expose source');
+ await role('CLIENT');await tools.getByRole('button',{name:'Xem Add-on',exact:true}).click();await tools.getByText('Chrome UAT add-on',{exact:true}).waitFor();check(await page.getByText('TEST private vendor',{exact:true}).count()===0,'Client never sees addon supplier');
+ check(await tools.getByRole('columnheader',{name:'Cost VNĐ',exact:true}).count()===0,'Client never sees addon cost');
+ const clientData=await context.request.get(base+'/api/service-v1/addons?client_id='+fixture.client.id);const text=await clientData.text();check(!text.includes('TEST private vendor')&&!text.includes('123.000001'),'HTTP client privacy');
+ await page.setViewportSize({width:390,height:844});check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Client mobile has no page overflow');await page.screenshot({path:path.join(output,'uat-client-mobile.png'),fullPage:true});
+ await page.setViewportSize({width:1440,height:1000});
+ await role('FINANCE');await action().selectOption('statement');const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Ho_Chi_Minh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+ await tools.getByLabel('Từ ngày',{exact:true}).fill(today);await tools.getByLabel('Đến ngày',{exact:true}).fill(today);await tools.getByLabel('Lý do / tham chiếu',{exact:true}).fill('TEST Chrome statement');await tools.getByRole('button',{name:'Thực hiện',exact:true}).click();await tools.getByRole('status').filter({hasText:'Đã ghi nhận.'}).waitFor();await tools.getByRole('button',{name:'Xem Statement',exact:true}).click();await tools.getByText('Kỳ '+today+' → '+today,{exact:false}).waitFor();check(true,'Finance finalizes immutable VND statement through UI');
+ await page.screenshot({path:path.join(output,'uat-finance-statement.png'),fullPage:true});
+ await role('BOD');const report=await context.request.get(base+'/api/service-v1/reporting?month='+today.slice(0,7));check(report.status()===200,'BOD report available');
+ await role('ADMIN');check((await context.request.get(base+'/api/service-v1/reporting?month='+today.slice(0,7))).status()===403,'Admin cannot read BOD-only report');
+ // Admin edit keeps issuance separate, does not send Supplier.
+ await action().selectOption('edit');await tools.getByLabel('Order ID',{exact:true}).fill(String(fixture.replacement.id));await tools.getByRole('button',{name:'Tải kiện và giá hiện hành',exact:true}).click();await tools.getByLabel('Kiện 1 weight',{exact:true}).waitFor();await tools.getByLabel('Thành phố',{exact:true}).fill('CHROME EDIT');await tools.getByLabel('Lý do / tham chiếu',{exact:true}).fill('TEST Chrome shipping edit');await tools.getByRole('button',{name:'Thực hiện',exact:true}).click();await tools.getByRole('status').filter({hasText:'Đã ghi nhận.'}).waitFor();check(true,'Admin pre-issuance edit through UI');
+ check(errors.length===0,'no browser page errors: '+errors.join(';'));
+ fs.writeFileSync(path.join(output,'browser-uat.json'),JSON.stringify({status:'PASS',checks,roles:['ADMIN','SALES','CLIENT','FINANCE','BOD'],database:'owned disposable',scope:'Add-on posting/privacy, Statement finalize, BOD report authorization, shipping edit, desktop/mobile render',errors},null,2));
+ console.log('BROWSER VND PASS ('+checks+' assertions; 5 roles, synthetic DB, actual Chrome)');
+}catch(e){if(browser){const failedPage=browser.contexts()[0]?.pages()[0];if(failedPage){fs.writeFileSync(path.join(output,'uat-failure.txt'),await failedPage.locator('body').ariaSnapshot());await failedPage.screenshot({path:path.join(output,'uat-failure.png'),fullPage:true});}}throw e;}finally{if(browser)await browser.close();if(server)server.kill('SIGTERM');}
+})().catch(e=>{console.error(e);process.exitCode=1});

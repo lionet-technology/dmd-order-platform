@@ -1,5 +1,5 @@
 import {sumVnd} from "./vnd-money";
-import {vndRequest,cancelVndMoney,resumeVndPurchases} from "./vnd-operational";
+import {vndRequest,cancelVndMoney,resumeVndPurchases,vndCancellationAmounts} from "./vnd-operational";
 import {readCancellationRules} from "./cancellation-config";
 import {recordSupplierCancellation} from "./supplier-cancellation";
 import {canCancelOrder} from "./order-transition-guards";
@@ -26,7 +26,8 @@ export class CancellationError extends Error {
 function chargedOrderAmount(orderId:number){
  return orderChargedCents(orderId)/100;
 }
-export function cancellationPolicy(order:Order){
+type CancellationPolicy={allowed:boolean;reason:string;refund_percent:number;refund_amount:number;support_refund_amount?:number;route_id?:number;policy_version?:number;policy_stage?:string;charged_amount?:number;previous_refunds?:number;currency?:string;vnd_cancellation?:ReturnType<typeof vndCancellationAmounts>};
+export function cancellationPolicy(order:Order):CancellationPolicy{
   if(order.workflow_status==="CANCELLED")return {allowed:false,reason:"Đơn đã huỷ.",refund_percent:Number(order.cancellation_refund_percent||0),refund_amount:Number(order.cancellation_refund_amount||0)};
   const guard=canCancelOrder({...order,fulfillment_started_at:null});if(!guard.allowed)return {...guard,refund_percent:0,refund_amount:0};
   if(/cargo/i.test(String(order.service||"")+" "+String(order.sub_service||"")))return {allowed:false,reason:"Dịch vụ Cargo cần quy trình huỷ riêng; chưa hỗ trợ huỷ tự động.",refund_percent:0,refund_amount:0};
@@ -51,7 +52,7 @@ export function cancellationPolicy(order:Order){
   const charged=chargedOrderAmount(order.id);
   if(!Number.isFinite(charged)||charged<0)return {allowed:false,reason:"Công nợ của đơn không hợp lệ; cần kiểm tra trước khi huỷ.",refund_percent:0,refund_amount:0};
   const previous=orderRefundedCents(order.id)/100;
-  return {allowed:true,reason:"",support_refund_amount:Math.max(0,money(charged-previous)),refund_percent:percent,refund_amount:Math.max(0,Math.min(money(charged-previous),money(charged*percent/100-previous))),route_id:route?.id,policy_version:config!.version,policy_stage:stage,charged_amount:charged,previous_refunds:previous};
+  return {allowed:true,reason:"",support_refund_amount:Math.max(0,money(charged-previous)),refund_percent:percent,refund_amount:Math.max(0,Math.min(money(charged-previous),money(charged*percent/100-previous))),...(vndRequest(order.id)?{currency:'VND',vnd_cancellation:vndCancellationAmounts(order.id,percent)}:{}),route_id:route?.id,policy_version:config!.version,policy_stage:stage,charged_amount:charged,previous_refunds:previous};
 }
 export function cancelOrder(orderId:number,user:AuthUser,options:{refund_percent?:unknown;reason?:unknown}={}){
   return db.transaction(()=>{

@@ -1,3 +1,8 @@
+## VND continuation — 17/11/2026
+Separate Admin shipping edit is implemented for VND Draft/Purchasing before any Tracking OR Label, including carton/Lot changes and explicit China region. After a manual offer, Service change requires an explicit new offer or automatic-price choice, then consent; retain reserve during pending consent/funds. Existing offer, post-charge correction and Tracking/Label operations remain separate.
+
+[Current implementation, acceptance and remaining boundaries](35-service-v1-completion.md). This delta supersedes earlier delivery-status statements below only within the named new-account VND scope; broader V1 completion is not claimed.
+
 ## Operational VNĐ increment — 16/11/2026
 [Feature 33](33-vnd-manual-purchase.md) now delivers a **bounded Chuyên tuyến Manual Quote slice** for explicitly activated, empty Client accounts: Purchase Request → price consent/scoped override → atomic Reserve/Awaiting Funds/FIFO → complete Tracking+Label charge → exact VNĐ ledger → Order correction/fees/tax → route-policy cancellation and Supplier follow-up. Existing USD data is never converted or relabelled. This does **not** complete automatic-service Purchase, Statements/Debt/reporting cutover, shipping Edit, Cancel & Duplicate or Client Add-on.
 This section supersedes older blanket “no operational VNĐ/consent/FIFO/correction delivery” statements only within that scope. All wider gaps remain.
