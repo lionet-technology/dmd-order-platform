@@ -27,4 +27,9 @@ This is a TEST policy, not an assertion of a real Supplier’s rate.
 ## Explicit gaps
 Automatic-service VNĐ price mapping/Purchase, general financial cutover/migration, Statements/Debt/claims/reports/Supplier integration, Shipping Edit, Cancel & Duplicate, Client Add-on and browser UAT remain missing. This is not V1 completion or production acceptance.
 Existing AGENTS.md and Codex/ remain untouched/excluded from commits. No Jenkins, production, deployment or carrier API.
-Final git diff --check PASS. Live remote rechecked unchanged at e74a0ea before commit. Commit/push evidence follows after safe fast-forward publication.
+Final git diff --check PASS. Live remote rechecked unchanged at e74a0ea before commit. ## Commit / publication evidence
+- Code + feature documentation + final test logs committed as **00aae8158f9715aaecbb21b012bc258144de7239**.
+- Successful normal push: `e74a0ea..00aae81 HEAD -> main`, no force.
+- Live `git ls-remote origin refs/heads/main` confirmed **00aae8158f9715aaecbb21b012bc258144de7239** after push.
+- Post-push worktree contained only the original modified `AGENTS.md` and untracked `Codex/`.
+- This publication evidence is a documentation-only follow-up; no source changed after the recorded final gates. Logs retain command output with terminal trailing whitespace normalized.

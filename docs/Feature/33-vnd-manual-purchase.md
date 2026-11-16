@@ -1,5 +1,7 @@
 # Feature 33 — Operational VNĐ: Chuyên tuyến Manual Purchase
 **Status: Implemented bounded slice; V1 remains PARTIAL.** Reviewed 2026-11-16 from remote/local e74a0eac13d21f461c2d16d514e61bb226cc2b9a.
+Code / tested source commit: **00aae8158f9715aaecbb21b012bc258144de7239**, pushed fast-forward to origin/main. Final gates:55 suites incl63 VNĐ assertions, typecheck, lint, isolated build PASS.
+
 [Approved handoff](DMD_Service_Architecture_V1_Implementation_Handoff_2026-11-16.md) · [Evidence](../../artifacts/service-v1-vnd-operations-2026-11-16/VERIFICATION.md).
 
 ## Scope and data boundary
