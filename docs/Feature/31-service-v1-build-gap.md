@@ -22,7 +22,7 @@ The attachment is requirements data explicitly selected by the Owner. It does no
 | Data / real rates | Verify workbook provenance, synthetic VND reset/rehearsal only | Read-only workbook found at /Users/quan/Downloads/Bảng Net Cost Dịch vụ.xlsx (60966 bytes). It is not the exact named (1)(1) file; equivalence/import is not yet verified. No guessed Excel numbers. |
 
 ## Conflicts resolved as requirements (not code claims)
-- No global 90/100 cancellation matrix. Unknown route/stage policy fails closed; ePacket Standard/Eco US baseline only may supply known defaults. ePacket EU/Yun/UPS issued refund remains dependent on confirmed Supplier policy.
+- No global 90/100 cancellation matrix. Unknown route/stage policy fails closed; known ePacket Standard/Eco US baseline is reference for explicit configuration, not an implicit runtime fallback. ePacket EU/Yun/UPS issued refund remains dependent on confirmed Supplier policy.
 - Edit Order cannot contain manual selling offer. Any Tracking OR Label locks shipping edits; separate Selling correction remains permitted after charge.
 - Add-on revenue lock is superseded by explicit delta correction; financial posting may exceed Credit Limit without automatic Debt.
 - UPS divisor, rate interval and tie priority are now approved, not OPEN. Exact source rows/zone provenance remain CHECK.
@@ -35,6 +35,12 @@ The attachment is requirements data explicitly selected by the Owner. It does no
 3. Build persisted Purchase/consent states and VND quote resolver and monetary storage together on disposable target; integrate FIFO and correction. No USD/VND mixed operational ledger.
 4. Separate edit/offer/issuance, atomic replacement, Add-on/corrections and reporting, with source-linked append-only history.
 5. Validate workbook + zone provenance; UI/role UAT and full suites/typecheck/lint/build on candidate commits.
+
+## Implemented increments after audited baseline
+- Ordinary cancellation now uses explicit unique route/stage policy; Admin support, shipment denial, reserve-only/retry/rollback and Supplier independence retained. See Feature 06/30 and tests.
+- reservePurchase owns an immediate transaction, idempotent same-amount replay and atomic replacement excluding its own old reserve; original reserve survives failed funds/audit. Legacy USD semantics retained; this is not consent/FIFO/VND delivery.
+- UPS calculator now enforces divisor 5000, (min,max] rates and deterministic SDS→VTT→JD ties after full formula. Rate boundary/rounding and account publication regressions updated. Priority UI/import/mapping remain pending.
+- No production, carrier API or Jenkins used. No new economic defaults or real rate rows activated.
 
 ## OPEN / deferred
 Supplier cancellation policy values/void, ePacket fee VND versus FX relation and inclusive components, unverified source rows/zone mapping, manual offer when changing Service. Preserve handoff §10; only block dependent features. Never invent initial FX/Fuel/rates.

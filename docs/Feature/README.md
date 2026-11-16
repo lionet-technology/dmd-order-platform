@@ -2,7 +2,9 @@
 
 **Current requirements 16/11:** [Full implementation handoff](DMD_Service_Architecture_V1_Implementation_Handoff_2026-11-16.md) and [HEAD gap / superseded rules / build order](31-service-v1-build-gap.md). APPROVED is not IMPLEMENTED; OPEN values are not defaults. These override contrary dated sections below.
 
-- [Owner 16/11: cancellation 100/90, Admin support and pending Supplier follow-up](30-supplier-cancellation-followup.md) — ordinary cancellation implemented; VND Purchase / Edit / Duplicate still incomplete.
+- [Per-route cancellation and Supplier follow-up](30-supplier-cancellation-followup.md) — configured policy/stage required; Admin support 100% cannot bypass denial. No global 90/100.
+- [Atomic reserve/retry hardening](04-purchase-engine.md) — independent writer regression; VND Purchase / consent / FIFO / Edit / Duplicate remain incomplete.
+- [UPS approved boundaries and deterministic priority](26-ups-v1-core.md) — divisor 5000, (min,max], SDS→VTT→JD tie; operational integration still pending.
 Cập nhật 14/11/2026. **CONFIRMED** = quyết định có nguồn; **CURRENT** = hành vi kiểm qua code; **PROPOSED** = chưa duyệt; **OPEN** = thiếu rule/bằng chứng/số liệu. Không nhãn nào tự chứng nhận production.
 
 - [Edit Order V1: confirmed target, partial locks and integration blockers](28-order-edit-v1.md)

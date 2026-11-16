@@ -1,0 +1,169 @@
+
+> dmd-finance-ops@0.1.0 test
+> node scripts/verify-all.cjs
+
+
+SUITE verify-rbac
+RBAC smoke PASS (65 assertions)
+
+SUITE verify-operations
+{"checks":65,"ok":true}
+
+SUITE verify-purchase-engine
+PURCHASE ENGINE PASS (46 assertions)
+
+SUITE verify-order-flow
+ORDER FLOW PASS (25 assertions)
+
+SUITE verify-credit
+{"checks":48,"ok":true}
+
+SUITE verify-owner-credit
+OWNER CREDIT RULES PASS (47 assertions); isolated DB /var/folders/x6/q7g3prc91cng1tjxqpd64yvc0000gn/T/dmd-owner-credit-XgrODr/test.db
+
+SUITE verify-balance-idempotency
+{"checks":6,"ok":true}
+
+SUITE verify-debt-reconciliation
+{"checks":66,"ok":true}
+
+SUITE verify-domain-finance
+{"checks":70,"ok":true}
+
+SUITE verify-epacket
+EPACKET PASS (170 assertions)
+
+SUITE verify-manifest-cartons
+MANIFEST CARTONS PASS (57 assertions)
+
+SUITE verify-route-segmentation
+ROUTE SEGMENTATION PASS (36 assertions)
+
+SUITE verify-supplier-payables
+SUPPLIER PAYABLES PASS (51 assertions)
+
+SUITE verify-order-cancellation
+ORDER CANCELLATION PASS (139 assertions)
+
+SUITE verify-legacy-migration
+{
+  "passed": 14,
+  "failed": 0,
+  "failures": []
+}
+
+SUITE verify-template-download
+TEMPLATE DOWNLOAD PASS (23 assertions)
+
+SUITE verify-release-gates
+RELEASE GATES PASS (91 assertions)
+
+SUITE verify-sla-demo
+{"checks":47,"ok":true}
+
+SUITE verify-tracking-sheet-scope
+TRACKING SHEET SCOPE PASS (5 assertions)
+
+SUITE verify-finance-filters
+FINANCE FILTERS PASS (14 assertions)
+
+SUITE verify-financial-core
+{"ok":true,"checks":79,"database":"isolated temporary SQLite; no operational DB imported"}
+
+SUITE verify-refunds
+REFUNDS DOMAIN/API PASS (102 assertions)
+
+SUITE verify-payment-reconciliation
+PAYMENT RECONCILIATION DOMAIN/API PASS (52 assertions)
+
+SUITE verify-payment-adjustments
+PAYMENT ADJUSTMENT DOMAIN/API PASS (66 assertions)
+
+SUITE verify-bod-finance-report
+BOD FINANCE REPORT PASS (28 assertions)
+
+SUITE verify-statements-v2
+STATEMENT V2 PASS (86 assertions)
+
+SUITE verify-bulk-recovery
+BULK RECOVERY PASS (23 assertions)
+
+SUITE verify-client-carton-groups
+CLIENT CARTON GROUPING PASS (21 assertions)
+
+SUITE verify-client-carton-api
+CLIENT CARTON API PASS (86 assertions)
+
+SUITE verify-financial-projection
+FINANCIAL SIGNED PROJECTION PASS (30 assertions)
+
+SUITE verify-debt-age
+DEBT AGE PURE PASS (28 assertions)
+
+SUITE verify-debt-aging-opening
+DEBT AGING OPENING MIGRATION PASS (17 assertions)
+
+SUITE verify-balance-debt-aging-split
+BALANCE DEBT AGING SPLIT PASS (16 assertions)
+
+SUITE verify-emergency-hold
+EMERGENCY HOLD PASS (154 assertions)
+
+SUITE verify-supplier-account
+SUPPLIER ACCOUNT PASS (138 assertions)
+
+SUITE verify-sales-monthly-close
+SALES MONTHLY CLOSE PASS (56 assertions, 40 concurrent purchases)
+
+SUITE verify-internal-expenses
+INTERNAL EXPENSES DOMAIN/API PASS (74 assertions)
+
+SUITE verify-supplier-privacy
+SUPPLIER PRIVACY PASS (25 assertions)
+
+SUITE verify-egress-content
+EGRESS CONTENT PASS (202 assertions)
+
+SUITE verify-manual-order-limit
+MANUAL ORDER LIMIT PASS (19 assertions)
+
+SUITE verify-linked-workflows
+LINKED WORKFLOWS PASS (502 assertions; 80 fixed-seed oracle steps; restored synthetic copy)
+
+SUITE verify-supplier-accounting-oracle
+SUPPLIER ACCOUNTING ORACLE PASS (15 assertions)
+
+SUITE verify-purchase-consent
+PURCHASE CONSENT HANDLER PASS (74 assertions)
+
+SUITE verify-shared-funds-race
+SHARED FUNDS RACE PASS (65 assertions; 21 independent SQLite writers; deterministic + simultaneous schedules)
+
+SUITE verify-service-v1-config
+SERVICE V1 CONFIGURATION PASS (27 checks; disposable DB /var/folders/x6/q7g3prc91cng1tjxqpd64yvc0000gn/T/dmd-service-v1-J1Iq8t)
+
+SUITE verify-service-v1-pricing
+SERVICE V1 PRICING PASS (29 checks; all amounts TEST ONLY)
+
+SUITE verify-supplier-cost-review
+SUPPLIER COST REVIEW PASS (RBAC, workbook, history, retry, GP, Ledger, late matching)
+
+SUITE verify-ups-v1-core
+UPS V1 CORE PASS (89 checks; synthetic rates/policies TEST ONLY)
+
+SUITE verify-ups-v1-accounts
+UPS V1 ACCOUNT PUBLICATION PASS (18 checks; synthetic rates TEST ONLY)
+
+SUITE verify-service-v1-quotes
+SERVICE V1 QUOTES PASS (synthetic VND, versions, discount, replay, history, RBAC; no money posting)
+
+SUITE verify-service-v1-fx
+SERVICE V1 FX PASS (Admin permissions, immutable versions, explicit confirmation, stale guards, USD source conversion, fractional VND, sequential markup, current-rate new quotes and immutable replay; synthetic only)
+
+SUITE verify-supplier-cancellation
+SUPPLIER CANCELLATION PASS (32 assertions)
+
+SUITE verify-atomic-reserve
+ATOMIC RESERVE PASS (18 checks; five independent SQLite writers)
+
+ALL DOMAIN SUITES PASS (53 suites)
