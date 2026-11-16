@@ -1,6 +1,10 @@
 ## Current reserve implementation — 16/11/2026
 [Atomic reserve and retry](04-purchase-engine.md) now serializes direct low-level writes, accounts for the existing reserve only once and restores the original on failed replacement. No change to Balance, credit limits, Debt, Claim refunds, Statement or currency semantics.
 
+## Exact fractional VNĐ foundation — 16/11/2026
+
+[Feature 32](32-vnd-money-foundation.md) provides exact decimal arithmetic and cancellation refund arithmetic, with no cents rounding. Operational credit/ledger/payment/Statement integration remains missing; this does not change the currency or storage of the existing application.
+
 ## Current requirements — handoff 16/11/2026
 [Canonical full handoff](DMD_Service_Architecture_V1_Implementation_Handoff_2026-11-16.md) and [audited HEAD gaps](31-service-v1-build-gap.md) supersede contrary dated requirements below. Earlier dated sections are historical where inconsistent, not concurrent current rules.
 - APPROVED: cancellation policy per Service/Sub-Service/Supplier route; no global 90/100. Admin may support 100%, never bypass shipment denial. Claim refund is separate. Combined Duplicate uses policy with optional Admin support, not unconditional 100%.

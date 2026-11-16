@@ -1,5 +1,7 @@
 # Feature Index — DMD Order Platform
 
+- [Exact fractional VNĐ foundation](32-vnd-money-foundation.md) — decimal arithmetic implemented; wallet/Purchase/ledger cutover still missing.
+
 **Current requirements 16/11:** [Full implementation handoff](DMD_Service_Architecture_V1_Implementation_Handoff_2026-11-16.md) and [HEAD gap / superseded rules / build order](31-service-v1-build-gap.md). APPROVED is not IMPLEMENTED; OPEN values are not defaults. These override contrary dated sections below.
 
 - [Per-route cancellation and Supplier follow-up](30-supplier-cancellation-followup.md) — configured policy/stage required; Admin support 100% cannot bypass denial. No global 90/100.

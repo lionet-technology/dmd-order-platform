@@ -42,6 +42,10 @@ The attachment is requirements data explicitly selected by the Owner. It does no
 - UPS calculator now enforces divisor 5000, (min,max] rates and deterministic SDS→VTT→JD ties after full formula. Rate boundary/rounding and account publication regressions updated. Priority UI/import/mapping remain pending.
 - No production, carrier API or Jenkins used. No new economic defaults or real rate rows activated.
 
+## Continuation after push of 2cef3e0
+- Confirmed origin/main at 7491a726 before fast-forward; pushed exactly the five approved commits and verified remote HEAD 2cef3e086a4f40cf16226642e5acbd6c1d3edcda.
+- Exact decimal VNĐ arithmetic added as a cutover foundation: [Feature 32](32-vnd-money-foundation.md). No operational currency switch, Purchase consent/FIFO, corrections or Duplicate completion is claimed.
+
 ## OPEN / deferred
 Supplier cancellation policy values/void, ePacket fee VND versus FX relation and inclusive components, unverified source rows/zone mapping, manual offer when changing Service. Preserve handoff §10; only block dependent features. Never invent initial FX/Fuel/rates.
 No Jenkins, deployment, production access or production reset.
