@@ -1,3 +1,7 @@
+## Atomic reserve hardening — 16/11/2026
+reservePurchase now acquires an immediate write transaction even for direct calls. It verifies Order/Client ownership, treats an exact active reservation as idempotent, excludes only its own old reserve while checking a replacement and writes the new reserve plus audit atomically. Failed funds/eligibility/audit checks restore the old reserve. Completed/cancelled reserves cannot reopen. Existing caller quote/consent gates remain required.
+verify-atomic-reserve.cjs exercises independent SQLite writer races for different Orders and same-Order retries, replacement room, ownership and audit rollback. This hardening preserves legacy USD cents; VND storage, retained pending revision/consent state, Awaiting Funds and FIFO are still missing. It is not a VND cutover.
+
 ## Current requirements — handoff 16/11/2026
 [Canonical full handoff](DMD_Service_Architecture_V1_Implementation_Handoff_2026-11-16.md) and [audited HEAD gaps](31-service-v1-build-gap.md) supersede contrary dated requirements below. Earlier dated sections are historical where inconsistent, not concurrent current rules.
 - APPROVED: cancellation policy per Service/Sub-Service/Supplier route; no global 90/100. Admin may support 100%, never bypass shipment denial. Claim refund is separate. Combined Duplicate uses policy with optional Admin support, not unconditional 100%.

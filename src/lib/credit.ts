@@ -164,7 +164,25 @@ export function accountFinancials(clientId:number,options:{readOnly?:boolean;inc
 export function purchaseJobAction(user:AuthUser,b:Row){return db.transaction(()=>{requireAdmin(user);const orderId=Number(b.order_id),r=db.prepare("SELECT * FROM purchase_reserves WHERE order_id=?").get(orderId) as Row|undefined;if(!r)throw Error("Purchase job không tồn tại.");if(b.action==='fail'){if(r.status==='FAILED')return r;if(r.status!=='RESERVED'||db.prepare("SELECT id FROM order_trackings WHERE order_id=?").get(orderId))throw Error("Job đã có tracking; xử lý bằng case.");if(!String(b.reason||'').trim())throw Error("Cần lý do thất bại.");db.prepare("UPDATE purchase_reserves SET status='FAILED',updated_at=CURRENT_TIMESTAMP WHERE order_id=?").run(orderId);audit(Number(r.client_id),user.id,'PURCHASE_FAILED',b);}
  else if(b.action==='retry'){if(r.status==='RESERVED')return r;if(r.status!=='FAILED')throw Error("Chỉ retry job thất bại.");reservePurchase(orderId,Number(r.client_id),Number(r.amount_cents)/100,user.id);audit(Number(r.client_id),user.id,'PURCHASE_RETRY',b);}else throw Error("Action không hỗ trợ.");return db.prepare("SELECT * FROM purchase_reserves WHERE order_id=?").get(orderId);}).immediate();}
 export function assertPurchasing(clientId:number,amount:number){const f=accountFinancials(clientId);if(f.purchase_blocked)throw Error(f.reasons.join("; "));if(f.available_to_buy_cents<cents(amount))throw Error("Balance / credit không đủ để mua dịch vụ.");}
-export function reservePurchase(orderId:number,clientId:number,amount:number,actorId:number){const existing=db.prepare("SELECT status FROM purchase_reserves WHERE order_id=?").get(orderId) as Row|undefined;if(existing&&!["FAILED","RESERVED"].includes(String(existing.status)))throw Error("Purchase đã hoàn tất hoặc bị hủy.");assertPurchasing(clientId,amount);db.prepare("INSERT INTO purchase_reserves(order_id,client_id,amount_cents,status,actor_id) VALUES (?,?,?,'RESERVED',?) ON CONFLICT(order_id) DO UPDATE SET amount_cents=excluded.amount_cents,status='RESERVED',actor_id=excluded.actor_id,updated_at=CURRENT_TIMESTAMP").run(orderId,clientId,cents(amount),actorId);audit(clientId,actorId,"PURCHASE_RESERVED",{orderId,amount});}
+/** Client funds and Order reserve are serialized in the same SQLite write transaction.
+ * The caller owns quote/consent eligibility. A failed replacement restores the original reserve. */
+export function reservePurchase(orderId:number,clientId:number,amount:number,actorId:number){return db.transaction(()=>{
+ const amountCents=cents(amount);
+ const order=db.prepare("SELECT client_user_id,workflow_status FROM orders WHERE id=?").get(orderId) as Row|undefined;
+ if(!order||Number(order.client_user_id)!==clientId)throw Error("Reserve Client mismatch.");
+ if(["CANCELLED","DELIVERED","CLOSED"].includes(String(order.workflow_status)))throw Error("Order không cho phép reserve.");
+ const existing=db.prepare("SELECT * FROM purchase_reserves WHERE order_id=?").get(orderId) as Row|undefined;
+ if(existing&&Number(existing.client_id)!==clientId)throw Error("Reserve Client mismatch.");
+ if(existing&&!["FAILED","RESERVED"].includes(String(existing.status)))throw Error("Purchase đã hoàn tất hoặc bị hủy.");
+ // Exact replay is not another purchase and must not consume room or append audit again.
+ if(existing?.status==="RESERVED"&&Number(existing.amount_cents)===amountCents)return;
+ // Exclude only this Order while checking the replacement. Other writers cannot see
+ // or consume the temporarily released amount; an eligibility/audit failure rolls it back.
+ if(existing?.status==="RESERVED")db.prepare("UPDATE purchase_reserves SET status='FAILED' WHERE order_id=?").run(orderId);
+ assertPurchasing(clientId,amount);
+ db.prepare("INSERT INTO purchase_reserves(order_id,client_id,amount_cents,status,actor_id) VALUES (?,?,?,'RESERVED',?) ON CONFLICT(order_id) DO UPDATE SET amount_cents=excluded.amount_cents,status='RESERVED',actor_id=excluded.actor_id,updated_at=CURRENT_TIMESTAMP").run(orderId,clientId,amountCents,actorId);
+ audit(clientId,actorId,"PURCHASE_RESERVED",{orderId,amount,previous_reserved_cents:existing?.status==="RESERVED"?Number(existing.amount_cents):0});
+}).immediate();}
 export function completeReserve(orderId:number,actorId:number){return db.transaction(()=>{
  const r=db.prepare("SELECT * FROM purchase_reserves WHERE order_id=? AND status='RESERVED'").get(orderId) as Row|undefined;if(!r)return;
  const o=db.prepare("SELECT * FROM orders WHERE id=?").get(orderId) as Row;
