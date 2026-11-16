@@ -1,4 +1,11 @@
-# UPS V1 calculation and confirmed globals — CURRENT backend increment 14/11/2026
+# UPS V1 calculation and confirmed globals
+## Current delta — handoff 16/11/2026
+Implemented in ups-v1-calculator.ts: V1 divisor 5000, strict rate intervals (min,max], FIXED ≤20kg and integer PER_KG bands starting above 20kg, and deterministic equal-full-Net priority SDS → VTT → JD independent of input ordering. Preview includes account_priority in its result snapshot. Full formula/rounding/confirmed-global/pending-account isolation are unchanged.
+New saves reject old closed-lower/open-upper/single-point bands. Existing immutable staged documents are not rewritten; incompatible old TEST documents need newly reviewed source-compatible versions. No guessed values or extrapolation beyond source max.
+Account priority configuration UI, Excel importer/country-zone mapping, operational Purchase and VND ledger integration remain missing. Default priority is now APPROVED and implemented, not OPEN. Tests verify 20/20.5/21/44/44.5, aggregate 20.5→21, missing beyond max, tie permutations and divisor.
+The dated requirements below are historical where contrary to this delta and canonical handoff.
+
+## Historical increment — 14/11/2026
 
 Pure VND preview calculator + persisted global SAVE/CONFIRM. No operational UPS adapter, actual workbook importer, account publication UI or Purchase integration yet.
 

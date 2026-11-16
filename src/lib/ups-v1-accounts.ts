@@ -31,7 +31,7 @@ export function saveUpsV1Account(input:{route_id:number;config_id:number;source_
  // Normalize all supported fields and validate components using each band's interior point.
  const body:AccountBody={account:pricing.account,rates:pricing.rates.map(r=>({zone:r.zone,min_kg:r.min_kg,max_kg:r.max_kg,min_inclusive:r.min_inclusive,max_inclusive:r.max_inclusive,unit:r.unit,rate_vnd:r.rate_vnd})),net_discount:pricing.net_discount,shipment_surcharge_vnd:pricing.shipment_surcharge_vnd,shipment_discount:pricing.shipment_discount,weight_surcharge_vnd_per_kg:pricing.weight_surcharge_vnd_per_kg,weight_discount:pricing.weight_discount};
  const r=body.rates[0];
- upsAccountNet({...body,zone:r.zone},r.unit==="PER_KG"?r.min_kg:r.min_kg+(r.max_kg-r.min_kg)/2,{fuel:0,vat:0,us_broker:0,customs_per_kg_vnd:0});
+ upsAccountNet({...body,zone:r.zone},r.unit==="PER_KG"?r.min_kg+1:r.min_kg+(r.max_kg-r.min_kg)/2,{fuel:0,vat:0,us_broker:0,customs_per_kg_vnd:0});
  const key=serviceV1Key(input.request_key),source=input.source_excel.trim(),hash=fingerprint({route_id:input.route_id,config_id:input.config_id,source,body});
  return db.transaction(()=>{
   const existing=replay("service_v1_ups_account_versions",key,hash,actorId);if(existing)return existing as Version;

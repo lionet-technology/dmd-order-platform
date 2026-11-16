@@ -10,9 +10,9 @@ function safe(value:number) {if(!Number.isFinite(value)||value>Number.MAX_SAFE_I
 export function validateUpsGlobals(input:UpsGlobals):UpsGlobals {
  return {fuel:nonnegative(input.fuel,"Fuel"),vat:nonnegative(input.vat,"VAT"),us_broker:nonnegative(input.us_broker,"US Broker"),customs_per_kg_vnd:nonnegative(input.customs_per_kg_vnd,"Customs")};
 }
-/** Owner 14/11: rounding is approved; divisor remains an explicit verified input. */
-export function upsSubServiceRounding(subService:string,divisor:number):UpsRoundingPolicy {
- positive(divisor,"Divisor");
+/** Owner handoff 16/11: V1 dimensional divisor is 5000 cm³/kg. */
+export function upsSubServiceRounding(subService:string,divisor=5000):UpsRoundingPolicy {
+ if(divisor!==5000)throw Error("UPS V1 dùng Divisor 5000.");
  const name=subService.trim().toUpperCase();
  if(!["EXPRESS","SAVER","EXPEDITED"].includes(name))throw Error("UPS Sub-Service chưa có rounding được duyệt.");
  const step=name==="EXPEDITED"?1:0.5;
@@ -44,9 +44,9 @@ export function validateUpsRates(rates:UpsRate[]) {
  for(const r of rates) {
   if(typeof r.zone!=="string"||!r.zone.trim()||typeof r.min_inclusive!=="boolean"||typeof r.max_inclusive!=="boolean")throw Error("Cần zone và cận Min/Max rõ ràng.");
   nonnegative(r.min_kg,"Min kg");positive(r.max_kg,"Max kg");nonnegative(r.rate_vnd,"Rate");
-  if(r.min_kg>r.max_kg||(r.min_kg===r.max_kg&&(!r.min_inclusive||!r.max_inclusive))||!["FIXED","PER_KG"].includes(r.unit))throw Error("UPS rate interval/unit không hợp lệ.");
+  if(r.min_kg>=r.max_kg||r.min_inclusive||!r.max_inclusive||!["FIXED","PER_KG"].includes(r.unit))throw Error("UPS rate interval/unit phải là (min,max].");
   if(r.unit==="FIXED"&&r.max_kg>20)throw Error("FIXED chỉ dùng ≤20kg.");
-  if(r.unit==="PER_KG"&&(r.min_kg<21||!Number.isInteger(r.min_kg)||!Number.isInteger(r.max_kg)||upsRateBand(r.min_kg).band!==upsRateBand(r.max_kg).band))
+  if(r.unit==="PER_KG"&&(r.min_kg<20||!Number.isInteger(r.min_kg)||!Number.isInteger(r.max_kg)||upsRateBand(r.min_kg+1).band!==upsRateBand(r.max_kg).band))
    throw Error("PER_KG cần dải 21–44, 45–70, 71–99 hoặc 100+.");
  }
  for(let i=0;i<rates.length;i++)for(let j=i+1;j<rates.length;j++) {
@@ -87,10 +87,10 @@ export function upsOrderNet(lots:Array<{lot_id:string;pricing:UpsAccountPricing;
  return {lots:results,net_vnd:safe(results.reduce((sum,lot)=>sum+lot.net_vnd,0)),shipment_surcharge_vnd:safe(results.reduce((sum,lot)=>sum+lot.shipment_vnd,0))};
 }
 
+export const UPS_V1_ACCOUNT_PRIORITY:readonly UpsAccount[]=Object.freeze(["SDS","VTT","JD"]);
 export function optimizeUpsAccounts(accounts:UpsAccountPricing[],weightKg:number,globals:UpsGlobals) {
  if(!Array.isArray(accounts)||!accounts.length||new Set(accounts.map(a=>a.account)).size!==accounts.length)throw Error("Cần danh sách account không trùng.");
  // All supplied eligible accounts must calculate; missing data fails rather than silently selecting an incomplete set.
- const costs=accounts.map(a=>upsAccountNet(a,weightKg,globals)).sort((a,b)=>a.net_vnd-b.net_vnd);
- if(costs.length>1&&costs[0].net_vnd===costs[1].net_vnd)throw Error("Account bằng Net; cần policy tie-break được duyệt.");
- return {selected:costs[0],accounts:costs};
+ const costs=accounts.map(a=>upsAccountNet(a,weightKg,globals)).sort((a,b)=>a.net_vnd-b.net_vnd||UPS_V1_ACCOUNT_PRIORITY.indexOf(a.account)-UPS_V1_ACCOUNT_PRIORITY.indexOf(b.account));
+ return {selected:costs[0],accounts:costs,account_priority:[...UPS_V1_ACCOUNT_PRIORITY]};
 }
