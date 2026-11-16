@@ -4,6 +4,8 @@ This section supersedes older blanket “no operational VNĐ/consent/FIFO/correc
 
 # Feature Index — DMD Order Platform
 
+- [Final Excel (2): authoritative source, superseded files and verified cells](SERVICE-V1-SOURCE-INDEX.md). Source/fee-FX OPEN items are closed only as documented there; operational delivery remains separately verified.
+
 - [Exact fractional VNĐ foundation](32-vnd-money-foundation.md) — decimal arithmetic implemented; wallet/Purchase/ledger cutover still missing.
 
 **Current requirements 16/11:** [Full implementation handoff](DMD_Service_Architecture_V1_Implementation_Handoff_2026-11-16.md) and [HEAD gap / superseded rules / build order](31-service-v1-build-gap.md). APPROVED is not IMPLEMENTED; OPEN values are not defaults. These override contrary dated sections below.

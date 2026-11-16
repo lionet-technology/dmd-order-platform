@@ -1,3 +1,6 @@
+## Verified source addendum — 16/11/2026
+[Final Excel (2) source index](SERVICE-V1-SOURCE-INDEX.md) supersedes earlier workbook/PDF references and the USD surcharge descriptions below. Fixed-VND ePacket charges are 135000 (>55cm), 285000 (>75cm, noncumulative), 405000 non-cont. Fee-FX relation and source availability are verified CLOSED. Remaining operational gates and cost-component coverage are not closed by this addendum.
+
 # DMD Order Platform — Service Architecture V1 / Implementation Handoff
 
 **Ngày:** 16/11/2026 · **Phạm vi:** Chuyển phát nhanh GĐ1 và liên kết Order–Finance–Supplier–Warehouse.
