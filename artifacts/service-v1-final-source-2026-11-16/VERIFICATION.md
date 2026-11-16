@@ -3,7 +3,7 @@
 Completed 17/11/2026, Asia/Ho_Chi_Minh. V1 remains PARTIAL.
 Baseline local HEAD da5e375bcb069c0a07975ed211dcaea7c518020c; initial working tree contained unrelated AGENTS.md modification and Codex/. These are excluded from task commits.
 Source reconciliation commit: 7916b14.
-Code commit: recorded below after commit.
+Code / tested source commit: 3929b72. Source and implementation are followed by a documentation-only evidence commit. Push uses normal fast-forward origin/main; remote SHA is verified after push.
 
 ## Actual source opened
 
