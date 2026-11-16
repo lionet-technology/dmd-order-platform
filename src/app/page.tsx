@@ -1058,7 +1058,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
     <aside className="sidebar">
       <div className="brand"><div className="brandMark">D</div><div><b>DMD Finance</b><span>Operations</span></div></div>
       <nav className="sideNav">
-        {role!=="WAREHOUSE"&&<Link href="/vnd">Chuyên tuyến · Sổ VNĐ</Link>}
+        {role!=="WAREHOUSE"&&<Link href="/vnd">Dịch vụ · Sổ VNĐ</Link>}
         {nav.filter(n=>n.roles.includes(role)).map(n=><button key={n.key} aria-label={n.label} title={n.label} className={section===n.key?"active":""} onClick={()=>navigate(n.key)}>
           <i>{n.icon}</i><span>{n.label}</span>
           {n.key==="operations"&&claimAttention>0&&<em aria-label="Claims cần lưu tâm">{claimAttention}</em>}

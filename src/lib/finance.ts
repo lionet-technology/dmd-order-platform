@@ -323,7 +323,7 @@ export function upsertOrder(input: OrderInput) {
     if(!weight||weight<=0)throw new Error("Tổng khối lượng phải lớn hơn 0 kg.");
     if(!volume||volume<=0)throw new Error("Hãy nhập đủ kích thước hoặc thể tích tổng của lô hàng.");
   }
-  if(isVndClient(Number(clientUserId))&&service.toLowerCase()!=="chuyên tuyến")throw Error("VNĐ vận hành hiện hỗ trợ Chuyên tuyến.");
+  if(isVndClient(Number(clientUserId))&&!["chuyên tuyến","epacket","yun express","yunexpress"].includes(service.toLowerCase()))throw Error("Dịch vụ chưa nối Purchase VNĐ.");
   if(isVndClient(Number(clientUserId)))for(const key of ["est_net_cost","base_cost","retail","sales_price","surcharge","import_tax","total_due"] as const){
     if(input[key]!==undefined&&num(input[key])!==0)throw Error("VNĐ: nhập giá bằng offer/Financial Posting riêng, không nhập vào cột tiền legacy.");
   }

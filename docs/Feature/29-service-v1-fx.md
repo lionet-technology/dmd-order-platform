@@ -1,3 +1,6 @@
+## Final-source automatic Purchase increment — 17/11/2026
+[Feature 34](34-service-v1-final-source-purchase.md) extends new-account VNĐ Purchase to ePacket Standard/Eco/EU and Yun via final Excel (2), existing Review/Publish and exact Reserve/FIFO/Charge. It supersedes earlier blanket statements that only Chuyên tuyến is admitted. UPS has a source resolver only; operational UPS, auto EU routing, Shipping Edit, Duplicate, Add-on and financial reporting cutover remain pending. [Source index](SERVICE-V1-SOURCE-INDEX.md) closes source identity and fixed-VND ePacket fee/FX relation only.
+
 # Service V1 — versioned Rate USD–VND
 Reviewed 16/11/2026. CURRENT increment; not an operational VND financial cutover.
 

@@ -1,4 +1,5 @@
 import {db} from './db';
+import {automaticVndOrderQuote,automaticSourceKind} from './service-v1-order-quote';
 import {routeState} from './route-lifecycle';
 import {vnd,addVnd,subtractVnd,sumVnd,compareVnd,cancellationRefundVnd} from './vnd-money';
 import type {AuthUser} from './auth';
@@ -40,8 +41,28 @@ export function vndBalance(clientId:number){
 function append(clientId:number,orderId:number|null,kind:string,delta:string,reason:string,actorId:number,key:string){
  db.prepare('INSERT INTO vnd_ledger(client_id,order_id,kind,delta,reason,actor_id,request_key) VALUES (?,?,?,?,?,?,?)').run(clientId,orderId,kind,vnd(delta),reason,actorId,key);
 }
+function refreshAutomatic(r:Row){
+ const o=order(Number(r.order_id));
+ if(!automaticSourceKind(String(o.service),String(o.sub_service))||['CHARGED','CANCELLED'].includes(String(r.status))||issued(Number(o.id)))return r;
+ try{
+  const quote=automaticVndOrderQuote(Number(o.id));
+  const old=db.prepare('SELECT * FROM vnd_auto_quotes WHERE order_id=?').get(o.id) as Row|undefined;
+  const snapshot=JSON.stringify(quote);
+  if(snapshot!==old?.snapshot_json)db.prepare('INSERT INTO vnd_auto_quote_history(order_id,snapshot_json) VALUES (?,?)').run(o.id,snapshot);
+  db.prepare('INSERT INTO vnd_auto_quotes(order_id,snapshot_json) VALUES (?,?) ON CONFLICT(order_id) DO UPDATE SET snapshot_json=excluded.snapshot_json,pricing_error=NULL').run(o.id,snapshot);
+  if(!old?.manual_offer&&r.offer!==quote.total_vnd)db.prepare("UPDATE vnd_purchase_requests SET offer=?,revision=revision+1,status='PRICE_CONFIRMATION_REQUIRED' WHERE order_id=?").run(quote.total_vnd,o.id);
+ }catch(e){
+  if(e&&typeof e==='object'&&'code' in e)throw e;
+  const reason=e instanceof Error?e.message:'Lỗi giá';
+  db.prepare("INSERT INTO vnd_auto_quotes(order_id,snapshot_json,pricing_error) VALUES (?,'{}',?) ON CONFLICT(order_id) DO UPDATE SET pricing_error=excluded.pricing_error").run(o.id,reason);
+  db.prepare("UPDATE vnd_purchase_requests SET status='PRICE_CONFIRMATION_REQUIRED' WHERE order_id=?").run(o.id);
+ }
+ return vndRequest(Number(o.id))!;
+}
 function process(r:Row,actorId:number){
  if(['CHARGED','CANCELLED'].includes(String(r.status)))return;
+ r=refreshAutomatic(r);
+ if((db.prepare('SELECT pricing_error FROM vnd_auto_quotes WHERE order_id=?').get(r.order_id) as Row|undefined)?.pricing_error)return;
  if(r.status==='RESERVED'&&r.reserve===r.offer&&r.accepted_revision===r.revision)return;
  if(r.offer===null){db.prepare("UPDATE vnd_purchase_requests SET status='AWAITING_QUOTE' WHERE id=?").run(r.id);return;}
  if(r.accepted_revision!==r.revision){db.prepare("UPDATE vnd_purchase_requests SET status='PRICE_CONFIRMATION_REQUIRED' WHERE id=?").run(r.id);return;}
@@ -57,8 +78,10 @@ export function resumeVndPurchases(clientId:number,actorId:number){
  for(const r of db.prepare("SELECT * FROM vnd_purchase_requests WHERE client_id=? AND status NOT IN ('CHARGED','CANCELLED') ORDER BY id").all(clientId) as Row[])process(r,actorId);
 }
 export function assertVndIssuance(orderId:number){
- const r=vndRequest(orderId);if(!r)return false;
+ let r=vndRequest(orderId);if(!r)return false;
  if(r.status==='CHARGED')return true;
+ r=refreshAutomatic(r);
+ if((db.prepare('SELECT pricing_error FROM vnd_auto_quotes WHERE order_id=?').get(orderId) as Row|undefined)?.pricing_error)throw Error('Giá tự động chưa hợp lệ; Admin cần xử lý.');
  eligible(order(orderId));
  if(r.status!=='RESERVED'||r.accepted_revision!==r.revision)throw Error('Chờ giá / xác nhận giá / sức mua; chưa được cấp Tracking/Label.');
  return true;
@@ -89,7 +112,7 @@ export function cancelVndMoney(orderId:number,percent:number,reason:string,actor
 export function vndView(clientId:number,actor:AuthUser){
  return db.transaction(()=>{
  vndAccess(actor,clientId);
- return {...vndBalance(clientId),requests:(db.prepare('SELECT * FROM vnd_purchase_requests WHERE client_id=? ORDER BY id').all(clientId) as Row[]).map(r=>({...r,cartons:db.prepare('SELECT id,carton_number FROM order_cartons WHERE order_id=? ORDER BY carton_number').all(r.order_id)})),
+ return {...vndBalance(clientId),requests:(db.prepare('SELECT * FROM vnd_purchase_requests WHERE client_id=? ORDER BY id').all(clientId) as Row[]).map(r=>({...r,pricing_error:(db.prepare('SELECT pricing_error FROM vnd_auto_quotes WHERE order_id=?').get(r.order_id) as Row|undefined)?.pricing_error??null,cartons:db.prepare('SELECT id,carton_number FROM order_cartons WHERE order_id=? ORDER BY carton_number').all(r.order_id)})),
  ledger:db.prepare('SELECT * FROM vnd_ledger WHERE client_id=? ORDER BY id DESC LIMIT 200').all(clientId),
  history:db.prepare('SELECT * FROM vnd_history WHERE client_id=? ORDER BY id DESC LIMIT 200').all(clientId)};
  }).deferred();
@@ -121,21 +144,24 @@ export function vndAction(actor:AuthUser,input:Row){
   }else{
    const id=Number(input.order_id),o=order(id);if(Number(o.client_user_id)!==clientId)throw Error('Order không thuộc Client.');
    const before=vndRequest(id);
-   let r=before;
+   let r=before?refreshAutomatic(before):undefined;
    if(action==='request'){
     if(!['ADMIN','SALES','CLIENT'].includes(actor.role))throw Error('Không có quyền Purchase.');
-    if(String(o.service).toLowerCase()!=='chuyên tuyến')throw Error('VNĐ vận hành hiện hỗ trợ Chuyên tuyến Manual Quote.');
+    if(String(o.service).toLowerCase()!=='chuyên tuyến'&&!automaticSourceKind(String(o.service),String(o.sub_service)))throw Error('Dịch vụ chưa nối VNĐ.');
     if(!r){
+     if(automaticSourceKind(String(o.service),String(o.sub_service)))automaticVndOrderQuote(id);
      eligible(o);if(issued(id)||o.purchase_completed_at||o.pricing_snapshot_json)throw Error('Order đã phát hành / mua.');
      if(actor.role==='CLIENT'&&!route(o)?.client_self_purchase)throw Error('Route chưa cho Client tự mua.');
      db.prepare("INSERT INTO vnd_purchase_requests(order_id,client_id,status,confirmed_at,request_actor_id) VALUES (?,?,'AWAITING_QUOTE',?,?)").run(id,clientId,new Date().toISOString(),actor.id);
      db.prepare("UPDATE orders SET service_purchased_at=COALESCE(service_purchased_at,?),workflow_status='PENDING_PURCHASE' WHERE id=?").run(new Date().toISOString(),id);
     }
+    r=refreshAutomatic(vndRequest(id)!);
    }else{
     if(!r||r.status==='CANCELLED')throw Error('Chưa Purchase hoặc đã huỷ.');
     if(action==='offer'){
      if(!['ADMIN','SALES'].includes(actor.role)||!reason)throw Error('Offer cần Admin/Sales và lý do.');
      if(r.status==='CHARGED'||issued(id))throw Error('Đã Tracking/Label; dùng Financial Correction sau charge.');
+     if(automaticSourceKind(String(o.service),String(o.sub_service)))db.prepare('UPDATE vnd_auto_quotes SET manual_offer=1 WHERE order_id=?').run(id);
      const amount=nonnegative(input.amount);if(compareVnd(amount,'0')<=0)throw Error('Offer phải lớn hơn 0; không tạo giá 0 thay báo giá thiếu.');
      if(Number(input.expected_revision)!==r.revision)throw Error('Revision đã thay đổi.');
      if(r.offer!==amount)db.prepare("UPDATE vnd_purchase_requests SET offer=?,revision=revision+1,status='PRICE_CONFIRMATION_REQUIRED' WHERE order_id=?").run(amount,id);
@@ -143,6 +169,7 @@ export function vndAction(actor:AuthUser,input:Row){
      if(action==='consent'&&(actor.role!=='CLIENT'||actor.id!==clientId))throw Error('Client xác nhận giá; Admin/Sales dùng override có lý do.');
      if(action==='override'&&(!['ADMIN','SALES'].includes(actor.role)||!reason))throw Error('Override cần Admin/Sales và lý do.');
      if(r.status==='CHARGED'||r.offer===null||Number(input.expected_revision)!==r.revision)throw Error('Giá đã thay đổi hoặc đã charge.');
+     if((db.prepare('SELECT pricing_error FROM vnd_auto_quotes WHERE order_id=?').get(id) as Row|undefined)?.pricing_error)throw Error('Giá tự động chưa hợp lệ.');
      eligible(o);
      db.prepare('UPDATE vnd_purchase_requests SET accepted_revision=revision WHERE order_id=?').run(id);
     }else if(action==='correction'||action==='surcharge'||action==='tax'){

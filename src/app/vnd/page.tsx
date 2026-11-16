@@ -1,7 +1,7 @@
 "use client";
 import Link from 'next/link';
 import {useEffect,useRef,useState} from 'react';
-type Purchase={order_id:number;status:string;offer:string|null;revision:number;reserve:string;cartons:Array<{id:number;carton_number:number}>};
+type Purchase={order_id:number;status:string;offer:string|null;revision:number;reserve:string;pricing_error?:string|null;cartons:Array<{id:number;carton_number:number}>};
 type Entry={id:number;kind:string;delta:string;reason:string;created_at:string};
 type Account={currency:string;balance:string;reserved:string;available:string;credit_limit:string;requests:Purchase[];ledger:Entry[]};
 type User={id:number;role:string};
@@ -38,14 +38,14 @@ export default function VndWorkspace(){
  }
  const admin=user&&['ADMIN','BOD'].includes(user.role),finance=admin||user?.role==='FINANCE',operator=user&&['ADMIN','SALES'].includes(user.role);
  return <main style={{maxWidth:1100,margin:'30px auto',padding:24}}>
-  <Link href="/">← Về màn hình chính</Link><h1>Chuyên tuyến · tài khoản VNĐ</h1>
-  <p>Báo giá thủ công cho Order. Tiền giữ nguyên số lẻ. Tạo Order và khai báo kiện trong màn hình Orders trước khi gửi yêu cầu mua.</p>
+  <Link href="/">← Về màn hình chính</Link><h1>Dịch vụ · tài khoản VNĐ</h1>
+  <p>ePacket/Yun dùng bảng giá đã phát hành; Chuyên tuyến dùng báo giá thủ công. Tiền giữ nguyên số lẻ. Tạo Order và khai báo kiện trong màn hình Orders trước khi gửi yêu cầu mua.</p>
   {!user?<p>Đăng nhập ở màn hình chính để tiếp tục.</p>:<>
    <label>Client ID <input aria-label="Client ID" value={client} disabled={user.role==='CLIENT'||busy} onChange={e=>{setClient(e.target.value);setAccount(null);}}/></label>
    <button disabled={busy||!client} onClick={load}>Tải tài khoản</button>
    {account&&<><h2>Sức mua</h2><p>Balance: {account.balance} VNĐ · Credit Limit: {account.credit_limit} VNĐ · Reserve: {account.reserved} VNĐ · Còn lại: {account.available} VNĐ</p>
     {account.available.startsWith("-")&&<p role="alert">Sức mua đang âm. Posting đã ghi nhận; Purchase mới tiếp tục chờ đủ sức mua. Không tự tạo Debt.</p>}
-    <h2>Yêu cầu mua</h2><table><thead><tr><th>Order</th><th>Trạng thái</th><th>Giá VNĐ</th><th>Reserve VNĐ</th><th>Revision</th><th>Chọn</th></tr></thead><tbody>{account.requests.map(r=><tr key={r.order_id}><td>{r.order_id}</td><td>{labels[r.status]}</td><td>{r.offer??'Chưa báo'}</td><td>{r.reserve}</td><td>{r.revision}</td><td><button onClick={()=>{setOrder(String(r.order_id));setCarton(String(r.cartons[0]?.id??''));setRevision(String(r.revision));setAmount(r.offer??'');}}>Chọn Order</button></td></tr>)}</tbody></table>
+    <h2>Yêu cầu mua</h2><table><thead><tr><th>Order</th><th>Trạng thái</th><th>Giá VNĐ</th><th>Reserve VNĐ</th><th>Revision</th><th>Chọn</th></tr></thead><tbody>{account.requests.map(r=><tr key={r.order_id}><td>{r.order_id}</td><td>{labels[r.status]}</td><td>{r.offer??'Chưa báo'}{r.pricing_error&&<p role="alert">Cần xử lý giá: {r.pricing_error}</p>}</td><td>{r.reserve}</td><td>{r.revision}</td><td><button onClick={()=>{setOrder(String(r.order_id));setCarton(String(r.cartons[0]?.id??''));setRevision(String(r.revision));setAmount(r.offer??'');}}>Chọn Order</button></td></tr>)}</tbody></table>
    </>}
    <h2>Thao tác</h2>
    <form onSubmit={e=>{e.preventDefault();void submit();}} style={{display:'grid',gap:12,maxWidth:600}}>

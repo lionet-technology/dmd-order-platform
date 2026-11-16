@@ -1,0 +1,125 @@
+
+> dmd-finance-ops@0.1.0 build
+> node scripts/build-isolated.cjs
+
+▲ Next.js 16.3.6 (Turbopack)
+- Environments: .env.local
+✓ Running next.config.ts took 93ms
+- Experiments (use with caution):
+  · cpus: 1
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 2.2s
+  Running TypeScript ...
+  Finished TypeScript in 2.4s ...
+  Collecting page data using 1 worker ...
+  Generating static pages using 1 worker (0/58) ...
+  Generating static pages using 1 worker (14/58)
+  Generating static pages using 1 worker (28/58)
+  Generating static pages using 1 worker (43/58)
+✓ Generating static pages using 1 worker (58/58) in 173ms
+Turbopack build encountered 1 warning:
+./src/lib/service-v1-source.ts:15:85
+Warning: Dynamic filesystem access causes tracing of the whole project
+  [90m13 |[0m ...[32mccd230b1ab8f52d724cfc872c43c4fb267ba60ef546563faecaebd314679'[0m)[36mthrow[0m [33mError[0m([32m'Dữ liệu impo...[0m
+  [90m14 |[0m ...
+[33m[1m>[0m [90m15 |[0m ...[32m56'[0m).update(readFileSync(join(process.cwd(),book.source.path))).digest([32m'hex'[0m)!==[33mFINAL_S...[0m
+  [90m   |[0m                             [33m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m16 |[0m ...
+  [90m17 |[0m ...
+  [90m18 |[0m ...[32mNFKC'[0m).replace([35m/[*#+]/g[0m,[32m''[0m).trim().replace([35m/\s+/g[0m,[32m' '[0m).toUpperCase();
+
+Static analysis determined that this filesystem access causes the whole project to be traced and included in the output.
+This is usually unintentional and leads to all source files (including the public folder) to be deployed as part of the server code.
+This can slow down deployments or lead to failures when size limits are exceeded.
+To resolve this, you can
+- make sure the path is statically scoped to some subfolder, for example path.join(process.cwd(), 'data', bar), or
+- only use them in development, or
+- opt out by adding an ignore comment to the highlighted call: path.join(/*turbopackIgnore: true*/ ...), or
+- remove them.
+
+Import trace:
+  App Route:
+    ./src/lib/service-v1-source.ts
+    ./src/lib/service-v1-order-quote.ts
+    ./src/app/api/service-v1/source/route.ts
+
+
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ƒ /api/admin-action-queue
+├ ƒ /api/admin-debt-aging
+├ ƒ /api/auth/login
+├ ƒ /api/auth/logout
+├ ƒ /api/auth/setup
+├ ƒ /api/auth/status
+├ ƒ /api/bod-finance-report
+├ ƒ /api/cancellation-requests
+├ ƒ /api/cases
+├ ƒ /api/claims
+├ ƒ /api/client-orders
+├ ƒ /api/client-services
+├ ƒ /api/commission-review
+├ ƒ /api/control-tower
+├ ƒ /api/costs
+├ ƒ /api/costs/adjustments
+├ ƒ /api/enums
+├ ƒ /api/enums/[id]
+├ ƒ /api/financials
+├ ƒ /api/health
+├ ƒ /api/import
+├ ƒ /api/inbound
+├ ƒ /api/internal-expenses
+├ ƒ /api/ledger
+├ ƒ /api/manifest-cartons
+├ ƒ /api/manifest-cartons/[id]
+├ ƒ /api/manifest-export
+├ ƒ /api/manifest-scan
+├ ƒ /api/orders
+├ ƒ /api/orders/[id]
+├ ƒ /api/orders/[id]/cancel
+├ ƒ /api/orders/[id]/shipment-structure
+├ ƒ /api/orders/[id]/trackings
+├ ƒ /api/orders/[id]/warehouse-hold
+├ ƒ /api/orders/manual-batch
+├ ƒ /api/orders/tracking-queue
+├ ƒ /api/orders/tracking-replacements
+├ ƒ /api/payment-reconciliation
+├ ƒ /api/purchase-export
+├ ƒ /api/purchase-export/generic
+├ ƒ /api/purchase-jobs
+├ ƒ /api/purchase-template-versions/[id]/download
+├ ƒ /api/purchase-template-versions/[id]/preview
+├ ƒ /api/purchase-templates
+├ ƒ /api/purchase-templates/[id]/activate
+├ ƒ /api/reconciliation
+├ ƒ /api/refunds
+├ ƒ /api/route-pricing
+├ ƒ /api/service-routes
+├ ƒ /api/service-routes/[id]/emergency
+├ ƒ /api/service-routes/[id]/lifecycle
+├ ƒ /api/service-routes/[id]/warehouse-hold
+├ ƒ /api/service-v1/configuration
+├ ƒ /api/service-v1/fx
+├ ƒ /api/service-v1/operations
+├ ƒ /api/service-v1/pricing
+├ ƒ /api/service-v1/quotes
+├ ƒ /api/service-v1/source
+├ ƒ /api/service-v1/ups-accounts
+├ ƒ /api/service-v1/ups-globals
+├ ƒ /api/shipment-status
+├ ƒ /api/statements-v2
+├ ƒ /api/summary
+├ ƒ /api/supplier-accounts
+├ ƒ /api/supplier-cancellations
+├ ƒ /api/supplier-payables
+├ ƒ /api/users
+├ ƒ /api/users/[id]
+└ ○ /vnd
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand

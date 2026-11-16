@@ -13,7 +13,7 @@ suites.push("verify-manual-order-limit","verify-linked-workflows","verify-suppli
 suites.push("verify-purchase-consent","verify-shared-funds-race");
 suites.push("verify-service-v1-config","verify-service-v1-pricing","verify-supplier-cost-review","verify-ups-v1-core","verify-ups-v1-accounts","verify-service-v1-quotes");
 suites.push("verify-service-v1-fx","verify-supplier-cancellation","verify-atomic-reserve","verify-vnd-money");
-suites.push("verify-vnd-operations");
+suites.push("verify-vnd-operations","verify-final-source","verify-vnd-auto");
 const env={...process.env,NODE_ENV:"test"};
 // Every suite must select its own disposable DB; never inherit a DB selected by an operator.
 delete env.DMD_DB_PATH;delete env.DMD_VERIFY_DB;

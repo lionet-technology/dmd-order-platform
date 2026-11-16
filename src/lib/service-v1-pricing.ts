@@ -1,3 +1,4 @@
+import {addVnd,multiplyVnd} from './vnd-money';
 import {currentServiceV1Fx} from './service-v1-fx';
 import {createHash} from "node:crypto";
 import {db} from "./db";
@@ -5,6 +6,14 @@ import {assertServiceV1Owner,readServiceV1Config,serviceV1Key} from "./service-v
 import {routeState} from "./route-lifecycle";
 type Row={id:number;route_id:number;kind:"NET"|"PROPOSAL";config_id:number;source_net_id:number|null;body_json:string;actor_id:number;request_key:string;request_hash:string};
 type NetRow={key:string;net_vnd:number;net_usd?:number};
+export function serviceV1DecimalNumber(value:number){
+ const [mantissa,exponent]=String(value).toLowerCase().split('e');
+ if(exponent===undefined)return mantissa;
+ const negative=mantissa.startsWith('-'),unsigned=negative?mantissa.slice(1):mantissa;
+ const [whole,fraction='']=unsigned.split('.'),digits=whole+fraction,point=whole.length+Number(exponent);
+ const expanded=point<=0?'0.'+'0'.repeat(-point)+digits:point>=digits.length?digits+'0'.repeat(point-digits.length):digits.slice(0,point)+'.'+digits.slice(point);
+ return (negative?'-':'')+expanded;
+}
 const fingerprint=(value:unknown)=>createHash("sha256").update(JSON.stringify(value)).digest("hex");
 function routeReady(routeId:number,actorId:number) {
  const config=readServiceV1Config(routeId,actorId);
@@ -69,7 +78,10 @@ export function createServiceV1Proposal(input:{route_id:number;config_id:number;
     const net_vnd=fx?Number(row.net_usd)*fx.usd_vnd:row.net_vnd;
     const base_vnd=net_vnd*(1+input.net_markup),retail_vnd=base_vnd*(1+input.base_markup);
     if(!Number.isFinite(base_vnd)||!Number.isFinite(retail_vnd)||retail_vnd>Number.MAX_SAFE_INTEGER)throw Error("Giá vượt độ chính xác tính toán.");
-    return {...row,net_vnd,base_vnd,retail_vnd};
+    const exactNet=multiplyVnd(serviceV1DecimalNumber(Number(fx?row.net_usd:row.net_vnd)),fx?serviceV1DecimalNumber(fx.usd_vnd):'1');
+    const base_vnd_decimal=multiplyVnd(exactNet,addVnd('1',serviceV1DecimalNumber(input.net_markup)));
+    const retail_vnd_decimal=multiplyVnd(base_vnd_decimal,addVnd('1',serviceV1DecimalNumber(input.base_markup)));
+    return {...row,net_vnd,base_vnd,retail_vnd,base_vnd_decimal,retail_vnd_decimal};
    })};
   const result=db.prepare("INSERT INTO service_v1_price_documents(route_id,kind,config_id,source_net_id,body_json,actor_id,request_key,request_hash) VALUES (?,'PROPOSAL',?,?,?,?,?,?)").run(input.route_id,config.id,net.id,JSON.stringify(body),actorId,key,hash);
   return db.prepare("SELECT * FROM service_v1_price_documents WHERE id=?").get(result.lastInsertRowid) as Row;

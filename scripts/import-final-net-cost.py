@@ -8,6 +8,7 @@ NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 
 def parse():
     raw = SOURCE.read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == 'a41d4e540f8e0023b859b32c6b415d744a6c9e095dd3f3b3a4590327b9fb68d2', 'Wrong final workbook'
     z = zipfile.ZipFile(SOURCE)
     strings = ["".join(t.itertext()) for t in ET.fromstring(z.read("xl/sharedStrings.xml"))]
     names = [s.get("name") for s in ET.fromstring(z.read("xl/workbook.xml")).findall("m:sheets/m:sheet", NS)]
