@@ -9,7 +9,7 @@ Status: bounded new-account VND implementation; full V1 remains PARTIAL. No prod
 - Read prior final-source verification, required Feature index/Decisions/Roadmap/Contributing, Approved Decisions, handoff and affected Order/Finance/RBAC/UPS docs.
 - Opened actual final workbook through scripts/import-final-net-cost.py parse(), read-only: 60,966 bytes, sheets ePacket/Yun Express/UPS, SHA256 a41d4e540f8e0023b859b32c6b415d744a6c9e095dd3f3b3a4590327b9fb68d2. Canonical XLSX and normalized JSON are unchanged.
 - Source variables/markups and special zones verified; old workbook (1)(1) is not used.
-- Gap-review-first commit: 65b6596. Implementation/evidence commit IDs are recorded in the final commit addendum.
+- Gap-review-first commit: 65b6596. Implementation + tested artifacts commit: 647ee72. The following commit changes documentation only; no behavior change after verification.
 
 ## Owner clarification, closed
 
@@ -49,6 +49,10 @@ Admin: creates Add-on and edits unissued shipping through UI. Sales: assigned-Cl
 The browser connector was unpaired. The initial system Chrome launch selected x64/Rosetta and closed; the runner now launches ARM Chrome explicitly through an owned temporary wrapper. Subsequent actual Chrome runs passed. Generated duplicate Next type files from the existing environment caused an initial standalone typecheck conflict; the isolated build regenerated types and final typecheck passed. No package reinstall or machine/browser preference change.
 
 This is targeted five-role UAT, not full manual acceptance of every UPS tier, all role/device workflows, real Supplier template/onboarding or live carrier behavior.
+
+## Git completion
+
+Implementation committed as 647ee72 after the gap-first 65b6596. Staged-path inspection confirmed no AGENTS.md, Codex/, Jenkinsfile, jenkins/ or canonical workbook/JSON changes. All intended code, tests, Feature docs and evidence are committed. Normal origin/main fast-forward push and post-push SHA verification follow this documentation-only addendum; the final chat records the resulting evidence commit SHA.
 
 ## Remaining V1 gaps / boundaries
 

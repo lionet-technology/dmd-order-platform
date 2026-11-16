@@ -31,5 +31,8 @@ Handoff §5 explicitly leaves Service change after a manual offer OPEN. Owner an
 ## Remaining V1 boundaries
 This is new-account VND implementation, not migration of legacy USD. Full VND Claim/refund pool, Supplier payable/actual reconciliation cutover, complete Sales commission/refund-group reporting and fully automated Statement period scheduling remain outside verified delivery. No real Supplier cancellation policy or carrier void was invented. Root-only configuration authority remains narrower than the target full Admin/BOD policy. Manual pricing modes and broad live pilot acceptance still require separate reconciliation. Test evidence does not activate production.
 
+## Verification and commits
+Gap audit: 65b6596. Implementation: 647ee72. Full regression: 59 suites PASS; new continuation 37 and finance 39 assertions; typecheck/lint/build PASS. Actual Chrome targeted UAT: 13 assertions, Admin/Sales/Client/Finance/BOD, isolated DB, desktop/mobile screenshots inspected. [Detailed evidence and limitations](../../artifacts/service-v1-continuation-2026-11-17/VERIFICATION.md). Documentation-only evidence follows the implementation commit.
+
 ## Guardrails
 Reuse VND consent, atomic FIFO reserve, one-time charge and immutable ledger. Financial postings may exceed credit with no automatic Debt. Cancellation policy is route-specific; Claim refund remains separate. Internal Purchase/export never calls a Supplier. Preserve source workbook and existing working changes; no Jenkins/production.
