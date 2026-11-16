@@ -1,3 +1,7 @@
+## Current implementation delta — 16/11/2026
+[Per-route cancellation](06-cancellation.md) replaces this feature's earlier global 100/90 rule. Cancellation now requires a confirmed route/stage policy; Admin support can raise its percentage to 100 without bypassing shipment/denial. Supplier queue snapshot/history/permissions and money independence are unchanged. TEST policies are explicit in both domain and HTTP fixtures; no supplier rates are seeded into the application.
+The older "Confirmed Owner decision" and "Money / version boundary" sections below record the prior implementation and no longer define refund rates.
+
 ## Current requirements — handoff 16/11/2026
 [Canonical full handoff](DMD_Service_Architecture_V1_Implementation_Handoff_2026-11-16.md) and [audited HEAD gaps](31-service-v1-build-gap.md) supersede contrary dated requirements below. Earlier dated sections are historical where inconsistent, not concurrent current rules.
 - APPROVED: cancellation policy per Service/Sub-Service/Supplier route; no global 90/100. Admin may support 100%, never bypass shipment denial. Claim refund is separate. Combined Duplicate uses policy with optional Admin support, not unconditional 100%.

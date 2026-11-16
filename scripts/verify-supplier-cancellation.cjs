@@ -8,6 +8,10 @@ const {listOrderEvents}=require('../src/lib/order-audit.ts');
 const users={};for(const role of ['ADMIN','SALES','CLIENT','FINANCE','BOD','WAREHOUSE'])users[role]=createUser({username:'supplier.cancel.'+role,password:'TestPass123!',display_name:role,role,...(role==='CLIENT'?{sales_user_id:users.SALES.id}:{})});
 let seq=0,checks=0;const check=(v,m)=>{checks++;assert.ok(v,m);},reject=(fn,m)=>{checks++;assert.throws(fn,undefined,m);};
 function order(supplier='DMD',label='https://labels.test/original.pdf'){
+ // Explicit TEST policy, including blank supplier legacy-follow-up fixtures.
+ db.prepare("INSERT OR IGNORE INTO service_route_configs(service,sub_service,supplier) VALUES ('ePacket','T11',?)").run(supplier);
+ const rid=db.prepare("SELECT id FROM service_route_configs WHERE service='ePacket' AND sub_service='T11' AND supplier=?").get(supplier).id;
+ if(!require('../src/lib/cancellation-config.ts').readCancellationRules(rid))require('../src/lib/cancellation-config.ts').saveCancellationRules(rid,{ISSUED:{allowed:true,refund_percent:90}},"TEST policy",users.ADMIN.id);
  const id=Number(db.prepare("INSERT INTO orders(order_id,client_user_id,customer,service,sub_service,supplier,workflow_status,total_due,sales_price,label,tracking) VALUES (?,?,'Client','ePacket','T11',?,'PURCHASING',100,100,?,?)").run('SC-'+(++seq),users.CLIENT.id,supplier,label,'SC-TRACK-'+seq).lastInsertRowid);
  db.prepare("INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount,reference_type,reference_id) VALUES (?,'ORDER_CHARGE','DEBIT',100,'ORDER',?)").run(users.CLIENT.id,String(id));return id;
 }

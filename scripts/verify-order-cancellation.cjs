@@ -73,10 +73,26 @@ rejects(()=>replaceOrderTracking({orderId:partial,oldTrackingId:partialTracking.
 rejects(()=>addLedgerEntry({entry_type:"REFUND",reference_type:"ORDER_CANCELLATION",reference_id:"1",amount:1}),"manual refund cannot forge automatic reference");
 rejects(()=>parseCancellationRules({ISSUED:{allowed:true,refund_percent:101}}),"Reject excessive rate");
 rejects(()=>saveCancellationRules(routeId,rules,"",admin.id),"Policy audit reason required");
-const noPolicy=order();db.prepare("UPDATE orders SET supplier='OTHER' WHERE id=?").run(noPolicy);check(cancelOrder(noPolicy,admin).refund_amount===100,"Owner policy independent of missing supplier route policy");
+const noPolicy=order();db.prepare("UPDATE orders SET supplier='OTHER' WHERE id=?").run(noPolicy);rejects(()=>cancelOrder(noPolicy,admin),"Missing supplier route policy blocks cancellation");
 const configured=order();saveCancellationRules(routeId,{...rules,PRE_PURCHASE:{allowed:true,refund_percent:72.5}},"New supplier rate",admin.id);
-check(cancelOrder(configured,client).refund_amount===100,"Owner 100 percent supersedes legacy custom rate");
+check(cancelOrder(configured,client).refund_amount===72.5,"Configured route percentage controls refund");
 saveCancellationRules(routeId,rules,"Restore fixture",admin.id);
+// Same issuance stage, independent Services/Suppliers; values are TEST policies, not production defaults.
+for(const [service,supplier,percent] of [["UPS","SBay",100],["Yun Express","SGBay",80],["ePacket","SGBay",72.5]]) {
+ const rid=Number(db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier) VALUES (?,'POLICY-TEST',?)").run(service,supplier).lastInsertRowid);
+ saveCancellationRules(rid,{ISSUED:{allowed:true,refund_percent:percent}},"TEST supplier policy",admin.id);
+ const id=order({label:"https://labels.test/policy.pdf"});db.prepare("UPDATE orders SET service=?,sub_service='POLICY-TEST',supplier=? WHERE id=?").run(service,supplier,id);
+ check(cancelOrder(id,client).refund_amount===percent,service+" uses its own issued policy");
+ const support=order({label:"https://labels.test/support.pdf"});db.prepare("UPDATE orders SET service=?,sub_service='POLICY-TEST',supplier=? WHERE id=?").run(service,supplier,support);
+ check(cancelOrder(support,admin,{refund_percent:100}).refund_amount===100,"Admin support works for non-90 policy");
+ const invalid=order({label:"https://labels.test/invalid.pdf"});db.prepare("UPDATE orders SET service=?,sub_service='POLICY-TEST',supplier=? WHERE id=?").run(service,supplier,invalid);
+ rejects(()=>cancelOrder(invalid,admin,{refund_percent:50}),"Admin cannot invent another percentage");
+}
+const missingStage=order();saveCancellationRules(routeId,{ISSUED:rules.ISSUED},"TEST missing stage",admin.id);
+rejects(()=>cancelOrder(missingStage,admin,{refund_percent:100}),"Missing stage cannot be bypassed with Admin support");
+saveCancellationRules(routeId,rules,"Restore TEST stages",admin.id);
+const purchasing=order();db.prepare("UPDATE orders SET service_purchased_at=CURRENT_TIMESTAMP WHERE id=?").run(purchasing);
+check(cancelOrder(purchasing,client).refund_amount===95,"Stable purchase timestamp selects PURCHASED policy");
 const surcharge=order();db.prepare("INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount,reference_type,reference_id) VALUES (?,'ADDITIONAL_FEE','DEBIT',5,'ORDER',?)").run(client.id,String(surcharge));
 check(cancelOrder(surcharge,sales).refund_amount===105,"Refund includes charged surcharge");
 const prior=order();const c=Number(db.prepare("INSERT INTO operation_cases(kind,severity,status,visibility,summary,created_by) VALUES ('CLAIM','MEDIUM','OPEN','PUBLIC','partial',?)").run(admin.id).lastInsertRowid);
@@ -99,7 +115,7 @@ const historyCount=db.prepare("SELECT COUNT(*) n FROM route_cancellation_policy_
 rejects(()=>db.prepare("UPDATE route_cancellation_policy_history SET reason='Changed' WHERE route_id=?").run(routeId),"Policy history immutable");
 check(db.prepare("SELECT COUNT(*) n FROM route_cancellation_policy_history WHERE route_id=?").get(routeId).n===historyCount,"Policy historical versions retained");
 saveCancellationRules(routeId,rules,"Restore shipped deny",admin.id);
-const denied=order();saveCancellationRules(routeId,{...rules,PRE_PURCHASE:{allowed:false,refund_percent:0}},"Supplier denies",admin.id);check(cancelOrder(denied,admin).refund_percent===100,"Owner rule supersedes legacy denied policy");saveCancellationRules(routeId,rules,"Restore",admin.id);
+const denied=order();saveCancellationRules(routeId,{...rules,PRE_PURCHASE:{allowed:false,refund_percent:0}},"Supplier denies",admin.id);rejects(()=>cancelOrder(denied,admin,{refund_percent:100}),"Admin support cannot bypass denied policy");saveCancellationRules(routeId,rules,"Restore",admin.id);
 const waiting=order();db.prepare("INSERT INTO cancellation_requests(order_id,requested_by) VALUES (?,?)").run(waiting,client.id);
 delete require.cache[require.resolve("../src/lib/order-cancellation.ts")];require("../src/lib/order-cancellation.ts");
 check(db.prepare("SELECT status FROM cancellation_requests WHERE order_id=?").get(waiting).status==='POLICY_RECHECK'&&ledger(waiting).length===0&&get(waiting).workflow_status!=='CANCELLED',"Migration retains requests without executing refund");

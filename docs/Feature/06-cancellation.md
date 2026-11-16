@@ -1,3 +1,10 @@
+## Implemented correction — per-route policy, 16/11/2026
+Ordinary cancellation now reads the unique Service/Sub-Service/Supplier route policy and exact PRE_PURCHASE/PURCHASED/ISSUED stage. Missing route, ambiguous case-insensitive route, missing stage or denied rule blocks cancellation with no refund or Supplier queue mutation. Stable service_purchased_at/snapshot also identifies PURCHASED. Tracking OR Label identifies ISSUED. Historical handover still denies regardless of configured SHIPPED rule.
+Admin can explicitly choose the current policy percentage or 100% support; cannot invent another percentage or bypass denial. Client/Sales use scoped ordinary policy. UI support uses the actual policy percentage, not fixed 90. No universal fallback. Configure verified Supplier policies before cancellation; test percentages are fixtures.
+Reserve-only cancellation releases without credit. Current charged-ledger/prior-refund cap, immediate transaction, Supplier follow-up and append-only history remain. This increment does not activate VND or implement financial correction.
+Tests: verify-order-cancellation, verify-supplier-cancellation, e2e-supplier-cancellation; final run evidence follows under artifacts/service-v1-build-2026-11-16.
+Dated 100/90-global behavior below is superseded history.
+
 ## Current requirements — handoff 16/11/2026
 [Canonical full handoff](DMD_Service_Architecture_V1_Implementation_Handoff_2026-11-16.md) and [audited HEAD gaps](31-service-v1-build-gap.md) supersede contrary dated requirements below. Earlier dated sections are historical where inconsistent, not concurrent current rules.
 - APPROVED: cancellation policy per Service/Sub-Service/Supplier route; no global 90/100. Admin may support 100%, never bypass shipment denial. Claim refund is separate. Combined Duplicate uses policy with optional Admin support, not unconditional 100%.
