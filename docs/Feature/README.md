@@ -1,4 +1,6 @@
 # Feature Index — DMD Order Platform
+
+- [Owner 16/11: cancellation 100/90, Admin support and pending Supplier follow-up](30-supplier-cancellation-followup.md) — ordinary cancellation implemented; VND Purchase / Edit / Duplicate still incomplete.
 Cập nhật 14/11/2026. **CONFIRMED** = quyết định có nguồn; **CURRENT** = hành vi kiểm qua code; **PROPOSED** = chưa duyệt; **OPEN** = thiếu rule/bằng chứng/số liệu. Không nhãn nào tự chứng nhận production.
 
 - [Edit Order V1: confirmed target, partial locks and integration blockers](28-order-edit-v1.md)

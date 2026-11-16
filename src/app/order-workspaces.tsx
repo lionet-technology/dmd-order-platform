@@ -104,6 +104,7 @@ export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderI
   const [data,setData]=useState<GenericRow|null>(null);
   const [tab,setTab]=useState("overview");
   const [historyScope,setHistoryScope]=useState<"all"|"public"|"internal">("all");
+  const [refundSupport,setRefundSupport]=useState(false);
   const [cancelOpen,setCancelOpen]=useState(false),[cancelError,setCancelError]=useState(""),[cancelBusy,setCancelBusy]=useState(false);
   const [error,setError]=useState("");
   useEffect(()=>{void json("/api/orders/"+orderId).then(setData).catch(error=>setError(error.message))},[orderId]);
@@ -111,11 +112,11 @@ export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderI
   if(!data)return <div className="loadingState">Đang tải chi tiết Order…</div>;
   const trackings=Array.isArray(data.trackings)?data.trackings as GenericRow[]:[];
   const cancelled=data.workflow_status==="CANCELLED";
-  const policy=(data.cancellation||{}) as {allowed?:boolean;reason?:string;refund_percent?:number;refund_amount?:number};
+  const policy=(data.cancellation||{}) as {allowed?:boolean;reason?:string;refund_percent?:number;refund_amount?:number;support_refund_amount?:number};
   async function submitCancellation(){
     setCancelBusy(true);setCancelError("");
     try{
-      await post("/api/orders/"+orderId+"/cancel",{});
+      await post("/api/orders/"+orderId+"/cancel",role==="ADMIN"&&refundSupport?{refund_percent:100}:{});
       setData(await json("/api/orders/"+orderId));setCancelOpen(false);setTab("history");await onDone?.();
     }catch(error){setCancelError(error instanceof Error?error.message:"Không thể huỷ đơn.")}
     finally{setCancelBusy(false)}
@@ -135,10 +136,10 @@ export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderI
       <button className="secondaryBtn" disabled={!active.length} onClick={()=>void copyAll()}>Copy tất cả Tracking</button>
       {!cancelled&&role==="ADMIN"&&onPurchase&&<button className="secondaryBtn" onClick={()=>onPurchase(data)}>Tracking & Label</button>}
       {!cancelled&&role!=="CLIENT"&&<button className="primaryBtn" onClick={()=>onEdit(data)}>Sửa Order</button>}
-      {!cancelled&&<span className="cancelBtnWrap" title={!policy.allowed?policy.reason:""}><button className="secondaryBtn cancelOrderBtn" disabled={!policy.allowed||cancelBusy} aria-disabled={!policy.allowed||cancelBusy} onClick={()=>{setCancelOpen(true);setCancelError("")}}>Huỷ đơn</button></span>}
+      {!cancelled&&<span className="cancelBtnWrap" title={!policy.allowed?policy.reason:""}><button className="secondaryBtn cancelOrderBtn" disabled={!policy.allowed||cancelBusy} aria-disabled={!policy.allowed||cancelBusy} onClick={()=>{setCancelOpen(true);setRefundSupport(false);setCancelError("")}}>Huỷ đơn</button></span>}
     </div>
-    {cancelled&&<div className="cancellationSummary"><b>Đã huỷ · Hoàn {String(data.cancellation_refund_percent||0)}%: {money(data.cancellation_refund_amount)}</b><p>{"Hoàn theo Supplier policy đã áp dụng; số tiền đã hoàn trước đó được khấu trừ."}</p></div>}
-    {cancelOpen&&<section className="cancellationConfirm"><h3>Xác nhận huỷ đơn</h3><p>Hoàn {policy.refund_percent}% vào Balance: <b>{money(policy.refund_amount)}</b>. Đơn sẽ ngừng xử lý trên hệ thống.</p><p>{"Đủ điều kiện policy sẽ tự động huỷ và hoàn. Chưa charge chỉ giải phóng reserve."}</p>{cancelError&&<p role="alert">{cancelError}</p>}<div className="detailActions"><button className="secondaryBtn" disabled={cancelBusy} onClick={()=>setCancelOpen(false)}>Đóng</button><button className="primaryBtn" disabled={cancelBusy} onClick={()=>void submitCancellation()}>{cancelBusy?"Đang huỷ…":"Xác nhận huỷ đơn"}</button></div></section>}
+    {cancelled&&<div className="cancellationSummary"><b>Đã huỷ · Hoàn {String(data.cancellation_refund_percent||0)}%: {money(data.cancellation_refund_amount)}</b><p>{"Hoàn theo chính sách đã áp dụng; số tiền đã hoàn trước đó được khấu trừ."}</p></div>}
+    {cancelOpen&&<section className="cancellationConfirm"><h3>Xác nhận huỷ đơn</h3>{role==="ADMIN"&&policy.refund_percent===90&&<label><input type="checkbox" checked={refundSupport} onChange={e=>setRefundSupport(e.target.checked)}/>Admin hỗ trợ hoàn 100% (thay mặc định 90%)</label>}<p>Hoàn {refundSupport&&role==="ADMIN"?100:policy.refund_percent}% vào Balance: <b>{money(refundSupport&&role==="ADMIN"?policy.support_refund_amount:policy.refund_amount)}</b>. Đơn sẽ ngừng xử lý trên hệ thống.</p><p>{"Đủ điều kiện policy sẽ tự động huỷ và hoàn. Chưa charge chỉ giải phóng reserve."}</p>{cancelError&&<p role="alert">{cancelError}</p>}<div className="detailActions"><button className="secondaryBtn" disabled={cancelBusy} onClick={()=>setCancelOpen(false)}>Đóng</button><button className="primaryBtn" disabled={cancelBusy} onClick={()=>void submitCancellation()}>{cancelBusy?"Đang huỷ…":"Xác nhận huỷ đơn"}</button></div></section>}
     <div className="detailTabs">
       {[["overview","Tổng quan"],["cartons","Carton & SKU"],["tracking","Tracking & Label"],["finance","Giá & Đối soát"],["history","Lịch sử"]].filter(item=>role==="ADMIN"||item[0]!=="finance").map(item=><button key={item[0]} className={tab===item[0]?"active":""} onClick={()=>setTab(item[0])}>{item[1]}</button>)}
     </div>

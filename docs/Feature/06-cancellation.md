@@ -1,5 +1,8 @@
+## Current Owner cancellation — 16/11/2026
+[Feature 30](30-supplier-cancellation-followup.md) supersedes the legacy route-policy cancellation outcome below: no Tracking/Label 100%; issued default 90%, ADMIN may support 100%; shipment started cannot cancel. Atomic pending Supplier follow-up is implemented for ordinary cancellation. Supplier money/cost is never inferred. Full Cancel & Duplicate remains incomplete. The older route-policy section below is historical where contradictory.
+
 ## Owner Edit Order V1 — 16/11/2026
-Confirmed target, current legacy issuance-lock hardening and remaining VND/consent/replacement gaps: [Feature 28](28-order-edit-v1.md). Duplicate must be a new processing Purchase Request, never Draft; existing cancellation policy still applies. Full workflow is not enabled by this change.
+Confirmed target, current legacy issuance-lock hardening and remaining VND/consent/replacement gaps: [Feature 28](28-order-edit-v1.md). Duplicate must be a new processing Purchase Request, never Draft; latest Owner 100/90/ADMIN support/shipped-deny policy applies. Full workflow is not enabled by this change.
 
 # Huỷ đơn & hoàn tiền — GĐ1
 

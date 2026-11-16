@@ -1,4 +1,7 @@
 # Edit Order V1 — partial hardening, integration blocked
+
+## Continuation 16/11 — current status
+[Feature 30](30-supplier-cancellation-followup.md) implements ordinary 100/90 cancellation with ADMIN-only 100% support and atomic pending Supplier follow-up. It supersedes the older unconditional 100% Duplicate requirement below. No BOD Duplicate permission. Cancel & Duplicate, unified edit/consent and Purchase/ledger VND remain incomplete. The source Excel has now been located at /Users/quan/Downloads/Bảng Net Cost Dịch vụ.xlsx; asking for its location again is unnecessary.
 Reviewed 16/11/2026 at starting HEAD 312227e56030bce1437d2f5ec8750257bc75ac21, main, origin lionet-technology/dmd-order-platform. No production/Jenkins work.
 
 ## Confirmed target

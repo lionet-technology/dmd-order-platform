@@ -1,3 +1,6 @@
+## Cancellation / Supplier follow-up — 16/11/2026
+[Feature 30](30-supplier-cancellation-followup.md): ordinary cancellation Owner 100/90/ADMIN support, shipment deny and atomic Supplier pending queue implemented. Full VND operational Purchase, Edit consent and Cancel & Duplicate remain pending; no production rollout.
+
 ## Supplier Cost — 06/11/2026
 - **Đã triển khai** ở `32423f0`: Pending khi Tracking trùng, giữ/nhận giá theo quyền, template phụ phí riêng, xác nhận phụ phí trùng, chống retry cùng key và audit. Xem [quy tắc và giới hạn](09-supplier-reconciliation.md).
 - **Còn mở**: UAT desktop/mobile hai luồng với chứng từ thật, rà soát dữ liệu trùng cũ vẫn ACTIVE, nghiệm thu cách giữ cả hai khoản thực tế khi Emergency dùng lại cùng Tracking, mapping component/FX và quy trình điều chỉnh Supplier Account khi chứng từ cũ đã hạch toán. Retry UI xuyên reload chưa giữ key cũ; nhập lại với key mới có thể thêm dòng chờ.

@@ -1,5 +1,8 @@
 # Service Architecture V1 — Approved Decisions
 
+## CONFIRMED — latest direct Owner cancellation continuation 16/11/2026
+No Tracking/Label: 100%. Any Tracking OR Label before shipment: default 90%, ADMIN may select 100% support. Started shipment cannot cancel. Same policy for ordinary cancellation and Cancel & Duplicate; supersedes older unconditional 100% Duplicate notes. Only ADMIN Duplicate; no inferred BOD permission. Original Supplier follow-up stays pending until explicit operator action; Client refund is independent of Supplier money/cancellation confirmation. [Implementation and remaining gaps](30-supplier-cancellation-followup.md).
+
 Ngày: 14/11/2026. Nguồn ưu tiên: yêu cầu Owner trong phiên triển khai hiện tại; tiếp theo là quyết định trực tiếp truy xuất được và Operational Flow 16/10. Không dùng lời khẳng định của trợ lý làm phê duyệt.
 
 ## CONFIRMED — Owner continuation 14/11/2026 (supersedes older OPEN labels)

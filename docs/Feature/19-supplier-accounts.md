@@ -1,3 +1,6 @@
+## Pending cancellation follow-up — 16/11/2026
+[Feature 30](30-supplier-cancellation-followup.md): original Supplier cancellation record and scoped queue now accompany ordinary cancellation. ADMIN/FINANCE/BOD manage operational follow-up only; existing Supplier money remains FINANCE/BOD. Follow-up status never implies cancellation confirmation, receipt, cost reversal or account posting. No backfill/inferred financial migration.
+
 ## Thay giá Supplier Cost đã hạch toán — 06/11/2026
 
 Chấp nhận chứng từ thay thế chỉ cập nhật Actual Cost và đối soát Order/Lot. Supplier Account giữ nguyên bút toán cũ. Confirm Cost chặn ghi toàn bộ giá thay thế nếu một chứng từ tiền nhiệm đã được hạch toán. Dùng điều chỉnh số dư có chứng từ đối soát cho phần chênh. Phụ phí qua Supplier Cost Adjustment ghi vào Lot trước, không tự phân bổ hoặc ghi sổ Supplier.

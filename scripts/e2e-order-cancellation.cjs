@@ -21,7 +21,8 @@ async function main(){
  for(const actor of [adminLogin,salesLogin,clientLogin])for(const issued of [false,true]){
   const order=await create();if(issued)await issue(order);
   const quote=await call("/api/orders/"+order.id,{cookie:actor.cookie});check(quote.data.cancellation.allowed&&quote.data.cancellation.refund_percent===(issued?90:100)&&quote.data.cancellation.refund_amount===(issued?90:100),"server refund quote for "+actor.data?.user?.role);
-  let response=await call("/api/orders/"+order.id+"/cancel",{method:"POST",cookie:actor.cookie,body:{reason:"HTTP cancellation test",refund_percent:100,refund_amount:999999,actor_user_id:999}});
+  if(actor!==adminLogin){const forged=await call("/api/orders/"+order.id+"/cancel",{method:"POST",cookie:actor.cookie,body:{refund_percent:100}});check(forged.status===403,"non-Admin support rejected");}
+  let response=await call("/api/orders/"+order.id+"/cancel",{method:"POST",cookie:actor.cookie,body:{reason:"HTTP cancellation test",refund_amount:999999,actor_user_id:999}});
   check(!response.data.pending_approval,"Eligible Client/Sales cancellation completes automatically under configured policy");
   check(response.status===200&&response.data.refund_amount===(issued?90:100),"server ignores forged refund or actor");
   const detail=await call("/api/orders/"+order.id,{cookie:client});const event=detail.data.events.find(x=>x.event_type==="REFUND");

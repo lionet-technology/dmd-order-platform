@@ -73,9 +73,9 @@ rejects(()=>replaceOrderTracking({orderId:partial,oldTrackingId:partialTracking.
 rejects(()=>addLedgerEntry({entry_type:"REFUND",reference_type:"ORDER_CANCELLATION",reference_id:"1",amount:1}),"manual refund cannot forge automatic reference");
 rejects(()=>parseCancellationRules({ISSUED:{allowed:true,refund_percent:101}}),"Reject excessive rate");
 rejects(()=>saveCancellationRules(routeId,rules,"",admin.id),"Policy audit reason required");
-const noPolicy=order();db.prepare("UPDATE orders SET supplier='OTHER' WHERE id=?").run(noPolicy);rejects(()=>cancelOrder(noPolicy,admin),"No policy denies Admin too");
+const noPolicy=order();db.prepare("UPDATE orders SET supplier='OTHER' WHERE id=?").run(noPolicy);check(cancelOrder(noPolicy,admin).refund_amount===100,"Owner policy independent of missing supplier route policy");
 const configured=order();saveCancellationRules(routeId,{...rules,PRE_PURCHASE:{allowed:true,refund_percent:72.5}},"New supplier rate",admin.id);
-check(cancelOrder(configured,client).refund_amount===72.5,"Configured custom rate automatic Client refund");
+check(cancelOrder(configured,client).refund_amount===100,"Owner 100 percent supersedes legacy custom rate");
 saveCancellationRules(routeId,rules,"Restore fixture",admin.id);
 const surcharge=order();db.prepare("INSERT INTO ledger_entries(client_user_id,entry_type,direction,amount,reference_type,reference_id) VALUES (?,'ADDITIONAL_FEE','DEBIT',5,'ORDER',?)").run(client.id,String(surcharge));
 check(cancelOrder(surcharge,sales).refund_amount===105,"Refund includes charged surcharge");
@@ -88,7 +88,7 @@ check(cancelOrder(reserveOnly,client).refund_amount===0&&ledger(reserveOnly).len
 check(db.prepare("SELECT status FROM purchase_reserves WHERE order_id=? LIMIT 1").get(reserveOnly).status==='CANCELLED',"Reserve released atomically");
 const shipped=order();db.prepare("UPDATE orders SET fulfillment_started_at=CURRENT_TIMESTAMP WHERE id=?").run(shipped);
 saveCancellationRules(routeId,{...rules,SHIPPED:{allowed:true,refund_percent:20}},"Supplier allows after handover",admin.id);
-check(cancelOrder(shipped,client).refund_amount===20,"Explicit shipped supplier rule permits auto cancellation");
+rejects(()=>cancelOrder(shipped,client),"Shipped always blocked even when legacy route policy allows");
 const deliveredPolicy=order();const deliveredTrack=addOrderTracking({orderId:deliveredPolicy,tracking:"DELIVERED-POLICY"});
 db.prepare("UPDATE order_trackings SET shipment_status='DELIVERED' WHERE id=?").run(deliveredTrack.id);
 rejects(()=>cancelOrder(deliveredPolicy,admin),"Delivered cannot use shipped policy");
@@ -99,7 +99,7 @@ const historyCount=db.prepare("SELECT COUNT(*) n FROM route_cancellation_policy_
 rejects(()=>db.prepare("UPDATE route_cancellation_policy_history SET reason='Changed' WHERE route_id=?").run(routeId),"Policy history immutable");
 check(db.prepare("SELECT COUNT(*) n FROM route_cancellation_policy_history WHERE route_id=?").get(routeId).n===historyCount,"Policy historical versions retained");
 saveCancellationRules(routeId,rules,"Restore shipped deny",admin.id);
-const denied=order();saveCancellationRules(routeId,{...rules,PRE_PURCHASE:{allowed:false,refund_percent:0}},"Supplier denies",admin.id);rejects(()=>cancelOrder(denied,admin),"Admin cannot override denied policy");saveCancellationRules(routeId,rules,"Restore",admin.id);
+const denied=order();saveCancellationRules(routeId,{...rules,PRE_PURCHASE:{allowed:false,refund_percent:0}},"Supplier denies",admin.id);check(cancelOrder(denied,admin).refund_percent===100,"Owner rule supersedes legacy denied policy");saveCancellationRules(routeId,rules,"Restore",admin.id);
 const waiting=order();db.prepare("INSERT INTO cancellation_requests(order_id,requested_by) VALUES (?,?)").run(waiting,client.id);
 delete require.cache[require.resolve("../src/lib/order-cancellation.ts")];require("../src/lib/order-cancellation.ts");
 check(db.prepare("SELECT status FROM cancellation_requests WHERE order_id=?").get(waiting).status==='POLICY_RECHECK'&&ledger(waiting).length===0&&get(waiting).workflow_status!=='CANCELLED',"Migration retains requests without executing refund");

@@ -1,4 +1,5 @@
 "use client";
+import {SupplierCancellationWorkspace} from './supplier-cancellation-workspace';
 import {MANUAL_ORDER_LIMIT,MANUAL_ORDER_LIMIT_MESSAGE} from "@/lib/manual-order-limit";
 import { FinanceWorkspace } from "./finance-role-workspace";
 import {SupplierCostWorkspace} from "./supplier-cost-workspace";
@@ -1109,6 +1110,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
         </>}
 
         {section==="orders"&&<>
+          {role==="ADMIN"&&<details><summary>Đơn huỷ chờ xử lý Supplier</summary><SupplierCancellationWorkspace/></details>}
           <PageHeader eyebrow="OPERATIONS" title="Orders" description={role==="ADMIN"?"Quản lý toàn bộ đơn hàng và trạng thái xử lý.":role==="SALES"?"Quản lý Orders của các Client được phân công.":"Theo dõi Orders của tài khoản Client này."}
             actions={role==="CLIENT"?<button className="primaryBtn" onClick={()=>{setClientDraft(null);setClientPurchase(true)}}>＋ Tạo / Import & Đặt mua dịch vụ</button>:<><button className="secondaryBtn" onClick={()=>setImportKind(role==="ADMIN"?"orders":"sales_orders")}>⇩ Import</button>{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkTracking(true)}>▦ Mua đơn hàng loạt</button>}{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkReplacement(true)}>⇄ Đổi Tracking</button>}<button className="primaryBtn" onClick={()=>openEntry("order")}>＋ Tạo Order</button></>}/>
           <div className="panel dataPanel">
