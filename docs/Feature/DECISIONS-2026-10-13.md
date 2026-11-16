@@ -1,3 +1,11 @@
+## Current requirements — handoff 16/11/2026
+[Canonical full handoff](DMD_Service_Architecture_V1_Implementation_Handoff_2026-11-16.md) and [audited HEAD gaps](31-service-v1-build-gap.md) supersede contrary dated requirements below. Earlier dated sections are historical where inconsistent, not concurrent current rules.
+- APPROVED: cancellation policy per Service/Sub-Service/Supplier route; no global 90/100. Admin may support 100%, never bypass shipment denial. Claim refund is separate. Combined Duplicate uses policy with optional Admin support, not unconditional 100%.
+- APPROVED: Edit Order shipping/service only before any Tracking OR Label; separate manual Edit Selling Price offer and Add Tracking/Label. Selling correction after charge appends delta/history without reopening Purchase.
+- APPROVED: Add-on revenue correction replaces old absolute revenue lock. Financial posting/adjustment may exceed Credit Limit without creating Debt; Purchase still gates funds.
+- APPROVED: VND fractional values retained; UPS divisor 5000, bands (min,max], priority SDS→VTT→JD. Global FX/UPS variables update new Net/Base/Retail without promoting pending account versions.
+- IMPLEMENTED / STAGED / MISSING: use the linked HEAD gap, not old baseline tables. Operational USD is not VND simply by changing labels. OPEN supplier policy values, ePacket FX/fee relation, source price/zone validation and manual-offer service change stay OPEN.
+
 ## Owner chốt Supplier Cost — 06/11/2026
 Chứng từ tổng theo Tracking trùng tự chờ xử lý, giữ nguyên Actual Cost và GP. Admin/Finance chỉ chọn giữ giá cũ hoặc nhận giá mới. Quyết định này thay phương án cũ cho cộng hai giá ngay trong luồng xử lý trùng. Khi giá mới thực chất là phụ phí, giữ giá cũ và dùng template riêng **Tracking | Cost bổ sung | Lý do**. Phụ phí trùng Tracking, số tiền và lý do chờ Admin/Finance xác nhận ghi thêm hoặc bỏ qua. Một lần gửi lại cùng thao tác phải dùng cùng khóa kỹ thuật, còn lần phát sinh thật cần xác nhận riêng. Lưu audit và áp dụng RBAC trên server. Phân loại phụ phí chi tiết hoãn. [Hành vi hiện hành](09-supplier-reconciliation.md).
 

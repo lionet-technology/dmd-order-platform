@@ -1,5 +1,7 @@
 # Feature Index — DMD Order Platform
 
+**Current requirements 16/11:** [Full implementation handoff](DMD_Service_Architecture_V1_Implementation_Handoff_2026-11-16.md) and [HEAD gap / superseded rules / build order](31-service-v1-build-gap.md). APPROVED is not IMPLEMENTED; OPEN values are not defaults. These override contrary dated sections below.
+
 - [Owner 16/11: cancellation 100/90, Admin support and pending Supplier follow-up](30-supplier-cancellation-followup.md) — ordinary cancellation implemented; VND Purchase / Edit / Duplicate still incomplete.
 Cập nhật 14/11/2026. **CONFIRMED** = quyết định có nguồn; **CURRENT** = hành vi kiểm qua code; **PROPOSED** = chưa duyệt; **OPEN** = thiếu rule/bằng chứng/số liệu. Không nhãn nào tự chứng nhận production.
 

@@ -24,3 +24,5 @@ SQLite mặc định: `data/dmd-finance-ops.db`; target tùy chọn qua `DMD_DB_
 Kiểm chứng: `npm test`, `npm run typecheck`, `npm run lint`, `npm run build`. Node và native better-sqlite3 phải cùng kiến trúc/ABI. Tests phải dùng DB tạm, không kế thừa DB vận hành. Không cần Jenkins.
 
 Giá Net thật chỉ nhập từ Excel chuẩn của Owner; không suy giá từ ảnh/PDF hay activate fixture.
+
+Current Service V1 requirements: [full handoff](docs/Feature/DMD_Service_Architecture_V1_Implementation_Handoff_2026-11-16.md), [implementation gaps](docs/Feature/31-service-v1-build-gap.md). Approval is distinct from implementation; operational VND cutover is pending.
