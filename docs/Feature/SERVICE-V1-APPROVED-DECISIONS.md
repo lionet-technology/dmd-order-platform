@@ -1,5 +1,14 @@
 # Service Architecture V1 — Approved Decisions
 
+## CONFIRMED — Owner answers 16/11/2026: pending Edit and Duplicate failure
+Source: direct Owner answers in this continuation; these decisions supersede the earlier proposal to rollback the source cancellation when the new Purchase lacks price/funds.
+- Edit after Purchase but before any Tracking/Label: keep the original Reserve while awaiting Client confirmation and block issuance. On Client confirmation (or authorized Admin/scoped Sales override), validate the proposed revision and current Balance/Credit/Debt gates before atomically replacing the Reserve. Insufficient funds leaves the revision pending and preserves the original Reserve.
+- Cancel & Duplicate: cancel/refund the original under the common 100/90/ADMIN-support policy and create one source-linked replacement in PURCHASING / PURCHASE REQUESTED. If the replacement lacks a valid price or sufficient purchasing room, retain the source cancellation and replacement with an explicit pending reason. Do not roll back the source merely because the new Purchase is financially ineligible.
+- A pending replacement is not an accepted Supplier purchase: do not fabricate a zero-price quote, copy the old quote/account or write a new Reserve/Charge to force processing. Retain a stable request/source relation; retries cannot cancel/refund the source or create a replacement twice. Supplier execution waits for a valid current quote and the normal financial gate. An unavailable automatic price remains a pricing issue, not an implicit extension of manual Awaiting Quote eligibility.
+- Source Supplier cancellation follow-up remains PENDING independently of replacement purchase or Client refund. No automatic Supplier cost/refund.
+Implementation status: approved target only; the pending-edit and Cancel & Duplicate commands are not yet delivered by the documentation update.
+
+
 ## CONFIRMED — latest direct Owner cancellation continuation 16/11/2026
 No Tracking/Label: 100%. Any Tracking OR Label before shipment: default 90%, ADMIN may select 100% support. Started shipment cannot cancel. Same policy for ordinary cancellation and Cancel & Duplicate; supersedes older unconditional 100% Duplicate notes. Only ADMIN Duplicate; no inferred BOD permission. Original Supplier follow-up stays pending until explicit operator action; Client refund is independent of Supplier money/cancellation confirmation. [Implementation and remaining gaps](30-supplier-cancellation-followup.md).
 
