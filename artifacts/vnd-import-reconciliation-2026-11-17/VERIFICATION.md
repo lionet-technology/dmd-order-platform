@@ -1,0 +1,28 @@
+# VNĐ post-shipping import / Supplier reconciliation — 17/11/2026
+Canonical repo: /Users/quan/Developer/report. Starting HEAD/main and fetched origin/main: 05c592650eb455d0074fb4cc8805460d04591dfc, ahead/behind 0/0. Re-fetched before commit; still 0/0. Initial and preserved owner changes: modified AGENTS.md, untracked Codex/. No workbook/source edits.
+
+## Delivered and tested slice
+- Supplier Excel TOTAL / commercial SUPPLEMENT staging, 1–200 rows, typed errors including weight above purchased billable weight, Net above estimate, missing estimate, duplicates within file/history, unmatched/ambiguous identifiers and missing supplemental base. All imported rows await review. Unknown rows remain visible; no True/Actual/payable/GP before accept.
+- Finance/BOD selected accept, Admin/Finance/BOD skip, immutable source/decision snapshots and reason. Explicit manual Lot mapping for unresolved rows, same-Supplier charged/cancelled VNĐ eligibility and current-approved CAS. Higher Net is a reviewable variance, not an absolute denial.
+- Immediate atomic bulk review, stale/conflicting/duplicate selection rollback, one accepted source per Lot per batch. TOTAL posts replacement delta; SUPPLEMENT adds only its explicit commercial cost after a previously approved base. Replays cannot double-post.
+- Existing manual single-document cost workflow is retained alongside the new Excel queue; it is not silently migrated or relabelled.
+- Client Excel surcharge/tax preview and explicit confirm, Admin/assigned Sales only, exact decimal posting into existing ORDER_SURCHARGE/ORDER_TAX. Client+row reference prevents duplicate posting across new request keys; changed source content rejects. Entire batch/audit/ledger rolls back on error. Does not generate Debt, Supplier cost/payable or rewrite reserve/issued Statement.
+- Commercial performance revenue includes surcharge, tax stays outside commercial revenue/GP. Existing commission reference scope (shipping/correction only) is deliberately retained; full supplementary-revenue/commission reconciliation remains unfinished.
+- Fixed single-Lot ePacket estimate fallback: a quote with a lots array containing billable weight/rate but no per-Lot Net uses Order snapshot Net only for one Lot. Multi-Lot still does not invent allocation.
+- Approved raw-rate/service-profile rules and manual Claim/watchlist/link direction recorded in Feature 40 and Approved Decisions; no all-in/partial chooser, extra assumed mid-mile, automatic Claim, carrier void or Supplier receivable from cancellation.
+
+## Verification
+- Full regression PASS: **66 suites** (test.log).
+- Supplier import suite PASS: **40 assertions**: error types, unresolved retention/manual mapping, duplicate and stale review rejection, exact total/supplement deltas, same-key replay, cross-key duplicate warning, two-Lot bulk accept, immutable source/decision and injected rollback, unchanged Client journal/Balance.
+- Client import suite PASS: **23 assertions**: assigned-role scope, preview/posting separation in browser, cross-key source dedupe/conflict, batch rollback, positive decimal validation, no automatic Debt, cancellation collected total includes both surcharge/tax, commercial/tax versus retained commission boundary, immutable source and cancelled Order rejection.
+- Build, typecheck, lint PASS (lint no warnings); build-isolated.cjs uses owned disposable SQLite. Logs/statuses in this directory. Node 20.20.2 matches installed native SQLite.
+- Actual production-build Chrome UAT PASS: **62 checks / five authenticated roles** on owned disposable DB and localhost. Includes Excel Client preview/no posting, exact confirm, cross-key reimport, immutable issued Statement, Supplier Excel unmatched row retention/error types, Admin cannot approve payable, Finance explicit accept with exact replacement delta, unselected row remains pending. Existing Claim pool/partial Bank/Balance, Supplier receivable/offset/reversal, privacy, Statement, BOD report, shipping edit and mobile checks retained. No page errors. Supplier queue screenshot visually inspected.
+- Initial proposed commission inclusion was rejected by the existing commission regression. Retained the approved/reference scope instead of changing eligibility; reran affected suites and all 66. Final logs are the corrected run.
+- Final diff whitespace checked; source SHA256 evidence stored separately. Workbook SHA256 unchanged: a41d4e540f8e0023b859b32c6b415d744a6c9e095dd3f3b3a4590327b9fb68d2. Owner AGENTS.md checksum unchanged during work: 7d476b36bb045b832b0ef7b79e31c6927d96717330b6254204b3f11c5538dda6.
+
+## Completed versus remaining
+**This bounded import/reconciliation slice is delivered; the entire V1 build is not complete.** Supplier tax/pass-through-specific import/accounting is not invented as commercial SUPPLEMENT. Supplier period close/reopen/late adjustments, final GP/commission reconciliation, Control Tower completion and real-document pilot/target restore rehearsal remain unfinished. Current cost view retains its old single-document review; queue unification and high-volume pagination/performance remain later refinements.
+
+Claim/watchlist/one-or-many-Order manual case/linking direction is documented, not built deeply. Current VNĐ Claim financial approval journal is not a Control Tower Complete Claim lifecycle. That belongs to the approved next short Claim/Refund phase. No additional approval layers were added.
+
+No Jenkins/production/carrier call, real bank transfer, operator DB reset, workbook mutation or owner AGENTS.md/Codex changes. Commit uses explicit task paths only; push is ordinary fast-forward. Final commit/remote equality is reported in the chat.

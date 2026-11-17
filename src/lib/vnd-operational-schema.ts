@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import {installSupplierImportSchema} from './vnd-supplier-import';
 /** Explicit new-account cutover only; never reinterpret legacy USD rows. */
 export function installVndOperationalSchema(db:Database.Database) {
  db.exec(`
@@ -9,6 +10,7 @@ export function installVndOperationalSchema(db:Database.Database) {
  CREATE TABLE IF NOT EXISTS vnd_addons(id INTEGER PRIMARY KEY,client_id INTEGER NOT NULL REFERENCES vnd_accounts(client_id),name TEXT NOT NULL,revenue TEXT NOT NULL,cost TEXT,supplier TEXT NOT NULL DEFAULT '',note TEXT NOT NULL DEFAULT '',revision INTEGER NOT NULL DEFAULT 1,actor_id INTEGER NOT NULL REFERENCES users(id),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
  CREATE TABLE IF NOT EXISTS vnd_addon_history(id INTEGER PRIMARY KEY,addon_id INTEGER NOT NULL REFERENCES vnd_addons(id),data_json TEXT NOT NULL,actor_id INTEGER NOT NULL REFERENCES users(id),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
  CREATE TABLE IF NOT EXISTS vnd_replacements(id INTEGER PRIMARY KEY,source_order_id INTEGER NOT NULL REFERENCES orders(id),replacement_order_id INTEGER NOT NULL UNIQUE REFERENCES orders(id),actor_id INTEGER NOT NULL REFERENCES users(id),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+ CREATE TABLE IF NOT EXISTS vnd_charge_sources(id INTEGER PRIMARY KEY,client_id INTEGER NOT NULL REFERENCES vnd_accounts(client_id),order_id INTEGER NOT NULL REFERENCES orders(id),kind TEXT NOT NULL,amount TEXT NOT NULL,reference TEXT NOT NULL,reason TEXT NOT NULL,actor_id INTEGER NOT NULL REFERENCES users(id),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(client_id,reference));
  CREATE TABLE IF NOT EXISTS vnd_destinations(order_id INTEGER PRIMARY KEY REFERENCES orders(id),china_region TEXT CHECK(china_region IN ('SOUTH','OTHER')));
  CREATE TABLE IF NOT EXISTS vnd_accounts(client_id INTEGER PRIMARY KEY REFERENCES users(id),credit_limit TEXT NOT NULL DEFAULT '0',actor_id INTEGER NOT NULL REFERENCES users(id),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
  CREATE TABLE IF NOT EXISTS vnd_purchase_requests(id INTEGER PRIMARY KEY,order_id INTEGER NOT NULL UNIQUE REFERENCES orders(id),client_id INTEGER NOT NULL REFERENCES vnd_accounts(client_id),status TEXT NOT NULL CHECK(status IN ('AWAITING_QUOTE','PRICE_CONFIRMATION_REQUIRED','AWAITING_FUNDS','RESERVED','CHARGED','CANCELLED')),offer TEXT,revision INTEGER NOT NULL DEFAULT 0,accepted_revision INTEGER,confirmed_at TEXT NOT NULL,request_actor_id INTEGER NOT NULL REFERENCES users(id),reserve TEXT NOT NULL DEFAULT '0',charged_offer TEXT);
@@ -33,9 +35,10 @@ export function installVndOperationalSchema(db:Database.Database) {
  CREATE UNIQUE INDEX IF NOT EXISTS vnd_supplier_one_reversal ON vnd_supplier_claim_events(settlement_id) WHERE kind='REVERSE';
  CREATE TABLE IF NOT EXISTS vnd_claim_notifications(id INTEGER PRIMARY KEY,recipient_id INTEGER NOT NULL REFERENCES users(id),client_id INTEGER NOT NULL REFERENCES users(id),event_id INTEGER NOT NULL REFERENCES vnd_refund_events(id),UNIQUE(recipient_id,event_id));
  CREATE TABLE IF NOT EXISTS vnd_claim_reads(notification_id INTEGER NOT NULL REFERENCES vnd_claim_notifications(id),recipient_id INTEGER NOT NULL REFERENCES users(id),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(notification_id,recipient_id));`);
+ installSupplierImportSchema(db);
  for(const table of ['vnd_supplier_claims','vnd_supplier_claim_events','vnd_claim_notifications','vnd_claim_reads'])for(const op of ['UPDATE','DELETE'])db.exec(`CREATE TRIGGER IF NOT EXISTS immutable_${table}_${op} BEFORE ${op} ON ${table} BEGIN SELECT RAISE(ABORT,'Immutable VND claim history'); END;`);
  for(const table of ['vnd_supplier_costs','vnd_supplier_reviews','vnd_supplier_ledger'])for(const op of ['UPDATE','DELETE'])db.exec(`CREATE TRIGGER IF NOT EXISTS immutable_${table}_${op} BEFORE ${op} ON ${table} BEGIN SELECT RAISE(ABORT,'Immutable VND supplier history'); END;`);
  for(const table of ['vnd_accounts'])db.exec(`CREATE TRIGGER IF NOT EXISTS immutable_${table}_delete BEFORE DELETE ON ${table} BEGIN SELECT RAISE(ABORT,'VND account cutover is permanent'); END;`);
- for(const table of ['vnd_ledger','vnd_commands','vnd_history','vnd_auto_quote_history','vnd_replacements','vnd_addon_history','vnd_statements','vnd_debt_events','vnd_debt_daily'])for(const op of ['UPDATE','DELETE'])
+ for(const table of ['vnd_charge_sources','vnd_ledger','vnd_commands','vnd_history','vnd_auto_quote_history','vnd_replacements','vnd_addon_history','vnd_statements','vnd_debt_events','vnd_debt_daily'])for(const op of ['UPDATE','DELETE'])
  db.exec(`CREATE TRIGGER IF NOT EXISTS immutable_${table}_${op} BEFORE ${op} ON ${table} BEGIN SELECT RAISE(ABORT,'Immutable VND history'); END;`);
 }

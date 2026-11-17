@@ -17,7 +17,7 @@ function readReport(month:string){
   const key=[o.service,o.sub_service,o.client_user_id,o.sales_user_id,o.supplier].join(':');
   const group=groups.get(key)??{service:String(o.service),sub_service:String(o.sub_service),client_id:Number(o.client_user_id),sales_user_id:o.sales_user_id,orders:0,revenue:'0',estimated_net:'0',estimated_base:'0',cancelled:0,actual_cost_status:'NOT_RECONCILED',missing_estimate:false,refunds:'0',supplier:String(o.supplier)};
   group.orders++;if(o.status==='CANCELLED')group.cancelled++;
-  const entries=db.prepare("SELECT * FROM vnd_ledger WHERE order_id=? AND kind IN ('ORDER_CHARGE','ORDER_CORRECTION')").all(o.id) as Row[];
+  const entries=db.prepare("SELECT * FROM vnd_ledger WHERE order_id=? AND kind IN ('ORDER_CHARGE','ORDER_CORRECTION','ORDER_SURCHARGE')").all(o.id) as Row[];
   group.revenue=addVnd(group.revenue,subtractVnd('0',sumVnd(entries.map(e=>String(e.delta)))));
   const q=db.prepare('SELECT snapshot_json FROM vnd_auto_quotes WHERE order_id=?').get(o.id) as Row|undefined;
   if(!q&&entries.length)group.missing_estimate=true;

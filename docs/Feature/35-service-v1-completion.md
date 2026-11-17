@@ -1,3 +1,6 @@
+## VNĐ build continuation — 17/11/2026
+[Feature 40](40-vnd-post-shipping-import-reconciliation.md) records current import/reconciliation behavior, money/reporting boundaries and the approved next-phase manual Claim/watchlist direction. Supplier TOTAL/SUPPLEMENT queue and Client surcharge/tax import are distinct; no import automatically creates a Claim/refund. Full V1/pilot remains partial.
+
 ## Claim / Supplier continuation — 17/11/2026
 [Feature 37](37-vnd-claims-supplier.md) records the next partial VNĐ increment and supersedes earlier blanket Claim/Supplier absence below only within that documented scope. Remaining implementation and actual OPEN dependencies remain explicit. No V1 or pilot completion.
 

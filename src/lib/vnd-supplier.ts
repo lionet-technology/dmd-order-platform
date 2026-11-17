@@ -1,4 +1,5 @@
 import {db} from './db';
+import {supplierImportView,applySupplierImport} from './vnd-supplier-import';
 import {applySupplierClaim,supplierClaimView} from './vnd-supplier-claims';
 import type {AuthUser} from './auth';
 import {canonicalEnumValue} from './enums';
@@ -13,7 +14,7 @@ export function vndLotEstimate(lotId:number){
  const lot=db.prepare('SELECT * FROM order_lots WHERE id=?').get(lotId) as Row|undefined;if(!lot)return null;
  const row=db.prepare('SELECT snapshot_json FROM vnd_auto_quotes WHERE order_id=?').get(lot.order_id) as Row|undefined;if(!row)return null;
  const quote=JSON.parse(String(row.snapshot_json));
- if(Array.isArray(quote.lots)){const q=quote.lots.find((l:Row)=>l.lot_id===lotId);return typeof q?.selected?.net_vnd==='string'?q.selected.net_vnd:typeof q?.net_vnd==='string'?q.net_vnd:null;}
+ if(Array.isArray(quote.lots)){const q=quote.lots.find((l:Row)=>l.lot_id===lotId);const value=q?.selected?.net_vnd??q?.net_vnd;if(typeof value==='string')return value;}
  const count=(db.prepare('SELECT count(*) n FROM order_lots WHERE order_id=?').get(lot.order_id) as {n:number}).n;
  return count===1&&typeof quote.net_vnd==='string'?quote.net_vnd:null;
 }
@@ -23,9 +24,9 @@ function readSupplier(actor:AuthUser,supplierRaw:unknown){
  const costs=db.prepare('SELECT c.*,l.order_id,l.lot_number FROM vnd_supplier_costs c JOIN order_lots l ON l.id=c.lot_id WHERE c.supplier=? ORDER BY c.id DESC').all(supplier) as Row[];
  const reviews=db.prepare('SELECT r.* FROM vnd_supplier_reviews r JOIN vnd_supplier_costs c ON c.id=r.cost_id WHERE c.supplier=? ORDER BY r.id').all(supplier);
  const projection=costs.map(c=>({...c,estimated:vndLotEstimate(Number(c.lot_id)),approved_cost_id:approvedVndLot(Number(c.lot_id))?.id??null}));
- if(actor.role==='ADMIN')return {currency:'VND',supplier,costs:projection,reviews};
+ if(actor.role==='ADMIN')return {currency:'VND',supplier,costs:projection,reviews,import_rows:supplierImportView(supplier)};
  const entries=db.prepare('SELECT * FROM vnd_supplier_ledger WHERE supplier=? ORDER BY id').all(supplier) as Row[];
- return {currency:'VND',supplier,costs:projection,reviews,...supplierClaimView(supplier),payable:sumVnd(entries.map(e=>String(e.delta))),entries};
+ return {currency:'VND',supplier,costs:projection,reviews,import_rows:supplierImportView(supplier),...supplierClaimView(supplier),payable:sumVnd(entries.map(e=>String(e.delta))),entries};
 }
 export function vndSupplierAction(actor:AuthUser,input:Row){
  return db.transaction(()=>{
@@ -34,7 +35,9 @@ export function vndSupplierAction(actor:AuthUser,input:Row){
  const prior=db.prepare('SELECT * FROM vnd_commands WHERE request_key=?').get(key) as Row|undefined;
  if(prior){if(prior.actor_id!==actor.id||prior.payload!==payload)throw Error('request_key đã dùng.');return vndSupplierView(actor,input.supplier);}
  const supplier=canonicalEnumValue('SUPPLIER',input.supplier,'',{allowInactive:true});
- if(action.startsWith('claim_')){
+ if(action==='import'||action==='review_import'){
+  applySupplierImport(actor,supplier,input,reason);
+ }else if(action.startsWith('claim_')){
   applySupplierClaim(actor,supplier,input,reason);
  }else if(action==='submit'){
   let lotId=Number(input.lot_id);

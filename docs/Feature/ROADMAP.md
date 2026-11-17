@@ -1,3 +1,6 @@
+## Build priorities — Owner 17/11/2026
+[Feature 40](40-vnd-post-shipping-import-reconciliation.md) delivers a bounded import/reconciliation slice: Client surcharge/tax, Supplier commercial supplemental costs, typed error queue and atomic selected review. Next short phase: Claim/Refund case completion semantics, manual one/many-Order cases, watchlists and Client/Supplier linking. Do not turn this build into full Claim redesign. Supplier period locks, GP/commission reconciliation and real pilot remain separate incomplete work.
+
 ## Final-source automatic Purchase increment — 17/11/2026
 [Feature 34](34-service-v1-final-source-purchase.md) extends new-account VNĐ Purchase to ePacket Standard/Eco/EU and Yun via final Excel (2), existing Review/Publish and exact Reserve/FIFO/Charge. It supersedes earlier blanket statements that only Chuyên tuyến is admitted. UPS has a source resolver only; operational UPS, auto EU routing, Shipping Edit, Duplicate, Add-on and financial reporting cutover remain pending. [Source index](SERVICE-V1-SOURCE-INDEX.md) closes source identity and fixed-VND ePacket fee/FX relation only.
 

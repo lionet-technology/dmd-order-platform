@@ -174,6 +174,32 @@ export function vndAction(actor:AuthUser,input:Row){
    const delta=subtractVnd(String(prior?.revenue??'0'),revenue);
    if(delta!=='0')append(clientId,null,prior?'ADDON_CORRECTION':'ADDON_REVENUE',delta,reason+' [Add-on '+addonId+']',actor.id,key);
    db.prepare('INSERT INTO vnd_addon_history(addon_id,data_json,actor_id) VALUES (?,?,?)').run(addonId,JSON.stringify({before:prior??null,after:{name,revenue,cost,supplier,note},reason}),actor.id);
+  }else if(action==='import_charges'){
+   if(!['ADMIN','SALES'].includes(actor.role)||!reason)throw Error('Import phí/thuế cần Admin/Sales và lý do.');
+   if(!Array.isArray(input.items)||!input.items.length||input.items.length>200)throw Error('Import 1–200 dòng.');
+   const seen=new Set<string>();
+   for(const raw of input.items as Row[]){
+    const kind=String(raw.kind),reference=String(raw.reference??'').trim(),note=String(raw.reason??'').trim();
+    if(!['surcharge','tax'].includes(kind)||!reference||reference.length>200||!note||note.length>2000)throw Error('Cần loại surcharge/tax, tham chiếu dòng duy nhất và lý do.');
+    if(seen.has(reference))throw Error('Trùng tham chiếu trong file.');seen.add(reference);
+    const amount=nonnegative(raw.amount);if(compareVnd(amount,'0')<=0)throw Error('Phí/thuế phải dương.');
+    let id=Number(raw.order_id);
+    if(raw.order_code!==undefined){
+     if(raw.order_id!==undefined)throw Error('Chọn Order ID hoặc DB ID.');
+     const matches=db.prepare('SELECT id FROM orders WHERE client_user_id=? AND order_id=?').all(clientId,String(raw.order_code).trim()) as Row[];
+     if(matches.length!==1)throw Error('Order ID không match duy nhất trong Client.');id=Number(matches[0].id);
+    }
+    const o=order(id);if(Number(o.client_user_id)!==clientId)throw Error('Order không thuộc Client.');
+    const r=vndRequest(id);if(r?.status!=='CHARGED')throw Error('Phí/thuế chỉ nhập cho Order VNĐ đã charge và chưa huỷ.');
+    const priorSource=db.prepare('SELECT * FROM vnd_charge_sources WHERE client_id=? AND reference=?').get(clientId,reference) as Row|undefined;
+    if(priorSource){
+     if(priorSource.order_id!==id||priorSource.kind!==kind||priorSource.amount!==amount||priorSource.reason!==note)throw Error('Tham chiếu đã dùng với nội dung khác.');
+     continue;
+    }
+    const sourceId=Number(db.prepare('INSERT INTO vnd_charge_sources(client_id,order_id,kind,amount,reference,reason,actor_id) VALUES (?,?,?,?,?,?,?)').run(clientId,id,kind,amount,reference,note,actor.id).lastInsertRowid);
+    append(clientId,id,kind==='tax'?'ORDER_TAX':'ORDER_SURCHARGE',subtractVnd('0',amount),note+' ['+reference+']',actor.id,'vnd-import-charge:'+sourceId);
+    history(clientId,id,'IMPORT_CHARGE',{source_id:sourceId,kind,amount,reference,reason:note,batch_reason:reason},actor.id);
+   }
   }else if(action==='duplicate'){
    if(actor.role!=='ADMIN'||!reason)throw Error('Cancel & Duplicate cần Admin và lý do.');
    const o=order(Number(input.order_id));if(Number(o.client_user_id)!==clientId)throw Error('Order không thuộc Client.');

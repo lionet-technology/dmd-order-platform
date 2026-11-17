@@ -1,3 +1,6 @@
+## VNĐ build continuation — 17/11/2026
+[Feature 40](40-vnd-post-shipping-import-reconciliation.md) records current import/reconciliation behavior, money/reporting boundaries and the approved next-phase manual Claim/watchlist direction. Supplier TOTAL/SUPPLEMENT queue and Client surcharge/tax import are distinct; no import automatically creates a Claim/refund. Full V1/pilot remains partial.
+
 ## VND continuation — 17/11/2026
 UPS VND generic Purchase export now includes supplier_account per carton/Lot; configured templates may use supplier_account or lot.supplier_account in Lot/Carton contexts. Export requires accepted valid reserve, refreshes unissued price/Net, and reads the selected account snapshot. It never sends a file to Supplier automatically.
 

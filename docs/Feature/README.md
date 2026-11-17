@@ -1,3 +1,6 @@
+## Current build continuation — 17/11/2026
+[Feature 40](40-vnd-post-shipping-import-reconciliation.md): Supplier VNĐ error queue/bulk review, commercial supplemental-cost import and Client surcharge/tax preview/import. Approved Claim watchlist/case-link direction is documented for the next phase; full V1 remains partial.
+
 ## Owner clarification — 17/11/2026 (supersedes earlier OPEN coverage notes)
 - CONFIRMED: workbook Net for ePacket Standard/Eco already includes mid-mile + last-mile. Detailed component accounting is deferred to a later phase; it is not a V1 blocker and must not be added again to inclusive Net. Estimated workbook Net remains distinct from Supplier-approved Actual and finalized GP.
 - CONFIRMED: Supplier cancellation/void policy and carrier evidence must be set up per service/route. Manual follow-up with Admin choosing a refund percentage/amount is approved. Values/evidence still need operational configuration; no default percentage, automatic carrier void or cost reversal follows from internal cancellation. Supplier money remains explicitly reconciled through its financial workflow.
