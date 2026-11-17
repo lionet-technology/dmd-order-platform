@@ -1,3 +1,7 @@
+## Owner clarification — 17/11/2026 (supersedes earlier OPEN coverage notes)
+- CONFIRMED: workbook Net for ePacket Standard/Eco already includes mid-mile + last-mile. Detailed component accounting is deferred to a later phase; it is not a V1 blocker and must not be added again to inclusive Net. Estimated workbook Net remains distinct from Supplier-approved Actual and finalized GP.
+- CONFIRMED: Supplier cancellation/void policy and carrier evidence must be set up per service/route. Manual follow-up with Admin choosing a refund percentage/amount is approved. Values/evidence still need operational configuration; no default percentage, automatic carrier void or cost reversal follows from internal cancellation. Supplier money remains explicitly reconciled through its financial workflow.
+
 ## Current implementation delta — 16/11/2026
 [Per-route cancellation](06-cancellation.md) replaces this feature's earlier global 100/90 rule. Cancellation now requires a confirmed route/stage policy; Admin support can raise its percentage to 100 without bypassing shipment/denial. Supplier queue snapshot/history/permissions and money independence are unchanged. TEST policies are explicit in both domain and HTTP fixtures; no supplier rates are seeded into the application.
 The older "Confirmed Owner decision" and "Money / version boundary" sections below record the prior implementation and no longer define refund rates.

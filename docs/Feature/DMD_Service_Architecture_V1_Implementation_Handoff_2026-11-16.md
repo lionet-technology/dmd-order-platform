@@ -1,3 +1,7 @@
+## Owner clarification — 17/11/2026 (supersedes earlier OPEN coverage notes)
+- CONFIRMED: workbook Net for ePacket Standard/Eco already includes mid-mile + last-mile. Detailed component accounting is deferred to a later phase; it is not a V1 blocker and must not be added again to inclusive Net. Estimated workbook Net remains distinct from Supplier-approved Actual and finalized GP.
+- CONFIRMED: Supplier cancellation/void policy and carrier evidence must be set up per service/route. Manual follow-up with Admin choosing a refund percentage/amount is approved. Values/evidence still need operational configuration; no default percentage, automatic carrier void or cost reversal follows from internal cancellation. Supplier money remains explicitly reconciled through its financial workflow.
+
 ## Verified source addendum — 16/11/2026
 [Final Excel (2) source index](SERVICE-V1-SOURCE-INDEX.md) supersedes earlier workbook/PDF references and the USD surcharge descriptions below. Fixed-VND ePacket charges are 135000 (>55cm), 285000 (>75cm, noncumulative), 405000 non-cont. Fee-FX relation and source availability are verified CLOSED. Remaining operational gates and cost-component coverage are not closed by this addendum.
 

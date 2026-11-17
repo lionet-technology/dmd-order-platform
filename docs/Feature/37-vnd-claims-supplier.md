@@ -1,3 +1,7 @@
+## Owner clarification — 17/11/2026 (supersedes earlier OPEN coverage notes)
+- CONFIRMED: workbook Net for ePacket Standard/Eco already includes mid-mile + last-mile. Detailed component accounting is deferred to a later phase; it is not a V1 blocker and must not be added again to inclusive Net. Estimated workbook Net remains distinct from Supplier-approved Actual and finalized GP.
+- CONFIRMED: Supplier cancellation/void policy and carrier evidence must be set up per service/route. Manual follow-up with Admin choosing a refund percentage/amount is approved. Values/evidence still need operational configuration; no default percentage, automatic carrier void or cost reversal follows from internal cancellation. Supplier money remains explicitly reconciled through its financial workflow.
+
 ## VNĐ receivable / notification continuation — 17/11/2026
 [Feature 38](38-vnd-supplier-receivables.md) adds a separate VNĐ Supplier receivable/offset/correction/reversal slice and durable scoped Claim decision/refund notifications. Legacy USD rules below are not a VNĐ migration. Supplementary imports, Supplier period closing, Control Tower integration and full pilot remain pending.
 
@@ -25,7 +29,7 @@ This is a separate new VNĐ journal, not an opening-balance migration from old U
 ## Reporting / access
 BOD-only enterprise report adds Claim obligation deltas by processing month/category and historical Sales when every linked Order has the same Sales; mixed/missing attribution remains review. Actual Bank execution is reported by executed month, independently of wallet movements and approval. No second GP reduction for payout. Commission performance marks Claim groups separately from cancellation and non-Claim groups, but does not allocate multi-Order pool amounts or fabricate GP-minus-Refund totals. Pending Claims are a group marker, not a financial refund.
 
-Supplier approved total costs are exposed separately per Order. Missing Lots remain missing. ePacket Standard/Eco component coverage is explicitly OPEN and does not certify fully actual GP. Broader actual GP and commission payout remain unaccepted.
+Supplier approved total costs are exposed separately per Order. Missing Lots remain missing. ePacket Standard/Eco workbook Net includes mid-mile + last-mile (Owner 17/11); component detail is deferred. This estimate-scope confirmation alone does not certify Supplier Actual or fully actual GP. Broader actual GP and commission payout remain unaccepted.
 
 Server authorization checks current active actor and Client ownership. Sales/Client cannot read Supplier endpoint; Admin/Finance/Sales/Client cannot read enterprise report. No added inheritance for BOD Claim decisions or Admin Supplier financial ledger.
 
@@ -42,4 +46,4 @@ Actual production-build Chrome UAT exposed SQLITE_BUSY while finalizing a Statem
 ## Remaining implementation, distinguished from OPEN decisions
 Not delivered in this increment: VNĐ Supplier surcharge template/import mappings and duplicate supplementary confirmation, Supplier Claim receivable/partial receipts/offset/reversal cutover, Supplier period locking/late-period references, durable Claim notifications/acknowledgements and integration with public Control Tower cases. Existing USD implementations are not certified VNĐ. These are implementation backlog, not requests to reapprove established rules.
 
-Actual OPEN dependencies: ePacket inclusive cost-component mapping/coverage; exact unconfigured Supplier cancellation/void policies and real carrier evidence. Mixed-Sales/per-Order Claim allocation is deliberately not inferred from a Client pool; manual group review remains the approved boundary. Pilot, real documentary reconciliation, backup/restore target rehearsal and comprehensive manual UAT remain required. V1 is not done.
+Remaining configuration dependencies: exact unconfigured Supplier cancellation/void policies and real carrier evidence. ePacket inclusive coverage is confirmed; component detail is deferred. Mixed-Sales/per-Order Claim allocation is deliberately not inferred from a Client pool; manual group review remains the approved boundary. Pilot, real documentary reconciliation, backup/restore target rehearsal and comprehensive manual UAT remain required. V1 is not done.

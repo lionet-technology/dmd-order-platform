@@ -1,3 +1,7 @@
+## Owner clarification — 17/11/2026 (supersedes earlier OPEN coverage notes)
+- CONFIRMED: workbook Net for ePacket Standard/Eco already includes mid-mile + last-mile. Detailed component accounting is deferred to a later phase; it is not a V1 blocker and must not be added again to inclusive Net. Estimated workbook Net remains distinct from Supplier-approved Actual and finalized GP.
+- CONFIRMED: Supplier cancellation/void policy and carrier evidence must be set up per service/route. Manual follow-up with Admin choosing a refund percentage/amount is approved. Values/evidence still need operational configuration; no default percentage, automatic carrier void or cost reversal follows from internal cancellation. Supplier money remains explicitly reconciled through its financial workflow.
+
 ## VNĐ continuation — 17/11/2026
 [Feature 37](37-vnd-claims-supplier.md) adds separate VNĐ pending documentary totals, explicit old/new review and approved actual deltas into payable. USD workflows below are not certified VNĐ; ePacket component coverage remains OPEN.
 

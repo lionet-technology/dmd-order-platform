@@ -1,3 +1,7 @@
+## Owner clarification — 17/11/2026 (supersedes earlier OPEN coverage notes)
+- CONFIRMED: workbook Net for ePacket Standard/Eco already includes mid-mile + last-mile. Detailed component accounting is deferred to a later phase; it is not a V1 blocker and must not be added again to inclusive Net. Estimated workbook Net remains distinct from Supplier-approved Actual and finalized GP.
+- CONFIRMED: Supplier cancellation/void policy and carrier evidence must be set up per service/route. Manual follow-up with Admin choosing a refund percentage/amount is approved. Values/evidence still need operational configuration; no default percentage, automatic carrier void or cost reversal follows from internal cancellation. Supplier money remains explicitly reconciled through its financial workflow.
+
 # VNĐ Supplier receivables and Claim notifications continuation
 **Status: PARTIAL V1; implemented slice verified on synthetic data, not pilot accepted. 2026-11-17.**
 
@@ -11,8 +15,8 @@ Local and origin/main both `20631973dcfccaf0de337b55c3bd86997230592b` (live ls-r
 - Remain pending: supplementary Supplier cost and Client surcharge/tax imports with mapping and duplicate review, Supplier period close/late-adjustment snapshots, complete GP/commission reconciliation and full real-document pilot.
 
 ## OPEN facts, not defaults
-- ePacket workbook supplies rates and fixed fees, but not whether cost includes mid-mile plus last-mile, supplier/component mapping or inclusive overlap evidence. Keep estimated/approved-total distinct from finalized GP. Minimal proposal: explicit coverage confirmation per service/route/version backed by Supplier evidence; until then no fully actual label.
-- Supplier cancellation/void policy values and carrier acknowledgement remain absent for unconfigured routes. Minimal proposal: keep manual follow-up pending; explicit evidence-based handling only. Internal Order cancellation never voids carrier or reverses Supplier cost automatically.
+- CLOSED by Owner 17/11: ePacket Standard/Eco workbook Net includes mid-mile + last-mile. Detailed breakdown deferred; do not double-add components or confuse Estimated with Supplier Actual/finalized GP.
+- APPROVED: manual Supplier follow-up with Admin-selected percentage/amount. Per-service policy values and carrier evidence still need configuration for unconfigured routes. Internal Order cancellation never voids carrier or reverses Supplier cost automatically.
 Supplier period closing is still implementation backlog, not a request to reapprove the immutable-period/late-adjustment principle. Reopening must not be invented; existing issued Client Statements remain immutable.
 
 ## Implemented behavior and boundaries

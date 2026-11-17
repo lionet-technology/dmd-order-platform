@@ -25,4 +25,4 @@ No formulas in populated source cells. Decimal strings preserve the actual XLSX 
 
 CLOSED: final workbook identity/access, rate/market/UPS-zone source availability, fixed-VND ePacket surcharge/FX relationship, initial markup/global values in this workbook.
 This does not certify runtime import, publication, operational Purchase, UAT or production readiness. Source availability is separate from implementation acceptance.
-OPEN: ePacket cost-component coverage/mid-mile allocation, supplier-specific cancellation policy, any ambiguous destination or unsupported source value. No inferred price or automatic country substitution.
+Owner confirmed 17/11/2026: ePacket Standard/Eco Net includes mid-mile + last-mile. Coverage is CLOSED; detailed component accounting/allocation is DEFERRED and does not block V1. No additional mid-mile cost may be assumed on top of inclusive Net. Supplier cancellation/void values and carrier evidence still require configuration per service/route; manual follow-up with Admin-selected percentage/amount is approved. Ambiguous destinations/unsupported source values still require review.
