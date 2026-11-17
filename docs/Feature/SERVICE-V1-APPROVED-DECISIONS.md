@@ -1,3 +1,6 @@
+## Claim / Supplier implementation — 17/11/2026
+[Feature 37](37-vnd-claims-supplier.md) records a partial VNĐ implementation of already approved Claim pool and Supplier actual/payable rules. No new formula, FX, allocation or permission decision is inferred. APPROVED remains distinct from delivered and pilot-accepted.
+
 ## VND continuation — 17/11/2026
 Owner answered the remaining manual-offer Service-change decision: require explicit NEW_OFFER or AUTOMATIC selection, then price consent; retain existing reserve while pending. Decisions already approved are unchanged. Implementation status is now recorded in Feature 35.
 

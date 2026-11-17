@@ -1,3 +1,6 @@
+## VNĐ continuation — 17/11/2026
+[Feature 37](37-vnd-claims-supplier.md) adds an isolated exact VNĐ Claim/refund pool on /vnd. The USD adapter below rejects VNĐ Clients. Approval snapshots preserve declared goods currency and total current charged revenue; no automatic compensation formula. Roles, evidence, Statement cutover and remaining notifications/case integration are documented there.
+
 ## Reserved funds protection — 04/11/2026
 Balance recovery requires positive funded net Balance remaining after all active Purchase reserves: `amount_cents <= max(0, net_balance_cents - reserved_cents)`. Credit Limit cannot fund recovery. The check, debit, Refund event and receipt are serialized in the existing immediate transaction. Accepted reservations cannot be consumed by a later recovery; a recovery accepted first reduces the room for a new Purchase. Bank recovery and accepted receipt replay are unchanged. Regression `verify-shared-funds-race.cjs`: independent Payment→Debt allocation, Refund recovery and Purchase writers, fixed and simultaneous schedules, integer-cent oracle.
 

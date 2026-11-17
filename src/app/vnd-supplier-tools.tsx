@@ -1,0 +1,24 @@
+"use client";
+import {useRef,useState} from 'react';
+export default function VndSupplierTools({role}:{role:string}){
+ const [supplier,setSupplier]=useState(''),[action,setAction]=useState('submit'),[lot,setLot]=useState(''),[tracking,setTracking]=useState(''),[cost,setCost]=useState(''),[previous,setPrevious]=useState('0'),[amount,setAmount]=useState(''),[reference,setReference]=useState(''),[reason,setReason]=useState(''),[day,setDay]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false);
+ const [data,setData]=useState<{payable?:string;costs:Array<{id:number;lot_id:number;amount:string;estimated:string|null;approved_cost_id:number|null}>;entries?:Array<{id:number;kind:string;delta:string;reference:string;executed_day:string|null}>}|null>(null),receipt=useRef<{payload:string;key:string}|null>(null);
+ if(!['ADMIN','BOD','FINANCE'].includes(role))return null;
+ async function run(save:boolean){setBusy(true);try{
+  const body:Record<string,unknown>={supplier,action,reason};
+  if(action==='submit'){if(tracking)body.tracking=tracking;else body.lot_id=Number(lot);Object.assign(body,{amount,reference});}
+  if(['approve','keep_old'].includes(action))Object.assign(body,{cost_id:Number(cost),expected_approved_cost_id:Number(previous)});
+  if(['payment','adjustment'].includes(action))Object.assign(body,{amount,reference,executed_day:day});
+  const payload=JSON.stringify(body);if(receipt.current?.payload!==payload)receipt.current={payload,key:crypto.randomUUID()};
+  const r=await fetch('/api/service-v1/suppliers'+(save?'':'?supplier='+encodeURIComponent(supplier)),save?{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({...body,request_key:receipt.current.key})}:{}),d=await r.json();if(!r.ok)throw Error(d.error);setData(d);setMessage(save?'Đã ghi Supplier VNĐ.':'Đã tải Supplier VNĐ.');
+ }catch(e){setMessage(e instanceof Error?e.message:'Không xử lý được.');}finally{setBusy(false);}}
+ return <section aria-label="Supplier finance VNĐ"><h2>Supplier finance VNĐ</h2><p>Chứng từ tổng theo Lot/Tracking luôn chờ duyệt. Actual đã chốt mới tạo phải trả; không tự thu thêm Client hoặc void cost khi huỷ Order. Sổ VNĐ tách lịch sử USD; không tự suy số dư mở đầu.</p>
+ <label>Supplier VNĐ <input value={supplier} onChange={e=>{setSupplier(e.target.value);setData(null);}}/></label><button disabled={busy||!supplier} onClick={()=>void run(false)}>Tải Supplier VNĐ</button>
+ {data&&<>{data.payable!==undefined&&<p>Phải trả VNĐ (âm = trả trước/credit): {data.payable}</p>}<div style={{overflowX:'auto'}}><table><thead><tr><th>Chứng từ</th><th>Lot</th><th>Actual đề nghị VNĐ</th><th>Estimate VNĐ</th><th>Chứng từ đã chốt</th></tr></thead><tbody>{data.costs.map(c=><tr key={c.id}><td>{c.id}</td><td>{c.lot_id}</td><td>{c.amount}</td><td>{c.estimated??'Thiếu estimate'}</td><td>{c.approved_cost_id??'Chưa chốt'}</td></tr>)}</tbody></table>{data.entries&&<table><thead><tr><th>Loại</th><th>Delta phải trả VNĐ</th><th>Tham chiếu</th><th>Ngày thực hiện</th></tr></thead><tbody>{data.entries.map(e=><tr key={e.id}><td>{e.kind}</td><td>{e.delta}</td><td>{e.reference}</td><td>{e.executed_day}</td></tr>)}</tbody></table>}</div></>}
+ <form style={{display:'grid',gap:10,maxWidth:600}} onSubmit={e=>{e.preventDefault();void run(true);}}><label>Thao tác Supplier <select value={action} onChange={e=>setAction(e.target.value)}><option value="submit">Nhập chứng từ tổng</option>{role!=='ADMIN'&&<><option value="approve">Nhận/chốt Actual mới</option><option value="payment">Ghi thanh toán thực</option><option value="adjustment">Điều chỉnh phải trả</option></>}{role!=='BOD'&&<option value="keep_old">Giữ Actual cũ</option>}</select></label>
+ {action==='submit'&&<><label>Lot ID <input value={lot} onChange={e=>setLot(e.target.value)}/></label><label>Hoặc Tracking <input value={tracking} onChange={e=>setTracking(e.target.value)}/></label></>}
+ {['approve','keep_old'].includes(action)&&<><label>Chứng từ cost ID <input required value={cost} onChange={e=>setCost(e.target.value)}/></label><label>Cost ID đã chốt (0 nếu chưa có) <input required value={previous} onChange={e=>setPrevious(e.target.value)}/></label></>}
+ {['submit','payment','adjustment'].includes(action)&&<><label>Số tiền Supplier VNĐ <input required value={amount} onChange={e=>setAmount(e.target.value)}/></label><label>Tham chiếu chứng từ Supplier <input required value={reference} onChange={e=>setReference(e.target.value)}/></label></>}
+ {action==='payment'&&<label>Ngày thanh toán Supplier <input required type="date" value={day} onChange={e=>setDay(e.target.value)}/></label>}
+ <label>Lý do Supplier <input required value={reason} onChange={e=>setReason(e.target.value)}/></label><button disabled={busy||!supplier}>Ghi Supplier VNĐ</button><button type="button" onClick={()=>{receipt.current=null;setMessage('Đã bắt đầu tác vụ Supplier mới.');}}>Bắt đầu Supplier mới</button></form><p role="status">{message}</p></section>;
+}

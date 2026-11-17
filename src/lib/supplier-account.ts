@@ -56,9 +56,11 @@ export function supplierAccountAction(u:AuthUser,b:Row){
  if(['claim_credit','claim_settle'].includes(String(b.action))||(b.action==='claim_status'&&b.status==='APPROVED')){text(b.reference);text(b.evidence);}
  const supplier=canonicalEnumValue('SUPPLIER',b.supplier,'',{allowInactive:true});if(!supplier)throw Error('Cần Supplier.');
  const reason=text(b.reason),reference=text(b.reference||b.reason);
+ const legacyOrder=(id:number)=>{if(db.prepare('SELECT 1 FROM orders o JOIN vnd_accounts v ON v.client_id=o.client_user_id WHERE o.id=?').get(id))throw Error('Supplier VNĐ dùng workflow VNĐ, không dùng USD.');};
  const post=(kind:string,source:string,delta:number,revenue=0,cost=0,order:number|null=null)=>{const id=Number(db.prepare('INSERT INTO supplier_account_entries(supplier,kind,source,delta_cents,revenue_cents,cost_cents,order_id,reason,reference,service,due_date,actor_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').run(supplier,kind,source,delta,revenue,cost,order,reason,reference,b.action==='addon'?String(b.service):null,date(b.due_date),u.id).lastInsertRowid);return {id};};
  if(b.action==='confirm_cost'){
  const c=db.prepare('SELECT c.*,l.cost_status,l.order_id FROM supplier_costs c JOIN order_lots l ON l.id=c.order_lot_id WHERE c.id=? AND c.import_status=\'ACTIVE\'').get(Number(b.cost_id)) as Row|undefined;
+ if(c)legacyOrder(Number(c.order_id));
  const reconciled=c?reconcileLots(Number(c.order_id)).find(l=>Number(l.id)===Number(c.order_lot_id)):undefined;
  if(!c||c.supplier!==supplier||reconciled?.reconciliation_status!=='PASS'||reconciled.actual_cents===null)throw Error('Cần Actual Cost cùng Supplier đã đối soát PASS.');
  const postedPredecessor=db.prepare(`WITH RECURSIVE predecessors(id) AS (
@@ -78,12 +80,13 @@ export function supplierAccountAction(u:AuthUser,b:Row){
  if(!['BUY','SELL'].includes(String(b.direction)))throw Error('Chọn DMD mua hoặc bán.');
  const service=canonicalEnumValue('SERVICE',b.service);if(!service)throw Error('Cần dịch vụ.');
  const order=b.order_id?Number(b.order_id):null;
- if(order){const o=db.prepare('SELECT supplier FROM orders WHERE id=?').get(order) as Row|undefined;if(!o||o.supplier!==supplier)throw Error('Order không thuộc Supplier.');}
+ if(order){legacyOrder(order);const o=db.prepare('SELECT supplier FROM orders WHERE id=?').get(order) as Row|undefined;if(!o||o.supplier!==supplier)throw Error('Order không thuộc Supplier.');}
  const cost=cents(b.net_cost,true);
  // Only this entry posts the add-on; optional Order linkage is informational.
  return post('ADDON_'+b.direction,source,b.direction==='BUY'?-n:n,b.direction==='SELL'?n:0,b.direction==='BUY'?n:cost,order);
  }
  if(b.action==='request_refund'){
+ const linked=db.prepare('SELECT order_id FROM order_trackings WHERE id=?').get(Number(b.tracking_id)) as Row|undefined;if(linked)legacyOrder(Number(linked.order_id));
  const t=db.prepare("SELECT t.id,o.supplier FROM order_trackings t JOIN orders o ON o.id=t.order_id WHERE t.id=? AND t.status='ACTIVE'").get(Number(b.tracking_id)) as Row|undefined;
  if(!t||t.supplier!==supplier)throw Error('Tracking không thuộc Supplier.');
  db.prepare('INSERT INTO supplier_refund_requests(tracking_id,supplier,reason,evidence,actor_id) VALUES (?,?,?,?,?)').run(t.id,supplier,reason,text(b.evidence),u.id);return {id:Number(t.id)};

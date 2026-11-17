@@ -1,4 +1,5 @@
 import {db} from './db';
+import {applyVndRefund,vndRefundView} from './vnd-refunds';
 import {vndEpacketDestination} from './vnd-routing';
 import {vndDebt,vndDebtProjection,accrueVndDebt,settleVndPayment,vndDebtAction} from './vnd-debt';
 import {finalizeVndStatement,vndCreditOverdue} from './vnd-statements';
@@ -125,7 +126,7 @@ export function cancelVndMoney(orderId:number,percent:number,reason:string,actor
 export function vndView(clientId:number,actor:AuthUser){
  return db.transaction(()=>{
  vndAccess(actor,clientId);
- return {...vndBalance(clientId),replacements:db.prepare('SELECT source_order_id,replacement_order_id FROM vnd_replacements r JOIN orders o ON o.id=r.source_order_id WHERE o.client_user_id=?').all(clientId),requests:(db.prepare('SELECT * FROM vnd_purchase_requests WHERE client_id=? ORDER BY id').all(clientId) as Row[]).map(r=>({...r,pricing_error:(db.prepare('SELECT pricing_error FROM vnd_auto_quotes WHERE order_id=?').get(r.order_id) as Row|undefined)?.pricing_error??null,cartons:db.prepare('SELECT id,carton_number FROM order_cartons WHERE order_id=? ORDER BY carton_number').all(r.order_id)})),
+ return {...vndBalance(clientId),refunds:vndRefundView(clientId,actor),replacements:db.prepare('SELECT source_order_id,replacement_order_id FROM vnd_replacements r JOIN orders o ON o.id=r.source_order_id WHERE o.client_user_id=?').all(clientId),requests:(db.prepare('SELECT * FROM vnd_purchase_requests WHERE client_id=? ORDER BY id').all(clientId) as Row[]).map(r=>({...r,pricing_error:(db.prepare('SELECT pricing_error FROM vnd_auto_quotes WHERE order_id=?').get(r.order_id) as Row|undefined)?.pricing_error??null,cartons:db.prepare('SELECT id,carton_number FROM order_cartons WHERE order_id=? ORDER BY carton_number').all(r.order_id)})),
  ledger:db.prepare('SELECT * FROM vnd_ledger WHERE client_id=? ORDER BY id DESC LIMIT 200').all(clientId),
  history:(db.prepare('SELECT * FROM vnd_history WHERE client_id=? ORDER BY id DESC LIMIT 200').all(clientId) as Row[]).map(h=>['CLIENT','SALES'].includes(actor.role)?{id:h.id,client_id:h.client_id,order_id:h.order_id,event:h.event,actor_id:h.actor_id,created_at:h.created_at}:h)};
  }).deferred();
@@ -137,7 +138,7 @@ export function vndAction(actor:AuthUser,input:Row){
  if(!key||key.length>200)throw Error('Cần request_key.');
  const payload=JSON.stringify(Object.fromEntries(Object.entries(input).sort(([a],[b])=>a.localeCompare(b))));
  const prior=db.prepare('SELECT * FROM vnd_commands WHERE request_key=?').get(key) as Row|undefined;
- if(prior){if(prior.actor_id!==actor.id||prior.payload!==payload)throw Error('request_key đã dùng với dữ liệu khác.');return JSON.parse(String(prior.result_json));}
+ if(prior){if(prior.actor_id!==actor.id||prior.payload!==payload)throw Error('request_key đã dùng với dữ liệu khác.');const result=JSON.parse(String(prior.result_json));if(['CLIENT','SALES'].includes(actor.role)){result.history=result.history.map((h:Row)=>({id:h.id,client_id:h.client_id,order_id:h.order_id,event:h.event,actor_id:h.actor_id,created_at:h.created_at}));if(result.refunds)result.refunds.events=result.refunds.events.map((e:Row)=>{const safe={...e};delete safe.bank_json;return safe;});}return result;}
  const admin=['ADMIN','BOD'].includes(actor.role),finance=admin||actor.role==='FINANCE';
  if(action==='activate'){
   if(!admin)throw Error('Chỉ Admin/BOD mở tài khoản VNĐ.');
@@ -151,7 +152,9 @@ export function vndAction(actor:AuthUser,input:Row){
  }else{
   if(!isVndClient(clientId))throw Error('Client chưa có tài khoản VNĐ.');
   accrueVndDebt(clientId,actor.id);
-  if(action==='statement'){
+  if(action.startsWith('claim_')||action.startsWith('refund_')){
+   applyVndRefund(actor,clientId,input,key,reason);
+  }else if(action==='statement'){
    if(!finance||!reason)throw Error('Chốt Statement cần Finance/Admin/BOD và lý do.');
    finalizeVndStatement(clientId,input,actor.id);
   }else if(['debt','debt_rate','extend_debt'].includes(action)){

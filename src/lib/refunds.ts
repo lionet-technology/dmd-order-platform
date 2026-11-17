@@ -32,6 +32,7 @@ export class RefundService {
   for(const op of ['UPDATE','DELETE'])db.exec(`CREATE TRIGGER IF NOT EXISTS refund_ledger_immutable_${op} BEFORE ${op} ON ledger_entries WHEN EXISTS(SELECT 1 FROM refund_events WHERE ledger_id=OLD.id) BEGIN SELECT RAISE(ABORT,'Refund wallet posting is immutable'); END;`);
  }
  private client(user:Actor,id:number){
+  if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='vnd_accounts'").get()&&this.db.prepare('SELECT 1 FROM vnd_accounts WHERE client_id=?').get(id))throw Error('Client VNĐ phải dùng Claim / Refund VNĐ; không ghi USD cents.');
   const c=this.db.prepare("SELECT id,sales_user_id,display_name FROM users WHERE id=? AND role='CLIENT'").get(id) as {id:number;sales_user_id:number;display_name:string}|undefined;
   if(!c)throw Error('Client không tồn tại.');
   if(!['ADMIN','FINANCE','BOD'].includes(user.role)&&!(user.role==='CLIENT'&&user.id===id)&&!(user.role==='SALES'&&user.id===c.sales_user_id))throw Error('Forbidden');

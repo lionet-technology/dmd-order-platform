@@ -1,0 +1,211 @@
+- main:
+  - link "← Về màn hình chính":
+    - /url: /
+  - heading "Dịch vụ · tài khoản VNĐ" [level=1]
+  - paragraph: ePacket/Yun/UPS dùng bảng giá đã phát hành; Chuyên tuyến dùng báo giá thủ công. Tiền giữ nguyên số lẻ. Tạo Order và khai báo kiện trong màn hình Orders trước khi gửi yêu cầu mua.
+  - text: Client ID
+  - textbox "Client ID": "7"
+  - button "Tải tài khoản"
+  - heading "Sức mua" [level=2]
+  - paragraph: "Balance: 999998915286.5495943 VNĐ · Credit Limit: 0 VNĐ · Reserve: 0 VNĐ · Còn lại: 999998915286.5495943 VNĐ"
+  - paragraph: "Debt gốc: 0 VNĐ · Lãi đã ghi: 0 · Lãi tạm tính: 0 · Hạn: Không có Debt"
+  - heading "Yêu cầu mua" [level=2]
+  - table:
+    - rowgroup:
+      - row "Order Trạng thái Giá VNĐ Reserve VNĐ Revision Chọn":
+        - columnheader "Order"
+        - columnheader "Trạng thái"
+        - columnheader "Giá VNĐ"
+        - columnheader "Reserve VNĐ"
+        - columnheader "Revision"
+        - columnheader "Chọn"
+    - rowgroup:
+      - row "45 Đã huỷ 9847623.269505 0 3 Chọn Order":
+        - cell "45"
+        - cell "Đã huỷ"
+        - cell "9847623.269505"
+        - cell "0"
+        - cell "3"
+        - cell "Chọn Order":
+          - button "Chọn Order"
+      - row "46 Chờ xác nhận giá 9847603.269504 0 1 Chọn Order":
+        - cell "46"
+        - cell "Chờ xác nhận giá"
+        - cell "9847603.269504"
+        - cell "0"
+        - cell "1"
+        - cell "Chọn Order":
+          - button "Chọn Order"
+      - row "47 Chờ xác nhận giá 9847603.269504 0 1 Chọn Order":
+        - cell "47"
+        - cell "Chờ xác nhận giá"
+        - cell "9847603.269504"
+        - cell "0"
+        - cell "1"
+        - cell "Chọn Order":
+          - button "Chọn Order"
+      - row "50 Chờ xác nhận giá 1531181.1922176 0 4 Chọn Order":
+        - cell "50"
+        - cell "Chờ xác nhận giá"
+        - cell "1531181.1922176"
+        - cell "0"
+        - cell "4"
+        - cell "Chọn Order":
+          - button "Chọn Order"
+      - row "51 Đã thu tiền 9847603.269504 0 1 Chọn Order":
+        - cell "51"
+        - cell "Đã thu tiền"
+        - cell "9847603.269504"
+        - cell "0"
+        - cell "1"
+        - cell "Chọn Order":
+          - button "Chọn Order"
+  - heading "Thao tác" [level=2]
+  - text: Thao tác
+  - combobox "Thao tác":
+    - option "Ghi nhận nạp tiền" [selected]
+    - option "Balance Adjustment (số có dấu)"
+    - option "Thay Credit Limit"
+  - text: Số tiền VNĐ
+  - textbox "Số tiền VNĐ":
+    - /placeholder: "100000.123456"
+  - text: Lý do / tham chiếu
+  - textbox "Lý do / tham chiếu"
+  - button "Thực hiện"
+  - button "Bắt đầu thao tác mới"
+  - status: Đã tải tài khoản.
+  - region "Supplier finance VNĐ":
+    - heading "Supplier finance VNĐ" [level=2]
+    - paragraph: Chứng từ tổng theo Lot/Tracking luôn chờ duyệt. Actual đã chốt mới tạo phải trả; không tự thu thêm Client hoặc void cost khi huỷ Order. Sổ VNĐ tách lịch sử USD; không tự suy số dư mở đầu.
+    - text: Supplier VNĐ
+    - textbox "Supplier VNĐ"
+    - button "Tải Supplier VNĐ" [disabled]
+    - text: Thao tác Supplier
+    - combobox "Thao tác Supplier":
+      - option "Nhập chứng từ tổng" [selected]
+      - option "Nhận/chốt Actual mới"
+      - option "Ghi thanh toán thực"
+      - option "Điều chỉnh phải trả"
+      - option "Giữ Actual cũ"
+    - text: Lot ID
+    - textbox "Lot ID"
+    - text: Hoặc Tracking
+    - textbox "Hoặc Tracking"
+    - text: Số tiền Supplier VNĐ
+    - textbox "Số tiền Supplier VNĐ"
+    - text: Tham chiếu chứng từ Supplier
+    - textbox "Tham chiếu chứng từ Supplier"
+    - text: Lý do Supplier
+    - textbox "Lý do Supplier"
+    - button "Ghi Supplier VNĐ" [disabled]
+    - button "Bắt đầu Supplier mới"
+    - status
+  - region "Claim và Refund VNĐ":
+    - heading "Claim / Refund VNĐ" [level=2]
+    - paragraph: Claim sự cố được duyệt riêng. Refund huỷ đơn dùng policy Service. Quyết định Claim chưa phải thực trả; không tự tính bồi thường hay quy đổi giá trị hàng.
+    - button "Xem Claim / Refund"
+    - text: Thao tác Claim / Refund
+    - combobox "Thao tác Claim / Refund":
+      - option "Thực trả vào Balance" [selected]
+      - option "Ghi thực trả Bank"
+      - option "Thu hồi qua Balance"
+      - option "Ghi thực nhận Bank"
+    - text: Số tiền Claim / Refund VNĐ
+    - textbox "Số tiền Claim / Refund VNĐ"
+    - text: Lý do Claim / Refund
+    - textbox "Lý do Claim / Refund"
+    - button "Ghi Claim / Refund"
+    - button "Bắt đầu Claim / Refund mới"
+    - status
+  - region "Công cụ tài khoản VNĐ":
+    - heading "Edit Order · Add-on · Statement · Debt" [level=2]
+    - paragraph: Edit Order chỉ trước Tracking hoặc Label. Đổi giá bán và cấp Tracking/Label dùng các thao tác riêng ở trên.
+    - button "Xem Add-on"
+    - button "Xem Statement"
+    - text: Thao tác
+    - combobox "Thao tác":
+      - option "Chốt Statement VNĐ" [selected]
+    - text: Từ ngày
+    - textbox "Từ ngày": 2026-11-17
+    - text: Đến ngày
+    - textbox "Đến ngày": 2026-11-17
+    - text: Lý do / tham chiếu
+    - textbox "Lý do / tham chiếu": TEST Chrome statement
+    - button "Thực hiện"
+    - button "Bắt đầu thao tác mới"
+    - status: database is locked
+  - heading "Sổ giao dịch VNĐ" [level=2]
+  - table:
+    - rowgroup:
+      - row "Thời điểm Loại Biến động VNĐ Lý do":
+        - columnheader "Thời điểm"
+        - columnheader "Loại"
+        - columnheader "Biến động VNĐ"
+        - columnheader "Lý do"
+    - rowgroup:
+      - row "15:04:22 17/11/2026 CLAIM_REFUND 50.000001 TEST overpool":
+        - cell "15:04:22 17/11/2026"
+        - cell "CLAIM_REFUND"
+        - cell "50.000001"
+        - cell "TEST overpool"
+      - row "15:04:20 17/11/2026 ADDON_REVENUE -100000.123456 TEST Chrome financial posting [Add-on 2]":
+        - cell "15:04:20 17/11/2026"
+        - cell "ADDON_REVENUE"
+        - cell "-100000.123456"
+        - cell "TEST Chrome financial posting [Add-on 2]"
+      - row "15:04:16 17/11/2026 ORDER_CHARGE -9847603.269504 Đủ Tracking và Label toàn Order":
+        - cell "15:04:16 17/11/2026"
+        - cell "ORDER_CHARGE"
+        - cell "-9847603.269504"
+        - cell "Đủ Tracking và Label toàn Order"
+      - row "15:04:16 17/11/2026 PAYMENT 1000000000000 TEST only":
+        - cell "15:04:16 17/11/2026"
+        - cell "PAYMENT"
+        - cell "1000000000000"
+        - cell "TEST only"
+      - row "15:04:16 17/11/2026 ADDON_CORRECTION 999999999.123456 TEST only [Add-on 1]":
+        - cell "15:04:16 17/11/2026"
+        - cell "ADDON_CORRECTION"
+        - cell "999999999.123456"
+        - cell "TEST only [Add-on 1]"
+      - row "15:04:16 17/11/2026 ADDON_REVENUE -999999999.123456 TEST only [Add-on 1]":
+        - cell "15:04:16 17/11/2026"
+        - cell "ADDON_REVENUE"
+        - cell "-999999999.123456"
+        - cell "TEST only [Add-on 1]"
+      - row "15:04:15 17/11/2026 CANCELLATION_REFUND 8862869.9425563 TEST replacement":
+        - cell "15:04:15 17/11/2026"
+        - cell "CANCELLATION_REFUND"
+        - cell "8862869.9425563"
+        - cell "TEST replacement"
+      - row "15:04:15 17/11/2026 ORDER_SURCHARGE -10.000002 TEST only":
+        - cell "15:04:15 17/11/2026"
+        - cell "ORDER_SURCHARGE"
+        - cell "-10.000002"
+        - cell "TEST only"
+      - row "15:04:15 17/11/2026 ORDER_CORRECTION -20.000001 TEST only":
+        - cell "15:04:15 17/11/2026"
+        - cell "ORDER_CORRECTION"
+        - cell "-20.000001"
+        - cell "TEST only"
+      - row "15:04:15 17/11/2026 ORDER_CHARGE -9847603.269504 Đủ Tracking và Label toàn Order":
+        - cell "15:04:15 17/11/2026"
+        - cell "ORDER_CHARGE"
+        - cell "-9847603.269504"
+        - cell "Đủ Tracking và Label toàn Order"
+      - row "15:04:15 17/11/2026 PAYMENT 441138.918528 TEST only":
+        - cell "15:04:15 17/11/2026"
+        - cell "PAYMENT"
+        - cell "441138.918528"
+        - cell "TEST only"
+      - row "15:04:15 17/11/2026 ADJUSTMENT 0 TEST only":
+        - cell "15:04:15 17/11/2026"
+        - cell "ADJUSTMENT"
+        - cell "0"
+        - cell "TEST only"
+      - row "15:04:14 17/11/2026 PAYMENT 9406464.350976 TEST only":
+        - cell "15:04:14 17/11/2026"
+        - cell "PAYMENT"
+        - cell "9406464.350976"
+        - cell "TEST only"
+- alert

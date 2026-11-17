@@ -1,0 +1,14 @@
+{
+  "status": "PASS",
+  "checks": 32,
+  "roles": [
+    "ADMIN",
+    "SALES",
+    "CLIENT",
+    "FINANCE",
+    "BOD"
+  ],
+  "database": "owned disposable",
+  "scope": "Claim creation/approval, partial Bank/Balance payout and overpool rejection, bank privacy, Supplier actual/payment RBAC, Add-on, Statement, BOD report, shipping edit, desktop/mobile render",
+  "errors": []
+}

@@ -13,5 +13,5 @@ async function handleGET(req:NextRequest){
 async function handlePOST(req:NextRequest){
  const a=requireAnyRole(req,['ADMIN','BOD','FINANCE','SALES','CLIENT']);if(a.error)return a.error;
  try{return NextResponse.json(vndAction(a.user,await req.json()));}
- catch(e){return NextResponse.json({error:e instanceof Error?e.message:'Không thể xử lý.'},{status:400});}
+ catch(e){if(e&&typeof e==='object'&&'code' in e&&String(e.code).startsWith('SQLITE_BUSY'))console.error('VND transaction busy',e);return NextResponse.json({error:e instanceof Error?e.message:'Không thể xử lý.'},{status:400});}
 }

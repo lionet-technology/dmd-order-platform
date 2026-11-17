@@ -1,3 +1,6 @@
+## VNĐ finance continuation — 17/11/2026
+[Feature 37](37-vnd-claims-supplier.md) adds separate exact VNĐ actual/payable/payment journals and blocks linked VNĐ Orders/Tracking in the old USD entry paths below. No old opening balance, invoice, payment or receivable is converted. VNĐ Supplier receivable/offset/reversal and period lock cutover remain implementation backlog.
+
 ## Pending cancellation follow-up — 16/11/2026
 [Feature 30](30-supplier-cancellation-followup.md): original Supplier cancellation record and scoped queue now accompany ordinary cancellation. ADMIN/FINANCE/BOD manage operational follow-up only; existing Supplier money remains FINANCE/BOD. Follow-up status never implies cancellation confirmation, receipt, cost reversal or account posting. No backfill/inferred financial migration.
 

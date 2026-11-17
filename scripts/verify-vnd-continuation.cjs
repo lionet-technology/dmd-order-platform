@@ -91,7 +91,11 @@ try{
  eq(db.pragma('integrity_check',{simple:true}),'ok');
  if(process.env.DMD_UAT_SETUP==='1'){
   const bod=auth.createUser({username:key(),display_name:'TEST BOD',password:'TestPass123!',role:'BOD'}),fin=auth.createUser({username:key(),display_name:'TEST FINANCE',password:'TestPass123!',role:'FINANCE'});
-  module.exports={client,owner,sales,bod,fin,replacement,dbPath:process.env.DMD_DB_PATH,tokens:Object.fromEntries(Object.entries({ADMIN:owner,SALES:sales,CLIENT:client,BOD:bod,FINANCE:fin}).map(([role,user])=>[role,auth.createSession(user.id).token]))};
+  call('post',{kind:'PAYMENT',delta:'1000000000000'});
+  const claimOrder=make('UPS','SAVER');call('request',{order_id:claimOrder.id},client);call('consent',{order_id:claimOrder.id,expected_revision:ops.vndRequest(claimOrder.id).revision},client);
+  const claimCarton=db.prepare('SELECT * FROM order_cartons WHERE order_id=?').get(claimOrder.id);
+  tracking.addOrderTracking({orderId:claimOrder.id,cartonId:claimCarton.id,tracking:'TEST-UAT-CLAIM-TRACKING',labelUrl:'https://labels.test/uat.pdf',actorId:owner.id});
+  module.exports={claimOrder,claimLotId:claimCarton.order_lot_id,client,owner,sales,bod,fin,replacement,dbPath:process.env.DMD_DB_PATH,tokens:Object.fromEntries(Object.entries({ADMIN:owner,SALES:sales,CLIENT:client,BOD:bod,FINANCE:fin}).map(([role,user])=>[role,auth.createSession(user.id).token]))};
  }
  console.log('VND CONTINUATION PASS ('+checks+' assertions)');
 }finally{db.close();}

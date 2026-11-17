@@ -1,3 +1,6 @@
+## Claim / Supplier continuation — 17/11/2026
+[Feature 37](37-vnd-claims-supplier.md) records the next partial VNĐ increment and supersedes earlier blanket Claim/Supplier absence below only within that documented scope. Remaining implementation and actual OPEN dependencies remain explicit. No V1 or pilot completion.
+
 # V1 continuation — 17/11/2026
 
 Status: implementation in progress; no production acceptance.

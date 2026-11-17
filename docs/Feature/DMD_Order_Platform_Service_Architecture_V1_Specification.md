@@ -1,3 +1,6 @@
+## Implementation continuation — 17/11/2026
+[Feature 37](37-vnd-claims-supplier.md) implements an isolated VNĐ Claim/refund and Supplier actual/payable/payment slice. Already approved rules are unchanged; implementation gaps and actual OPEN dependencies are distinguished there. V1 remains PARTIAL pending wider delivery and pilot acceptance.
+
 # DMD Order Platform — Service Architecture V1 Specification
 Current requirements 16/11/2026, implementation PARTIAL.
 [Full canonical handoff](DMD_Service_Architecture_V1_Implementation_Handoff_2026-11-16.md) contains the detailed approved requirements, formula, Service Matrix and acceptance list. [Approved decisions](SERVICE-V1-APPROVED-DECISIONS.md) summarizes the active rules. [Earlier specification](archive/DMD_Order_Platform_Service_Architecture_V1_Specification-BEFORE-HANDOFF-2026-11-16.md) is historical, superseded where contrary.

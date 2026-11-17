@@ -1,3 +1,6 @@
+## VNĐ continuation — 17/11/2026
+[Feature 37](37-vnd-claims-supplier.md) adds a separate exact VNĐ actual/payable/payment journal. Existing USD invoices remain separate documentary history; no opening or cost is inferred. Supplier receivables, supplementary templates and period lock cutover remain backlog.
+
 ## Account comparison — 04/11/2026
 The Supplier Account API reports documentary invoice outstanding beside Account payable and their signed difference, with a reconciliation-required flag. Invoice amounts/allocations remain documentary and never auto-post Account cost, bank payment or GP. [Fields and limits](19-supplier-accounts.md#channel-and-documentary-reconciliation-report--04112026).
 

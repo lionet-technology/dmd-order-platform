@@ -1,3 +1,6 @@
+## VNĐ Claim / Supplier continuation — 17/11/2026
+[Feature 37](37-vnd-claims-supplier.md): Client/assigned Sales/Admin create Claim; Admin decisions; Finance payouts; Admin/Finance recovery. Supplier costs for Admin/Finance/BOD; payable/approval/payment for Finance/BOD; keep-old for Admin/Finance. Enterprise report stays BOD-only. No broader inheritance inferred.
+
 ## VND continuation — 17/11/2026
 New VND shipping edit/Cancel & Duplicate are explicitly Admin-only. Add-on writes are Sales/Admin/BOD scoped to the Client; Sales cost/supplier visibility is limited to that Client's Add-ons through the dedicated endpoint. Client projections omit Add-on cost/supplier and private history. VND enterprise monthly report remains BOD-only; configuration remains root Admin pending broader target reconciliation.
 

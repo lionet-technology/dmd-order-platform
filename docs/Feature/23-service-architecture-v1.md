@@ -1,3 +1,6 @@
+## VNĐ Claim / Supplier continuation — 17/11/2026
+[Feature 37](37-vnd-claims-supplier.md) records Claim approval/pool/execution/recovery, Supplier actual-to-payable/payment and categorized reporting. This partial delivery supersedes blanket absence statements below within its named scope only; full V1/pilot acceptance is not claimed.
+
 ## Operational VNĐ increment — 16/11/2026
 [Feature 33](33-vnd-manual-purchase.md) now delivers a **bounded Chuyên tuyến Manual Quote slice** for explicitly activated, empty Client accounts: Purchase Request → price consent/scoped override → atomic Reserve/Awaiting Funds/FIFO → complete Tracking+Label charge → exact VNĐ ledger → Order correction/fees/tax → route-policy cancellation and Supplier follow-up. Existing USD data is never converted or relabelled. This does **not** complete automatic-service Purchase, Statements/Debt/reporting cutover, shipping Edit, Cancel & Duplicate or Client Add-on.
 This section supersedes older blanket “no operational VNĐ/consent/FIFO/correction delivery” statements only within that scope. All wider gaps remain.

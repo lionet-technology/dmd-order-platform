@@ -1,3 +1,6 @@
+## VNĐ Claim / Supplier increment — 17/11/2026
+[Feature 37](37-vnd-claims-supplier.md): separate Claim approval/pool/Bank/Balance/recovery, Supplier documentary actual-to-payable and payment history, categorized reporting. Partial scope; final gate evidence and remaining implementation are recorded separately. No pilot acceptance.
+
 ## Canonical local workspace and VND commission inputs — 17/11/2026
 Active repo: `/Users/quan/Developer/report`. [Feature 36](36-vnd-commission-report.md) records copy integrity and bounded per-Order/Sales commission inputs. Claim/refund categories, Supplier Finance and full pilot remain incomplete.
 

@@ -1,3 +1,6 @@
+## VNĐ Claim continuation — 17/11/2026
+[Feature 37](37-vnd-claims-supplier.md) supersedes the absence of a VNĐ Claim journal: processing-month category/Sales obligation deltas, executed Bank rows, Claim group markers and approved Supplier totals are available. Per-Order pool allocation and GP-minus-Refund remain unavailable, not zero.
+
 # VND commission reporting continuation — 17/11/2026
 
 Status: bounded implementation verified; not full commission or production acceptance. [Evidence](../../artifacts/local-workspace-vnd-2026-11-17/VERIFICATION.md).

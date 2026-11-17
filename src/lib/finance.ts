@@ -486,6 +486,7 @@ function addSupplierCostOnce(input: SupplierCostInput, actorId?:number) {
   if(direct){
     if(!Number.isInteger(input.order_id)||!Number.isInteger(input.lot_number)||Number(input.lot_number)<1)throw Error("Cần Order ID và số Lot hợp lệ.");
     if(!db.prepare("SELECT id FROM orders WHERE id=?").get(input.order_id))throw Error("Order không tồn tại.");
+    const owner=db.prepare('SELECT client_user_id FROM orders WHERE id=?').get(input.order_id) as {client_user_id:number};if(isVndClient(owner.client_user_id))throw Error('Supplier Cost VNĐ dùng chứng từ VNĐ, không dùng USD.');
     ensureOrderShipmentStructure(Number(input.order_id));
     lot=db.prepare("SELECT id FROM order_lots WHERE order_id=? AND lot_number=?").get(input.order_id,input.lot_number) as {id:number}|undefined;
     if(!lot)throw Error("Lot không thuộc Order.");
@@ -507,6 +508,7 @@ function addSupplierCostOnce(input: SupplierCostInput, actorId?:number) {
   if(!explicitTotal&&!totalNet)throw Error("Cần Total Net Cost hoặc các thành phần chi phí.");
 
   const owner=findTrackingOwner(tracking);
+  if(db.prepare("SELECT 1 FROM order_trackings t JOIN orders o ON o.id=t.order_id JOIN vnd_accounts v ON v.client_id=o.client_user_id WHERE upper(replace(replace(trim(t.tracking),' ',''),'-',''))=?").get(normalizedTracking))throw Error('Tracking VNĐ dùng Supplier Cost VNĐ, không dùng USD.');
   const extraSurcharge=money(num(input.extra_surcharge));const importTax=money(num(input.import_tax));
   const surchargeType=extraSurcharge?(text(input.surcharge_type)||"phụ phí bổ sung"):"";
   const occurredAt=normalizeDateInput(input.occurred_at, "Ngày chi phí");

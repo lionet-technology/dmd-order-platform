@@ -53,7 +53,7 @@ try{
  db.exec("CREATE TRIGGER finance_rollback BEFORE INSERT ON vnd_commands WHEN NEW.request_key='TEST-FINANCE-ROLLBACK' BEGIN SELECT RAISE(ABORT,'TEST rollback'); END;");
  bad(()=>ops.vndAction(admin,{action:'post',client_id:client.id,kind:'PAYMENT',delta:'1',reason:'TEST',request_key:'TEST-FINANCE-ROLLBACK'}),/rollback/);
  eq(JSON.stringify(ops.vndView(client.id,admin)),before);
- const monthly=report.vndBusinessReport(debt.vndDay().slice(0,7));eq(monthly.currency,'VND');eq(monthly.actual_gp,null);eq(monthly.claim_refund_status,'NOT_ACTIVATED');
+ const monthly=report.vndBusinessReport(debt.vndDay().slice(0,7));eq(monthly.currency,'VND');eq(monthly.actual_gp,null);eq(monthly.claim_refund_status,'ACTIVE');
  eq(db.pragma('integrity_check',{simple:true}),'ok');
  console.log('VND FINANCIAL CUTOVER PASS ('+checks+' assertions)');
 }finally{db.close();}

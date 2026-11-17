@@ -5,12 +5,14 @@ import {installRouteLifecycleSchema} from "./route-lifecycle";
 import fs from "node:fs";
 import path from "node:path";
 
-const dbPath = process.env.DMD_DB_PATH || path.join(process.cwd(), "data", "dmd-finance-ops.db");
+const dbPath = path.resolve(process.env.DMD_DB_PATH || path.join(process.cwd(), "data", "dmd-finance-ops.db"));
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
 const globalForDb = globalThis as unknown as { dmdDb?: Database.Database };
-export const db = globalForDb.dmdDb ?? new Database(dbPath);
-if (process.env.NODE_ENV !== "production") globalForDb.dmdDb = db;
+// Server bundles may evaluate this module more than once through financial import cycles.
+// All modules in one process must use the same connection/transaction in production too.
+export const db = globalForDb.dmdDb?.open && globalForDb.dmdDb.name===dbPath ? globalForDb.dmdDb : new Database(dbPath);
+globalForDb.dmdDb = db;
 
 db.pragma("busy_timeout = 10000");
 // Keep foreign-key enforcement off while legacy schemas are upgraded below.

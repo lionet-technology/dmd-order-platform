@@ -1,3 +1,6 @@
+## VNĐ continuation — 17/11/2026
+[Feature 37](37-vnd-claims-supplier.md) adds separate VNĐ pending documentary totals, explicit old/new review and approved actual deltas into payable. USD workflows below are not certified VNĐ; ePacket component coverage remains OPEN.
+
 ## Current requirements — handoff 16/11/2026
 [Canonical full handoff](DMD_Service_Architecture_V1_Implementation_Handoff_2026-11-16.md) and [audited HEAD gaps](31-service-v1-build-gap.md) supersede contrary dated requirements below. Earlier dated sections are historical where inconsistent, not concurrent current rules.
 - APPROVED: cancellation policy per Service/Sub-Service/Supplier route; no global 90/100. Admin may support 100%, never bypass shipment denial. Claim refund is separate. Combined Duplicate uses policy with optional Admin support, not unconditional 100%.

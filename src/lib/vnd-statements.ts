@@ -11,13 +11,15 @@ export function makeVndStatement(clientId:number,start:unknown,end:unknown){
  if(!activation)throw Error('Client chưa có tài khoản VNĐ.');
  if(!last&&from>activation.day)throw Error('Kỳ đầu phải bao gồm ngày mở tài khoản VNĐ để đối chiếu opening.');
  if(last&&from!==nextVndDay(String(last.period_end)))throw Error('Statement phải nối tiếp kỳ đã chốt.');
- const opening=last?JSON.parse(String(last.snapshot_json)).closing:{balance:'0',debt_principal:'0',debt_interest:'0',refund_balance:null};
+ const opening=last?JSON.parse(String(last.snapshot_json)).closing:{balance:'0',debt_principal:'0',debt_interest:'0',refund_balance:'0'};
  const rows=db.prepare("SELECT * FROM vnd_ledger WHERE client_id=? AND id>? AND date(created_at,'+7 hours')<=? ORDER BY id").all(clientId,Number(last?.last_ledger_id??0),to) as Row[];
  const debtEvents=db.prepare("SELECT * FROM vnd_debt_events WHERE client_id=? AND id>? AND date(created_at,'+7 hours')<=? ORDER BY id").all(clientId,Number(last?.last_debt_event_id??0),to) as Row[];
  // First statement carries all unreported opening activity; later statements carry late postings by journal id.
  const economicDelta=sumVnd(rows.map(r=>String(r.delta))),principalDelta=sumVnd(debtEvents.map(r=>String(r.principal_delta))),interestPayment=sumVnd(debtEvents.filter(r=>r.kind==='PAYMENT').map(r=>String(r.interest_delta))),interestAccrued=subtractVnd('0',sumVnd(rows.filter(r=>r.kind==='DEBT_INTEREST').map(r=>String(r.delta))));
- const closing={balance:addVnd(addVnd(opening.balance,economicDelta),principalDelta),debt_principal:addVnd(opening.debt_principal,principalDelta),debt_interest:addVnd(addVnd(opening.debt_interest,interestAccrued),interestPayment),refund_balance:null};
- return {currency:'VND',client_id:clientId,period_start:from,period_end:to,opening,closing,movements:rows,debt_movements:debtEvents,last_ledger_id:Number(rows.at(-1)?.id??last?.last_ledger_id??0),last_debt_event_id:Number(debtEvents.at(-1)?.id??last?.last_debt_event_id??0),claim_refund_status:'NOT_ACTIVATED',cash_flow:{payments:sumVnd(rows.filter(r=>r.kind==='PAYMENT').map(r=>String(r.delta))),cancellation_refunds:sumVnd(rows.filter(r=>r.kind==='CANCELLATION_REFUND').map(r=>String(r.delta)))}};
+ const lastSnapshot=last?JSON.parse(String(last.snapshot_json)):null;
+ const refundRows=db.prepare("SELECT id,claim_id,kind,delta,approved,revision,category,executed_day,reason,actor_id,created_at FROM vnd_refund_events WHERE client_id=? AND id>? AND date(created_at,'+7 hours')<=? ORDER BY id").all(clientId,Number(lastSnapshot?.last_refund_event_id??0),to) as Row[];
+ const closing={balance:addVnd(addVnd(opening.balance,economicDelta),principalDelta),debt_principal:addVnd(opening.debt_principal,principalDelta),debt_interest:addVnd(addVnd(opening.debt_interest,interestAccrued),interestPayment),refund_balance:addVnd(opening.refund_balance??'0',sumVnd(refundRows.map(r=>String(r.delta))))};
+ return {currency:'VND',client_id:clientId,period_start:from,period_end:to,opening,closing,movements:rows,debt_movements:debtEvents,last_ledger_id:Number(rows.at(-1)?.id??last?.last_ledger_id??0),last_debt_event_id:Number(debtEvents.at(-1)?.id??last?.last_debt_event_id??0),last_refund_event_id:Number(refundRows.at(-1)?.id??lastSnapshot?.last_refund_event_id??0),refund_movements:refundRows,claim_refund_status:'ACTIVE',cash_flow:{payments:sumVnd(rows.filter(r=>r.kind==='PAYMENT').map(r=>String(r.delta))),cancellation_refunds:sumVnd(rows.filter(r=>r.kind==='CANCELLATION_REFUND').map(r=>String(r.delta)))}};
 }
 export function finalizeVndStatement(clientId:number,input:Row,actorId:number){
  const snapshot=makeVndStatement(clientId,input.period_start,input.period_end);
