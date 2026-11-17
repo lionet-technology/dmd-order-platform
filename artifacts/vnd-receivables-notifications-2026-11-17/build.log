@@ -14,9 +14,9 @@
   Finished TypeScript in 1847ms ...
   Collecting page data using 1 worker ...
   Generating static pages using 1 worker (0/63) ...
-  Generating static pages using 1 worker (15/63) 
-  Generating static pages using 1 worker (31/63) 
-  Generating static pages using 1 worker (47/63) 
+  Generating static pages using 1 worker (15/63)
+  Generating static pages using 1 worker (31/63)
+  Generating static pages using 1 worker (47/63)
 ✓ Generating static pages using 1 worker (63/63) in 139ms
 Turbopack build encountered 1 warning:
 ./src/lib/db.ts:8:16
@@ -127,4 +127,3 @@ Route (app)
 
 ○  (Static)   prerendered as static content
 ƒ  (Dynamic)  server-rendered on demand
-

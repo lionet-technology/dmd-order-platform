@@ -3,7 +3,7 @@ Canonical workspace: `/Users/quan/Developer/report`. **V1 PARTIAL; no pilot/prod
 
 ## Starting evidence
 - Local and live origin/main both `20631973dcfccaf0de337b55c3bd86997230592b`; only pre-existing owner AGENTS.md and untracked Codex/ present.
-- Read prior `artifacts/vnd-claims-supplier-2026-11-17/VERIFICATION.md`, Feature contract/Approved Decisions/V1 Handoff, Supplier Account/correction rules and source index before code. Documentation boundary commit `d7506cc` precedes implementation.
+- Read prior `artifacts/vnd-claims-supplier-2026-11-17/VERIFICATION.md`, Feature contract/Approved Decisions/V1 Handoff, Supplier Account/correction rules and source index before code. Documentation boundary commit `d7506cc` precedes implementation commit `c3bb296`.
 - Opened workbook read-only via ExcelJS: ePacket 75 rows/15 columns, Yun Express 41/12, UPS 1008/40. ePacket D72–D75 source strings: 26000 VNĐ/USD; 135000, 285000, 405000 VNĐ/order. Inclusive component coverage is not supplied by those values. Final SHA256 remains `a41d4e540f8e0023b859b32c6b415d744a6c9e095dd3f3b3a4590327b9fb68d2`.
 
 ## Delivered
@@ -19,6 +19,7 @@ Canonical workspace: `/Users/quan/Developer/report`. **V1 PARTIAL; no pilot/prod
 - Actual Chrome production-build UAT **47 assertions / five roles** (ADMIN, SALES, CLIENT, FINANCE, BOD), owned disposable DB/localhost. Supplier create/approve/overlimit/partial Offset/Bank/full Offset reversal, exact separate account totals and unchanged Client pool/Balance; notification acknowledgement survives reload, Client cannot acknowledge Sales notice; existing Claim payouts, Supplier actual/payment, bank privacy, Add-on exception, immutable Statement, BOD-only report and shipping edit pass. No page errors.
 - Initial UAT selector failure is preserved as `initial-selector-*`. Snapshot showed the expected form; the harness now selects by accessible combobox role/name. Not an ignored business failure. Final run uses rebuilt final application.
 - Inspected Supplier mobile screenshot visually; no page overflow. Five-role desktop/mobile artifacts and `browser-uat.json` retained.
+- Terminal CR/trailing whitespace and empty terminal lines in build/lint/typecheck logs were normalized after execution; command output content/results are preserved. The first staged diff check caught these formatting-only log lines; the final full-change check passes.
 - `git diff --check` PASS. Source SHA256 manifest links checked application/test files to this report; resulting commit/remote hashes are reported in chat after ordinary push.
 
 ## Remaining implementation (not new business-policy questions)
