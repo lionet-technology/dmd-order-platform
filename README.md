@@ -19,7 +19,7 @@ Service Architecture V1 đang triển khai; ePacket mục tiêu VNĐ và Net→B
 - [V1 Specification](docs/Feature/DMD_Order_Platform_Service_Architecture_V1_Specification.md)
 - [V1 code gaps và acceptance](docs/Feature/23-service-architecture-v1.md)
 
-Tài liệu nằm tại `/Users/quan/Desktop/report`. Trạng thái lịch sử index được lưu riêng trong archive.
+Tài liệu nằm tại `/Users/quan/Developer/report`. Trạng thái lịch sử index được lưu riêng trong archive.
 
 ## Development
 `npm install`, `npm run dev`; mở http://localhost:3000.
