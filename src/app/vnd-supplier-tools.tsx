@@ -1,5 +1,6 @@
 "use client";
 import {useRef,useState} from 'react';
+import VndSupplierClaimTools from './vnd-supplier-claim-tools';
 export default function VndSupplierTools({role}:{role:string}){
  const [supplier,setSupplier]=useState(''),[action,setAction]=useState('submit'),[lot,setLot]=useState(''),[tracking,setTracking]=useState(''),[cost,setCost]=useState(''),[previous,setPrevious]=useState('0'),[amount,setAmount]=useState(''),[reference,setReference]=useState(''),[reason,setReason]=useState(''),[day,setDay]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false);
  const [data,setData]=useState<{payable?:string;costs:Array<{id:number;lot_id:number;amount:string;estimated:string|null;approved_cost_id:number|null}>;entries?:Array<{id:number;kind:string;delta:string;reference:string;executed_day:string|null}>}|null>(null),receipt=useRef<{payload:string;key:string}|null>(null);
@@ -20,5 +21,5 @@ export default function VndSupplierTools({role}:{role:string}){
  {['approve','keep_old'].includes(action)&&<><label>Chứng từ cost ID <input required value={cost} onChange={e=>setCost(e.target.value)}/></label><label>Cost ID đã chốt (0 nếu chưa có) <input required value={previous} onChange={e=>setPrevious(e.target.value)}/></label></>}
  {['submit','payment','adjustment'].includes(action)&&<><label>Số tiền Supplier VNĐ <input required value={amount} onChange={e=>setAmount(e.target.value)}/></label><label>Tham chiếu chứng từ Supplier <input required value={reference} onChange={e=>setReference(e.target.value)}/></label></>}
  {action==='payment'&&<label>Ngày thanh toán Supplier <input required type="date" value={day} onChange={e=>setDay(e.target.value)}/></label>}
- <label>Lý do Supplier <input required value={reason} onChange={e=>setReason(e.target.value)}/></label><button disabled={busy||!supplier}>Ghi Supplier VNĐ</button><button type="button" onClick={()=>{receipt.current=null;setMessage('Đã bắt đầu tác vụ Supplier mới.');}}>Bắt đầu Supplier mới</button></form><p role="status">{message}</p></section>;
+ <label>Lý do Supplier <input required value={reason} onChange={e=>setReason(e.target.value)}/></label><button disabled={busy||!supplier}>Ghi Supplier VNĐ</button><button type="button" onClick={()=>{receipt.current=null;setMessage('Đã bắt đầu tác vụ Supplier mới.');}}>Bắt đầu Supplier mới</button></form><p role="status">{message}</p>{role!=='ADMIN'&&<VndSupplierClaimTools key={supplier} supplier={supplier} onChange={()=>void run(false)}/>}</section>;
 }

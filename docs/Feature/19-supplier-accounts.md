@@ -1,3 +1,6 @@
+## VNĐ receivable / notification continuation — 17/11/2026
+[Feature 38](38-vnd-supplier-receivables.md) adds a separate VNĐ Supplier receivable/offset/correction/reversal slice and durable scoped Claim decision/refund notifications. Legacy USD rules below are not a VNĐ migration. Supplementary imports, Supplier period closing, Control Tower integration and full pilot remain pending.
+
 ## VNĐ finance continuation — 17/11/2026
 [Feature 37](37-vnd-claims-supplier.md) adds separate exact VNĐ actual/payable/payment journals and blocks linked VNĐ Orders/Tracking in the old USD entry paths below. No old opening balance, invoice, payment or receivable is converted. VNĐ Supplier receivable/offset/reversal and period lock cutover remain implementation backlog.
 

@@ -1,5 +1,5 @@
 # VNĐ Supplier receivables and Claim notifications continuation
-**Status: PLANNED, not implemented or pilot accepted. 2026-11-17.**
+**Status: PARTIAL V1; implemented slice verified on synthetic data, not pilot accepted. 2026-11-17.**
 
 ## Verified starting point
 Local and origin/main both `20631973dcfccaf0de337b55c3bd86997230592b` (live ls-remote). Owner AGENTS.md and untracked Codex/ are preserved. Read Feature contract, Approved Decisions, full V1 handoff, Feature 37, Supplier Account rules and authoritative source index. Workbook SHA256 matches `a41d4e540f8e0023b859b32c6b415d744a6c9e095dd3f3b3a4590327b9fb68d2`.
@@ -13,4 +13,18 @@ Local and origin/main both `20631973dcfccaf0de337b55c3bd86997230592b` (live ls-r
 ## OPEN facts, not defaults
 - ePacket workbook supplies rates and fixed fees, but not whether cost includes mid-mile plus last-mile, supplier/component mapping or inclusive overlap evidence. Keep estimated/approved-total distinct from finalized GP. Minimal proposal: explicit coverage confirmation per service/route/version backed by Supplier evidence; until then no fully actual label.
 - Supplier cancellation/void policy values and carrier acknowledgement remain absent for unconfigured routes. Minimal proposal: keep manual follow-up pending; explicit evidence-based handling only. Internal Order cancellation never voids carrier or reverses Supplier cost automatically.
-- Formal Supplier close/reopen authority, boundary and correction references require reconciliation of current close mechanism before implementing. Existing issued Client Statements remain immutable.
+Supplier period closing is still implementation backlog, not a request to reapprove the immutable-period/late-adjustment principle. Reopening must not be invented; existing issued Client Statements remain immutable.
+
+## Implemented behavior and boundaries
+`vnd_supplier_claims` and immutable `vnd_supplier_claim_events` store requested amount, explicit Lot scope, proof and actor. Finance/BOD only; Admin remains documentary-only. New Claims require ACTIVE Tracking in every selected Lot; immutable scope_json preserves those Tracking IDs/values. Replaced/cancelled Tracking requires reviewed source handling, not automatic inclusion. Each Lot can belong to one Claim in this journal; subsequent changes require correction/reversal. Explicit final approval 0..requested creates a separate receivable. Partial Bank/Offset settlements are capped by current outstanding inside the serialized action. Decision CAS rejects stale approval/correction. Zero decision closes, correction can reopen with proof; correction cannot fall below net settlements. Full reversal restores receivable; only Offset reversal restores payable. Original references remain consumed case-insensitively across this VNĐ claim/payment/adjustment journal, including reversed records. Legacy USD journals are separate and not converted.
+
+Offset is permitted to produce Supplier credit/prepayment; no implicit netting with Client accounts. No GP, revenue, Order cost or Client ledger write occurs. Amount strings preserve fractional VNĐ. Same actor/key/payload replay performs no second write; changed payload/actor fails. Receipt insertion failure rolls back all journal writes.
+
+Client/assigned Sales receive durable in-app notices for each new Claim decision and actual refund/recovery event, including pool-level payouts without fabricated Claim allocation. Acknowledgement is recipient-specific, append-only and idempotent. Current account scope/active actor is checked on every read/ack; reassigning Sales revokes prior Sales access, without replaying history to the new Sales. Notifications intentionally omit free-text reasons, decision evidence/context and all bank fields. Latest 100 notices only; pagination, unread badge, initial Claim submission alert/Admin inbox and Control Tower integration remain pending. No external messages are sent.
+
+## Code / API / verification
+- `src/lib/vnd-supplier-claims.ts`, `vnd-supplier.ts`, `vnd-operational-schema.ts`; existing `/api/service-v1/suppliers` accepts claim_create/claim_approve/claim_correct/claim_settle/claim_reverse, with reference/evidence/reason/request_key. All noncreate commands require loaded expected_decision_id; settlement channels BANK/OFFSET.
+- `/api/service-v1/claim-notifications`: scoped GET client_id; POST client_id/id acknowledges. Only Client/Sales.
+- `/vnd` Supplier detail includes requested/approved/Bank/Offset/outstanding, immutable evidence history and correction/reversal forms. Client Claim panel includes notifications/read action.
+- `scripts/verify-vnd-supplier-claims.cjs`, expanded `verify-vnd-refunds.cjs`, `vnd-race-worker.cjs`, expanded five-role Chrome `e2e-vnd-v1.cjs`.
+- Final gate results and remaining gaps: `artifacts/vnd-receivables-notifications-2026-11-17/VERIFICATION.md` (64 domain suites, build/typecheck/lint and 47 Chrome checks across five roles PASS).

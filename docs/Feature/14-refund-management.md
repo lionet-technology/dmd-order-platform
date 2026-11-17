@@ -1,3 +1,6 @@
+## VNĐ receivable / notification continuation — 17/11/2026
+[Feature 38](38-vnd-supplier-receivables.md) adds a separate VNĐ Supplier receivable/offset/correction/reversal slice and durable scoped Claim decision/refund notifications. Legacy USD rules below are not a VNĐ migration. Supplementary imports, Supplier period closing, Control Tower integration and full pilot remain pending.
+
 ## VNĐ continuation — 17/11/2026
 [Feature 37](37-vnd-claims-supplier.md) adds an isolated exact VNĐ Claim/refund pool on /vnd. The USD adapter below rejects VNĐ Clients. Approval snapshots preserve declared goods currency and total current charged revenue; no automatic compensation formula. Roles, evidence, Statement cutover and remaining notifications/case integration are documented there.
 

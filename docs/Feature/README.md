@@ -1,4 +1,4 @@
-[VNĐ Supplier receivable continuation plan](38-vnd-supplier-receivables.md) — reviewed starting HEAD and approved rules; implementation/acceptance tracked separately.
+[VNĐ Supplier receivable continuation](38-vnd-supplier-receivables.md) — separate receivable/offset/reversal and durable scoped Claim notifications; full V1/pilot remain partial.
 
 ## VNĐ Claim / Supplier increment — 17/11/2026
 [Feature 37](37-vnd-claims-supplier.md): separate Claim approval/pool/Bank/Balance/recovery, Supplier documentary actual-to-payable and payment history, categorized reporting. Partial scope; final gate evidence and remaining implementation are recorded separately. No pilot acceptance.

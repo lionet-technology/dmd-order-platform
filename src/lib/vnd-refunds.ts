@@ -65,5 +65,25 @@ export function applyVndRefund(actor:AuthUser,clientId:number,input:Row,key:stri
   if(wallet)db.prepare('INSERT INTO vnd_ledger(client_id,kind,delta,reason,actor_id,request_key) VALUES (?,?,?,?,?,?)').run(clientId,recovery?'CLAIM_RECOVERY':'CLAIM_REFUND',recovery?subtractVnd('0',n):n,reason,actor.id,key);
  }
  db.prepare('INSERT INTO vnd_refund_events(client_id,claim_id,kind,delta,approved,revision,category,context_json,bank_json,executed_day,reason,actor_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').run(clientId,claim?.id??null,kind,delta,approved,revision,category,ctx,bank,day,reason,actor.id);
+ const eventId=Number((db.prepare('SELECT last_insert_rowid() id').get() as {id:number}).id);
+ const client=db.prepare('SELECT sales_user_id FROM users WHERE id=?').get(clientId) as {sales_user_id:number|null};
+ for(const id of new Set([clientId,client.sales_user_id].filter((n):n is number=>typeof n==='number'&&n>0)))db.prepare('INSERT INTO vnd_claim_notifications(recipient_id,client_id,event_id) VALUES (?,?,?)').run(id,clientId,eventId);
  resumeVndPurchases(clientId,actor.id);
+}
+
+export function vndClaimNotifications(actor:AuthUser,clientId:number){
+ vndAccess(actor,clientId);
+ // Public financial facts only. No bank proof, decision context, cost, supplier or free-text reasons.
+ return db.prepare(`SELECT n.id,e.claim_id,e.kind,e.delta,e.approved,e.revision,e.created_at,
+ EXISTS(SELECT 1 FROM vnd_claim_reads r WHERE r.notification_id=n.id AND r.recipient_id=?) is_read
+ FROM vnd_claim_notifications n JOIN vnd_refund_events e ON e.id=n.event_id
+ WHERE n.recipient_id=? AND n.client_id=? ORDER BY n.id DESC LIMIT 100`).all(actor.id,actor.id,clientId);
+}
+export function acknowledgeVndClaim(actor:AuthUser,clientId:number,id:number){
+ return db.transaction(()=>{
+ vndAccess(actor,clientId);
+ if(!Number.isSafeInteger(id)||!db.prepare('SELECT id FROM vnd_claim_notifications WHERE id=? AND recipient_id=? AND client_id=?').get(id,actor.id,clientId))throw Error('Không có quyền thông báo.');
+ db.prepare('INSERT OR IGNORE INTO vnd_claim_reads(notification_id,recipient_id) VALUES (?,?)').run(id,actor.id);
+ return {id};
+ }).immediate();
 }

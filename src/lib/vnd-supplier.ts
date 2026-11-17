@@ -1,4 +1,5 @@
 import {db} from './db';
+import {applySupplierClaim,supplierClaimView} from './vnd-supplier-claims';
 import type {AuthUser} from './auth';
 import {canonicalEnumValue} from './enums';
 import {vnd,compareVnd,subtractVnd,sumVnd} from './vnd-money';
@@ -24,7 +25,7 @@ function readSupplier(actor:AuthUser,supplierRaw:unknown){
  const projection=costs.map(c=>({...c,estimated:vndLotEstimate(Number(c.lot_id)),approved_cost_id:approvedVndLot(Number(c.lot_id))?.id??null}));
  if(actor.role==='ADMIN')return {currency:'VND',supplier,costs:projection,reviews};
  const entries=db.prepare('SELECT * FROM vnd_supplier_ledger WHERE supplier=? ORDER BY id').all(supplier) as Row[];
- return {currency:'VND',supplier,costs:projection,reviews,payable:sumVnd(entries.map(e=>String(e.delta))),entries};
+ return {currency:'VND',supplier,costs:projection,reviews,...supplierClaimView(supplier),payable:sumVnd(entries.map(e=>String(e.delta))),entries};
 }
 export function vndSupplierAction(actor:AuthUser,input:Row){
  return db.transaction(()=>{
@@ -33,7 +34,9 @@ export function vndSupplierAction(actor:AuthUser,input:Row){
  const prior=db.prepare('SELECT * FROM vnd_commands WHERE request_key=?').get(key) as Row|undefined;
  if(prior){if(prior.actor_id!==actor.id||prior.payload!==payload)throw Error('request_key đã dùng.');return vndSupplierView(actor,input.supplier);}
  const supplier=canonicalEnumValue('SUPPLIER',input.supplier,'',{allowInactive:true});
- if(action==='submit'){
+ if(action.startsWith('claim_')){
+  applySupplierClaim(actor,supplier,input,reason);
+ }else if(action==='submit'){
   let lotId=Number(input.lot_id);
   if(input.tracking){
    if(input.lot_id!==undefined)throw Error('Chọn Tracking hoặc Lot, không đồng thời.');
@@ -58,7 +61,7 @@ export function vndSupplierAction(actor:AuthUser,input:Row){
  }else if(action==='payment'||action==='adjustment'){
   if(!['FINANCE','BOD'].includes(actor.role))throw Error('Supplier ledger cần Finance/BOD.');
   const reference=required(input.reference);
-  if(action==='payment'&&db.prepare("SELECT id FROM vnd_supplier_ledger WHERE supplier=? AND kind='PAYMENT' AND lower(reference)=lower(?)").get(supplier,reference))throw Error('Tham chiếu payment trùng.');
+  if(db.prepare("SELECT id FROM vnd_supplier_ledger WHERE supplier=? AND lower(reference)=lower(?)").get(supplier,reference)||db.prepare('SELECT e.id FROM vnd_supplier_claim_events e JOIN vnd_supplier_claims c ON c.id=e.claim_id WHERE c.supplier=? AND lower(e.reference)=lower(?)').get(supplier,reference)||db.prepare('SELECT id FROM vnd_supplier_claims WHERE supplier=? AND lower(reference)=lower(?)').get(supplier,reference))throw Error('Tham chiếu payment/adjustment trùng.');
   let delta:string,day:string|null=null;
   if(action==='payment'){const n=money(input.amount);if(n==='0')throw Error('Payment phải dương.');delta=subtractVnd('0',n);day=validVndDay(input.executed_day);if(day>vndDay())throw Error('Chỉ ghi tiền đã trả.');}
   else {if(typeof input.amount!=='string')throw Error('Cần chuỗi VNĐ.');delta=vnd(input.amount);}

@@ -63,6 +63,18 @@ let checks=0,n=0;const eq=(a,b)=>{checks++;assert.deepEqual(a,b)},bad=(f,re)=>{c
  // Accepted replay is returned before today's smaller pool check, with no second wallet credit.
  const oldEvents=db.prepare('SELECT count(*) n FROM vnd_refund_events').get().n;
  ops.vndAction(fin,payment);eq(db.prepare('SELECT count(*) n FROM vnd_refund_events').get().n,oldEvents);
+ const notices=refund.vndClaimNotifications(client,client.id),salesNotices=refund.vndClaimNotifications(sales,client.id);
+ eq(notices.length,oldEvents);eq(salesNotices.length,oldEvents);
+ eq(notices.every(n=>n.is_read===0),true);
+ eq(JSON.stringify(notices).includes('SECRET'),false);eq(JSON.stringify(notices).includes('reason'),false);eq(JSON.stringify(notices).includes('context'),false);
+ refund.acknowledgeVndClaim(client,client.id,notices[0].id);refund.acknowledgeVndClaim(client,client.id,notices[0].id);
+ eq(refund.vndClaimNotifications(client,client.id)[0].is_read,1);eq(refund.vndClaimNotifications(sales,client.id)[0].is_read,0);
+ bad(()=>refund.acknowledgeVndClaim(sales,client.id,notices[0].id),/quyền/);bad(()=>refund.vndClaimNotifications(other,client.id),/quyền/);
+ db.prepare('UPDATE users SET sales_user_id=? WHERE id=?').run(other.id,client.id);
+ bad(()=>refund.vndClaimNotifications(sales,client.id),/quyền/);bad(()=>refund.acknowledgeVndClaim(sales,client.id,salesNotices[0].id),/quyền/);
+ eq(refund.vndClaimNotifications(other,client.id).length,0);
+ db.prepare('UPDATE users SET active=0 WHERE id=?').run(client.id);bad(()=>refund.vndClaimNotifications(client,client.id),/quyền/);
+ bad(()=>db.prepare('DELETE FROM vnd_claim_reads').run(),/Immutable/);
  eq(db.pragma('integrity_check',{simple:true}),'ok');
  console.log('VND REFUNDS PASS ('+checks+' assertions)');
 }finally{db.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

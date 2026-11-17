@@ -1,5 +1,6 @@
 "use client";
 import {useRef,useState} from 'react';
+import VndClaimNotifications from './vnd-claim-notifications';
 type Props={client:string;user:{id:number;role:string};onChange:()=>void};
 type Refunds={refund_balance:string;claims:Array<{id:number;category:string;note:string;decision_basis:Array<{order_id:number;total_current_revenue:string;declared_goods:Array<{description:string;unit_manufacturing_value:number|null;currency:string;quantity:number}>}>}>;events:Array<{id:number;claim_id:number|null;kind:string;delta:string;approved:string|null;revision:number|null;created_at:string}>};
 export default function VndRefundTools({client,user,onChange}:Props){
@@ -16,7 +17,7 @@ export default function VndRefundTools({client,user,onChange}:Props){
   const r=await fetch('/api/service-v1/operations',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({...body,request_key:receipt.current.key})}),d=await r.json();if(!r.ok)throw Error(d.error);setData(d.refunds);setMessage('Đã ghi nhận Claim / Refund.');onChange();
  }catch(e){setMessage(String(e instanceof Error?e.message:e));}finally{setBusy(false);}}
  return <section aria-label="Claim và Refund VNĐ"><h2>Claim / Refund VNĐ</h2><p>Claim sự cố được duyệt riêng. Refund huỷ đơn dùng policy Service. Quyết định Claim chưa phải thực trả; không tự tính bồi thường hay quy đổi giá trị hàng.</p>
- <button disabled={busy||!client} onClick={()=>void load()}>Xem Claim / Refund</button>
+ <VndClaimNotifications client={client} role={user.role}/><button disabled={busy||!client} onClick={()=>void load()}>Xem Claim / Refund</button>
  {data&&<><p>Pool Refund VNĐ: {data.refund_balance}</p><div style={{overflowX:'auto'}}><table><thead><tr><th>Claim</th><th>Nhóm</th><th>Ghi chú</th></tr></thead><tbody>{data.claims.map(c=><tr key={c.id}><td>{c.id}</td><td>{c.category}</td><td>{c.note}{c.decision_basis.map(o=><div key={o.order_id}>Order {o.order_id} · Tổng doanh thu hiện hành {o.total_current_revenue} VNĐ{o.declared_goods.map((g,i)=><p key={i}>{g.description}: {g.quantity} × {g.unit_manufacturing_value??'Thiếu giá trị hàng'} {g.currency}</p>)}</div>)}</td></tr>)}</tbody></table><table><thead><tr><th>Ngày ghi</th><th>Claim</th><th>Thao tác</th><th>Delta pool VNĐ</th><th>Tổng duyệt VNĐ</th><th>Revision</th></tr></thead><tbody>{data.events.map(e=><tr key={e.id}><td>{e.created_at}</td><td>{e.claim_id}</td><td>{e.kind}</td><td>{e.delta}</td><td>{e.approved}</td><td>{e.revision}</td></tr>)}</tbody></table></div></>}
  {writer&&<form style={{display:'grid',gap:10,maxWidth:600}} onSubmit={e=>{e.preventDefault();void save();}}><label>Thao tác Claim / Refund <select value={action} onChange={e=>setAction(e.target.value)}>
  {creator&&<option value="claim_create">Tạo Claim</option>}{admin&&<option value="claim_decide">Duyệt / sửa tổng duyệt Claim</option>}{finance&&<><option value="refund_balance">Thực trả vào Balance</option><option value="refund_bank">Ghi thực trả Bank</option></>}{(admin||finance)&&<><option value="refund_recover">Thu hồi qua Balance</option><option value="refund_recover_bank">Ghi thực nhận Bank</option></>}</select></label>

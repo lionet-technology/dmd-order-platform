@@ -1,3 +1,6 @@
+## VNĐ receivable / notification continuation — 17/11/2026
+[Feature 38](38-vnd-supplier-receivables.md) adds a separate VNĐ Supplier receivable/offset/correction/reversal slice and durable scoped Claim decision/refund notifications. Legacy USD rules below are not a VNĐ migration. Supplementary imports, Supplier period closing, Control Tower integration and full pilot remain pending.
+
 ## Minimal operational alerts — 28/10/2026
 Admin action queue now includes up to 100 failed purchase jobs, reserved Orders with active Label still needing Charge reconciliation, and unresolved monthly Statement close reviews (issued periods excluded). Read-only, manual refresh/shared financial event, no automatic retry/debit or scheduler. Backup monitoring explicitly says NOT_CONFIGURED; successful synthetic backup rehearsal is not continuous monitoring. No raw supplier/cost/exception text is exposed in these summaries. Actual scheduler, backup destination/retention and external escalation require deployment configuration.
 

@@ -1,0 +1,12 @@
+VND CONTINUATION PASS (37 assertions)
+locator.selectOption: Timeout 12000ms exceeded.
+Call log:
+[2m  - waiting for getByRole('region', { name: 'Phải thu Supplier VNĐ', exact: true }).getByLabel('Thao tác phải thu Supplier', { exact: true })[22m
+
+    at selectSC (/Users/quan/Developer/report/scripts/e2e-vnd-v1.cjs:42:95)
+    at /Users/quan/Developer/report/scripts/e2e-vnd-v1.cjs:47:8 {
+  log: [
+    "  - waiting for getByRole('region', { name: 'Phải thu Supplier VNĐ', exact: true }).getByLabel('Thao tác phải thu Supplier', { exact: true })"
+  ],
+  name: 'TimeoutError'
+}

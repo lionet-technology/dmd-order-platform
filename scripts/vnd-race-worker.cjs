@@ -6,7 +6,7 @@ require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f
 const {db}=require('../src/lib/db.ts');require('../src/lib/auth.ts');require('../src/lib/cases.ts');
 const {vndAction}=require('../src/lib/vnd-operational.ts'),{completeReserve}=require('../src/lib/credit.ts');
 parentPort.once('message',()=>{
- try{const actor=db.prepare('SELECT * FROM users WHERE id=?').get(w.actor);for(let i=0;i<3;i++){if(w.charge)completeReserve(w.charge,actor.id);else vndAction(actor,w.input);}parentPort.postMessage({ok:true});}
+ try{const actor=db.prepare('SELECT * FROM users WHERE id=?').get(w.actor);for(let i=0;i<3;i++){if(w.charge)completeReserve(w.charge,actor.id);else if(w.supplier)require('../src/lib/vnd-supplier.ts').vndSupplierAction(actor,w.input);else vndAction(actor,w.input);}parentPort.postMessage({ok:true});}
  catch(e){parentPort.postMessage({ok:false,error:String(e.message)});}
  finally{db.close();parentPort.close();}
 });
