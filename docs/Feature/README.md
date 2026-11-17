@@ -1,3 +1,6 @@
+## Canonical local workspace and VND commission inputs — 17/11/2026
+Active repo: `/Users/quan/Developer/report`. [Feature 36](36-vnd-commission-report.md) records copy integrity and bounded per-Order/Sales commission inputs. Claim/refund categories, Supplier Finance and full pilot remain incomplete.
+
 ## VND continuation — 17/11/2026
 New-account VND continuation: UPS Purchase/account export, destination ePacket EU routing, Admin shipping edit, policy Cancel & Duplicate, scoped Client Add-on, immutable VND Statements, explicit Debt and BOD monthly report now have implementation. Full migration, Claim/Supplier financial cutover and full reporting/pilot acceptance remain incomplete.
 

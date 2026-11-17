@@ -1,3 +1,6 @@
+## VND commission inputs — 17/11/2026
+[Feature 36](36-vnd-commission-report.md): BOD-only VND monthly report now adds historical Sales/group and Order inputs. Signed GP remains separate from per-Order positive GP; cancelled Orders are excluded from consideration. Missing Base/attribution and Claim-refund derived totals remain unavailable. No commission payout/rate or Claim allocation is created. Reads use one database snapshot.
+
 ## VND continuation — 17/11/2026
 A separate BOD-only VND monthly projection now reads VND ledger and purchase snapshots, separates Order purchase-period revenue from posting-period cash flow and marks unreconciled Actual GP and missing manual estimates as unavailable. Legacy USD report is not relabelled. Full commission/refund-group reporting remains incomplete.
 
