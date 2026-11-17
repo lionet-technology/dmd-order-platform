@@ -1,6 +1,7 @@
 "use client";
 import Link from 'next/link';
 import VndTools from '../vnd-tools';
+import VndExceptionTools from '../vnd-exception-tools';
 import {useEffect,useRef,useState} from 'react';
 type Purchase={order_id:number;status:string;offer:string|null;revision:number;reserve:string;pricing_error?:string|null;cartons:Array<{id:number;carton_number:number}>};
 type Entry={id:number;kind:string;delta:string;reason:string;created_at:string};
@@ -70,6 +71,7 @@ export default function VndWorkspace(){
     <button type="button" disabled={busy} onClick={()=>{receipt.current=null;setMessage('Đã bắt đầu thao tác mới.');}}>Bắt đầu thao tác mới</button>
    </form>
    <p role="status">{message}</p>
+   <VndExceptionTools/>
    <VndTools key={client} client={client} user={user} onChange={()=>void load()}/>
    {account&&<><h2>Sổ giao dịch VNĐ</h2><div style={{overflowX:'auto',maxWidth:'100%'}}><table><thead><tr><th>Thời điểm</th><th>Loại</th><th>Biến động VNĐ</th><th>Lý do</th></tr></thead><tbody>{account.ledger.map(e=><tr key={e.id}><td>{new Date(e.created_at.replace(' ','T')+'Z').toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}</td><td>{e.kind}</td><td>{e.delta}</td><td>{e.reason}</td></tr>)}</tbody></table></div></>}
   </>}

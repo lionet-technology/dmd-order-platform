@@ -1,4 +1,5 @@
 import {db} from './db';
+import {supplierPeriodView,closeSupplierPeriod,supplierPostingCursor,linkSupplierPostings} from './vnd-supplier-periods';
 import {supplierImportView,applySupplierImport} from './vnd-supplier-import';
 import {applySupplierClaim,supplierClaimView} from './vnd-supplier-claims';
 import type {AuthUser} from './auth';
@@ -26,7 +27,7 @@ function readSupplier(actor:AuthUser,supplierRaw:unknown){
  const projection=costs.map(c=>({...c,estimated:vndLotEstimate(Number(c.lot_id)),approved_cost_id:approvedVndLot(Number(c.lot_id))?.id??null}));
  if(actor.role==='ADMIN')return {currency:'VND',supplier,costs:projection,reviews,import_rows:supplierImportView(supplier)};
  const entries=db.prepare('SELECT * FROM vnd_supplier_ledger WHERE supplier=? ORDER BY id').all(supplier) as Row[];
- return {currency:'VND',supplier,costs:projection,reviews,import_rows:supplierImportView(supplier),...supplierClaimView(supplier),payable:sumVnd(entries.map(e=>String(e.delta))),entries};
+ return {currency:'VND',supplier,costs:projection,reviews,import_rows:supplierImportView(supplier),...supplierClaimView(supplier),...supplierPeriodView(supplier),payable:sumVnd(entries.map(e=>String(e.delta))),entries};
 }
 export function vndSupplierAction(actor:AuthUser,input:Row){
  return db.transaction(()=>{
@@ -35,7 +36,10 @@ export function vndSupplierAction(actor:AuthUser,input:Row){
  const prior=db.prepare('SELECT * FROM vnd_commands WHERE request_key=?').get(key) as Row|undefined;
  if(prior){if(prior.actor_id!==actor.id||prior.payload!==payload)throw Error('request_key đã dùng.');return vndSupplierView(actor,input.supplier);}
  const supplier=canonicalEnumValue('SUPPLIER',input.supplier,'',{allowInactive:true});
- if(action==='import'||action==='review_import'){
+ const cursor=supplierPostingCursor();
+ if(action==='close_period'){
+  closeSupplierPeriod(actor,supplier,input,reason);
+ }else if(action==='import'||action==='review_import'){
   applySupplierImport(actor,supplier,input,reason);
  }else if(action.startsWith('claim_')){
   applySupplierClaim(actor,supplier,input,reason);
@@ -70,6 +74,7 @@ export function vndSupplierAction(actor:AuthUser,input:Row){
   else {if(typeof input.amount!=='string')throw Error('Cần chuỗi VNĐ.');delta=vnd(input.amount);}
   db.prepare('INSERT INTO vnd_supplier_ledger(supplier,kind,delta,reference,executed_day,reason,actor_id) VALUES (?,?,?,?,?,?,?)').run(supplier,action.toUpperCase(),delta,reference,day,reason,actor.id);
  }else throw Error('Thao tác Supplier chưa hỗ trợ.');
+ linkSupplierPostings(actor,supplier,input,reason,cursor);
  const result=vndSupplierView(actor,supplier);
  db.prepare('INSERT INTO vnd_commands(request_key,actor_id,payload,result_json) VALUES (?,?,?,?)').run(key,actor.id,payload,JSON.stringify(result));return result;
  }).immediate();

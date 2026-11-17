@@ -61,6 +61,7 @@ let checks=0,n=0;const eq=(a,b)=>{checks++;assert.deepEqual(a,b)},bad=(f,re)=>{c
  eq(supplier.vndSupplierView(admin,'DMD').claims,undefined);eq(supplier.vndSupplierView(admin,'DMD').receivable,undefined);
  bad(()=>supplier.vndSupplierView(sales,'DMD'),/quyền/);bad(()=>supplier.vndSupplierView(client,'DMD'),/quyền/);
  bad(()=>claim('claim_correct',{amount:'1'},admin),/Finance/);
+ const gp=require('../src/lib/vnd-reporting.ts').vndBusinessReport(vndDay().slice(0,7)).gp_reconciliation.find(r=>r.order_id===o.id);eq(gp.actual_net,'100.123456');eq(gp.gp_net_before_client_refunds,'-100.123456');eq(gp.supplier_receivable_in_gp,false);
  eq(JSON.stringify(ops.vndBalance(client.id)),original);eq(JSON.stringify(db.prepare('SELECT * FROM orders').all()),orders);
  bad(()=>db.prepare("UPDATE vnd_supplier_claim_events SET amount='0'").run(),/Immutable/);
  bad(()=>db.prepare('DELETE FROM vnd_supplier_claims').run(),/Immutable/);

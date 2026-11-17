@@ -5,15 +5,15 @@ import {validVndDay,vndDay} from './vnd-debt';
 type Row=Record<string,unknown>;
 function required(v:unknown){const s=typeof v==='string'?v.trim():'';if(!s||s.length>2000)throw Error('Cần chứng từ/lý do hợp lệ.');return s;}
 function amount(v:unknown,positive=false){if(typeof v!=='string')throw Error('Cần chuỗi VNĐ.');const n=vnd(v);if(compareVnd(n,'0')<(positive?1:0))throw Error('Số tiền không hợp lệ.');return n;}
-export function supplierClaimState(claim:Row){
- const events=db.prepare('SELECT * FROM vnd_supplier_claim_events WHERE claim_id=? ORDER BY id').all(claim.id) as Row[];
+export function supplierClaimState(claim:Row,throughDay?:string){
+ const events=db.prepare("SELECT * FROM vnd_supplier_claim_events WHERE claim_id=? AND (? IS NULL OR substr(datetime(created_at,'+7 hours'),1,10)<=?) ORDER BY id").all(claim.id,throughDay??null,throughDay??null) as Row[];
  const decisions=events.filter(e=>['APPROVE','CORRECT'].includes(String(e.kind))),decision=decisions.at(-1);
  const active=events.filter(e=>['BANK','OFFSET'].includes(String(e.kind))&&!events.some(r=>r.kind==='REVERSE'&&r.settlement_id===e.id));
  const approved=decision?String(decision.approved):null,received=sumVnd(active.filter(e=>e.kind==='BANK').map(e=>String(e.amount))),offset=sumVnd(active.filter(e=>e.kind==='OFFSET').map(e=>String(e.amount))),settled=sumVnd([received,offset]),outstanding=approved===null?'0':subtractVnd(approved,settled);
  return {...claim,approved,decision_id:Number(decision?.id??0),received,offset,settled,outstanding,status:approved===null?'OPEN':outstanding==='0'?'CLOSED':settled==='0'?'APPROVED':'PARTIALLY_SETTLED',events};
 }
 export function supplierClaimView(supplier:string){
- const claims=(db.prepare('SELECT * FROM vnd_supplier_claims WHERE supplier=? ORDER BY id DESC').all(supplier) as Row[]).map(supplierClaimState);
+ const claims=(db.prepare('SELECT * FROM vnd_supplier_claims WHERE supplier=? ORDER BY id DESC').all(supplier) as Row[]).map(c=>supplierClaimState(c));
  return {claims,receivable:sumVnd(claims.map(c=>c.outstanding))};
 }
 /** Runs within the Supplier action immediate transaction, after authorization and receipt lookup. */

@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import {installSupplierPeriodSchema} from './vnd-supplier-periods';
 import {installSupplierImportSchema} from './vnd-supplier-import';
 /** Explicit new-account cutover only; never reinterpret legacy USD rows. */
 export function installVndOperationalSchema(db:Database.Database) {
@@ -36,6 +37,7 @@ export function installVndOperationalSchema(db:Database.Database) {
  CREATE TABLE IF NOT EXISTS vnd_claim_notifications(id INTEGER PRIMARY KEY,recipient_id INTEGER NOT NULL REFERENCES users(id),client_id INTEGER NOT NULL REFERENCES users(id),event_id INTEGER NOT NULL REFERENCES vnd_refund_events(id),UNIQUE(recipient_id,event_id));
  CREATE TABLE IF NOT EXISTS vnd_claim_reads(notification_id INTEGER NOT NULL REFERENCES vnd_claim_notifications(id),recipient_id INTEGER NOT NULL REFERENCES users(id),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(notification_id,recipient_id));`);
  installSupplierImportSchema(db);
+ installSupplierPeriodSchema(db);
  for(const table of ['vnd_supplier_claims','vnd_supplier_claim_events','vnd_claim_notifications','vnd_claim_reads'])for(const op of ['UPDATE','DELETE'])db.exec(`CREATE TRIGGER IF NOT EXISTS immutable_${table}_${op} BEFORE ${op} ON ${table} BEGIN SELECT RAISE(ABORT,'Immutable VND claim history'); END;`);
  for(const table of ['vnd_supplier_costs','vnd_supplier_reviews','vnd_supplier_ledger'])for(const op of ['UPDATE','DELETE'])db.exec(`CREATE TRIGGER IF NOT EXISTS immutable_${table}_${op} BEFORE ${op} ON ${table} BEGIN SELECT RAISE(ABORT,'Immutable VND supplier history'); END;`);
  for(const table of ['vnd_accounts'])db.exec(`CREATE TRIGGER IF NOT EXISTS immutable_${table}_delete BEFORE DELETE ON ${table} BEGIN SELECT RAISE(ABORT,'VND account cutover is permanent'); END;`);

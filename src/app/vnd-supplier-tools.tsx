@@ -1,9 +1,10 @@
 "use client";
 import {useRef,useState} from 'react';
+import VndSupplierPeriodTools from './vnd-supplier-period-tools';
 import VndSupplierImportTools from './vnd-supplier-import-tools';
 import VndSupplierClaimTools from './vnd-supplier-claim-tools';
 export default function VndSupplierTools({role}:{role:string}){
- const [supplier,setSupplier]=useState(''),[action,setAction]=useState('submit'),[lot,setLot]=useState(''),[tracking,setTracking]=useState(''),[cost,setCost]=useState(''),[previous,setPrevious]=useState('0'),[amount,setAmount]=useState(''),[reference,setReference]=useState(''),[reason,setReason]=useState(''),[day,setDay]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false);
+ const [supplier,setSupplier]=useState(''),[action,setAction]=useState('submit'),[lot,setLot]=useState(''),[tracking,setTracking]=useState(''),[cost,setCost]=useState(''),[previous,setPrevious]=useState('0'),[original,setOriginal]=useState(''),[amount,setAmount]=useState(''),[reference,setReference]=useState(''),[reason,setReason]=useState(''),[day,setDay]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false);
  const [data,setData]=useState<{payable?:string;costs:Array<{id:number;lot_id:number;amount:string;estimated:string|null;approved_cost_id:number|null}>;entries?:Array<{id:number;kind:string;delta:string;reference:string;executed_day:string|null}>}|null>(null),receipt=useRef<{payload:string;key:string}|null>(null);
  if(!['ADMIN','BOD','FINANCE'].includes(role))return null;
  async function run(save:boolean){setBusy(true);try{
@@ -11,6 +12,7 @@ export default function VndSupplierTools({role}:{role:string}){
   if(action==='submit'){if(tracking)body.tracking=tracking;else body.lot_id=Number(lot);Object.assign(body,{amount,reference});}
   if(['approve','keep_old'].includes(action))Object.assign(body,{cost_id:Number(cost),expected_approved_cost_id:Number(previous)});
   if(['payment','adjustment'].includes(action))Object.assign(body,{amount,reference,executed_day:day});
+  if(action==='adjustment'&&original)body.original_ledger_id=Number(original);
   const payload=JSON.stringify(body);if(receipt.current?.payload!==payload)receipt.current={payload,key:crypto.randomUUID()};
   const r=await fetch('/api/service-v1/suppliers'+(save?'':'?supplier='+encodeURIComponent(supplier)),save?{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({...body,request_key:receipt.current.key})}:{}),d=await r.json();if(!r.ok)throw Error(d.error);setData(d);setMessage(save?'Đã ghi Supplier VNĐ.':'Đã tải Supplier VNĐ.');
  }catch(e){setMessage(e instanceof Error?e.message:'Không xử lý được.');}finally{setBusy(false);}}
@@ -21,6 +23,7 @@ export default function VndSupplierTools({role}:{role:string}){
  {action==='submit'&&<><label>Lot ID <input value={lot} onChange={e=>setLot(e.target.value)}/></label><label>Hoặc Tracking <input value={tracking} onChange={e=>setTracking(e.target.value)}/></label></>}
  {['approve','keep_old'].includes(action)&&<><label>Chứng từ cost ID <input required value={cost} onChange={e=>setCost(e.target.value)}/></label><label>Cost ID đã chốt (0 nếu chưa có) <input required value={previous} onChange={e=>setPrevious(e.target.value)}/></label></>}
  {['submit','payment','adjustment'].includes(action)&&<><label>Số tiền Supplier VNĐ <input required value={amount} onChange={e=>setAmount(e.target.value)}/></label><label>Tham chiếu chứng từ Supplier <input required value={reference} onChange={e=>setReference(e.target.value)}/></label></>}
+ {action==='adjustment'&&<label>Bút toán Supplier gốc (bắt buộc sau khóa kỳ) <input value={original} onChange={e=>setOriginal(e.target.value)}/></label>}
  {action==='payment'&&<label>Ngày thanh toán Supplier <input required type="date" value={day} onChange={e=>setDay(e.target.value)}/></label>}
- <label>Lý do Supplier <input required value={reason} onChange={e=>setReason(e.target.value)}/></label><button disabled={busy||!supplier}>Ghi Supplier VNĐ</button><button type="button" onClick={()=>{receipt.current=null;setMessage('Đã bắt đầu tác vụ Supplier mới.');}}>Bắt đầu Supplier mới</button></form><p role="status">{message}</p><VndSupplierImportTools key={supplier+role} supplier={supplier} role={role} onChange={()=>void run(false)}/>{role!=='ADMIN'&&<VndSupplierClaimTools key={supplier} supplier={supplier} onChange={()=>void run(false)}/>}</section>;
+ <label>Lý do Supplier <input required value={reason} onChange={e=>setReason(e.target.value)}/></label><button disabled={busy||!supplier}>Ghi Supplier VNĐ</button><button type="button" onClick={()=>{receipt.current=null;setMessage('Đã bắt đầu tác vụ Supplier mới.');}}>Bắt đầu Supplier mới</button></form><p role="status">{message}</p><VndSupplierImportTools key={supplier+role} supplier={supplier} role={role} onChange={()=>void run(false)}/>{role!=='ADMIN'&&<VndSupplierPeriodTools key={'period'+supplier} supplier={supplier} onChange={()=>void run(false)}/>}{role!=='ADMIN'&&<VndSupplierClaimTools key={supplier} supplier={supplier} onChange={()=>void run(false)}/>}</section>;
 }

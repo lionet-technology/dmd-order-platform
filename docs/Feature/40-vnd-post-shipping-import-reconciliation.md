@@ -1,3 +1,6 @@
+## VNĐ V1 continuation — 17/11/2026
+[Feature 41](41-vnd-supplier-period-gp-control-tower.md) records immutable Supplier period close/current-period late corrections, freight-only GP-Base and approved reference commission formula, whole-Claim same-cohort group reconciliation, before-Refund GP-Net, and scoped VNĐ Control Tower exceptions. Synthetic verification is separate from real-document pilot/deployment acceptance. Claim/watchlist/Complete Claim linking remains NEXT phase. This supersedes contrary earlier delivery-status notes only for this bounded VNĐ scope.
+
 # Post-shipping imports and Supplier reconciliation queue
 **Status: implemented bounded VNĐ slice; 66 regression suites, build/typecheck/lint and five-role Chrome 62 checks PASS. Reviewed 17/11/2026.** This is the current scope for the Owner continuation; full V1/pilot remains partial.
 
