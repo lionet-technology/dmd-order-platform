@@ -3,7 +3,7 @@
 - CONFIRMED: Supplier cancellation/void policy and carrier evidence must be set up per service/route. Manual follow-up with Admin choosing a refund percentage/amount is approved. Values/evidence still need operational configuration; no default percentage, automatic carrier void or cost reversal follows from internal cancellation. Supplier money remains explicitly reconciled through its financial workflow.
 
 ## VNĐ continuation — 17/11/2026
-[Feature 37](37-vnd-claims-supplier.md) adds separate VNĐ pending documentary totals, explicit old/new review and approved actual deltas into payable. USD workflows below are not certified VNĐ; ePacket component coverage remains OPEN.
+[Feature 37](37-vnd-claims-supplier.md) adds separate VNĐ pending documentary totals, explicit old/new review and approved actual deltas into payable. USD workflows below are not certified VNĐ. ePacket Standard/Eco Net includes mid-mile + last-mile; detailed components are deferred (Feature 39).
 
 ## Current requirements — handoff 16/11/2026
 [Canonical full handoff](DMD_Service_Architecture_V1_Implementation_Handoff_2026-11-16.md) and [audited HEAD gaps](31-service-v1-build-gap.md) supersede contrary dated requirements below. Earlier dated sections are historical where inconsistent, not concurrent current rules.
@@ -11,7 +11,7 @@
 - APPROVED: Edit Order shipping/service only before any Tracking OR Label; separate manual Edit Selling Price offer and Add Tracking/Label. Selling correction after charge appends delta/history without reopening Purchase.
 - APPROVED: Add-on revenue correction replaces old absolute revenue lock. Financial posting/adjustment may exceed Credit Limit without creating Debt; Purchase still gates funds.
 - APPROVED: VND fractional values retained; UPS divisor 5000, bands (min,max], priority SDS→VTT→JD. Global FX/UPS variables update new Net/Base/Retail without promoting pending account versions.
-- IMPLEMENTED / STAGED / MISSING: use the linked HEAD gap, not old baseline tables. Operational USD is not VND simply by changing labels. OPEN supplier policy values, ePacket FX/fee relation, source price/zone validation and manual-offer service change stay OPEN.
+- IMPLEMENTED / STAGED / MISSING: use the linked HEAD gap, not old baseline tables. Operational USD is not VND simply by changing labels. Use the current source index and Feature 35/39 for resolved source, FX/fee, Service-change and inclusive ePacket Net decisions. Supplier-specific cancellation/void values and carrier evidence still require configuration; do not invent defaults.
 
 # Supplier Cost & Reconciliation
 

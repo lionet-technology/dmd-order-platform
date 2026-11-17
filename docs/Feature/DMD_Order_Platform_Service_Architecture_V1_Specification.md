@@ -11,7 +11,7 @@ Current requirements 16/11/2026, implementation PARTIAL.
 | §1 Service Matrix, Supplier, Lot/Carton | 02-orders-drafts, 24-service-v1-configuration, 19-supplier-accounts |
 | §2 Configuration, sequential Pricing/Publish, globals | 25-service-v1-pricing, 27-service-v1-quotes, 29-service-v1-fx |
 | §3 UPS full formula, (min,max], divisor5000, priority | 26-ups-v1-core |
-| §4 ePacket/Yun FX, oversize/non-cont | 03-service-route-pricing, 29-service-v1-fx; exact fee VND/FX relation remains OPEN |
+| §4 ePacket/Yun FX, oversize/non-cont | 03-service-route-pricing, 29-service-v1-fx; source/fee-FX confirmed by SERVICE-V1-SOURCE-INDEX; inclusive Standard/Eco Net confirmed by Feature 39 |
 | §5 Purchase/consent/FIFO/Reserve and separate edits | 04-purchase-engine, 05-tracking-label, 28-order-edit-v1 |
 | §6 per-Service cancellation and Admin Duplicate | 06-cancellation, 30-supplier-cancellation-followup |
 | §7 Fulfillment/Warehouse/Emergency | 07-warehouse-manifest, 18-emergency-route-hold |

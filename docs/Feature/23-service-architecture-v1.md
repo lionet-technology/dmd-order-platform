@@ -30,4 +30,4 @@ Reviewed 16/11/2026. Status: PARTIAL.
 
 ## Next execution and OPEN dependencies
 Order–Finance comes first: verified VND data/money model + server quote resolver, persistent consent/wait/FIFO, separate edit/offer/issuance, atomic replacement and corrections. Update features/tests with each behavior change.
-Do not infer ePacket VND fee/FX relation or inclusive Net components, Supplier cancellation values, missing zone/rate rows or manual-offer behavior on Service change. The available differently named Net workbook still needs provenance/import validation. Missing implementation of an approved rule is not an OPEN business decision.
+Current source/fee-FX decisions are in SERVICE-V1-SOURCE-INDEX.md; Owner confirmed Standard/Eco inclusive mid-mile + last-mile Net in Feature 39. Detail is deferred. Supplier cancellation values and carrier proof still require configuration. Service-change behavior follows Feature 35. Missing implementation of an approved rule is not an OPEN business decision.

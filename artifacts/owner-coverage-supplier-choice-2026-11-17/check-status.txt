@@ -1,0 +1,7 @@
+test=0 (64 suites)
+build=0
+typecheck=0
+lint=0 (zero warnings)
+browser=0 (52 checks, five roles)
+supplier-final=0 (37 assertions)
+diff-check=0

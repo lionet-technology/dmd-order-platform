@@ -14,6 +14,7 @@ try{
  const call=(action,b={},actor=fin)=>supplier.vndSupplierAction(actor,{action,supplier:'DMD',reason:'TEST',request_key:key(),...b}),view=()=>supplier.vndSupplierView(fin,'DMD');
  bad(()=>finance.addSupplierCost({order_id:o.id,lot_number:1,supplier:'DMD',service:'ePacket',sub_service:'Standard',total_net_cost:1},admin.id),/VNĐ/);
  const balance=ops.vndBalance(client.id),orders=JSON.stringify(db.prepare('SELECT * FROM orders').all());
+ const pendingActual=require('../src/lib/vnd-reporting.ts').vndBusinessReport(vndDay().slice(0,7)).supplier_actuals.find(r=>r.order_id===o.id);eq(pendingActual.actual_net,null);eq(pendingActual.status,'MISSING_ACTUAL');
  call('submit',{lot_id:lot.id,amount:'40.000001',reference:'TEST invoice'},admin);
  eq(view().payable,'0');eq(view().costs[0].estimated,'30.123456');eq(view().costs[0].approved_cost_id,null);
  const first=view().costs[0].id;
@@ -33,7 +34,7 @@ try{
  supplier.vndSupplierAction(bod,input);supplier.vndSupplierAction(bod,input);
  eq(view().payable,'30.999999');eq(view().entries.length,2);
  const actual=require('../src/lib/vnd-reporting.ts').vndBusinessReport(vndDay().slice(0,7)).supplier_actuals.find(r=>r.order_id===o.id);
- eq(actual.actual_net,'30.999999');eq(actual.coverage,'COMPONENT_COVERAGE_OPEN');
+ eq(actual.actual_net,'30.999999');eq(actual.coverage,'WORKBOOK_INCLUSIVE_MID_LAST_MILE');eq(actual.component_breakdown,'DEFERRED');eq(actual.status,'APPROVED_TOTAL');db.prepare("UPDATE orders SET sub_service='Eco' WHERE id=?").run(o.id);eq(require('../src/lib/vnd-reporting.ts').vndBusinessReport(vndDay().slice(0,7)).supplier_actuals.find(r=>r.order_id===o.id).coverage,'WORKBOOK_INCLUSIVE_MID_LAST_MILE');db.prepare("UPDATE orders SET sub_service='Standard' WHERE id=?").run(o.id);eq(require('../src/lib/vnd-reporting.ts').vndBusinessReport(vndDay().slice(0,7)).actual_gp,null);
  call('payment',{amount:'10.000001',reference:'TEST bank payment',executed_day:vndDay()});
  eq(view().payable,'20.999998');
  bad(()=>call('payment',{amount:'1',reference:'test BANK payment',executed_day:vndDay()}),/trùng/);
