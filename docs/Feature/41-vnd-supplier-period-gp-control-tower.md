@@ -1,3 +1,6 @@
+## Claim và Refund NEXT — 18/11/2026
+[Feature 42](42-vnd-claim-refund-next.md) ghi đặc tả Claim/Refund, hiện trạng, checklist pilot và phần truy vết case chưa phân bổ trong báo cáo BOD.
+
 # Supplier period close, GP reconciliation and VNĐ exceptions
 **Status: implemented bounded continuation; verification evidence in [build report](../../artifacts/vnd-v1-close-reconciliation-2026-11-17/VERIFICATION.md). Not production or real-document pilot acceptance.**
 Owner continuation 17/11/2026; canonical repo /Users/quan/Developer/report. Supersedes earlier missing-period and no-reference-formula notes only within this VNĐ scope.

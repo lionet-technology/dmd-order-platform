@@ -24,6 +24,7 @@ export function vndCommissionInputs(orders:Row[]){
    cancellation_refund:sumVnd((db.prepare("SELECT delta FROM vnd_ledger WHERE order_id=? AND kind='CANCELLATION_REFUND'").all(o.id) as Row[]).map(e=>String(e.delta)))};
  });
  const keys=[...new Set(details.map(o=>JSON.stringify([o.sales_user_id,o.group])))];
+ const unallocated = new Map<number, { claim_id: number; order_ids: number[]; approved_vnd: string }>();
  const performance=keys.map(key=>{
   const rows=details.filter(o=>JSON.stringify([o.sales_user_id,o.group])===key),first=rows[0];
   const claimIds=[...new Set(rows.flatMap(o=>o.approved_claim_ids))];
@@ -31,10 +32,14 @@ export function vndCommissionInputs(orders:Row[]){
   for(const id of claimIds){
    const c=db.prepare('SELECT orders_json FROM vnd_claims WHERE id=?').get(id) as Row;
    const ids=JSON.parse(String(c.orders_json)) as number[];
-   // Whole-Claim reporting only when its complete scope belongs to this one cohort/group.
-   if(ids.some(id=>!rows.some(o=>o.order_id===id))){claimRefund=null;break;}
    const decision=db.prepare("SELECT approved FROM vnd_refund_events WHERE claim_id=? AND kind='DECISION' ORDER BY id DESC LIMIT 1").get(id) as Row;
-   claimRefund=addVnd(claimRefund,String(decision.approved));
+   const approved = String(decision.approved);
+   if (ids.some(orderId => !rows.some(order => order.order_id === orderId))) {
+    unallocated.set(Number(id), { claim_id: Number(id), order_ids: ids, approved_vnd: approved });
+    claimRefund = null;
+   } else if (claimRefund !== null) {
+    claimRefund = addVnd(claimRefund, approved);
+   }
   }
   const signedTotal=rows.some(o=>o.signed_gp_base===null)?null:sumVnd(rows.map(o=>o.signed_gp_base!));
   return {sales_user_id:first.sales_user_id,group:first.group,orders:rows.length,revenue:sumVnd(rows.map(o=>o.revenue)),
@@ -42,5 +47,5 @@ export function vndCommissionInputs(orders:Row[]){
    gp_base_for_consideration:rows.some(o=>o.gp_base_for_consideration===null)?null:sumVnd(rows.map(o=>o.gp_base_for_consideration!)),
    commission_reference:rows.some(o=>o.commission_reference===null)?null:sumVnd(rows.map(o=>o.commission_reference!)),refund_review_required:rows.some(o=>o.refund_review_required),cancellation_refund:sumVnd(rows.map(o=>o.cancellation_refund)),claim_refund:claimRefund,gp_base_minus_claim_refund:claimRefund===null||signedTotal===null?null:subtractVnd(signedTotal,claimRefund),claim_refund_status:claimRefund===null?'UNALLOCATED_CROSS_COHORT_OR_GROUP':claimIds.length?'WHOLE_CLAIM_SAME_COHORT_GROUP':'NO_APPROVED_CLAIMS'};
  });
- return {status:'PARTIAL_CLIENT_POOL_NO_ALLOCATION',basis:'PURCHASE_MONTH_LIVE',formula:'sales>base ? 0.001*sales+0.12*max(sales-base,0) : 0; cancelled=0',formula_version:'OWNER_CONTINUATION_2026_11_17_REFERENCE_ONLY',performance,orders:details};
+ return {status:'PARTIAL_CLIENT_POOL_NO_ALLOCATION',basis:'PURCHASE_MONTH_LIVE',formula:'sales>base ? 0.001*sales+0.12*max(sales-base,0) : 0; cancelled=0',formula_version:'OWNER_CONTINUATION_2026_11_17_REFERENCE_ONLY',performance,unallocated_claims:[...unallocated.values()].sort((a,b)=>a.claim_id-b.claim_id),orders:details};
 }

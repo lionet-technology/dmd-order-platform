@@ -1,0 +1,56 @@
+{
+  "status": "PASS",
+  "data": "TEST FIXTURES ONLY — NO REAL DOCUMENTS",
+  "source": "/var/folders/x6/q7g3prc91cng1tjxqpd64yvc0000gn/T/dmd-service-v1-7cBJL2/test.db",
+  "backup": "/var/folders/x6/q7g3prc91cng1tjxqpd64yvc0000gn/T/dmd-service-v1-7cBJL2/TEST-backup.db",
+  "restored": "/var/folders/x6/q7g3prc91cng1tjxqpd64yvc0000gn/T/dmd-service-v1-7cBJL2/TEST-restored.db",
+  "tables": [
+    {
+      "name": "vnd_supplier_periods",
+      "rows": 2
+    },
+    {
+      "name": "vnd_supplier_ledger",
+      "rows": 4
+    },
+    {
+      "name": "vnd_supplier_costs",
+      "rows": 3
+    },
+    {
+      "name": "vnd_supplier_claims",
+      "rows": 1
+    },
+    {
+      "name": "vnd_supplier_claim_events",
+      "rows": 2
+    },
+    {
+      "name": "vnd_supplier_posting_links",
+      "rows": 4
+    },
+    {
+      "name": "vnd_commands",
+      "rows": 9
+    },
+    {
+      "name": "vnd_ledger",
+      "rows": 0
+    }
+  ],
+  "verified": [
+    "SQLite integrity",
+    "foreign keys",
+    "byte-identical frozen snapshots",
+    "late-adjustment original links",
+    "separate payable and receivable journals",
+    "commands and Client journal unchanged"
+  ],
+  "not_verified": [
+    "real Supplier documents",
+    "deployment-target restore",
+    "production credentials",
+    "operator acceptance",
+    "production financial actions"
+  ]
+}

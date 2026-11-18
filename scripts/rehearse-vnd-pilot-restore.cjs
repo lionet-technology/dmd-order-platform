@@ -10,7 +10,7 @@ original.backup(backup).then(()=>{
  assert.equal(check.pragma('integrity_check',{simple:true}),'ok');assert.deepEqual(check.pragma('foreign_key_check'),[]);
  for(const t of tables)assert.deepEqual(check.prepare('SELECT * FROM '+t+' ORDER BY rowid').all(),before[t]);
  check.close();
- const output=path.resolve(__dirname,'../artifacts/vnd-v1-close-reconciliation-2026-11-17/pilot-restore.json');
+ const output=path.resolve(process.argv[2] || path.join(__dirname,'../artifacts/vnd-v1-close-reconciliation-2026-11-17/pilot-restore.json'));
  fs.writeFileSync(output,JSON.stringify({status:'PASS',data:'TEST FIXTURES ONLY — NO REAL DOCUMENTS',source,backup,restored,tables:tables.map(t=>({name:t,rows:before[t].length})),verified:['SQLite integrity','foreign keys','byte-identical frozen snapshots','late-adjustment original links','separate payable and receivable journals','commands and Client journal unchanged'],not_verified:['real Supplier documents','deployment-target restore','production credentials','operator acceptance','production financial actions']},null,2));
  console.log('SYNTHETIC PILOT RESTORE PASS ('+tables.length+' table comparisons, integrity and foreign keys)');
 }).catch(e=>{console.error(e);process.exitCode=1;});

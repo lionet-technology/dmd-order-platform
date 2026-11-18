@@ -41,8 +41,18 @@ try{
  const multi=Number(db.prepare("INSERT INTO vnd_claims(client_id,category,orders_json,evidence,note,actor_id) VALUES (?,'SHIPPING_ISSUE',?,'TEST','TEST',?)").run(client.id,JSON.stringify([positive.id,negative.id]),admin.id).lastInsertRowid);
  db.prepare("INSERT INTO vnd_refund_events(client_id,claim_id,kind,delta,approved,revision,category,context_json,reason,actor_id) VALUES (?,?,'DECISION','10','10',1,'SHIPPING_ISSUE',?,'TEST',?)").run(client.id,multi,JSON.stringify({orders:[{sales_user_id:sales.id},{sales_user_id:sales.id}]}),admin.id);
  eq(vndBusinessReport(vndDay().slice(0,7)).commission.performance.find(r=>r.group==='CLAIM_SHIPPING_ISSUE').claim_refund,'10');
+ eq(vndBusinessReport(vndDay().slice(0,7)).commission.unallocated_claims,[]);
+ // The same Claim crosses groups within this month and must appear once at case level.
+ db.prepare("UPDATE orders SET workflow_status='CANCELLED' WHERE id=?").run(negative.id);
+ const expectedUnallocated=[{claim_id:multi,order_ids:[positive.id,negative.id],approved_vnd:'10'}];
+ const crossGroup=vndBusinessReport(vndDay().slice(0,7)).commission;
+ eq(crossGroup.unallocated_claims,expectedUnallocated);
+ eq(crossGroup.performance.find(r=>r.group==='CANCELLATION').gp_base_minus_claim_refund,null);
+ db.prepare("UPDATE orders SET workflow_status=? WHERE id=?").run(negative.workflow_status,negative.id);
  db.prepare("UPDATE orders SET service_purchased_at='2000-01-01' WHERE id=?").run(negative.id);
  eq(vndBusinessReport(vndDay().slice(0,7)).commission.performance.find(r=>r.group==='CLAIM_SHIPPING_ISSUE').claim_refund,null);
  eq(vndBusinessReport(vndDay().slice(0,7)).commission.performance.find(r=>r.group==='CLAIM_SHIPPING_ISSUE').claim_refund_status,'UNALLOCATED_CROSS_COHORT_OR_GROUP');
+ eq(vndBusinessReport(vndDay().slice(0,7)).commission.unallocated_claims,expectedUnallocated);
+ eq(vndBusinessReport('2000-01').commission.unallocated_claims,expectedUnallocated);
  console.log('VND COMMISSION PASS ('+checks+' assertions)');
 }finally{db.close();}
