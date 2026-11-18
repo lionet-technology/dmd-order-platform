@@ -1,3 +1,7 @@
+## Claim NEXT · Triển khai vận hành 18/11/2026
+
+[Feature 42](42-vnd-claim-refund-next.md) cập nhật Claim Client/Supplier nhiều Order, chronology Processing, Complete, hai watchlist và link thủ công. GP/commission sau Refund liên nhóm giữ OPEN. Pilot chứng từ thật và rehearsal môi trường triển khai tiếp tục chờ xác nhận. Các mốc cũ bên dưới mô tả phạm vi từng đợt trước.
+
 ## VNĐ V1 continuation — 17/11/2026
 [Feature 41](41-vnd-supplier-period-gp-control-tower.md) records immutable Supplier period close/current-period late corrections, freight-only GP-Base and approved reference commission formula, whole-Claim same-cohort group reconciliation, before-Refund GP-Net, and scoped VNĐ Control Tower exceptions. Synthetic verification is separate from real-document pilot/deployment acceptance. Claim/watchlist/Complete Claim linking remains NEXT phase. This supersedes contrary earlier delivery-status notes only for this bounded VNĐ scope.
 

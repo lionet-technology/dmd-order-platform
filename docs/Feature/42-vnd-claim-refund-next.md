@@ -2,9 +2,9 @@
 
 Đợt 18/11/2026 bổ sung truy vết Claim chưa phân bổ trong báo cáo BOD. Bảng hiển thị một dòng cho mỗi Claim trong phạm vi kỳ mua đang xem, gồm toàn bộ Order ID và số tiền duyệt mới nhất. Một Claim giao nhiều kỳ có thể xuất hiện khi xem từng kỳ. Các nhóm bị ảnh hưởng tiếp tục trả về số Refund và GP-Base sau Refund là null. Báo cáo chỉ đọc, giữ nguyên phương pháp tính GP-Net và hoa hồng tham khảo của [Feature 41](41-vnd-supplier-period-gp-control-tower.md).
 
-## Đặc tả và đối chiếu hiện trạng
+## Đặc tả và mốc trước triển khai vận hành
 
-| Luồng | Quy tắc đã chốt | Hiện trạng sau đợt này |
+| Luồng | Quy tắc đã chốt | Mốc f9c90f1 |
 |---|---|---|
 | Client Claim | Case gồm một hoặc nhiều Order của cùng Client. Created → Processing có lịch sử trao đổi/chứng từ → Complete Claim có kết luận, số tiền có thể bằng 0. | API VNĐ tạo case, lưu chứng từ, Admin ghi quyết định có revision; quyết định 0 không thêm nghĩa vụ. Còn thiếu Processing, lịch sử trao đổi và thao tác Complete rõ ràng. |
 | Supplier Claim | Case gồm một hoặc nhiều Order. Chọn thủ công các Order cần xử lý. Lưu chứng từ, kết luận và số tiền khi Complete. | Case hiện tại nhận nhiều Lot cùng Supplier, với điều kiện Tracking ACTIVE và phạm vi Order VNĐ được kiểm tra phía server. Dùng chứng từ và journal hiện có. Còn thiếu thao tác bắt đầu từ Order, Processing và Complete riêng khỏi trạng thái thu tiền. |
@@ -12,6 +12,14 @@
 | Client Refund | Khi Complete có số tiền dương, ghi vào pool cấp Client. Finance thực trả Bank/Balance từng đợt trong hạn mức pool. | Tái sử dụng quyết định, pool và API thực trả hiện có. Quyết định ghi delta, thực trả giảm pool, Bank không ghi ví. Không thêm tầng duyệt. |
 | Supplier settlement | Chứng từ điều chỉnh Actual/payable hoặc ghi recovery rồi thu Bank/offset. Hạch toán một lần theo bản chất khoản điều chỉnh. | Luồng sửa Actual/payable và luồng receivable đã có. Bank chỉ thu receivable; offset giảm payable; cả hai không giảm Actual lần nữa. Liên kết chứng từ giữa hai luồng còn cần hoàn thiện để operator tránh ghi trùng. |
 | Cancellation Refund | Dùng policy theo service/route và tổng doanh thu hiện tại đủ điều kiện, hoàn phần còn lại theo quy định. | Luồng huỷ riêng. Việc huỷ nội bộ không tự void carrier hay tạo Supplier recovery. |
+
+## Triển khai vận hành trên /vnd
+
+- Client/assigned Sales/Admin quản lý watchlist Client, tạo một Claim từ nhiều Order và thêm trao đổi. Finance/BOD quản lý watchlist, trao đổi và liên kết Supplier Claim. Watchlist ghi thêm từng lần đánh dấu/gỡ, gồm Order, lý do, actor và thời điểm. Danh sách hiện tại hiển thị Claim ID theo Order. Đánh dấu độc lập với tạo Claim.
+- Processing lưu trao đổi theo thứ tự ghi nhận, với ghi chú, chứng từ tùy chọn, actor và thời điểm. Khi tạo, case lưu yêu cầu chính và chứng từ. Case đã Complete giữ nguyên chronology; correction của quyết định đi qua revision tài chính.
+- Complete Client Claim do Admin, Complete Supplier Claim do Finance/BOD. Kết luận, chứng từ và số tiền từ 0 được ghi trong cùng transaction với quyết định. Mốc Complete được suy ra từ quyết định đầu tiên, gồm dữ liệu trước triển khai. Trạng thái thu tiền Supplier hiển thị riêng. Client Bank/Balance và Supplier Bank/Offset tiếp tục theo hạn mức và receipt hiện có.
+- Supplier có thể tạo một case từ nhiều Order cùng Supplier. Mỗi Order được ánh xạ sang các Lot, giữ điều kiện Tracking ACTIVE và chặn Lot đã có Claim. Vẫn hỗ trợ nhập Lot trực tiếp. Link thủ công yêu cầu hai case có Order chung thuộc đúng Client/Supplier. Link và chứng từ Supplier chỉ hiển thị ở màn hình Supplier Finance/BOD.
+- API hiện có `/api/service-v1/operations` và `/api/service-v1/suppliers` bổ sung `claim_process`, `claim_watchlist` và `claim_complete`; Supplier thêm `claim_link`. Lệnh cũ vẫn đọc/ghi cùng journal. Schema bổ sung ba bảng lịch sử append-only. Quy tắc cancellation theo Service và GP/commission liên nhóm tiếp tục như bảng trên.
 
 ## Phân quyền và bất biến
 

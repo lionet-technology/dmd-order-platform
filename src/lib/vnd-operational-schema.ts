@@ -36,6 +36,34 @@ export function installVndOperationalSchema(db:Database.Database) {
  CREATE UNIQUE INDEX IF NOT EXISTS vnd_supplier_one_reversal ON vnd_supplier_claim_events(settlement_id) WHERE kind='REVERSE';
  CREATE TABLE IF NOT EXISTS vnd_claim_notifications(id INTEGER PRIMARY KEY,recipient_id INTEGER NOT NULL REFERENCES users(id),client_id INTEGER NOT NULL REFERENCES users(id),event_id INTEGER NOT NULL REFERENCES vnd_refund_events(id),UNIQUE(recipient_id,event_id));
  CREATE TABLE IF NOT EXISTS vnd_claim_reads(notification_id INTEGER NOT NULL REFERENCES vnd_claim_notifications(id),recipient_id INTEGER NOT NULL REFERENCES users(id),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(notification_id,recipient_id));`);
+ db.exec(`
+ CREATE TABLE IF NOT EXISTS vnd_claim_processing(
+   id INTEGER PRIMARY KEY,
+   client_claim_id INTEGER REFERENCES vnd_claims(id),
+   supplier_claim_id INTEGER REFERENCES vnd_supplier_claims(id),
+   note TEXT NOT NULL, evidence TEXT NOT NULL,
+   actor_id INTEGER NOT NULL REFERENCES users(id), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+   CHECK((client_claim_id IS NULL) <> (supplier_claim_id IS NULL))
+ );
+ CREATE INDEX IF NOT EXISTS vnd_claim_processing_client ON vnd_claim_processing(client_claim_id,id);
+ CREATE INDEX IF NOT EXISTS vnd_claim_processing_supplier ON vnd_claim_processing(supplier_claim_id,id);
+ CREATE TABLE IF NOT EXISTS vnd_claim_watchlist(
+   id INTEGER PRIMARY KEY, side TEXT NOT NULL CHECK(side IN ('CLIENT','SUPPLIER')),
+   order_id INTEGER NOT NULL REFERENCES orders(id), supplier TEXT NOT NULL DEFAULT '',
+   active INTEGER NOT NULL CHECK(active IN (0,1)), reason TEXT NOT NULL,
+   actor_id INTEGER NOT NULL REFERENCES users(id), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+ );
+ CREATE INDEX IF NOT EXISTS vnd_claim_watchlist_scope ON vnd_claim_watchlist(side,supplier,order_id,id);
+ CREATE TABLE IF NOT EXISTS vnd_claim_links(
+   client_claim_id INTEGER NOT NULL REFERENCES vnd_claims(id),
+   supplier_claim_id INTEGER NOT NULL REFERENCES vnd_supplier_claims(id),
+   reason TEXT NOT NULL, actor_id INTEGER NOT NULL REFERENCES users(id),
+   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+   PRIMARY KEY(client_claim_id,supplier_claim_id)
+ );
+ CREATE INDEX IF NOT EXISTS vnd_claim_links_supplier ON vnd_claim_links(supplier_claim_id,client_claim_id);
+ `);
+ for(const table of ['vnd_claim_processing','vnd_claim_watchlist','vnd_claim_links'])for(const op of ['UPDATE','DELETE'])db.exec(`CREATE TRIGGER IF NOT EXISTS immutable_${table}_${op} BEFORE ${op} ON ${table} BEGIN SELECT RAISE(ABORT,'Immutable VND case history'); END;`);
  installSupplierImportSchema(db);
  installSupplierPeriodSchema(db);
  for(const table of ['vnd_supplier_claims','vnd_supplier_claim_events','vnd_claim_notifications','vnd_claim_reads'])for(const op of ['UPDATE','DELETE'])db.exec(`CREATE TRIGGER IF NOT EXISTS immutable_${table}_${op} BEFORE ${op} ON ${table} BEGIN SELECT RAISE(ABORT,'Immutable VND claim history'); END;`);

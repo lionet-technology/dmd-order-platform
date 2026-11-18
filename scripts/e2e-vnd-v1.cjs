@@ -36,10 +36,23 @@ let server,browser,checks=0;const check=(v,m)=>{checks++;assert.ok(v,m)};
  // Claim approval/execution and Supplier actual-to-payable through authenticated UI.
  const refunds=page.getByRole('region',{name:'Claim và Refund VNĐ',exact:true}),suppliers=page.getByRole('region',{name:'Supplier finance VNĐ',exact:true});
  const refundSubmit=async()=>{await refunds.getByRole('button',{name:'Ghi Claim / Refund',exact:true}).click();await refunds.getByRole('status').filter({hasText:'Đã ghi nhận Claim / Refund.'}).waitFor();};
- await role('CLIENT');await refunds.getByLabel('Danh sách Order ID',{exact:true}).fill(String(fixture.claimOrder.id));await refunds.getByLabel('Chứng từ Claim / Refund',{exact:true}).fill('TEST goods invoice');await refunds.getByLabel('Lý do Claim / Refund',{exact:true}).fill('TEST shipping incident');await refundSubmit();
+ const refundAction=()=>refunds.getByRole('combobox',{name:'Thao tác Claim / Refund',exact:true});
+ await role('CLIENT');await refundAction().selectOption('claim_watchlist');
+ await refunds.getByLabel('Danh sách Order ID',{exact:true}).fill(String(fixture.claimOrder.id));
+ await refunds.getByLabel('Lý do Claim / Refund',{exact:true}).fill('TEST Client needs follow-up');
+ await refundSubmit();
+ const clientWatch=refunds.getByRole('checkbox',{name:/Chưa có Claim/});await clientWatch.check();
+ check(await clientWatch.isChecked(),'Client watchlist flags before case creation');
+ await refunds.getByRole('button',{name:'Tạo một Client Claim từ Order đã chọn',exact:true}).click();
+ await refunds.getByLabel('Danh sách Order ID',{exact:true}).fill(String(fixture.claimOrder.id));await refunds.getByLabel('Chứng từ Claim / Refund',{exact:true}).fill('TEST goods invoice');await refunds.getByLabel('Lý do Claim / Refund',{exact:true}).fill('TEST shipping incident');await refundSubmit();
  let accountData=await (await context.request.get(base+'/api/service-v1/operations?client_id='+fixture.client.id)).json();const claimId=accountData.refunds.claims[0].id;check(accountData.refunds.refund_balance==='0','unapproved Claim creates no obligation');
- await role('ADMIN');await refunds.getByRole('combobox',{name:'Thao tác Claim / Refund',exact:true}).selectOption('claim_decide');await refunds.getByLabel('Claim ID',{exact:true}).fill(String(claimId));await refunds.getByLabel('Revision Claim hiện hành',{exact:true}).fill('0');await refunds.getByLabel('Số tiền Claim / Refund VNĐ',{exact:true}).fill('80.123456');await refunds.getByLabel('Chứng từ Claim / Refund',{exact:true}).fill('TEST Admin decision evidence');await refunds.getByLabel('Lý do Claim / Refund',{exact:true}).fill('TEST approved total');await refundSubmit();
- accountData=await (await context.request.get(base+'/api/service-v1/operations?client_id='+fixture.client.id)).json();check(accountData.refunds.refund_balance==='80.123456','Admin approval establishes exact VND pool');const beforePayout=accountData.balance;
+ check(accountData.refunds.watchlist[0].claim_ids.includes(claimId),'Client watchlist shows linked Claim');
+ await refundAction().selectOption('claim_process');await refunds.getByLabel('Claim ID',{exact:true}).fill(String(claimId));
+ await refunds.getByLabel('Lý do Claim / Refund',{exact:true}).fill('TEST Client conversation');
+ await refundSubmit();await refunds.getByText(/Actor .*TEST Client conversation/).waitFor();
+ check(true,'Client chronology rendered with actor');
+ await role('ADMIN');await refundAction().selectOption('claim_complete');await refunds.getByLabel('Claim ID',{exact:true}).fill(String(claimId));await refunds.getByLabel('Revision Claim hiện hành',{exact:true}).fill('0');await refunds.getByLabel('Số tiền Claim / Refund VNĐ',{exact:true}).fill('80.123456');await refunds.getByLabel('Chứng từ Claim / Refund',{exact:true}).fill('TEST Admin decision evidence');await refunds.getByLabel('Lý do Claim / Refund',{exact:true}).fill('TEST approved total');await refundSubmit();
+ accountData=await (await context.request.get(base+'/api/service-v1/operations?client_id='+fixture.client.id)).json();check(accountData.refunds.refund_balance==='80.123456'&&accountData.refunds.claims[0].case_status==='COMPLETE','Complete Client Claim establishes exact VND pool');const beforePayout=accountData.balance;
  await suppliers.getByLabel('Supplier VNĐ',{exact:true}).fill('SGBay');await suppliers.getByLabel('Lot ID',{exact:true}).fill(String(fixture.claimLotId));await suppliers.getByLabel('Số tiền Supplier VNĐ',{exact:true}).fill('100.000001');await suppliers.getByLabel('Tham chiếu chứng từ Supplier',{exact:true}).fill('TEST UAT total invoice');await suppliers.getByLabel('Lý do Supplier',{exact:true}).fill('TEST documentary total');await suppliers.getByRole('button',{name:'Ghi Supplier VNĐ',exact:true}).click();await suppliers.getByRole('status').filter({hasText:'Đã ghi Supplier VNĐ.'}).waitFor();
  const costData=await (await context.request.get(base+'/api/service-v1/suppliers?supplier=SGBay')).json();check(costData.payable===undefined,'Admin documentary view excludes Supplier account');const costId=costData.costs[0].id;
  await role('FINANCE');check(await page.getByRole('group',{name:'Mức hoàn Supplier VNĐ · ghi theo dõi, chưa ghi tiền',exact:true}).count()===0,'Finance cannot author Admin refund choice');await refunds.getByRole('combobox',{name:'Thao tác Claim / Refund',exact:true}).selectOption('refund_balance');await refunds.getByLabel('Số tiền Claim / Refund VNĐ',{exact:true}).fill('81');await refunds.getByLabel('Lý do Claim / Refund',{exact:true}).fill('TEST overpool');await refunds.getByRole('button',{name:'Ghi Claim / Refund',exact:true}).click();await refunds.getByRole('status').filter({hasText:'vượt pool'}).waitFor();check(true,'Finance overpool rejected through browser');
@@ -54,11 +67,23 @@ let server,browser,checks=0;const check=(v,m)=>{checks++;assert.ok(v,m)};
  const saveSC=async()=>{await sc.getByRole('button',{name:'Ghi phải thu Supplier',exact:true}).click();await sc.getByRole('status').filter({hasText:'Đã ghi phải thu Supplier.'}).waitFor();};
  const selectSC=async action=>{await sc.getByRole('combobox',{name:'Thao tác phải thu Supplier',exact:true}).selectOption(action);};
  const proofSC=async reference=>{await sc.getByLabel('Tham chiếu phải thu Supplier',{exact:true}).fill(reference);await sc.getByLabel('Chứng từ phải thu Supplier',{exact:true}).fill('TEST supplier evidence');await sc.getByLabel('Lý do phải thu Supplier',{exact:true}).fill('TEST supplier claim');};
- await sc.getByLabel('Danh sách Lot Supplier',{exact:true}).fill(String(fixture.claimLotId));await sc.getByLabel('Số tiền phải thu VNĐ',{exact:true}).fill('30.123456');await proofSC('TEST RECEIVABLE CREATE');await saveSC();
+ await selectSC('claim_watchlist');await sc.getByLabel('Danh sách Order ID',{exact:true}).fill(String(fixture.claimOrder.id));
+ await sc.getByLabel('Lý do phải thu Supplier',{exact:true}).fill('TEST Supplier follow-up');await saveSC();
+ const supplierWatch=sc.getByRole('checkbox',{name:/Chưa có Claim/});await supplierWatch.check();
+ check(await supplierWatch.isChecked(),'Supplier watchlist flags before case creation');
+ await sc.getByRole('button',{name:'Tạo một Supplier Claim từ Order đã chọn',exact:true}).click();
+ await sc.getByLabel('Danh sách Order ID',{exact:true}).fill(String(fixture.claimOrder.id));await sc.getByLabel('Số tiền phải thu VNĐ',{exact:true}).fill('30.123456');await proofSC('TEST RECEIVABLE CREATE');await saveSC();
  let scData=await (await context.request.get(base+'/api/service-v1/suppliers?supplier=SGBay')).json(),scId=scData.claims[0].id;
  check(scData.receivable==='0'&&scData.payable==='60','Supplier request alone moves no accounts');
- await selectSC('claim_approve');await sc.getByLabel('Claim Supplier ID',{exact:true}).fill(String(scId));await sc.getByLabel('Decision Supplier hiện hành',{exact:true}).fill('0');await sc.getByLabel('Số tiền phải thu VNĐ',{exact:true}).fill('30.123456');await proofSC('TEST RECEIVABLE APPROVE');await saveSC();
- scData=await (await context.request.get(base+'/api/service-v1/suppliers?supplier=SGBay')).json();check(scData.receivable==='30.123456'&&scData.payable==='60','approval creates separate receivable only');
+ check(scData.watchlist[0].claim_ids.includes(scId),'Supplier watchlist shows linked Claim');
+ await selectSC('claim_process');await sc.getByLabel('Claim Supplier ID',{exact:true}).fill(String(scId));
+ await sc.getByLabel('Lý do phải thu Supplier',{exact:true}).fill('TEST Supplier conversation');await saveSC();
+ await sc.getByText(/Actor .*TEST Supplier conversation/).waitFor();check(true,'Supplier chronology rendered with actor');
+ await selectSC('claim_link');await sc.getByLabel('Client Claim ID',{exact:true}).fill(String(claimId));
+ await sc.getByLabel('Lý do phải thu Supplier',{exact:true}).fill('TEST shared Order link');await saveSC();
+ await sc.getByText(new RegExp('Client Claim '+claimId+' .*TEST shared Order link')).waitFor();check(true,'Finance manually links cases on shared Order');
+ await selectSC('claim_complete');await sc.getByLabel('Claim Supplier ID',{exact:true}).fill(String(scId));await sc.getByLabel('Decision Supplier hiện hành',{exact:true}).fill('0');await sc.getByLabel('Số tiền phải thu VNĐ',{exact:true}).fill('30.123456');await proofSC('TEST RECEIVABLE APPROVE');await saveSC();
+ scData=await (await context.request.get(base+'/api/service-v1/suppliers?supplier=SGBay')).json();check(scData.receivable==='30.123456'&&scData.payable==='60'&&scData.claims[0].case_status==='COMPLETE','Complete Supplier Claim creates separate receivable only');
  await selectSC('claim_settle');await sc.getByLabel('Decision Supplier hiện hành',{exact:true}).fill(String(scData.claims[0].decision_id));await sc.getByRole('combobox',{name:'Kênh thu Supplier',exact:true}).selectOption('OFFSET');await sc.getByLabel('Số tiền phải thu VNĐ',{exact:true}).fill('31');await proofSC('TEST OFFSET');await sc.getByRole('button',{name:'Ghi phải thu Supplier',exact:true}).click();await sc.getByRole('status').filter({hasText:'Vượt phải thu Supplier'}).waitFor();check(true,'Supplier excess settlement rejects from UI');
  await sc.getByLabel('Số tiền phải thu VNĐ',{exact:true}).fill('20.000001');await saveSC();
  scData=await (await context.request.get(base+'/api/service-v1/suppliers?supplier=SGBay')).json();check(scData.receivable==='10.123455'&&scData.payable==='39.999999','offset reduces both receivable and payable');
@@ -153,7 +178,22 @@ let server,browser,checks=0;const check=(v,m)=>{checks++;assert.ok(v,m)};
  for(const r of ['SALES','CLIENT']){await role(r);const exceptionResponse=await context.request.get(base+'/api/service-v1/exceptions');const ex=await exceptionResponse.json();check(exceptionResponse.ok(),'scoped exceptions available '+r);check(ex.counts.supplier_import===0&&ex.counts.missing_actual===0,'no Supplier Actual queues for '+r);check(!JSON.stringify(ex).includes('actual_net')&&!JSON.stringify(ex).includes('net_vnd'),'no Net in exception response '+r);check((await context.request.get(base+'/api/service-v1/suppliers?supplier=DMD')).status()===403,'Supplier journal denied '+r);await page.getByRole('heading',{name:'Control Tower VNĐ',exact:true}).waitFor();}
  await role('BOD');await tools.getByLabel('Tháng báo cáo',{exact:true}).fill(today.slice(0,7));await tools.getByRole('button',{name:'Xem báo cáo VNĐ',exact:true}).click();await tools.getByRole('columnheader',{name:'Hoa hồng tham khảo VNĐ',exact:true}).waitFor();check(await tools.getByRole('heading',{name:'Đối chiếu GP-Net trước Refund',exact:true}).count()===1,'GP Net reconciliation distinct from commission');
  check(errors.length===0,'no browser page errors: '+errors.join(';'));
- fs.writeFileSync(path.join(output,'browser-uat.json'),JSON.stringify({status:'PASS',checks,roles:['ADMIN','SALES','CLIENT','FINANCE','BOD'],database:'owned disposable',scope:'BOD case-level unallocated Refund tracking, Supplier frozen period/late current correction/original reference, Control Tower role privacy, GP-Net versus commission reference, Client Excel surcharge/tax preview/import/cross-key replay and immutable Statement, Supplier Excel typed error queue/unmatched retention/explicit Actual payable delta, Admin manual Supplier refund percentage/evidence with no posting, Supplier Claim receivable approval/partial Bank/offset/reversal and overlimit, durable Claim notification acknowledgement, Claim creation/approval, partial Bank/Balance payout and overpool rejection, bank privacy, Supplier actual/payment RBAC, Add-on, Statement, BOD report, shipping edit, desktop/mobile render',errors},null,2));
+ const Database=require('better-sqlite3');
+ const tables=['vnd_claim_processing','vnd_claim_watchlist','vnd_claim_links','vnd_claims','vnd_refund_events','vnd_supplier_claims','vnd_supplier_claim_events','vnd_supplier_periods','vnd_supplier_posting_links','vnd_commands','vnd_ledger'];
+ const backup=path.join(dir,'claim-cases-backup.db'),copy=path.join(dir,'claim-cases-restore.db');
+ const original=new Database(fixture.dbPath,{readonly:true});
+ const snapshot=(connection,table)=>connection.prepare('SELECT * FROM '+table+' ORDER BY rowid').all();
+ const before=Object.fromEntries(tables.map(table=>[table,snapshot(original,table)]));
+ try{await original.backup(backup);}finally{original.close();}
+ fs.copyFileSync(backup,copy);
+ const restored=new Database(copy,{readonly:true});
+ try{
+  assert.equal(restored.pragma('integrity_check',{simple:true}),'ok');
+  assert.deepEqual(restored.pragma('foreign_key_check'),[]);
+  for(const table of tables){assert.ok(before[table].length,table+' fixture must have rows');assert.deepEqual(snapshot(restored,table),before[table]);}
+ }finally{restored.close();}
+ fs.writeFileSync(path.join(output,'claim-restore.json'),JSON.stringify({status:'PASS',database:'owned disposable Chrome TEST fixture',integrity:'ok',foreign_key_violations:0,tables:tables.map(name=>({name,rows:before[name].length}))},null,2));
+ fs.writeFileSync(path.join(output,'browser-uat.json'),JSON.stringify({status:'PASS',checks,roles:['ADMIN','SALES','CLIENT','FINANCE','BOD'],database:'owned disposable',scope:'Client and Supplier watchlists and case creation from Order selection, Processing chronology, explicit completion and manual case linking, BOD case-level unallocated Refund tracking, Supplier frozen period/late current correction/original reference, Control Tower role privacy, GP-Net versus commission reference, Client Excel surcharge/tax preview/import/cross-key replay and immutable Statement, Supplier Excel typed error queue/unmatched retention/explicit Actual payable delta, Admin manual Supplier refund percentage/evidence with no posting, Supplier Claim receivable approval/partial Bank/offset/reversal and overlimit, durable Claim notification acknowledgement, Claim creation/approval, partial Bank/Balance payout and overpool rejection, bank privacy, Supplier actual/payment RBAC, Add-on, Statement, BOD report, shipping edit, desktop/mobile render',errors},null,2));
  console.log('BROWSER VND PASS ('+checks+' assertions; 5 roles, synthetic DB, actual Chrome)');
 }catch(e){if(browser){const failedPage=browser.contexts()[0]?.pages()[0];if(failedPage){fs.writeFileSync(path.join(output,'uat-failure.txt'),await failedPage.locator('body').ariaSnapshot());await failedPage.screenshot({path:path.join(output,'uat-failure.png'),fullPage:true});}}throw e;}finally{if(browser)await browser.close();if(server)server.kill('SIGTERM');}
 })().catch(e=>{console.error(e);process.exitCode=1});

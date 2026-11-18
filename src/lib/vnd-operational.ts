@@ -1,3 +1,4 @@
+import {vndAccess} from './vnd-access';
 import {db} from './db';
 import {applyVndRefund,vndRefundView} from './vnd-refunds';
 import {vndEpacketDestination} from './vnd-routing';
@@ -13,10 +14,7 @@ type Row=Record<string,unknown>;
 export function isVndClient(clientId:number){return Boolean(db.prepare('SELECT 1 FROM vnd_accounts WHERE client_id=?').get(clientId));}
 export function vndRequest(orderId:number){return db.prepare('SELECT * FROM vnd_purchase_requests WHERE order_id=?').get(orderId) as Row|undefined;}
 function user(id:number){return db.prepare('SELECT * FROM users WHERE id=?').get(id) as Row|undefined;}
-export function vndAccess(actor:Pick<AuthUser,'id'|'role'>,clientId:number){
- const actual=user(actor.id),client=user(clientId);
- if(!actual?.active||actual.role!==actor.role||client?.role!=='CLIENT'||!(['ADMIN','BOD','FINANCE'].includes(actor.role)||actor.role==='CLIENT'&&actor.id===clientId||actor.role==='SALES'&&client.sales_user_id===actor.id))throw Error('Không có quyền với tài khoản VNĐ.');
-}
+export {vndAccess} from './vnd-access';
 function history(clientId:number,orderId:number|null,event:string,data:unknown,actorId:number){db.prepare('INSERT INTO vnd_history(client_id,order_id,event,data_json,actor_id) VALUES (?,?,?,?,?)').run(clientId,orderId,event,JSON.stringify(data),actorId);}
 function order(id:number){const o=db.prepare('SELECT * FROM orders WHERE id=?').get(id) as Row|undefined;if(!o)throw Error('Order không tồn tại.');return o;}
 export function issued(id:number){const o=order(id);return Boolean(String(o.tracking||'').trim()||String(o.label||'').trim()||db.prepare('SELECT id FROM order_trackings WHERE order_id=? LIMIT 1').get(id));}

@@ -3,6 +3,7 @@ import type {AuthUser} from './auth';
 import {vndAccess,vndBalance,resumeVndPurchases} from './vnd-operational';
 import {vnd,compareVnd,subtractVnd,sumVnd} from './vnd-money';
 import {validVndDay,vndDay} from './vnd-debt';
+import {addClaimProcessing,claimOrderIds,claimProcessing,claimWatchlist,setClaimWatchlist} from './vnd-claim-cases';
 type Row=Record<string,unknown>;
 export function vndRefundBalance(clientId:number){
  return sumVnd((db.prepare('SELECT delta FROM vnd_refund_events WHERE client_id=? ORDER BY id').all(clientId) as {delta:string}[]).map(r=>r.delta));
@@ -24,7 +25,15 @@ function context(ids:number[],clientId:number,requireCharged=false){
 export function vndRefundView(clientId:number,actor:AuthUser){
  vndAccess(actor,clientId);
  const privateBank=['ADMIN','FINANCE','BOD'].includes(actor.role);
- return {currency:'VND',refund_balance:vndRefundBalance(clientId),claims:(db.prepare('SELECT * FROM vnd_claims WHERE client_id=? ORDER BY id DESC').all(clientId) as Row[]).map(c=>({...c,decision_basis:context(JSON.parse(String(c.orders_json)),clientId)})),events:(db.prepare('SELECT * FROM vnd_refund_events WHERE client_id=? ORDER BY id DESC').all(clientId) as Row[]).map(r=>{const publicRow={...r};if(!privateBank)delete publicRow.bank_json;return publicRow;})};
+ const events=db.prepare('SELECT * FROM vnd_refund_events WHERE client_id=? ORDER BY id DESC').all(clientId) as Row[];
+ const decisions=new Map<unknown,Row>();
+ for(const event of events) if(event.kind==='DECISION'&&!decisions.has(event.claim_id)) decisions.set(event.claim_id,event);
+ const claims=(db.prepare('SELECT * FROM vnd_claims WHERE client_id=? ORDER BY id DESC').all(clientId) as Row[]).map(c=>{
+  const order_ids=JSON.parse(String(c.orders_json)) as number[];
+  const decision=decisions.get(c.id);
+  return {...c,id:c.id,order_ids,decision_basis:context(order_ids,clientId),...claimProcessing('CLIENT',c.id,Boolean(decision))};
+ });
+ return {currency:'VND',refund_balance:vndRefundBalance(clientId),claims,watchlist:claimWatchlist('CLIENT',clientId,claims),events:events.map(r=>{const publicRow={...r};if(!privateBank)delete publicRow.bank_json;return publicRow;})};
 }
 /** Called only inside the serialized vndAction transaction/receipt. No automatic compensation formula. */
 export function applyVndRefund(actor:AuthUser,clientId:number,input:Row,key:string,reason:string){
@@ -33,17 +42,29 @@ export function applyVndRefund(actor:AuthUser,clientId:number,input:Row,key:stri
  if(action==='claim_create'){
   if(!['ADMIN','SALES','CLIENT'].includes(actor.role))throw Error('Không có quyền tạo Claim.');
   if(!['SHIPPING_ISSUE','FORCE_MAJEURE','RECONCILIATION_ERROR'].includes(String(input.category)))throw Error('Nhóm Claim không hợp lệ.');
-  if(!Array.isArray(input.order_ids)||!input.order_ids.length||input.order_ids.length>200||input.order_ids.some(x=>!Number.isSafeInteger(x)||x<=0)||new Set(input.order_ids).size!==input.order_ids.length)throw Error('Danh sách Order không hợp lệ.');
-  const ids=input.order_ids as number[];context(ids,clientId,true);
-  db.prepare('INSERT INTO vnd_claims(client_id,category,orders_json,evidence,note,actor_id) VALUES (?,?,?,?,?,?)').run(clientId,input.category,JSON.stringify(ids),text(input.evidence),String(input.note??'').slice(0,2000),actor.id);
+  const ids=claimOrderIds(input.order_ids);context(ids,clientId,true);
+  db.prepare('INSERT INTO vnd_claims(client_id,category,orders_json,evidence,note,actor_id) VALUES (?,?,?,?,?,?)').run(clientId,input.category,JSON.stringify(ids),text(input.evidence),text(typeof input.note==='string'&&input.note.trim()?input.note:reason),actor.id);
+  return;
+ }
+ if(action==='claim_watchlist'||action==='claim_process'){
+  if(!['ADMIN','SALES','CLIENT'].includes(actor.role))throw Error('Không có quyền cập nhật Client Claim.');
+  if(action==='claim_watchlist'){
+   setClaimWatchlist('CLIENT',clientId,claimOrderIds(input.order_ids),input.active,reason,actor.id);
+  }else{
+   const id=Number(input.claim_id);
+   if(!db.prepare('SELECT id FROM vnd_claims WHERE id=? AND client_id=?').get(id,clientId))throw Error('Claim không tồn tại.');
+   if(db.prepare("SELECT id FROM vnd_refund_events WHERE claim_id=? AND kind='DECISION'").get(id))throw Error('Claim đã Complete.');
+   addClaimProcessing('CLIENT',id,reason,input.evidence,actor.id);
+  }
   return;
  }
  let claim:Row|undefined,approved:string|null=null,revision:number|null=null,category:string|null=null,ctx:string|null=null,bank:string|null=null,day:string|null=null,delta:string,kind:string;
- if(action==='claim_decide'){
+ if(action==='claim_complete'||action==='claim_decide'){
   if(actor.role!=='ADMIN')throw Error('Chỉ Admin duyệt Claim.');
   claim=db.prepare('SELECT * FROM vnd_claims WHERE id=? AND client_id=?').get(Number(input.claim_id),clientId) as Row|undefined;
   if(!claim)throw Error('Claim không tồn tại.');
   const last=db.prepare("SELECT * FROM vnd_refund_events WHERE claim_id=? AND kind='DECISION' ORDER BY id DESC LIMIT 1").get(claim.id) as Row|undefined;
+  if(action==='claim_complete'&&last)throw Error('Claim đã Complete; dùng sửa quyết định.');
   if(input.expected_revision!==Number(last?.revision??0))throw Error('Revision Claim đã thay đổi.');
   approved=amount(input.amount);revision=Number(last?.revision??0)+1;category=String(claim.category);
   // Preserve original goods/currency and current charged revenue at every decision; never invent FX or a cap.
