@@ -1,5 +1,6 @@
 import {createHash} from 'node:crypto';
 import {db} from './db';
+import {approvedVndLot} from './vnd-supplier';
 import type {AuthUser} from './auth';
 import {vnd,compareVnd,addVnd,subtractVnd,sumVnd} from './vnd-money';
 type Row=Record<string,unknown>;
@@ -10,7 +11,6 @@ export function installSupplierImportSchema(database:typeof db){
 }
 function text(value:unknown,optional=false){const s=typeof value==='string'?value.trim():'';if((!optional&&!s)||s.length>2000)throw Error('Thiếu hoặc quá dài dữ liệu chứng từ.');return s;}
 function amount(value:unknown){if(typeof value!=='string')throw Error('Số tiền/cân cần chuỗi thập phân.');const n=vnd(value);if(compareVnd(n,'0')<0)throw Error('Số tiền/cân không được âm.');return n;}
-function approved(lot:number){return db.prepare("SELECT c.* FROM vnd_supplier_costs c JOIN vnd_supplier_ledger e ON e.cost_id=c.id AND e.kind='ACTUAL' WHERE c.lot_id=? ORDER BY e.id DESC LIMIT 1").get(lot) as Row|undefined;}
 function estimate(lot:Row){
  const row=db.prepare('SELECT snapshot_json FROM vnd_auto_quotes WHERE order_id=?').get(lot.order_id) as Row|undefined;if(!row)return null;
  const q=JSON.parse(String(row.snapshot_json));
@@ -30,7 +30,7 @@ function matching(data:Row,supplier:string){
 }
 export function supplierImportState(row:Row){
  const data=JSON.parse(String(row.data_json)) as Row,ids=matching(data,String(row.supplier));
- const lot=ids.length===1?eligible(ids[0],String(row.supplier)):undefined,old=lot?approved(Number(lot.id)):undefined;
+ const lot=ids.length===1?eligible(ids[0],String(row.supplier)):undefined,old=lot?approvedVndLot(Number(lot.id),String(row.supplier)):undefined;
  const errors:string[]=[];if(!ids.length)errors.push('ORDER_NOT_MATCHED');if(ids.length>1)errors.push('AMBIGUOUS_MATCH');
  let net:string|null=null,weight:string|null=null;
  if(lot){
@@ -47,7 +47,7 @@ export function supplierImportState(row:Row){
   if(data.supplier_weight&&(!weight||compareVnd(String(data.supplier_weight),weight)>0))errors.push(weight?'WEIGHT_ABOVE_DMD':'MISSING_DMD_WEIGHT');
   if(data.kind==='SUPPLEMENT'&&!old)errors.push('MISSING_APPROVED_BASE');
   if(old&&data.kind==='TOTAL')errors.push('DUPLICATE_HISTORY');
-  if(db.prepare('SELECT id FROM vnd_supplier_costs WHERE lot_id=?').get(lot.id)&&!old&&data.kind==='TOTAL')errors.push('DUPLICATE_HISTORY');
+  if(db.prepare('SELECT id FROM vnd_supplier_costs WHERE lot_id=? AND supplier=?').get(lot.id,row.supplier)&&!old&&data.kind==='TOTAL')errors.push('DUPLICATE_HISTORY');
  }
  const peers=db.prepare('SELECT * FROM vnd_supplier_import_rows WHERE supplier=? AND id<>?').all(row.supplier,row.id) as Row[];
  const identity=(d:Row)=>d.tracking?'tracking:'+d.tracking:d.lot_id?'lot:'+d.lot_id:'order:'+d.order_code;
@@ -87,7 +87,7 @@ export function applySupplierImport(actor:AuthUser,supplier:string,input:Row,rea
    lotId=item.lot_id===undefined?Number(state.lot_id):Number(item.lot_id);
    const lot=eligible(lotId,supplier);if(!lot)throw Error('Cần chọn Lot VNĐ đã charge đúng Supplier.');
    if(lots.has(lotId))throw Error('Một batch chỉ accept một dòng mỗi Lot; review lần lượt để tránh đếm trùng.');lots.add(lotId);
-   const old=approved(lotId);if(item.expected_approved_cost_id!==Number(old?.id??0))throw Error('Actual đã thay đổi; tải lại.');
+   const old=approvedVndLot(lotId,supplier);if(item.expected_approved_cost_id!==Number(old?.id??0))throw Error('Actual đã thay đổi; tải lại.');
    if(state.data.kind==='SUPPLEMENT'&&!old)throw Error('Phụ phí cần Actual gốc đã chốt.');
    const total=state.data.kind==='SUPPLEMENT'?addVnd(String(old!.amount),String(state.data.amount)):String(state.data.amount);
    costId=Number(db.prepare('INSERT INTO vnd_supplier_costs(lot_id,supplier,amount,reference,reason,actor_id) VALUES (?,?,?,?,?,?)').run(lotId,supplier,total,state.data.reference,reason,actor.id).lastInsertRowid);

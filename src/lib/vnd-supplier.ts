@@ -10,7 +10,11 @@ type Row=Record<string,unknown>;
 function access(actor:AuthUser){const u=db.prepare('SELECT role,active FROM users WHERE id=?').get(actor.id) as Row|undefined;if(!u?.active||u.role!==actor.role||!['ADMIN','FINANCE','BOD'].includes(actor.role))throw Error('Không có quyền Supplier VNĐ.');}
 function money(value:unknown){if(typeof value!=='string')throw Error('Cần chuỗi VNĐ.');const n=vnd(value);if(compareVnd(n,'0')<0)throw Error('Cost không được âm.');return n;}
 function required(value:unknown){const s=typeof value==='string'?value.trim():'';if(!s||s.length>2000)throw Error('Cần lý do/chứng từ.');return s;}
-export function approvedVndLot(lotId:number){return db.prepare("SELECT c.* FROM vnd_supplier_costs c JOIN vnd_supplier_ledger l ON l.cost_id=c.id AND l.kind='ACTUAL' WHERE c.lot_id=? ORDER BY l.id DESC LIMIT 1").get(lotId) as Row|undefined;}
+export function approvedVndLot(lotId:number,supplier?:string){
+ const currentSupplier=supplier??(db.prepare('SELECT o.supplier FROM order_lots l JOIN orders o ON o.id=l.order_id WHERE l.id=?').get(lotId) as {supplier:string}|undefined)?.supplier;
+ if(!currentSupplier)return undefined;
+ return db.prepare("SELECT c.* FROM vnd_supplier_costs c JOIN vnd_supplier_ledger l ON l.cost_id=c.id AND l.kind='ACTUAL' WHERE c.lot_id=? AND c.supplier=? ORDER BY l.id DESC LIMIT 1").get(lotId,currentSupplier) as Row|undefined;
+}
 export function vndLotEstimate(lotId:number){
  const lot=db.prepare('SELECT * FROM order_lots WHERE id=?').get(lotId) as Row|undefined;if(!lot)return null;
  const row=db.prepare('SELECT snapshot_json FROM vnd_auto_quotes WHERE order_id=?').get(lot.order_id) as Row|undefined;if(!row)return null;
@@ -24,7 +28,7 @@ function readSupplier(actor:AuthUser,supplierRaw:unknown){
  access(actor);const supplier=canonicalEnumValue('SUPPLIER',supplierRaw,'',{allowInactive:true});
  const costs=db.prepare('SELECT c.*,l.order_id,l.lot_number FROM vnd_supplier_costs c JOIN order_lots l ON l.id=c.lot_id WHERE c.supplier=? ORDER BY c.id DESC').all(supplier) as Row[];
  const reviews=db.prepare('SELECT r.* FROM vnd_supplier_reviews r JOIN vnd_supplier_costs c ON c.id=r.cost_id WHERE c.supplier=? ORDER BY r.id').all(supplier);
- const projection=costs.map(c=>({...c,estimated:vndLotEstimate(Number(c.lot_id)),approved_cost_id:approvedVndLot(Number(c.lot_id))?.id??null}));
+ const projection=costs.map(c=>({...c,estimated:vndLotEstimate(Number(c.lot_id)),approved_cost_id:approvedVndLot(Number(c.lot_id),supplier)?.id??null}));
  if(actor.role==='ADMIN')return {currency:'VND',supplier,costs:projection,reviews,import_rows:supplierImportView(supplier)};
  const entries=db.prepare('SELECT * FROM vnd_supplier_ledger WHERE supplier=? ORDER BY id').all(supplier) as Row[];
  return {currency:'VND',supplier,costs:projection,reviews,import_rows:supplierImportView(supplier),...supplierClaimView(supplier),...supplierPeriodView(supplier),payable:sumVnd(entries.map(e=>String(e.delta))),entries};
@@ -59,7 +63,7 @@ export function vndSupplierAction(actor:AuthUser,input:Row){
   if(action==='keep_old'&&!['ADMIN','FINANCE'].includes(actor.role))throw Error('Xử lý trùng cần Admin/Finance.');
   const cost=db.prepare('SELECT * FROM vnd_supplier_costs WHERE id=? AND supplier=?').get(Number(input.cost_id),supplier) as Row|undefined;
   if(!cost)throw Error('Không có chứng từ.');
-  const old=approvedVndLot(Number(cost.lot_id));
+  const old=approvedVndLot(Number(cost.lot_id),supplier);
   if(input.expected_approved_cost_id!==Number(old?.id??0))throw Error('Actual đã thay đổi; tải lại.');
   if(db.prepare('SELECT id FROM vnd_supplier_reviews WHERE cost_id=?').get(cost.id))throw Error('Chứng từ đã xử lý.');
   if(action==='keep_old'&&!old)throw Error('Chưa có Actual cũ để giữ.');

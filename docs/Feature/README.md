@@ -1,3 +1,7 @@
+## Audit kỹ thuật GĐ1 · 18/11/2026
+
+[Backlog GĐ1 cập nhật](43-gd1-completion-decision-backlog.md) ghi luồng nhập Net/Base cho Chuyên tuyến, kiểm chứng Actual Emergency qua Supplier khác và các điểm cần chốt.
+
 ## Hoàn thiện Giai đoạn 1 · 18/11/2026
 
 [Trạng thái GĐ1 và backlog quyết định nghiệp vụ](43-gd1-completion-decision-backlog.md) cập nhật hiện trạng theo từng luồng VNĐ, kiểm chứng kỹ thuật và các quyết định cần chốt trước đợt UI/UX và UAT.

@@ -59,6 +59,8 @@ export function emergencySwitchOrder(actor:AuthUser,holdId:number,orderId:number
   }
   if(new Set(trackings.map(t=>normalizeTracking(t.new_tracking))).size!==trackings.length)throw Error("Tracking mới trùng trong batch.");
   const hasEstimate=estimatedNetCost!==undefined&&estimatedNetCost!==null&&String(estimatedNetCost).trim()!=="";
+  if(hasEstimate&&db.prepare('SELECT 1 FROM vnd_accounts WHERE client_id=?').get(before.client_user_id))
+   throw Error("Order VNĐ chưa hỗ trợ cập nhật Estimated Net Cost qua Emergency Switch. Hãy để trống.");
   const estimate=Number(estimatedNetCost);
   if(hasEstimate&&(!Number.isFinite(estimate)||estimate<0||Math.round(estimate*100)/100!==estimate))throw Error("Estimated Net Cost phải là số USD hợp lệ tối đa hai chữ số thập phân.");
   if(hasEstimate){

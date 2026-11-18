@@ -23,7 +23,12 @@ let n=0,checks=0;const eq=(a,b,m)=>{checks++;assert.deepEqual(a,b,m)},throws=(fn
  const draft=make();throws(()=>finance.upsertOrder({id:draft.id,sales_price:1}),/offer/);
  const a=make(2);request(a);eq(ops.vndRequest(a.id).status,'AWAITING_QUOTE','No fabricated zero reserve');
  throws(()=>tracking.addOrderTracking({orderId:a.id,tracking:'EARLY',actorId:admin.id}),/Chờ/);
- offer(a,'100000.123456');eq(ops.vndRequest(a.id).status,'PRICE_CONFIRMATION_REQUIRED');
+ const price={order_id:a.id,amount:'100000.123456',expected_revision:0,net_vnd:'60000.000001',base_vnd:'80000.123456'};
+ throws(()=>call('offer',price,sales),/Admin/);
+ throws(()=>call('offer',{...price,base_vnd:undefined}),/chuỗi thập phân/);
+ call('offer',price);eq(ops.vndRequest(a.id).status,'PRICE_CONFIRMATION_REQUIRED');
+ eq(JSON.parse(db.prepare('SELECT snapshot_json FROM vnd_auto_quotes WHERE order_id=?').get(a.id).snapshot_json),{source:'MANUAL_CUSTOM',net_vnd:price.net_vnd,base_vnd:price.base_vnd});
+ for(const actor of [sales,client])eq(JSON.stringify(ops.vndView(client.id,actor)).includes(price.net_vnd),false);
  consent(a);eq(ops.vndRequest(a.id).status,'AWAITING_FUNDS');
  const b=make();request(b);offer(b,'100000.123456');consent(b);
  const payment={action:'post',client_id:client.id,request_key:'TEST-PAY',kind:'PAYMENT',delta:'100000.123456',reason:'TEST payment'};
@@ -43,6 +48,7 @@ let n=0,checks=0;const eq=(a,b,m)=>{checks++;assert.deepEqual(a,b,m)},throws=(fn
  tracking.addOrderTracking({orderId:a.id,cartonId:cartons[0].id,tracking:'VND-A-1',labelUrl:'https://labels.test/a1.pdf',actorId:admin.id});
  eq(ops.vndRequest(a.id).status,'RESERVED','Partial label does not charge');
  tracking.addOrderTracking({orderId:a.id,cartonId:cartons[1].id,tracking:'VND-A-2',labelUrl:'https://labels.test/a2.pdf',actorId:admin.id});
+ throws(()=>call('offer',{...price,expected_revision:acceptedRevision}),/Tracking\/Label/);
  eq(ops.vndRequest(a.id).status,'CHARGED');eq(ops.vndBalance(client.id).balance,'0');eq(ops.vndBalance(client.id).reserved,'0');
  require('../src/lib/credit.ts').completeReserve(a.id,admin.id);eq(db.prepare("SELECT count(*) n FROM vnd_ledger WHERE kind='ORDER_CHARGE'").get().n,1,'Charge once');
  throws(()=>finance.upsertOrder({id:a.id,recipient_name:'Changed'}),/khóa|VNĐ/);

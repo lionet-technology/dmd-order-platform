@@ -24,7 +24,7 @@ export function editVndShipping(order:Row,input:Row){
   const amount=vnd(String(input.amount));
   if(compareVnd(amount,'0')<=0)throw Error('Offer mới phải dương.');
   if(r)db.prepare("UPDATE vnd_purchase_requests SET offer=?,revision=revision+1,status='PRICE_CONFIRMATION_REQUIRED',accepted_revision=NULL WHERE order_id=?").run(amount,id);
-  db.prepare("INSERT INTO vnd_auto_quotes(order_id,snapshot_json,manual_offer) VALUES (?,'{}',1) ON CONFLICT(order_id) DO UPDATE SET manual_offer=1,pricing_error=NULL").run(id);
+  db.prepare("INSERT INTO vnd_auto_quotes(order_id,snapshot_json,manual_offer) VALUES (?,'{}',1) ON CONFLICT(order_id) DO UPDATE SET manual_offer=1,pricing_error=NULL,snapshot_json=CASE WHEN ? THEN '{}' ELSE snapshot_json END").run(id,serviceChanged?1:0);
  }else if(serviceChanged&&r){
   if(String(next.service).toLowerCase()==='chuyên tuyến')throw Error('Service Manual Quote cần chọn NEW_OFFER.');
   db.prepare('UPDATE vnd_auto_quotes SET manual_offer=0,pricing_error=NULL WHERE order_id=?').run(id);

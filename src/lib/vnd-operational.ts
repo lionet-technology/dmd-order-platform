@@ -252,6 +252,16 @@ export function vndAction(actor:AuthUser,input:Row){
      if(automaticSourceKind(String(o.service),String(o.sub_service)))db.prepare('UPDATE vnd_auto_quotes SET manual_offer=1 WHERE order_id=?').run(id);
      const amount=nonnegative(input.amount);if(compareVnd(amount,'0')<=0)throw Error('Offer phải lớn hơn 0; không tạo giá 0 thay báo giá thiếu.');
      if(Number(input.expected_revision)!==r.revision)throw Error('Revision đã thay đổi.');
+     if(input.net_vnd!==undefined||input.base_vnd!==undefined){
+      if(actor.role!=='ADMIN'||String(o.service).toLowerCase()!=='chuyên tuyến')throw Error('Net/Base VNĐ thủ công chỉ dành cho Admin trên Chuyên tuyến.');
+      const net=nonnegative(input.net_vnd),base=nonnegative(input.base_vnd);
+      const snapshot=JSON.stringify({source:'MANUAL_CUSTOM',net_vnd:net,base_vnd:base});
+      const previous=db.prepare('SELECT snapshot_json FROM vnd_auto_quotes WHERE order_id=?').get(id) as Row|undefined;
+      if(previous?.snapshot_json!==snapshot){
+       db.prepare('INSERT INTO vnd_auto_quote_history(order_id,snapshot_json) VALUES (?,?)').run(id,snapshot);
+       db.prepare('INSERT INTO vnd_auto_quotes(order_id,snapshot_json,manual_offer) VALUES (?,?,1) ON CONFLICT(order_id) DO UPDATE SET snapshot_json=excluded.snapshot_json,manual_offer=1,pricing_error=NULL').run(id,snapshot);
+      }
+     }
      if(r.offer!==amount)db.prepare("UPDATE vnd_purchase_requests SET offer=?,revision=revision+1,status='PRICE_CONFIRMATION_REQUIRED' WHERE order_id=?").run(amount,id);
     }else if(action==='consent'||action==='override'){
      if(action==='consent'&&(actor.role!=='CLIENT'||actor.id!==clientId))throw Error('Client xác nhận giá; Admin/Sales dùng override có lý do.');
