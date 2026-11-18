@@ -34,6 +34,11 @@ export function importFinalServiceNet(routeId:number,actorId:number,requestKey:s
  return createServiceV1Net({route_id:routeId,config_id:Number(config.id),source_excel:source.source.path,source_currency:currency,rows,request_key:requestKey},actorId);
  }).immediate();
 }
+export function publishedVndRoute(routeId:number){
+ const config=db.prepare('SELECT * FROM service_v1_config_versions WHERE route_id=? ORDER BY revision DESC LIMIT 1').get(routeId) as Row|undefined;
+ const price=db.prepare("SELECT d.* FROM service_v1_price_events e JOIN service_v1_price_documents d ON d.id=e.document_id WHERE d.route_id=? AND d.kind='PROPOSAL' AND e.action='PUBLISH' ORDER BY e.id DESC LIMIT 1").get(routeId) as Row|undefined;
+ return config&&price&&price.config_id===config.id?{config,price}:null;
+}
 /** Server resolves shipment and published row; callers cannot select a cheaper rate key. */
 export function automaticVndOrderQuote(orderId:number){
  const o=db.prepare('SELECT * FROM orders WHERE id=?').get(orderId) as Row|undefined;
@@ -42,9 +47,9 @@ export function automaticVndOrderQuote(orderId:number){
  if(!kind)throw Error('Chưa nối Purchase VNĐ cho dịch vụ này.');
  const r=db.prepare('SELECT * FROM service_route_configs WHERE service=? COLLATE NOCASE AND sub_service=? COLLATE NOCASE AND supplier=? COLLATE NOCASE').get(o.service,String(o.sub_service||''),o.supplier) as Row|undefined;
  if(!r)throw Error('Không có route.');
- const config=db.prepare('SELECT * FROM service_v1_config_versions WHERE route_id=? ORDER BY revision DESC LIMIT 1').get(r.id) as Row|undefined;
- const price=db.prepare("SELECT d.* FROM service_v1_price_events e JOIN service_v1_price_documents d ON d.id=e.document_id WHERE d.route_id=? AND d.kind='PROPOSAL' AND e.action='PUBLISH' ORDER BY e.id DESC LIMIT 1").get(r.id) as Row|undefined;
- if(!config||!price||price.config_id!==config.id)throw Error('Chưa có Published Price theo cấu hình hiện hành.');
+ const publishedRoute=publishedVndRoute(Number(r.id));
+ if(!publishedRoute)throw Error('Chưa có Published Price theo cấu hình hiện hành.');
+ const {config,price}=publishedRoute;
  const cfg=JSON.parse(String(config.config_json));
  if(cfg.adapter!==(kind==='YUN'?'YUNEXPRESS':kind==='UPS'?'UPS':'EPACKET'))throw Error('Adapter không khớp dịch vụ.');
  const setting=db.prepare("SELECT * FROM client_service_settings WHERE client_user_id=? AND service=? COLLATE NOCASE AND (sub_service=? COLLATE NOCASE OR sub_service='') ORDER BY length(sub_service) DESC LIMIT 1").get(o.client_user_id,o.service,String(o.sub_service||'')) as Row|undefined;

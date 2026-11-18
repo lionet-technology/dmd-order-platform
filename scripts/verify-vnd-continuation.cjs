@@ -55,6 +55,14 @@ try{
  call('correction',{order_id:a.id,amount:money.addVnd(globalQuote.total_vnd,'20.000001'),expected_revision:ops.vndRequest(a.id).revision});
  call('surcharge',{order_id:a.id,amount:'10.000002'});
  const request={action:'duplicate',client_id:client.id,order_id:a.id,reason:'TEST replacement',request_key:key()};
+ const collisionKey=key();
+ const existingDraft=finance.upsertOrder({client_user_id:client.id,order_id:a.order_id+'-R-'+collisionKey,service:'UPS',sub_service:'SAVER',supplier:'SGBay',country:'US',carton_count:1,weight:3,length:1,width:1,height:1,item:'TEST',material:'Cotton',recipient_name:'TEST',city:'PRESERVE DRAFT'});
+ const readOrder=db.prepare('SELECT * FROM orders WHERE id=?');
+ const originalDraft=readOrder.get(existingDraft.id);
+ const beforeCollision=ops.vndView(client.id,owner);
+ bad(()=>ops.vndAction(owner,{...request,request_key:collisionKey}),/Mã Order thay thế đã tồn tại/);
+ eq(readOrder.get(existingDraft.id),originalDraft);
+ eq(ops.vndView(client.id,owner),beforeCollision);
  const result=ops.vndAction(owner,request);eq(ops.vndAction(owner,request),result);
  const link=db.prepare('SELECT * FROM vnd_replacements WHERE source_order_id=?').get(a.id),replacement=db.prepare('SELECT * FROM orders WHERE id=?').get(link.replacement_order_id);
  eq(replacement.workflow_status,'PENDING_PURCHASE');eq(replacement.tracking,null);eq(db.prepare('SELECT count(*) n FROM order_trackings WHERE order_id=?').get(replacement.id).n,0);

@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { MANUAL_ORDER_LIMIT,MANUAL_ORDER_LIMIT_MESSAGE } from "@/lib/manual-order-limit";
-import { useEffect,useState } from "react";
+import { useEffect,useRef,useState } from "react";
 import { PricingPreview,type Preview } from "./pricing-preview";
 type Row=Record<string,unknown>;
 type Route={id:number;service:string;sub_service:string;discount_percent:number;max_cartons_per_order:number};
@@ -12,7 +12,8 @@ const blank=()=>({country:"US",carton_count:1,item:"T-shirt",material:"Cotton"} 
 type PurchaseFailure={id:number;error:string;error_type:'DATA'|'SYSTEM'};
 export function ClientPurchasePanel({onDone,initial}:{onDone:()=>void;initial?:Row|null}){
  const [manualCartonMode,setManualCartonMode]=useState<'single'|'multiple'>('single');
- const [failures,setFailures]=useState<PurchaseFailure[]>([]),[routes,setRoutes]=useState<Route[]>([]),[currency,setCurrency]=useState("USD"),[balance,setBalance]=useState<number|string>(0),[routeId,setRouteId]=useState(""),[rows,setRows]=useState<Row[]>([initial||blank()]),[checked,setChecked]=useState<Validated[]>([]),[file,setFile]=useState<File|null>(null),[mode,setMode]=useState("manual"),[busy,setBusy]=useState(false),[msg,setMsg]=useState(""),[saved,setSaved]=useState<Array<{id:number;order_id:string;pricing:Preview}>>([]),[selection,setSelection]=useState<number[]>([]);
+ const [failures,setFailures]=useState<PurchaseFailure[]>([]),[routes,setRoutes]=useState<Route[]>([]),[currency,setCurrency]=useState("USD"),[balance,setBalance]=useState<number|string>(0),[routeId,setRouteId]=useState(""),[rows,setRows]=useState<Row[]>([initial||blank()]),[checked,setChecked]=useState<Validated[]>([]),[file,setFile]=useState<File|null>(null),[mode,setMode]=useState("manual"),[busy,setBusy]=useState(false),[msg,setMsg]=useState(""),[saved,setSaved]=useState<Array<{id:number;order_id:string;pricing:Preview;quote_vnd?:string|null}>>([]),[selection,setSelection]=useState<number[]>([]);
+ const vndReceipts=useRef(new Map<string,string>());
  const locked=!!initial?.service_purchased_at||!!initial?.purchase_completed_at||["PURCHASED","RECONCILED"].includes(String(initial?.workflow_status));
  useEffect(()=>{void fetch("/api/client-orders").then(r=>r.json()).then(d=>{setCurrency(d.currency||"USD");setRoutes(d.routes||[]);setBalance(d.balance||0);setRouteId(String((d.routes||[]).find((r:Route)=>initial?r.service===initial.service&&r.sub_service===initial.sub_service:true)?.id||""))})},[initial]);
  useEffect(()=>{
@@ -28,9 +29,24 @@ export function ClientPurchasePanel({onDone,initial}:{onDone:()=>void;initial?:R
  const r=await fetch("/api/client-orders",{method:"POST",...(body instanceof FormData?{body}:{headers:{"content-type":"application/json"},body:JSON.stringify(body)})}),d=await r.json();
  if(!r.ok)throw Error(d.error);
  if(action==="upload"){setChecked(d.rows);setRows(d.rows.map((r:Validated)=>r.input));setMsg('Đã đọc file, nhóm theo Client Order ID liên tiếp. Mỗi nhóm là một Draft; nếu có lỗi, sửa Excel rồi upload lại.')}
- else if(action==="save"){setFailures([]);setRows(prev=>prev.map((row,i)=>({...row,id:d.orders[i].id})));setSaved(d.orders);setSelection(d.orders.filter((o:{pricing:Preview})=>o.pricing?.eligible).map((o:{id:number})=>o.id));setMsg("Đã lưu Draft. Chọn đơn rồi Đặt mua dịch vụ.");onDone()}
+ else if(action==="save"){setFailures([]);setRows(prev=>prev.map((row,i)=>({...row,id:d.orders[i].id})));setSaved(d.orders);setSelection(d.orders.filter((o:{pricing:Preview})=>o.pricing?.eligible).map((o:{id:number})=>o.id));setMsg("Đã lưu Draft.");onDone()}
  else{const failed=(d.results||[]).filter((x:{status:string})=>x.status==='FAILED') as PurchaseFailure[];const failedIds=new Set(failed.map(x=>x.id));setFailures(failed);setMsg(`Đã mua ${d.succeeded} đơn; ${d.failed} đơn chưa mua. ${d.failed?'Kiểm tra lỗi bên dưới, sửa Draft hoặc xác nhận mua lại sau khi đủ điều kiện.':'Ops đang xử lý Tracking/Label.'}`);setSaved(prev=>prev.filter(o=>failedIds.has(o.id)));setSelection([]);setRows(prev=>failed.length?prev.filter(row=>failedIds.has(Number(row.id))):[blank()]);setChecked([]);void fetch('/api/client-orders').then(r=>r.json()).then(d=>setBalance(d.balance||0));onDone()}
  }catch(e){setMsg((e as Error).message)}finally{setBusy(false)}
+ }
+ async function purchaseVnd(orderId:number,offer:string){
+  setBusy(true);setMsg("");
+  const receipt=JSON.stringify([orderId,offer]);
+  if(!vndReceipts.current.has(receipt))vndReceipts.current.set(receipt,crypto.randomUUID());
+  try{
+   const r=await fetch('/api/client-orders',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'purchase_vnd',order_id:orderId,expected_offer:offer,request_key:vndReceipts.current.get(receipt)})});
+   const result=await r.json();
+   if(!r.ok)throw Error(result.error);
+   setSaved(previous=>previous.filter(order=>order.id!==orderId));
+   setRows(previous=>{const remaining=previous.filter(row=>Number(row.id)!==orderId);return remaining.length?remaining:[blank()];});
+   setMsg(result.status==='PRICE_CONFIRMATION_REQUIRED'?'Giá hiện hành '+result.offer+' VNĐ. Mở sổ VNĐ để xác nhận.':result.status==='AWAITING_FUNDS'?'Đã gửi yêu cầu. Đơn chờ đủ sức mua.':'Đã gửi yêu cầu Purchase.');
+   onDone();
+  }catch(error){setMsg(error instanceof Error?error.message:'Không thể gửi Purchase.');}
+  finally{setBusy(false);}
  }
  const chosenRoute=routes.find(r=>String(r.id)===routeId);
  const allowsMulti=Number(chosenRoute?.max_cartons_per_order||1)>1;
@@ -62,10 +78,10 @@ export function ClientPurchasePanel({onDone,initial}:{onDone:()=>void;initial?:R
  <div className="tableWrap"><table><thead><tr>{labels.map(l=><th key={l}>{l}</th>)}<th></th></tr></thead><tbody>{rows.map((r,i)=><tr key={i}>{fields.map(k=><td key={k}><input aria-label={labels[fields.indexOf(k)]+" · dòng "+(i+1)} style={{minWidth:105}} disabled={busy||mode==="upload"||k==="carton_count"&&Array.isArray(r.carton_rows)&&manualCartonMode==="multiple"} title={k==="carton_count"&&manualCartonMode==="multiple"?"Carton Quantity tự tính theo danh sách Carton":undefined} value={String(r[k]??"")} onChange={e=>{setRows(prev=>prev.map((row,n)=>{if(n!==i)return row;const changed={...row,[k]:e.target.value};if(Array.isArray(row.carton_rows)){const original=row.carton_rows as Row[];changed.carton_rows=[{...original[0],[k]:e.target.value},...original.slice(1).map(c=>k==='order_id'?{...c,order_id:e.target.value}:c)];}return changed}));setSaved([])}}/></td>)}<td><button className="rowAction dangerBtn" disabled={mode==="upload"} onClick={()=>setRows(prev=>prev.filter((_,n)=>n!==i))}>Bỏ</button></td></tr>)}</tbody></table></div>
  {mode==='manual'&&manualCartonMode==='multiple'&&allowsMulti&&rows.map((order,idx)=><div className="panel" key={'carton-'+idx}><b>{String(order.order_id||'Order '+(idx+1))} · {Array.isArray(order.carton_rows)?(order.carton_rows as Row[]).length:1} Carton</b><p>Carton 1 ở bảng trên. Các Carton tiếp theo chỉ nhập thông tin kiện hàng.</p>{(Array.isArray(order.carton_rows)?(order.carton_rows as Row[]).slice(1):[]).map((carton,j)=><div key={j} className="templateGrid"><b>Carton {j+2}</b>{(['weight','length','width','height','item','material','declared_value'] as const).map(k=><label key={k}><span>{labels[fields.indexOf(k)]}</span><input aria-label={'Carton '+(j+2)+' '+k} value={String(carton[k]??'')} onChange={e=>{const value=e.target.value;setRows(prev=>prev.map((r,n)=>n!==idx?r:{...r,carton_rows:(r.carton_rows as Row[]).map((c,ci)=>ci===j+1?{...c,[k]:value,order_id:r.order_id,carton_count:''}:c)}));setSaved([])}}/></label>)}<button className="secondaryBtn" onClick={()=>removeCarton(idx,j+1)}>Bỏ Carton {j+2}</button></div>)}<button className="secondaryBtn" disabled={(Array.isArray(order.carton_rows)?(order.carton_rows as Row[]).length:1)>=Number(chosenRoute?.max_cartons_per_order||1)} onClick={()=>appendCarton(idx)}>＋ Thêm Carton</button></div>)}
  {mode==="manual"&&<button className="secondaryBtn" disabled={busy||rows.length>=MANUAL_ORDER_LIMIT} onClick={()=>{setRows(prev=>prev.length<MANUAL_ORDER_LIMIT?[...prev,blank()]:prev);setSaved([])}}>＋ Thêm Order</button>}
- {checked.map((r,i)=><details key={i} open={rows.length===1||r.errors.length>0}><summary>Dòng {r.row_number} · {String(rows[i]?.order_id||'Chưa có ID')} · {Array.isArray(rows[i]?.carton_rows)?(rows[i].carton_rows as Row[]).length:1} Carton · {r.errors.length?'Lỗi dữ liệu':r.pricing?.eligible?'Đủ điều kiện':'Chưa đủ điều kiện mua dịch vụ'}</summary>{r.errors.map((e,n)=><p className="error" key={n}>{e}</p>)}{Array.isArray(rows[i]?.carton_rows)&&(rows[i].carton_rows as Row[]).length>1&&<p>Các dòng Excel: {(rows[i].carton_rows as Row[]).map(c=>String(c.row_number||'?')).join(', ')}. Muốn sửa Carton, chỉnh trong Excel rồi upload lại.</p>}<PricingPreview pricing={r.pricing}/></details>)}
+ {checked.map((r,i)=><details key={i} open={rows.length===1||r.errors.length>0}><summary>Dòng {r.row_number} · {String(rows[i]?.order_id||'Chưa có ID')} · {Array.isArray(rows[i]?.carton_rows)?(rows[i].carton_rows as Row[]).length:1} Carton · {r.errors.length?'Lỗi dữ liệu':currency==='VND'?'Hợp lệ để lưu Draft':r.pricing?.eligible?'Đủ điều kiện':'Chưa đủ điều kiện mua dịch vụ'}</summary>{r.errors.map((e,n)=><p className="error" key={n}>{e}</p>)}{Array.isArray(rows[i]?.carton_rows)&&(rows[i].carton_rows as Row[]).length>1&&<p>Các dòng Excel: {(rows[i].carton_rows as Row[]).map(c=>String(c.row_number||'?')).join(', ')}. Muốn sửa Carton, chỉnh trong Excel rồi upload lại.</p>}{currency!=="VND"&&<PricingPreview pricing={r.pricing}/>}</details>)}
  <button className="secondaryBtn" disabled={busy||!routeId||!rows.length||(mode==="upload"&&!file)} onClick={()=>void act("save")}>Lưu Draft ({rows.length})</button></>}
  {locked&&<PricingPreview pricing={initial?.pricing as Preview}/>}
- {saved.length>0&&currency==="VND"&&<div><p>Đã lưu Order: {saved.map(o=>"#"+o.id+" · "+o.order_id).join(", ")}.</p><Link href="/vnd">Mở Purchase / xác nhận giá / sổ VNĐ</Link></div>}
+ {currency==="VND"&&<div>{saved.map(o=><p key={o.id}>#{o.id} · {o.order_id} · {o.quote_vnd===null||o.quote_vnd===undefined?'Chờ báo giá hoặc kiểm tra cấu hình':<>{o.quote_vnd} VNĐ <button disabled={busy} onClick={()=>void purchaseVnd(o.id,o.quote_vnd!)}>Đặt mua</button></>}</p>)}<Link href="/vnd">Mở Purchase / xác nhận giá / sổ VNĐ</Link></div>}
  {saved.length>0&&currency!=="VND"&&<div className="clientPurchaseSelections"><h3>Chọn Draft đặt mua</h3>{saved.map(o=><label key={o.id}><input type="checkbox" checked={selection.includes(o.id)} disabled={!o.pricing?.eligible} onChange={e=>setSelection(prev=>e.target.checked?[...prev,o.id]:prev.filter(id=>id!==o.id))}/>{o.order_id} · {'manual_price_pending' in (o.pricing||{})?'Admin nhập giá khi cấp Tracking/Label':o.pricing?.total_charge.toFixed(2)+' USD'} · {failures.find(f=>f.id===o.id)?.error|| (o.pricing?.eligible?'Đủ điều kiện':o.pricing?.reasons.join(' '))}</label>)}<p>Đã có giá: {saved.filter(o=>selection.includes(o.id)&&!('manual_price_pending' in (o.pricing||{}))).reduce((n,o)=>n+o.pricing.total_charge,0).toFixed(2)} USD {saved.some(o=>selection.includes(o.id)&&'manual_price_pending' in (o.pricing||{}))?' · Có đơn chờ Admin nhập giá; tổng này chưa gồm các đơn đó.':''}</p><button className="primaryBtn" disabled={busy||!selection.length} onClick={()=>void act("purchase")}>Đặt mua dịch vụ ({selection.length})</button></div>}
 
  {msg&&<p role="status">{msg}</p>}

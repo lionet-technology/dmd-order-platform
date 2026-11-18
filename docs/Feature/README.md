@@ -1,3 +1,7 @@
+## Hoàn thiện Giai đoạn 1 · 18/11/2026
+
+[Trạng thái GĐ1 và backlog quyết định nghiệp vụ](43-gd1-completion-decision-backlog.md) cập nhật hiện trạng theo từng luồng VNĐ, kiểm chứng kỹ thuật và các quyết định cần chốt trước đợt UI/UX và UAT.
+
 ## Claim NEXT · Triển khai vận hành 18/11/2026
 
 [Feature 42](42-vnd-claim-refund-next.md) cập nhật Claim Client/Supplier nhiều Order, chronology Processing, Complete, hai watchlist và link thủ công. GP/commission sau Refund liên nhóm giữ OPEN. Pilot chứng từ thật và rehearsal môi trường triển khai tiếp tục chờ xác nhận. Các mốc cũ bên dưới mô tả phạm vi từng đợt trước.

@@ -7,6 +7,7 @@ import {finalizeVndStatement,vndCreditOverdue} from './vnd-statements';
 import {duplicateVndOrder} from './vnd-duplicate';
 import {editVndShipping} from './vnd-shipping-edit';
 import {automaticVndOrderQuote,automaticSourceKind} from './service-v1-order-quote';
+import {findTrackingOwner} from './order-operations';
 import {routeState} from './route-lifecycle';
 import {vnd,addVnd,subtractVnd,sumVnd,compareVnd,cancellationRefundVnd} from './vnd-money';
 import type {AuthUser} from './auth';
@@ -182,8 +183,13 @@ export function vndAction(actor:AuthUser,input:Row){
     if(seen.has(reference))throw Error('Trùng tham chiếu trong file.');seen.add(reference);
     const amount=nonnegative(raw.amount);if(compareVnd(amount,'0')<=0)throw Error('Phí/thuế phải dương.');
     let id=Number(raw.order_id);
-    if(raw.order_code!==undefined){
-     if(raw.order_id!==undefined)throw Error('Chọn Order ID hoặc DB ID.');
+    if([raw.order_id,raw.order_code,raw.tracking].filter(value=>value!==undefined).length!==1)throw Error('Chọn đúng một định danh Order ID, DB ID hoặc Tracking.');
+    if(raw.tracking!==undefined){
+     if(typeof raw.tracking!=='string'||!raw.tracking.trim())throw Error('Tracking phải là text.');
+     const match=findTrackingOwner(raw.tracking);
+     if(!match||match.client_user_id!==clientId)throw Error('Tracking không match trong Client.');
+     id=match.order_id;
+    }else if(raw.order_code!==undefined){
      const matches=db.prepare('SELECT id FROM orders WHERE client_user_id=? AND order_id=?').all(clientId,String(raw.order_code).trim()) as Row[];
      if(matches.length!==1)throw Error('Order ID không match duy nhất trong Client.');id=Number(matches[0].id);
     }
@@ -235,6 +241,9 @@ export function vndAction(actor:AuthUser,input:Row){
      db.prepare("UPDATE orders SET service_purchased_at=COALESCE(service_purchased_at,?),workflow_status='PENDING_PURCHASE' WHERE id=?").run(new Date().toISOString(),id);
     }
     r=refreshAutomatic(vndRequest(id)!);
+    if(!before&&actor.role==='CLIENT'&&r.offer!==null&&typeof input.expected_offer==='string'&&r.offer===vnd(input.expected_offer)){
+     db.prepare('UPDATE vnd_purchase_requests SET accepted_revision=revision WHERE order_id=?').run(id);
+    }
    }else{
     if(!r||r.status==='CANCELLED')throw Error('Chưa Purchase hoặc đã huỷ.');
     if(action==='offer'){

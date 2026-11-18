@@ -1,4 +1,5 @@
-import {isVndClient,vndBalance} from "@/lib/vnd-operational";
+import {automaticSourceKind,automaticVndOrderQuote,publishedVndRoute} from '@/lib/service-v1-order-quote';
+import {isVndClient,vndAction,vndBalance} from "@/lib/vnd-operational";
 import {guardManualOrderRows} from "@/lib/manual-order-limit";
 import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import {accountFinancials} from "@/lib/credit";
@@ -17,13 +18,20 @@ import { normalizeCountry } from "@/lib/epacket-pricing";
 import {purchaseBatch} from '@/lib/client-bulk-purchase';
 export const runtime="nodejs";
 type Row=Record<string,unknown>;
+
+function vndDraftRoute(route:Row){
+ if(String(route.service).toLowerCase()==='chuyên tuyến')return true;
+ if(!automaticSourceKind(String(route.service),String(route.sub_service)))return false;
+ return Boolean(publishedVndRoute(Number(route.id)));
+}
 async function handleGET(req:NextRequest){
  const auth=requireUser(req,"CLIENT");if(auth.error)return auth.error;
- const routes=(db.prepare("SELECT r.* FROM service_route_configs r WHERE r.active=1 AND r.client_self_purchase=1").all() as Row[]).filter(r=>activePricing(Number(r.id))||isManualPriceRoute(r.service)).map(r=>{
+ const vndClient=isVndClient(auth.user.id);
+ const routes=(db.prepare("SELECT r.* FROM service_route_configs r WHERE r.active=1 AND r.client_self_purchase=1").all() as Row[]).filter(r=>vndClient?vndDraftRoute(r):activePricing(Number(r.id))||isManualPriceRoute(r.service)).map(r=>{
  const setting=db.prepare("SELECT * FROM client_service_settings WHERE client_user_id=? AND lower(service)=lower(?) AND (lower(sub_service)=lower(?) OR sub_service='') ORDER BY CASE WHEN lower(sub_service)=lower(?) THEN 0 ELSE 1 END LIMIT 1").get(auth.user.id,String(r.service),String(r.sub_service),String(r.sub_service)) as Row|undefined;
- return setting?.is_enabled?{id:r.id,service:r.service,sub_service:r.sub_service,discount_percent:setting.discount_percent,currency:"USD",max_cartons_per_order:maxCartonsForService(r.service,r.max_cartons_per_order)}:null}).filter(Boolean);
+ return setting?.is_enabled?{id:r.id,service:r.service,sub_service:r.sub_service,discount_percent:setting.discount_percent,currency:vndClient?"VND":"USD",max_cartons_per_order:maxCartonsForService(r.service,r.max_cartons_per_order)}:null}).filter(Boolean);
  const balance=(db.prepare("SELECT COALESCE(SUM(CASE WHEN direction='CREDIT' THEN amount ELSE -amount END),0) balance FROM ledger_entries WHERE client_user_id=?").get(auth.user.id) as {balance:number}).balance;
- if(isVndClient(auth.user.id))return NextResponse.json({routes:routes.filter(r=>r?.service==='Chuyên tuyến').map(r=>({...r,currency:'VND'})),balance:vndBalance(auth.user.id).balance,currency:'VND',financials:null});
+ if(vndClient)return NextResponse.json({routes,balance:vndBalance(auth.user.id).balance,currency:'VND',financials:null});
  return NextResponse.json({routes,balance,financials:accountFinancials(auth.user.id,{readOnly:true})});
 }
 async function handlePOST(req:NextRequest){
@@ -36,14 +44,21 @@ async function handlePOST(req:NextRequest){
  if(!(file instanceof File)||file.size>5*1024*1024||!/[.](csv|xlsx)$/i.test(file.name))throw Error("Chọn CSV/XLSX tối đa 5 MB.");
  body={action:String(form.get("action")||"preview"),route_id:Number(form.get("route_id")),rows:groupClientCartonRows(await parseClientFile(Buffer.from(await file.arrayBuffer()),file.name))};
  }else body=await req.json();
- const action=String(body.action||"preview");
+ const action=String(body.action||"preview"),vndClient=isVndClient(auth.user.id);
+ if(action==="purchase_vnd"){
+  if(!vndClient)throw Error("Client chưa có tài khoản VNĐ.");
+  const result=vndAction(auth.user,{action:'request',client_id:auth.user.id,order_id:body.order_id,expected_offer:body.expected_offer,request_key:body.request_key});
+  const purchase=result.requests.find((r:Row)=>r.order_id===Number(body.order_id));
+  return NextResponse.json({status:purchase?.status,offer:purchase?.offer});
+ }
  if(action==="purchase"){
+ if(vndClient)throw Error("Dùng màn Dịch vụ · tài khoản VNĐ để gửi và xác nhận Purchase.");
  const ids=Array.isArray(body.order_ids)?body.order_ids.map(Number):[];
  if(!ids.length||ids.length>1000)throw Error("Chọn 1–1000 Order.");
  return NextResponse.json(purchaseBatch(ids,auth.user,(body.expected_quotes&&typeof body.expected_quotes==="object"?body.expected_quotes:{}) as Record<string,string>));
  }
  const route=db.prepare("SELECT * FROM service_route_configs WHERE id=? AND active=1 AND client_self_purchase=1").get(Number(body.route_id)) as Row|undefined;
- if(!route)throw Error("Route chưa cho phép Client tự đặt mua.");
+ if(!route||vndClient&&!vndDraftRoute(route))throw Error("Route chưa cho phép Client tự đặt mua.");
  const setting=db.prepare("SELECT * FROM client_service_settings WHERE client_user_id=? AND lower(service)=lower(?) AND (lower(sub_service)=lower(?) OR sub_service='') ORDER BY CASE WHEN lower(sub_service)=lower(?) THEN 0 ELSE 1 END LIMIT 1").get(auth.user.id,String(route.service),String(route.sub_service),String(route.sub_service)) as Row|undefined;
  if(!setting?.is_enabled)throw Error("Client chưa được cấp dịch vụ.");
  const rows=Array.isArray(body.rows)?body.rows as Row[]:[];
@@ -70,8 +85,8 @@ async function handlePOST(req:NextRequest){
  const count=["length","width","height"].filter(k=>Number(data[k])>0).length;
  if(count!==0&&count!==3)errors.push("Nhập đủ Dài/Rộng/Cao.");
  if(count===0&&!(Number(data.manual_volume)>0))errors.push("Thiếu kích thước/thể tích.");
- const q=orderQuote(data);if(!q&&!isManualPriceRoute(route.service))errors.push('Route chưa có cơ chế báo giá tự động được duyệt; chưa thể mua dịch vụ.');
- const pricing=safePricing(data,"CLIENT");
+ const q=vndClient?null:orderQuote(data);if(!vndClient&&!q&&!isManualPriceRoute(route.service))errors.push('Route chưa có cơ chế báo giá tự động được duyệt; chưa thể mua dịch vụ.');
+ const pricing=vndClient?null:safePricing(data,"CLIENT");
  const reasons=[...errors,...(q?.reasons||[]),...(pricing?.reasons||[])];
  return {row_number:Number(row.row_number||index+1),data,cartons,errors,pricing:pricing?{...pricing,eligible:!reasons.length,reasons:reasons.length?reasons:pricing.reasons}:null};
  });
@@ -79,7 +94,7 @@ async function handlePOST(req:NextRequest){
  if(action!=="save")throw Error("Thao tác không hợp lệ.");
  if(prepared.some(r=>r.errors.length))return NextResponse.json({error:"Sửa lỗi dữ liệu trước khi lưu Draft.",rows:prepared.map(({data,cartons,...r})=>({...r,input:{...(data.id?{id:data.id}:{}),...Object.fromEntries(CLIENT_FIELDS.map(k=>[k,data[k]])),carton_rows:cartons.map(c=>Object.fromEntries([...CLIENT_FIELDS,'row_number'].map(k=>[k,c[k]])))}}))},{status:422});
  const orders=db.transaction(()=>prepared.map(r=>{
- const saved=upsertOrder(r.data) as Row;
+ const saved=upsertOrder(r.data,{createOnly:vndClient&&!r.data.id}) as Row;
  if(r.cartons.length>1){
   saveOrderShipmentStructure(Number(saved.id),{lot_count:1,cartons:r.cartons.map((carton,index)=>({
    carton_number:index+1,lot_number:1,weight:Number(carton.weight),length:Number(carton.length)||null,width:Number(carton.width)||null,height:Number(carton.height)||null,volume:Number(carton.manual_volume)||null,
@@ -88,7 +103,13 @@ async function handlePOST(req:NextRequest){
  }
  db.prepare("UPDATE orders SET workflow_status=CASE WHEN workflow_status='HOLD' THEN 'HOLD' ELSE 'SALES_DRAFT' END,sales_user_id=?,created_by_user_id=COALESCE(created_by_user_id,?),updated_by_user_id=? WHERE id=?").run(auth.user.sales_user_id,auth.user.id,auth.user.id,Number(saved.id));
  logOrderEvent({orderId:Number(saved.id),eventType:r.data.id?"ORDER_UPDATED":"ORDER_CREATED",summary:"Client lưu Draft.",actorId:auth.user.id});
- return {id:saved.id,order_id:saved.order_id,pricing:safePricing(saved,"CLIENT")};
+ if(!vndClient)return {id:saved.id,order_id:saved.order_id,pricing:safePricing(saved,"CLIENT")};
+ let quoteVnd:string|null=null;
+ if(automaticSourceKind(String(saved.service),String(saved.sub_service))){
+  try{quoteVnd=automaticVndOrderQuote(Number(saved.id)).total_vnd;}
+  catch(error){if(error&&typeof error==='object'&&'code' in error)throw error;}
+ }
+ return {id:saved.id,order_id:saved.order_id,pricing:null,quote_vnd:quoteVnd};
  })).immediate();
  return NextResponse.json({orders},{status:201});
  }catch(e){return NextResponse.json({error:e instanceof Error?e.message:"Không thể xử lý Order."},{status:400})}

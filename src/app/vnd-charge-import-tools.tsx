@@ -1,6 +1,6 @@
 "use client";
 import {useRef,useState} from 'react';
-type Item={order_code:string;kind:string;amount:string;reference:string;reason:string};
+type Item={order_code?:string;tracking?:string;kind:string;amount:string;reference:string;reason:string};
 export default function VndChargeImportTools({client,onChange}:{client:string;onChange:()=>void}){
  const [file,setFile]=useState<File|null>(null),[items,setItems]=useState<Item[]>([]),[reason,setReason]=useState(''),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
  const receipt=useRef<{payload:string;key:string}|null>(null);
@@ -15,7 +15,7 @@ export default function VndChargeImportTools({client,onChange}:{client:string;on
    if(save){setMessage('Đã ghi phí/thuế. Dòng cùng tham chiếu và nội dung không ghi lần hai.');setItems([]);onChange();}else{setItems(d.items);setMessage('Đã xem trước, chưa ghi tiền. Kiểm tra nội dung rồi xác nhận.');}
   }catch(e){setMessage(e instanceof Error?e.message:'Không xử lý được.');}finally{setBusy(false);}
  }
- return <section aria-label="Import phí thuế Client"><h3>Import phụ phí/thuế sau vận chuyển</h3><p>Excel: Order ID | Loại | Số tiền VNĐ | Tham chiếu | Lý do. Loại surcharge hoặc tax; Order ID dạng chữ; tham chiếu duy nhất cho từng dòng trong tài khoản Client. Chỉ đơn đã charge, chưa huỷ. Phí thu Client độc lập với cost Supplier.</p>
+ return <section aria-label="Import phí thuế Client"><h3>Import phụ phí/thuế sau vận chuyển</h3><p>Excel: Order ID hoặc Tracking | Loại | Số tiền VNĐ | Tham chiếu | Lý do. Loại surcharge hoặc tax; Order ID hoặc Tracking dạng chữ; tham chiếu duy nhất cho từng dòng trong tài khoản Client. Chỉ đơn đã charge, chưa huỷ. Phí thu Client độc lập với cost Supplier.</p>
  <label>File phí/thuế Client <input type="file" accept=".xlsx" onChange={e=>{setFile(e.target.files?.[0]??null);setItems([]);}}/></label><button disabled={busy||!file||!client} onClick={()=>void run(false)}>Xem trước phí/thuế</button>
- {!!items.length&&<><div style={{overflowX:'auto'}}><table><thead><tr><th>Order</th><th>Loại</th><th>VNĐ</th><th>Tham chiếu</th><th>Lý do</th></tr></thead><tbody>{items.map((r,i)=><tr key={i}><td>{r.order_code}</td><td>{r.kind}</td><td>{r.amount}</td><td>{r.reference}</td><td>{r.reason}</td></tr>)}</tbody></table></div><label>Lý do ghi lô phí/thuế <input value={reason} onChange={e=>setReason(e.target.value)}/></label><button disabled={busy||!reason} onClick={()=>void run(true)}>Xác nhận ghi {items.length} dòng phí/thuế</button></>}<p role="status">{message}</p></section>;
+ {!!items.length&&<><div style={{overflowX:'auto'}}><table><thead><tr><th>Order ID / Tracking</th><th>Loại</th><th>VNĐ</th><th>Tham chiếu</th><th>Lý do</th></tr></thead><tbody>{items.map((r,i)=><tr key={i}><td>{r.order_code??r.tracking}</td><td>{r.kind}</td><td>{r.amount}</td><td>{r.reference}</td><td>{r.reason}</td></tr>)}</tbody></table></div><label>Lý do ghi lô phí/thuế <input value={reason} onChange={e=>setReason(e.target.value)}/></label><button disabled={busy||!reason} onClick={()=>void run(true)}>Xác nhận ghi {items.length} dòng phí/thuế</button></>}<p role="status">{message}</p></section>;
 }

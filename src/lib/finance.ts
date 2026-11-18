@@ -257,7 +257,7 @@ function numericValue(input: OrderInput, key: keyof OrderInput, existing?: Order
   return num(existing?.[String(key)]);
 }
 
-export function upsertOrder(input: OrderInput) {
+export function upsertOrder(input: OrderInput, {createOnly = false} = {}) {
   const initialOrderId = text(input.order_id);
   const initialTracking = text(input.tracking);
   const preliminaryKey = draftKey([
@@ -269,6 +269,7 @@ export function upsertOrder(input: OrderInput) {
     input.recipient_name,
   ]);
   const existing = findOrder(input, initialTracking, initialOrderId, preliminaryKey);
+  if (createOnly && existing) throw new Error("Draft trùng với Order đã tồn tại; cần mã Order mới.");
   if(existing&&(String(existing.tracking||"").trim()||String(existing.label||"").trim()||db.prepare("SELECT id FROM order_trackings WHERE order_id=? LIMIT 1").get(existing.id)))throw new Error("Order đã có Tracking/Label; dữ liệu nhạy cảm đã khóa.");
   if(existing?.pricing_snapshot_json)throw new Error("Đơn đã đặt mua; giá và dữ liệu kiện đã khóa.");
   if(existing?.workflow_status==="CANCELLED")throw new Error("Đơn đã huỷ; không thể sửa hoặc tạo lại trên cùng record.");

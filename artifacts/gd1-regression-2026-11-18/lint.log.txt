@@ -1,0 +1,2 @@
+> dmd-finance-ops@0.1.0 lint
+> eslint .
