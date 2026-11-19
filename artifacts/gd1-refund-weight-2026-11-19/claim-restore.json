@@ -1,0 +1,52 @@
+{
+  "status": "PASS",
+  "database": "owned disposable Chrome TEST fixture",
+  "integrity": "ok",
+  "foreign_key_violations": 0,
+  "tables": [
+    {
+      "name": "vnd_claim_processing",
+      "rows": 2
+    },
+    {
+      "name": "vnd_claim_watchlist",
+      "rows": 2
+    },
+    {
+      "name": "vnd_claim_links",
+      "rows": 1
+    },
+    {
+      "name": "vnd_claims",
+      "rows": 3
+    },
+    {
+      "name": "vnd_refund_events",
+      "rows": 5
+    },
+    {
+      "name": "vnd_supplier_claims",
+      "rows": 1
+    },
+    {
+      "name": "vnd_supplier_claim_events",
+      "rows": 4
+    },
+    {
+      "name": "vnd_supplier_periods",
+      "rows": 1
+    },
+    {
+      "name": "vnd_supplier_posting_links",
+      "rows": 1
+    },
+    {
+      "name": "vnd_commands",
+      "rows": 54
+    },
+    {
+      "name": "vnd_ledger",
+      "rows": 16
+    }
+  ]
+}

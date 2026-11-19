@@ -213,6 +213,32 @@ let server,browser,checks=0;const check=(v,m)=>{checks++;assert.ok(v,m)};
  check(stalePurchase.ok()&&pending.status==='PRICE_CONFIRMATION_REQUIRED'&&pending.offer===changedDraft.quote_vnd,'Stale displayed price requires explicit confirmation');
  check(errors.length===0,'no browser page errors: '+errors.join(';'));
  const Database=require('better-sqlite3');
+ // Exercise mixed declared currencies through the authenticated operational API.
+ const declarations = new Database(fixture.dbPath);
+ const mixedOrders = [fixture.claimOrder.id,fixture.mixedOrder.id];
+ try {
+  declarations.transaction(()=>{
+   for (const [index, orderId] of mixedOrders.entries()) {
+    declarations.prepare('DELETE FROM carton_items WHERE carton_id IN (SELECT id FROM order_cartons WHERE order_id=?)').run(orderId);
+    const item = declarations.prepare("INSERT INTO order_items(order_id,sku,description,unit_manufacturing_value,currency) VALUES (?,'TEST-MIXED','TEST',?,?)").run(orderId,2+index*2,index===0?'USD':'VND');
+    declarations.prepare('INSERT INTO carton_items(carton_id,order_item_id,quantity) SELECT id,?,1 FROM order_cartons WHERE order_id=? ORDER BY id LIMIT 1').run(item.lastInsertRowid,orderId);
+   }
+  })();
+ } finally { declarations.close(); }
+ const operations = base+'/api/service-v1/operations';
+ const mixedCommand = (action,fields) => context.request.post(operations,{data:{action,client_id:fixture.client.id,request_key:'TEST-HTTP-MIXED-'+action,reason:'TEST mixed declarations',evidence:'TEST invoice',...fields}});
+ const mixedCreate = await mixedCommand('claim_create',{order_ids:mixedOrders,category:'SHIPPING_ISSUE'});
+ check(mixedCreate.ok(),'Client opens mixed-currency Claim: '+await mixedCreate.text());
+ await role('ADMIN');
+ const opened = (await (await context.request.get(operations+'?client_id='+fixture.client.id)).json()).refunds.claims[0];
+ const {addVnd,compareVnd,sumVnd} = require('../src/lib/vnd-money.ts');
+ const revenue = sumVnd(opened.decision_basis.flatMap(order=>[order.selling_vnd,order.surcharge_vnd,order.tax_vnd]).filter(value=>compareVnd(value,'0')>0));
+ const mixedComplete = await mixedCommand('claim_complete',{claim_id:opened.id,amount:addVnd(revenue,'6'),expected_revision:0});
+ check(mixedComplete.ok(),'Admin completes mixed-currency Claim: '+await mixedComplete.text());
+ const mixedEvent = (await (await context.request.get(operations+'?client_id='+fixture.client.id)).json()).refunds.events.find(event=>event.claim_id===opened.id&&event.kind==='DECISION');
+ const mixedSnapshot = JSON.parse(mixedEvent.context_json);
+ check(mixedSnapshot.orders.map(order=>order.declared_goods[0].currency).join(',')==='USD,VND','Claim snapshot retains declared currencies');
+ check(mixedSnapshot.allocation.map(order=>order.compensation_vnd).join(',')==='2,4','Claim excess uses declared numeric weights without FX');
  const tables=['vnd_claim_processing','vnd_claim_watchlist','vnd_claim_links','vnd_claims','vnd_refund_events','vnd_supplier_claims','vnd_supplier_claim_events','vnd_supplier_periods','vnd_supplier_posting_links','vnd_commands','vnd_ledger'];
  const backup=path.join(dir,'claim-cases-backup.db'),copy=path.join(dir,'claim-cases-restore.db');
  const original=new Database(fixture.dbPath,{readonly:true});
@@ -227,7 +253,7 @@ let server,browser,checks=0;const check=(v,m)=>{checks++;assert.ok(v,m)};
   for(const table of tables){assert.ok(before[table].length,table+' fixture must have rows');assert.deepEqual(snapshot(restored,table),before[table]);}
  }finally{restored.close();}
  fs.writeFileSync(path.join(output,'claim-restore.json'),JSON.stringify({status:'PASS',database:'owned disposable Chrome TEST fixture',integrity:'ok',foreign_key_violations:0,tables:tables.map(name=>({name,rows:before[name].length}))},null,2));
- fs.writeFileSync(path.join(output,'browser-uat.json'),JSON.stringify({status:'PASS',checks,roles:['ADMIN','SALES','CLIENT','FINANCE','BOD'],database:'owned disposable',scope:'Client and Supplier watchlists and case creation from Order selection, Processing chronology, explicit completion and manual case linking, BOD case-level unallocated Refund tracking, Supplier frozen period/late current correction/original reference, Control Tower role privacy, GP-Net versus commission reference, Client Excel surcharge/tax preview/import/cross-key replay and immutable Statement, Supplier Excel typed error queue/unmatched retention/explicit Actual payable delta, Admin manual Supplier refund percentage/evidence with no posting, Supplier Claim receivable approval/partial Bank/offset/reversal and overlimit, durable Claim notification acknowledgement, Claim creation/approval, partial Bank/Balance payout and overpool rejection, bank privacy, Supplier actual/payment RBAC, Add-on, Statement, BOD report, shipping edit, desktop/mobile render',errors},null,2));
+ fs.writeFileSync(path.join(output,'browser-uat.json'),JSON.stringify({status:'PASS',checks,roles:['ADMIN','SALES','CLIENT','FINANCE','BOD'],database:'owned disposable',scope:'Client and Supplier watchlists and case creation from Order selection, Processing chronology, explicit completion and manual case linking, BOD case-level unallocated Refund tracking, HTTP mixed-currency excess allocation, Supplier frozen period/late current correction/original reference, Control Tower role privacy, GP-Net versus commission reference, Client Excel surcharge/tax preview/import/cross-key replay and immutable Statement, Supplier Excel typed error queue/unmatched retention/explicit Actual payable delta, Admin manual Supplier refund percentage/evidence with no posting, Supplier Claim receivable approval/partial Bank/offset/reversal and overlimit, durable Claim notification acknowledgement, Claim creation/approval, partial Bank/Balance payout and overpool rejection, bank privacy, Supplier actual/payment RBAC, Add-on, Statement, BOD report, shipping edit, desktop/mobile render',errors},null,2));
  console.log('BROWSER VND PASS ('+checks+' assertions; 5 roles, synthetic DB, actual Chrome)');
 }catch(e){if(browser){const failedPage=browser.contexts()[0]?.pages()[0];if(failedPage){fs.writeFileSync(path.join(output,'uat-failure.txt'),await failedPage.locator('body').ariaSnapshot());await failedPage.screenshot({path:path.join(output,'uat-failure.png'),fullPage:true});}}throw e;}finally{if(browser)await browser.close();if(server)server.kill('SIGTERM');}
 })().catch(e=>{console.error(e);process.exitCode=1});

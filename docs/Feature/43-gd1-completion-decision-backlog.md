@@ -53,3 +53,9 @@ Nguồn quyết định hiện hành gồm [Approved Decisions](SERVICE-V1-APPRO
 Owner đã chọn phân bổ Refund tự động, doanh thu ròng có thể âm và hoa hồng từng Order tối thiểu 0. Lát đầu lưu allocation bất biến tại quyết định Claim, xem [Feature 42](42-vnd-claim-refund-next.md). Báo cáo BOD có số liệu live sau Refund theo Order. Excel BOD có chi tiết theo Sales/Order và đối chiếu delta theo tháng duyệt, tách kỳ mua hiện tại và quá khứ. Khoá quyết toán hoa hồng, tổng hợp điều chỉnh vào số phải trả và pilot còn mở.
 
 Những quy tắc đã duyệt còn chờ triển khai hoặc xác minh gồm Credit Term mặc định 0, tuần thứ Hai–Chủ nhật và chỉ Admin chặn mua thủ công; template Supplier có nhiều cột cấu thành; nhập chi phí và giá Chuyên tuyến theo Order hoặc Lot; lựa chọn giữ giá offer hoặc dùng giá tự động khi đổi dịch vụ; đối soát Supplier void/Emergency; và Add-on Supplier thủ công. Module Credit Note riêng được hoãn, tham chiếu chống ghi trùng vẫn thuộc phạm vi.
+
+## Xác nhận quy tắc phần vượt Refund · 19/11/2026
+
+Claim nhiều Order dùng số khai báo nhân số lượng làm trọng số phần vượt, kể cả khi khai khác loại tiền. Không áp FX. Tổng trọng số bằng 0 thì chia đều. Quyết định và revision giữ cơ sở bất biến. Xem [Feature 42](42-vnd-claim-refund-next.md).
+
+[Bằng chứng kiểm thử và kiểm tra Git/Jenkins](../../artifacts/gd1-refund-weight-2026-11-19/VERIFICATION.md).

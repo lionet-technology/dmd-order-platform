@@ -41,6 +41,12 @@ let checks=0,n=0;const eq=(a,b)=>{checks++;assert.deepEqual(a,b)},bad=(f,re)=>{c
  eq(allocateVndRefund('27',[b,a]).map(x=>[x.selling_vnd,x.surcharge_vnd,x.tax_vnd]),[['8','1','0'],['18','0','0']]);
  eq(allocateVndRefund('33',[b,a]).map(x=>x.compensation_vnd),['2','1']);
  eq(allocateVndRefund('36',[{...b,declared_goods:basis(20,'0','0','0',2).declared_goods},{...a,declared_goods:basis(10,'0','0','0',1).declared_goods}]).map(x=>x.compensation_vnd),['2','4']);
+ const mixed = [
+  {...a, declared_goods: [{unit_manufacturing_value: 2, currency: 'USD', quantity: 2},
+   {unit_manufacturing_value: 1, currency: 'EUR', quantity: 1}]},
+  {...b, declared_goods: [{unit_manufacturing_value: 10, currency: 'VND', quantity: 1}]},
+ ];
+ eq(allocateVndRefund('45', mixed).map(x => [x.total_vnd, x.compensation_vnd]), [['15', '5'], ['30', '10']]);
  eq(allocateVndRefund('1',[basis(1,'0.5','0','0'),basis(2,'0.6','0','0')]).map(x=>x.total_vnd),['0.5','0.5']);
  const event=db.prepare("SELECT * FROM vnd_refund_events WHERE kind='DECISION'").get(),ctx=JSON.parse(event.context_json);
  eq(ctx.allocation[0].total_vnd,'80.123456');eq(ctx.allocation[0].selling_vnd,'80.123456');
@@ -108,6 +114,27 @@ let checks=0,n=0;const eq=(a,b)=>{checks++;assert.deepEqual(a,b)},bad=(f,re)=>{c
  db.prepare('UPDATE users SET sales_user_id=? WHERE id=?').run(other.id,client.id);
  bad(()=>refund.vndClaimNotifications(sales,client.id),/quyền/);bad(()=>refund.acknowledgeVndClaim(sales,client.id,salesNotices[0].id),/quyền/);
  eq(refund.vndClaimNotifications(other,client.id).length,0);
+ // Complete through the operational command, then prove revision ignores live item edits.
+ const secondOrder = finance.upsertOrder({client_user_id:client.id,order_id:key(),service:'ePacket',sub_service:'Standard',supplier:'DMD',country:'US',carton_count:1,weight:1,length:1,width:1,height:1,item:'TEST',material:'Cotton'});
+ db.prepare("INSERT INTO vnd_purchase_requests(order_id,client_id,status,offer,confirmed_at,request_actor_id) VALUES (?,?,'CHARGED','0',CURRENT_TIMESTAMP,?)").run(secondOrder.id,client.id,admin.id);
+ for (const [orderId, value, currency] of [[o.id, 2, 'USD'], [secondOrder.id, 4, 'VND']]) {
+  const carton = db.prepare('SELECT id FROM order_cartons WHERE order_id=?').get(orderId);
+  db.prepare('DELETE FROM carton_items WHERE carton_id=?').run(carton.id);
+  const itemId = db.prepare("INSERT INTO order_items(order_id,sku,description,unit_manufacturing_value,currency) VALUES (?,'TEST-MIXED','TEST',?,?)").run(orderId,value,currency).lastInsertRowid;
+  db.prepare('INSERT INTO carton_items(carton_id,order_item_id,quantity) VALUES (?,?,1)').run(carton.id,itemId);
+ }
+ call('claim_create',{order_ids:[o.id,secondOrder.id],category:'SHIPPING_ISSUE',evidence:'TEST mixed declarations'},client);
+ const mixedClaim = db.prepare('SELECT id FROM vnd_claims ORDER BY id DESC LIMIT 1').get().id;
+ const mixedDecision = () => JSON.parse(db.prepare("SELECT context_json FROM vnd_refund_events WHERE claim_id=? AND kind='DECISION' ORDER BY revision DESC LIMIT 1").get(mixedClaim).context_json);
+ call('claim_complete',{claim_id:mixedClaim,amount:'141.123456',expected_revision:0,evidence:'TEST Complete'});
+ const completed = mixedDecision();
+ eq(completed.orders.map(order=>order.declared_goods[0].currency),['USD','VND']);
+ eq(completed.allocation.map(order=>order.compensation_vnd),['2','4']);
+ db.prepare("UPDATE order_items SET unit_manufacturing_value=100 WHERE order_id=? AND sku='TEST-MIXED'").run(o.id);
+ call('claim_decide',{claim_id:mixedClaim,amount:'144.123456',expected_revision:1,evidence:'TEST Revision'});
+ eq(mixedDecision().orders,completed.orders);
+ eq(mixedDecision().allocation.map(order=>order.compensation_vnd),['3','6']);
+ eq(db.prepare("SELECT context_json FROM vnd_refund_events WHERE claim_id=? AND revision=1").get(mixedClaim).context_json,JSON.stringify(completed));
  db.prepare('UPDATE users SET active=0 WHERE id=?').run(client.id);bad(()=>refund.vndClaimNotifications(client,client.id),/quyền/);
  bad(()=>db.prepare('DELETE FROM vnd_claim_reads').run(),/Immutable/);
  eq(db.pragma('integrity_check',{simple:true}),'ok');

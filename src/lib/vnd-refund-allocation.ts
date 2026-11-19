@@ -45,16 +45,10 @@ export function allocateVndRefund(approved: string, basis: RefundOrderBasis[]) {
  const excess = subtractVnd(approved, withinRevenue);
  let compensation = orders.map(() => '0');
  if (compareVnd(excess, '0') > 0) {
-  const currencies = new Set<string>();
+  // Declared amounts are weights only. Currency is retained in the decision snapshot for audit.
   const declared = orders.map(order => sumVnd(order.declared_goods
    .filter(item => (item.unit_manufacturing_value ?? 0) > 0 && item.quantity > 0)
-   .map(item => {
-    currencies.add(item.currency);
-    return multiplyVnd(String(item.unit_manufacturing_value), String(item.quantity));
-   })));
-  if (orders.length > 1 && currencies.size > 1) {
-   throw Error('Cần quy đổi giá trị sản xuất về cùng tiền tệ để phân bổ phần bồi thường vượt doanh thu.');
-  }
+   .map(item => multiplyVnd(String(item.unit_manufacturing_value), String(item.quantity)))));
   compensation = split(excess, sumVnd(declared) === '0' ? orders.map(() => '1') : declared);
  }
  return orders.map((order, index) => {
