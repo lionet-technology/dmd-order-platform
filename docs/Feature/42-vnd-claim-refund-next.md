@@ -39,3 +39,9 @@
 | Restore NON-production | Backup từ DB TEST, restore sang file mới, đối chiếu journal/snapshot, integrity và foreign keys | Khi có môi trường rehearsal, ghi rõ nguồn TEST, cấu hình và phiên bản, thời điểm backup/restore, đối chiếu số dư và người vận hành xác nhận |
 
 Pilot chứng từ thật và restore tại môi trường triển khai vẫn chờ dữ liệu và môi trường xác nhận.
+
+## Phân bổ khi duyệt Claim · 19/11/2026
+
+Complete Claim và lệnh duyệt tương thích ghi phân bổ trong cùng sự kiện quyết định bất biến. Cơ sở gồm doanh thu bán, phụ phí, thuế và giá trị sản xuất đã khai của từng Order. Phần trong doanh thu chia theo trọng số doanh thu từng Order rồi trừ Selling Price, phụ phí và thuế theo thứ tự. Phần vượt chia theo giá trị sản xuất, hoặc chia đều khi tổng giá trị sản xuất bằng 0. Phần dư làm tròn phân theo phần lẻ lớn nhất rồi theo Order ID tăng dần, giữ tổng bằng số tiền duyệt và giữ phần thập phân VNĐ hiện có. Revision lưu phân bổ mới dựa trên cùng dữ liệu đã chốt; Claim cũ nhận snapshot lần đầu khi có revision. Thực trả Bank/Balance tiếp tục dùng pool riêng.
+
+Phần vượt doanh thu trên Claim nhiều Order có giá trị sản xuất bằng nhiều loại tiền cần quy đổi có căn cứ trước khi duyệt. Báo cáo BOD trả thêm số liệu live theo Order gồm doanh thu ròng, doanh thu cước, GP-Base và commission sau phân bổ. Doanh thu và GP-Base có thể âm, commission tối thiểu 0. Số liệu live đọc quyết định mới nhất, không ghi vào snapshot kỳ; quyết toán snapshot hoa hồng theo kỳ còn mở. Excel BOD xuất bảng live theo kỳ mua, delta quyết định trong tháng duyệt và đối chiếu tổng nghĩa vụ. Dòng quyết định phân biệt kỳ mua hiện tại và kỳ mua trước, giữ nhóm Claim riêng khỏi refund huỷ. Revision đầu của Claim cũ có cờ phân bổ mở đầu, để trống delta theo Order khi kỳ trước chưa từng phân bổ.

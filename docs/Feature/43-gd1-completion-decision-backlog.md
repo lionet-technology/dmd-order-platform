@@ -47,3 +47,9 @@ Nguồn quyết định hiện hành gồm [Approved Decisions](SERVICE-V1-APPRO
 - **Emergency VNĐ.** Khi đổi sang Supplier khác, báo cáo tìm Actual của Supplier hiện hành. Review và payable tính delta trên Actual cũ của cùng Supplier, giữ bút toán Supplier trước. Chứng từ mới chờ Finance/BOD duyệt. Giữ mở ca đổi tuyến cùng Supplier hoặc quay lại Supplier cũ, chi phí còn treo trên tuyến cũ trong GP và phương án nhập Estimated Net VNĐ vào Emergency.
 - **Supplier, Statement, báo cáo.** Template chuẩn tiếp tục dùng được. Mapping Supplier/Service cần mẫu chứng từ và định danh cột. Feature 19 xác nhận hướng BUY/SELL từ phía DMD, song còn phải đối chiếu cách nối sổ VNĐ và phạm vi báo cáo. Chốt Statement thủ công đã có. Chưa có lịch tự chốt và báo cáo chuỗi nhiều tháng.
 - [Báo cáo audit và kết quả TEST](../../artifacts/gd1-audit-2026-11-18/VERIFICATION.md).
+
+## Tiếp tục GĐ1 · 19/11/2026
+
+Owner đã chọn phân bổ Refund tự động, doanh thu ròng có thể âm và hoa hồng từng Order tối thiểu 0. Lát đầu lưu allocation bất biến tại quyết định Claim, xem [Feature 42](42-vnd-claim-refund-next.md). Báo cáo BOD có số liệu live sau Refund theo Order. Excel BOD có chi tiết theo Sales/Order và đối chiếu delta theo tháng duyệt, tách kỳ mua hiện tại và quá khứ. Khoá quyết toán hoa hồng, tổng hợp điều chỉnh vào số phải trả và pilot còn mở.
+
+Những quy tắc đã duyệt còn chờ triển khai hoặc xác minh gồm Credit Term mặc định 0, tuần thứ Hai–Chủ nhật và chỉ Admin chặn mua thủ công; template Supplier có nhiều cột cấu thành; nhập chi phí và giá Chuyên tuyến theo Order hoặc Lot; lựa chọn giữ giá offer hoặc dùng giá tự động khi đổi dịch vụ; đối soát Supplier void/Emergency; và Add-on Supplier thủ công. Module Credit Note riêng được hoãn, tham chiếu chống ghi trùng vẫn thuộc phạm vi.

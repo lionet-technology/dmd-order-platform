@@ -35,7 +35,15 @@ let checks=0,n=0;const eq=(a,b)=>{checks++;assert.deepEqual(a,b)},bad=(f,re)=>{c
  call('claim_watchlist',{order_ids:[o.id],active:false},client);
  eq(refund.vndRefundView(client.id,client).watchlist,[]);
  eq(ops.vndBalance(client.id).balance,before);eq(refund.vndRefundBalance(client.id),'80.123456');
+ const {allocateVndRefund}=require('../src/lib/vnd-refund-allocation.ts');
+ const basis=(id,selling,surcharge,tax,declared=0)=>({order_id:id,selling_vnd:selling,surcharge_vnd:surcharge,tax_vnd:tax,declared_goods:[{unit_manufacturing_value:declared,currency:'USD',quantity:1}]});
+ const a=basis(10,'8','1','1'),b=basis(20,'18','1','1');
+ eq(allocateVndRefund('27',[b,a]).map(x=>[x.selling_vnd,x.surcharge_vnd,x.tax_vnd]),[['8','1','0'],['18','0','0']]);
+ eq(allocateVndRefund('33',[b,a]).map(x=>x.compensation_vnd),['2','1']);
+ eq(allocateVndRefund('36',[{...b,declared_goods:basis(20,'0','0','0',2).declared_goods},{...a,declared_goods:basis(10,'0','0','0',1).declared_goods}]).map(x=>x.compensation_vnd),['2','4']);
+ eq(allocateVndRefund('1',[basis(1,'0.5','0','0'),basis(2,'0.6','0','0')]).map(x=>x.total_vnd),['0.5','0.5']);
  const event=db.prepare("SELECT * FROM vnd_refund_events WHERE kind='DECISION'").get(),ctx=JSON.parse(event.context_json);
+ eq(ctx.allocation[0].total_vnd,'80.123456');eq(ctx.allocation[0].selling_vnd,'80.123456');
  eq(ctx.orders[0].total_current_revenue,'135.123456');eq(ctx.orders[0].declared_goods[0].currency,'USD');
  bad(()=>decide('90',0),/Revision/);bad(()=>call('refund_balance',{amount:'81'},fin),/pool/);bad(()=>call('refund_balance',{amount:'1'},admin),/quyền/);
  const payment={action:'refund_balance',client_id:client.id,amount:'50.000001',reason:'TEST',request_key:key()};
@@ -46,7 +54,11 @@ let checks=0,n=0;const eq=(a,b)=>{checks++;assert.deepEqual(a,b)},bad=(f,re)=>{c
  eq(refund.vndRefundBalance(client.id),'10');eq(ops.vndBalance(client.id).balance,'-85.123455');
  eq(JSON.stringify(refund.vndRefundView(client.id,client)).includes('BANK SECRET'),false);eq(JSON.stringify(refund.vndRefundView(client.id,sales)).includes('BANK SECRET'),false);
  bad(()=>refund.vndRefundView(client.id,other),/quyền/);
- decide('10',1);eq(refund.vndRefundBalance(client.id),'-60.123456');eq(ops.vndBalance(client.id).balance,'-85.123455');
+ decide('10',1);
+ const revision=db.prepare("SELECT context_json FROM vnd_refund_events WHERE kind='DECISION' ORDER BY id DESC").get();
+ eq(JSON.parse(revision.context_json).orders,ctx.orders);
+ eq(JSON.parse(revision.context_json).allocation[0].total_vnd,'10');
+ eq(refund.vndRefundBalance(client.id),'-60.123456');eq(ops.vndBalance(client.id).balance,'-85.123455');
  bad(()=>call('refund_recover',{amount:'1'},fin),/Balance/);eq(db.prepare('SELECT count(*) n FROM vnd_debts').get().n,0);
  call('refund_recover_bank',{amount:'10',executed_day:vndDay(),reference:'TEST recovery',source_account:'CLIENT',destination_account:'DMD',evidence:'TEST receipt'},admin);
  eq(refund.vndRefundBalance(client.id),'-50.123456');eq(ops.vndBalance(client.id).balance,'-85.123455');

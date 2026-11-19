@@ -4,6 +4,7 @@ import {vndAccess,vndBalance,resumeVndPurchases} from './vnd-operational';
 import {vnd,compareVnd,subtractVnd,sumVnd} from './vnd-money';
 import {validVndDay,vndDay} from './vnd-debt';
 import {addClaimProcessing,claimOrderIds,claimProcessing,claimWatchlist,setClaimWatchlist} from './vnd-claim-cases';
+import {allocateVndRefund, type RefundOrderBasis} from './vnd-refund-allocation';
 type Row=Record<string,unknown>;
 export function vndRefundBalance(clientId:number){
  return sumVnd((db.prepare('SELECT delta FROM vnd_refund_events WHERE client_id=? ORDER BY id').all(clientId) as {delta:string}[]).map(r=>r.delta));
@@ -19,7 +20,12 @@ function context(ids:number[],clientId:number,requireCharged=false){
   const r=db.prepare('SELECT status FROM vnd_purchase_requests WHERE order_id=?').get(id) as Row|undefined;
   if(!o||o.client_user_id!==clientId||!r||requireCharged&&r.status!=='CHARGED')throw Error('Claim cần Order VNĐ đã charge, chưa huỷ, thuộc Client.');
   const entries=db.prepare("SELECT kind,delta FROM vnd_ledger WHERE order_id=? AND kind IN ('ORDER_CHARGE','ORDER_CORRECTION','ORDER_SURCHARGE','ORDER_TAX') ORDER BY id").all(id) as Row[];
-  return {order_id:id,sales_user_id:o.sales_user_id,total_current_revenue:subtractVnd('0',sumVnd(entries.map(e=>String(e.delta)))),declared_goods:db.prepare('SELECT i.description,i.unit_manufacturing_value,i.currency,c.quantity FROM carton_items c JOIN order_items i ON i.id=c.order_item_id WHERE i.order_id=? ORDER BY c.id').all(id)};
+  const revenue = (kinds: string[]) => subtractVnd('0', sumVnd(entries.filter(e => kinds.includes(String(e.kind))).map(e => String(e.delta))));
+  return {
+   order_id:id,sales_user_id:o.sales_user_id,total_current_revenue:revenue(['ORDER_CHARGE','ORDER_CORRECTION','ORDER_SURCHARGE','ORDER_TAX']),
+   selling_vnd:revenue(['ORDER_CHARGE','ORDER_CORRECTION']),surcharge_vnd:revenue(['ORDER_SURCHARGE']),tax_vnd:revenue(['ORDER_TAX']),
+   declared_goods:db.prepare('SELECT i.description,i.unit_manufacturing_value,i.currency,c.quantity FROM carton_items c JOIN order_items i ON i.id=c.order_item_id WHERE i.order_id=? ORDER BY c.id').all(id) as RefundOrderBasis['declared_goods'],
+  };
  });
 }
 export function vndRefundView(clientId:number,actor:AuthUser){
@@ -67,8 +73,14 @@ export function applyVndRefund(actor:AuthUser,clientId:number,input:Row,key:stri
   if(action==='claim_complete'&&last)throw Error('Claim đã Complete; dùng sửa quyết định.');
   if(input.expected_revision!==Number(last?.revision??0))throw Error('Revision Claim đã thay đổi.');
   approved=amount(input.amount);revision=Number(last?.revision??0)+1;category=String(claim.category);
-  // Preserve original goods/currency and current charged revenue at every decision; never invent FX or a cap.
-  ctx=JSON.stringify({orders:context(JSON.parse(String(claim.orders_json)),clientId),evidence:claim.evidence,decision_evidence:text(input.evidence)});
+  const previous = last?.context_json ? JSON.parse(String(last.context_json)) : null;
+  const orders = previous?.allocation_version === 1
+   ? previous.orders as RefundOrderBasis[]
+   : context(JSON.parse(String(claim.orders_json)),clientId);
+  ctx=JSON.stringify({
+   orders,allocation_version:1,allocation:allocateVndRefund(approved,orders),
+   evidence:claim.evidence,decision_evidence:text(input.evidence),
+  });
   delta=subtractVnd(approved,String(last?.approved??'0'));kind='DECISION';
  }else{
   const recovery=['refund_recover','refund_recover_bank'].includes(action);

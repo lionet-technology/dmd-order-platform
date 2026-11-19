@@ -1,0 +1,2 @@
+VND CONTINUATION PASS (40 assertions)
+BROWSER VND PASS (100 assertions; 5 roles, synthetic DB, actual Chrome)

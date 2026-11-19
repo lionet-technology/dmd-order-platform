@@ -53,3 +53,13 @@ Primary source: [full attached handoff](DMD_Service_Architecture_V1_Implementati
 
 ## OPEN / DEFERRED
 Handoff §10 remains authoritative: exact Supplier cancellation/void policy, missing source rows/zone provenance, ePacket VND fee/FX relation and inclusive cost components, manual offer on Service change. BOD full-system target versus current explicit Admin-only cancellation inheritance needs reconciliation before broadening access. Do not invent rules or seed unverified values. No production access, Jenkins or deployment.
+
+## Owner GĐ1 continuation · 19/11/2026
+
+- Refund nhiều Order phân bổ theo trọng số doanh thu, trừ Selling Price rồi phụ phí và thuế. Phần vượt dùng trọng số giá trị sản xuất, chia đều khi tổng giá trị sản xuất bằng 0. Complete đóng băng căn cứ phân bổ, Bank/Balance đi theo dòng tiền riêng. Doanh thu ròng được âm và hoa hồng Order tối thiểu 0. Kỳ hoa hồng theo tháng lịch. Báo cáo đối chiếu theo loại Refund, kỳ mua và kỳ quyết định, giữ lịch sử đã khóa.
+- Credit Term tính theo tuần, mặc định 0 trả trước. Statement thứ Hai–Chủ nhật; đếm kỳ cuối âm liên tiếp và reset ngay khi Balance không âm. Term 2 quá hạn khi chốt kỳ âm thứ hai. Hiển thị cảnh báo; chỉ Admin chặn Purchase thủ công. Debt giữ deadline riêng.
+- Supplier import dùng template có version theo Supplier và Sub-Service, cộng các cột cấu thành Net và phụ phí theo mapping, chống ghi trùng dòng và duyệt trước khi ghi sổ.
+- Chuyên tuyến mỗi trường giá/chi phí lấy theo Order hoặc theo Lot. Actual đối chiếu Tracking. Nhiều Supplier theo Lot là tùy chọn theo đánh giá rủi ro. Khi đổi dịch vụ, Admin chọn giữ offer hoặc áp giá tự động sau khi xem hai mức giá và giữ quy tắc consent/reserve.
+- Supplier void và Emergency theo hàng đợi nội bộ; ghi phí theo cấu hình tuyến sau đối soát/Claim. Add-on Supplier dùng chứng từ thủ công, SELL Client ghi Balance. Hoãn module Credit Note riêng; các luồng ghi sổ vẫn cần tham chiếu chống ghi trùng.
+
+Tiến độ triển khai và kiểm chứng theo [Feature 43](43-gd1-completion-decision-backlog.md).

@@ -54,5 +54,19 @@ try{
  eq(vndBusinessReport(vndDay().slice(0,7)).commission.performance.find(r=>r.group==='CLAIM_SHIPPING_ISSUE').claim_refund_status,'UNALLOCATED_CROSS_COHORT_OR_GROUP');
  eq(vndBusinessReport(vndDay().slice(0,7)).commission.unallocated_claims,expectedUnallocated);
  eq(vndBusinessReport('2000-01').commission.unallocated_claims,expectedUnallocated);
+ const liveA=make('100','40'),liveB=make('50','20');
+ const command=(actor,action,fields)=>ops.vndAction(actor,{action,client_id:client.id,reason:'TEST',request_key:key(),...fields});
+ command(admin,'claim_create',{order_ids:[liveB.id,liveA.id],category:'SHIPPING_ISSUE',evidence:'TEST'});
+ const liveClaim=db.prepare('SELECT max(id) id FROM vnd_claims').get().id;
+ const liveDecision={claim_id:liveClaim,expected_revision:0,amount:'153',evidence:'TEST'};
+ const beforeBalance=ops.vndBalance(client.id).balance;
+ command(admin,'claim_complete',liveDecision);
+ const after=()=>vndBusinessReport(vndDay().slice(0,7)).commission.orders.filter(o=>[liveA.id,liveB.id].includes(o.order_id));
+ eq(after().map(o=>o.live_after_refund.net_revenue_vnd),['-2','-1']);
+ eq(after().map(o=>o.live_after_refund.gp_base_vnd),['-42','-21']);
+ eq(after().map(o=>o.live_after_refund.commission_vnd),['0','0']);
+ eq(ops.vndBalance(client.id).balance,beforeBalance);
+ command(admin,'claim_decide',{...liveDecision,expected_revision:1,amount:'30'});
+ eq(after().map(o=>o.live_after_refund.commission_vnd),['4.88','2.44']);
  console.log('VND COMMISSION PASS ('+checks+' assertions)');
 }finally{db.close();}
