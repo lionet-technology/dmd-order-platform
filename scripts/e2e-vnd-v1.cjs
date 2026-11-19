@@ -173,6 +173,39 @@ let server,browser,checks=0;const check=(v,m)=>{checks++;assert.ok(v,m)};
  const acceptedImport=await (await context.request.get(base+'/api/service-v1/suppliers?supplier=SGBay')).json();check(acceptedImport.payable==='160.000001','explicit accept replaces documentary total by exact payable delta');
  check(acceptedImport.import_rows.find(r=>r.data.reference==='TEST-QUEUE-MISSING').decision===null,'unselected error remains pending');
  await qi.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(output,'uat-supplier-import-queue.png'),fullPage:false});
+ // Exercise mapping creation, multipart upload, pending evidence, acceptance and replay in the browser.
+ await qi.getByText('Cấu hình template theo tuyến',{exact:true}).click();
+ await qi.getByLabel('Service',{exact:true}).fill('UPS');await qi.getByLabel('Sub-Service',{exact:true}).fill('SAVER');
+ await qi.getByLabel('Cột Tracking',{exact:true}).fill('Waybill');await qi.getByLabel('Cột mã dòng chứng từ',{exact:true}).fill('Line');
+ const actualFields=qi.getByRole('group',{name:'Actual Net VNĐ',exact:true}),feeFields=qi.getByRole('group',{name:'Supplier Surcharge VNĐ',exact:true});
+ await actualFields.getByLabel('Cách lấy số').selectOption('SUM');await actualFields.getByLabel('Cột Excel').fill('Freight\nDelivery');
+ await feeFields.getByLabel('Cách lấy số').selectOption('SUM');await feeFields.getByLabel('Cột Excel').fill('Fuel\nRemote');
+ await qi.getByLabel('Phụ phí đã nằm trong Actual Net').check();
+ await qi.getByRole('button',{name:'Lưu phiên bản mới'}).click();await qi.getByRole('status').filter({hasText:'Đã lưu phiên bản template.'}).waitFor();
+ await qi.getByLabel('Mã chứng từ Supplier').fill('TEST-MAPPED-INVOICE');
+ await qi.getByLabel('File Supplier VNĐ',{exact:true}).setInputFiles({name:'TEST-mapped.xlsx',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer:await xlsx(['Waybill','Line','Freight','Delivery','Fuel','Remote'],[['TEST-UAT-CLAIM-TRACKING','001','195.000002',5,3,2]])});
+ const loadSupplier=async()=> (await context.request.get(base+'/api/service-v1/suppliers?supplier=SGBay')).json();
+ const uploadMapped=async()=>{
+  const response=page.waitForResponse(r=>r.url().endsWith('/api/service-v1/suppliers')&&r.request().method()==='POST');
+  await qi.getByRole('button',{name:'Import vào queue',exact:true}).click();check((await response).ok(),'mapped workbook uploads through the browser');
+  await qi.getByRole('status').filter({hasText:'Đã lưu;'}).waitFor();
+ };
+ await uploadMapped();
+ const mappedPreview=await loadSupplier(),mappedRow=mappedPreview.import_rows.find(r=>r.data.source?.document==='TEST-MAPPED-INVOICE');
+ check(mappedPreview.payable===acceptedImport.payable&&mappedRow.data.amount==='200.000002'&&mappedRow.data.source.surcharge.total==='5','mapped preview preserves components and excludes inclusive surcharges');
+ await qi.getByText('Excel dòng 2 · v1',{exact:true}).click();
+ check(await qi.getByText('Fuel: 3',{exact:true}).isVisible(),'browser exposes the mapped surcharge breakdown');
+ await qi.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(output,'uat-supplier-template.png'),fullPage:false});
+ await qi.getByLabel('Chọn dòng Supplier '+mappedRow.id,{exact:true}).check();
+ const mappedApproval=page.waitForResponse(r=>r.url().endsWith('/api/service-v1/suppliers')&&r.request().method()==='POST');
+ await qi.getByRole('button',{name:'Accept 1 dòng đã chọn',exact:true}).click();
+ check((await mappedApproval).ok(),'browser approval succeeds');
+ await qi.getByLabel('Chọn dòng Supplier '+mappedRow.id,{exact:true}).waitFor({state:'detached'});
+ const mappedAccepted=await loadSupplier();
+ check(mappedAccepted.import_rows.find(r=>r.id===mappedRow.id).decision.decision==='accept'&&mappedAccepted.payable===acceptedImport.payable,'Finance accepts inclusive actual without charging fees twice');
+ await qi.getByLabel('Lý do review/import',{exact:true}).fill('TEST duplicate upload with fresh request');
+ await uploadMapped();
+ check((await loadSupplier()).import_rows.filter(r=>r.data.source?.document==='TEST-MAPPED-INVOICE').length===1,'fresh workbook request preserves accepted line identity');
  // Supplier period close and late correction: all UI writes on this script's owned DB.
  await role('ADMIN');check(await page.getByRole('region',{name:'Khóa kỳ Supplier VNĐ',exact:true}).count()===0,'Admin cannot see financial close form');
  let denied=await context.request.post(base+'/api/service-v1/suppliers',{data:{action:'close_period',supplier:'DMD',period_start:'2026-01-01',period_end:'2026-01-31',expected_previous_period_id:0,reason:'TEST',request_key:'TEST-DENIED-CLOSE'}});check(denied.status()===400,'Admin close rejected server side');
@@ -253,7 +286,7 @@ let server,browser,checks=0;const check=(v,m)=>{checks++;assert.ok(v,m)};
   for(const table of tables){assert.ok(before[table].length,table+' fixture must have rows');assert.deepEqual(snapshot(restored,table),before[table]);}
  }finally{restored.close();}
  fs.writeFileSync(path.join(output,'claim-restore.json'),JSON.stringify({status:'PASS',database:'owned disposable Chrome TEST fixture',integrity:'ok',foreign_key_violations:0,tables:tables.map(name=>({name,rows:before[name].length}))},null,2));
- fs.writeFileSync(path.join(output,'browser-uat.json'),JSON.stringify({status:'PASS',checks,roles:['ADMIN','SALES','CLIENT','FINANCE','BOD'],database:'owned disposable',scope:'Client and Supplier watchlists and case creation from Order selection, Processing chronology, explicit completion and manual case linking, BOD case-level unallocated Refund tracking, HTTP mixed-currency excess allocation, Supplier frozen period/late current correction/original reference, Control Tower role privacy, GP-Net versus commission reference, Client Excel surcharge/tax preview/import/cross-key replay and immutable Statement, Supplier Excel typed error queue/unmatched retention/explicit Actual payable delta, Admin manual Supplier refund percentage/evidence with no posting, Supplier Claim receivable approval/partial Bank/offset/reversal and overlimit, durable Claim notification acknowledgement, Claim creation/approval, partial Bank/Balance payout and overpool rejection, bank privacy, Supplier actual/payment RBAC, Add-on, Statement, BOD report, shipping edit, desktop/mobile render',errors},null,2));
+ fs.writeFileSync(path.join(output,'browser-uat.json'),JSON.stringify({status:'PASS',checks,roles:['ADMIN','SALES','CLIENT','FINANCE','BOD'],database:'owned disposable',scope:'Client and Supplier watchlists and case creation from Order selection, Processing chronology, explicit completion and manual case linking, BOD case-level unallocated Refund tracking, HTTP mixed-currency excess allocation, Supplier frozen period/late current correction/original reference, Control Tower role privacy, GP-Net versus commission reference, Client Excel surcharge/tax preview/import/cross-key replay and immutable Statement, Supplier Excel versioned multi-column mapping and replay, inclusive surcharge preview, typed errors and explicit Actual payable delta, Admin manual Supplier refund percentage/evidence with no posting, Supplier Claim receivable approval/partial Bank/offset/reversal and overlimit, durable Claim notification acknowledgement, Claim creation/approval, partial Bank/Balance payout and overpool rejection, bank privacy, Supplier actual/payment RBAC, Add-on, Statement, BOD report, shipping edit, desktop/mobile render',errors},null,2));
  console.log('BROWSER VND PASS ('+checks+' assertions; 5 roles, synthetic DB, actual Chrome)');
 }catch(e){if(browser){const failedPage=browser.contexts()[0]?.pages()[0];if(failedPage){fs.writeFileSync(path.join(output,'uat-failure.txt'),await failedPage.locator('body').ariaSnapshot());await failedPage.screenshot({path:path.join(output,'uat-failure.png'),fullPage:true});}}throw e;}finally{if(browser)await browser.close();if(server)server.kill('SIGTERM');}
 })().catch(e=>{console.error(e);process.exitCode=1});

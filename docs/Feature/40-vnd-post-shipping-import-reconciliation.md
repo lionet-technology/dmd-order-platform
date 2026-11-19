@@ -41,3 +41,13 @@ Regression: verify-vnd-supplier-import.cjs, verify-vnd-charge-import.cjs, existi
 Evidence: ../../artifacts/vnd-import-reconciliation-2026-11-17/VERIFICATION.md.
 
 Not delivered: Supplier tax/pass-through accounting import (do not disguise tax as commercial supplemental cost), Supplier period close/reopen/late-adjustment policy, full finalized GP/commission reconciliation, redesigned Claims/watchlists, complete Control Tower and pilot with real evidence. Supplier commercial supplement and Client surcharge/tax imports are delivered; these are distinct money flows.
+
+
+## Template Excel có phiên bản · 20/11/2026
+
+- Chọn Supplier và tuyến Service/Sub-Service. Lưu phiên bản mới từ cấu hình riêng cho tuyến. Mỗi nhóm Actual Net và Supplier Surcharge chọn một cột tổng hoặc cộng các cột thành phần. Ô trống trong nhóm cộng bằng 0. Cột tổng bắt buộc có giá trị. Một cột chỉ map một lần. Nếu phí đã nằm trong Actual, tổng phí chỉ dùng để đối chiếu. Nếu phí nằm ngoài Actual, cộng đúng một lần. Dòng chỉ có phụ phí cần Actual gốc đã duyệt.
+- Chứng từ khai mã ổn định và mỗi dòng có mã text ổn định, độc lập với Tracking và vị trí Excel. Các dòng phí thật có mã riêng. Cùng nguồn được tải lại thì giữ phiên bản đã gắn với bản chờ/đã duyệt. Muốn đọc lại bằng phiên bản khác, bỏ qua bản chờ trước rồi tải lại. Nếu đã Accept, dùng chứng từ điều chỉnh mới có tham chiếu và giải trình về chứng từ gốc. Dùng tổng Actual đã sửa để điều chỉnh bằng delta.
+- Luồng VNĐ giữ số thập phân chính xác và không tự làm tròn hoặc đổi tiền. Workbook phải cung cấp giá trị VNĐ. Nếu map cột loại tiền, dòng mang loại tiền khác VNĐ bị báo lỗi. Queue lưu dòng/cột gốc, các khoản thành phần, kiểu cộng, phiên bản và lỗi parse. Lỗi parse chặn Accept. Sai lệch cân và Net, match mơ hồ hoặc thiếu match tiếp tục qua quy trình đối soát. Match tự động và ghép Lot thủ công đều yêu cầu đúng tuyến của template.
+- Import hoặc bỏ qua chưa ghi Actual/payable. Finance/BOD Accept ghi Actual, delta payable và quyết định một lần trong cùng transaction. Điều chỉnh nhập sau khóa kỳ dùng ngày ghi sổ hiện tại và nối kỳ gốc theo cơ chế Supplier period. Luồng Excel chuẩn cũ tiếp tục khả dụng.
+
+Admin, Finance và BOD dùng cùng màn hình cấu hình/nhập. Chỉ Finance/BOD Accept được. API Supplier hiện có nhận `save_import_template`, Excel multipart theo `template_id` và `review_import`. [Mapping và lịch sử](../../src/lib/vnd-supplier-templates.ts) · [Hồi quy Excel](../../scripts/verify-vnd-supplier-import.cjs) · [Kiểm chứng trên TEST](../../artifacts/gd1-supplier-template-2026-11-20/VERIFICATION.md).

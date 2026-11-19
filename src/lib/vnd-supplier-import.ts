@@ -1,12 +1,14 @@
 import {createHash} from 'node:crypto';
 import {db} from './db';
 import {approvedVndLot} from './vnd-supplier';
+import {installSupplierTemplateSchema,mappedSupplierRows} from './vnd-supplier-templates';
 import type {AuthUser} from './auth';
 import {vnd,compareVnd,addVnd,subtractVnd,sumVnd} from './vnd-money';
 type Row=Record<string,unknown>;
 export function installSupplierImportSchema(database:typeof db){
  database.exec(`CREATE TABLE IF NOT EXISTS vnd_supplier_import_rows(id INTEGER PRIMARY KEY,supplier TEXT NOT NULL,batch_key TEXT NOT NULL,position INTEGER NOT NULL,data_json TEXT NOT NULL,actor_id INTEGER NOT NULL REFERENCES users(id),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(batch_key,position));
  CREATE TABLE IF NOT EXISTS vnd_supplier_import_decisions(id INTEGER PRIMARY KEY,row_id INTEGER NOT NULL UNIQUE REFERENCES vnd_supplier_import_rows(id),decision TEXT NOT NULL,lot_id INTEGER REFERENCES order_lots(id),cost_id INTEGER REFERENCES vnd_supplier_costs(id),snapshot_json TEXT NOT NULL,reason TEXT NOT NULL,actor_id INTEGER NOT NULL REFERENCES users(id),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);`);
+ installSupplierTemplateSchema(database);
  for(const table of ['vnd_supplier_import_rows','vnd_supplier_import_decisions'])for(const op of ['UPDATE','DELETE'])database.exec(`CREATE TRIGGER IF NOT EXISTS immutable_${table}_${op} BEFORE ${op} ON ${table} BEGIN SELECT RAISE(ABORT,'Immutable supplier import'); END;`);
 }
 function text(value:unknown,optional=false){const s=typeof value==='string'?value.trim():'';if((!optional&&!s)||s.length>2000)throw Error('Thiếu hoặc quá dài dữ liệu chứng từ.');return s;}
@@ -19,7 +21,7 @@ function estimate(lot:Row){
  return count===1&&typeof q.net_vnd==='string'?q.net_vnd:null;
 }
 function eligible(lotId:number,supplier:string){
- return db.prepare("SELECT l.*,o.order_id order_code FROM order_lots l JOIN orders o ON o.id=l.order_id JOIN vnd_purchase_requests p ON p.order_id=o.id WHERE l.id=? AND o.supplier=? AND p.status IN ('CHARGED','CANCELLED')").get(lotId,supplier) as Row|undefined;
+ return db.prepare("SELECT l.*,o.order_id order_code,o.service,o.sub_service FROM order_lots l JOIN orders o ON o.id=l.order_id JOIN vnd_purchase_requests p ON p.order_id=o.id WHERE l.id=? AND o.supplier=? AND p.status IN ('CHARGED','CANCELLED')").get(lotId,supplier) as Row|undefined;
 }
 function matching(data:Row,supplier:string){
  if(data.lot_id)return eligible(Number(data.lot_id),supplier)?[Number(data.lot_id)]:[];
@@ -28,10 +30,16 @@ function matching(data:Row,supplier:string){
  :db.prepare("SELECT l.id FROM order_lots l JOIN orders o ON o.id=l.order_id JOIN vnd_purchase_requests p ON p.order_id=o.id WHERE o.order_id=? AND o.supplier=? AND p.status IN ('CHARGED','CANCELLED')").all(data.order_code,supplier);
  return (rows as {id:number}[]).map(r=>r.id);
 }
+function matchesRoute(lot:Row|undefined,source:Row|undefined){
+ return !source||(lot?.service===source.service&&lot?.sub_service===source.sub_service);
+}
 export function supplierImportState(row:Row){
- const data=JSON.parse(String(row.data_json)) as Row,ids=matching(data,String(row.supplier));
+ const data=JSON.parse(String(row.data_json)) as Row;
+ const source=data.source as Row|undefined;
+ const parseErrors=(data.parse_errors??[]) as string[];
+ const ids=parseErrors.length?[]:matching(data,String(row.supplier)).filter(id=>matchesRoute(eligible(id,String(row.supplier)),source));
  const lot=ids.length===1?eligible(ids[0],String(row.supplier)):undefined,old=lot?approvedVndLot(Number(lot.id),String(row.supplier)):undefined;
- const errors:string[]=[];if(!ids.length)errors.push('ORDER_NOT_MATCHED');if(ids.length>1)errors.push('AMBIGUOUS_MATCH');
+ const errors=[...parseErrors];if(!ids.length&&!parseErrors.length)errors.push('ORDER_NOT_MATCHED');if(ids.length>1)errors.push('AMBIGUOUS_MATCH');
  let net:string|null=null,weight:string|null=null;
  if(lot){
   net=estimate(lot);
@@ -49,10 +57,10 @@ export function supplierImportState(row:Row){
   if(old&&data.kind==='TOTAL')errors.push('DUPLICATE_HISTORY');
   if(db.prepare('SELECT id FROM vnd_supplier_costs WHERE lot_id=? AND supplier=?').get(lot.id,row.supplier)&&!old&&data.kind==='TOTAL')errors.push('DUPLICATE_HISTORY');
  }
- const peers=db.prepare('SELECT * FROM vnd_supplier_import_rows WHERE supplier=? AND id<>?').all(row.supplier,row.id) as Row[];
+ const peers=source?[]:db.prepare('SELECT * FROM vnd_supplier_import_rows WHERE supplier=? AND id<>?').all(row.supplier,row.id) as Row[];
  const identity=(d:Row)=>d.tracking?'tracking:'+d.tracking:d.lot_id?'lot:'+d.lot_id:'order:'+d.order_code;
  const duplicates=peers.filter(p=>{const d=JSON.parse(String(p.data_json));return identity(d)===identity(data)&&(data.kind==='TOTAL'||(d.kind===data.kind&&d.amount===data.amount&&d.reason===data.reason));});
- if(duplicates.some(p=>p.batch_key===row.batch_key))errors.push('DUPLICATE_IN_FILE');
+ if(!source&&duplicates.some(p=>p.batch_key===row.batch_key))errors.push('DUPLICATE_IN_FILE');
  if(duplicates.some(p=>p.batch_key!==row.batch_key)&&!errors.includes('DUPLICATE_HISTORY'))errors.push('DUPLICATE_HISTORY');
  const state={lot_id:lot?.id??null,order_code:lot?.order_code??null,estimated:net,dmd_weight:weight,approved_cost_id:Number(old?.id??0),approved_amount:old?.amount??null,errors};
  return {...row,data,...state,token:createHash('sha256').update(JSON.stringify(state)).digest('hex')};
@@ -62,6 +70,30 @@ export function supplierImportView(supplier:string){
  return rows.map(row=>({...supplierImportState(row),decision:db.prepare('SELECT * FROM vnd_supplier_import_decisions WHERE row_id=?').get(row.id)??null}));
 }
 export function applySupplierImport(actor:AuthUser,supplier:string,input:Row,reason:string){
+ if(input.action==='import_workbook'){
+  const seen=new Set<string>();
+  const insertRow=db.prepare('INSERT INTO vnd_supplier_import_rows(supplier,batch_key,position,data_json,actor_id) VALUES (?,?,?,?,?)');
+  const insertLine=db.prepare('INSERT INTO vnd_supplier_document_lines(row_id,supplier,document,line,template_id,fingerprint) VALUES (?,?,?,?,?,?)');
+  const previous=db.prepare(`SELECT l.*,d.decision FROM vnd_supplier_document_lines l
+    LEFT JOIN vnd_supplier_import_decisions d ON d.row_id=l.row_id
+    WHERE l.supplier=? AND l.document=? AND l.line=? ORDER BY l.row_id DESC LIMIT 1`);
+  for(const row of mappedSupplierRows(supplier,input)){
+   const {source}=row;
+   const line=JSON.stringify(source.line===null?['invalid',source.excel_row]:['source',source.line]);
+   if(seen.has(line))throw Error('Mã dòng trùng trong chứng từ: '+source.line);
+   seen.add(line);
+   const fingerprint=createHash('sha256').update(JSON.stringify([source.headers,source.cells])).digest('hex');
+   const prior=previous.get(supplier,source.document,line) as Row|undefined;
+   if(prior?.decision==='accept'||(prior&&!prior.decision)){
+    if(prior.fingerprint===fingerprint)continue;
+    throw Error('Dòng '+source.line+' đã tồn tại. Bỏ qua bản chờ để map lại, hoặc dùng chứng từ điều chỉnh riêng nếu đã Accept.');
+   }
+   if(prior?.decision==='skip'&&prior.fingerprint===fingerprint&&prior.template_id===source.template_id)continue;
+   const {lastInsertRowid}=insertRow.run(supplier,input.request_key,source.excel_row,JSON.stringify({...row,reason}),actor.id);
+   insertLine.run(lastInsertRowid,supplier,source.document,line,source.template_id,fingerprint);
+  }
+  return;
+ }
  if(input.action==='import'){
   if(!Array.isArray(input.items)||input.items.length<1||input.items.length>200)throw Error('Import 1–200 dòng.');
   input.items.forEach((raw:Row,i:number)=>{
@@ -85,7 +117,9 @@ export function applySupplierImport(actor:AuthUser,supplier:string,input:Row,rea
   let costId:number|null=null,lotId:number|null=null;
   if(input.decision==='accept'){
    lotId=item.lot_id===undefined?Number(state.lot_id):Number(item.lot_id);
-   const lot=eligible(lotId,supplier);if(!lot)throw Error('Cần chọn Lot VNĐ đã charge đúng Supplier.');
+   if(Array.isArray(state.data.parse_errors)&&state.data.parse_errors.length)throw Error('Dòng lỗi Excel cần sửa hoặc map lại trước khi Accept.');
+   const lot=eligible(lotId,supplier);
+   if(!lot||!matchesRoute(lot,state.data.source as Row|undefined))throw Error('Cần chọn Lot VNĐ đã charge đúng Supplier và tuyến của template.');
    if(lots.has(lotId))throw Error('Một batch chỉ accept một dòng mỗi Lot; review lần lượt để tránh đếm trùng.');lots.add(lotId);
    const old=approvedVndLot(lotId,supplier);if(item.expected_approved_cost_id!==Number(old?.id??0))throw Error('Actual đã thay đổi; tải lại.');
    if(state.data.kind==='SUPPLEMENT'&&!old)throw Error('Phụ phí cần Actual gốc đã chốt.');

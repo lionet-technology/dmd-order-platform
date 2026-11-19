@@ -2,6 +2,7 @@ import {db} from './db';
 import {supplierPeriodView,closeSupplierPeriod,supplierPostingCursor,linkSupplierPostings} from './vnd-supplier-periods';
 import {supplierImportView,applySupplierImport} from './vnd-supplier-import';
 import {applySupplierClaim,supplierClaimView} from './vnd-supplier-claims';
+import {saveSupplierTemplate,supplierTemplates} from './vnd-supplier-templates';
 import type {AuthUser} from './auth';
 import {canonicalEnumValue} from './enums';
 import {vnd,compareVnd,subtractVnd,sumVnd} from './vnd-money';
@@ -28,10 +29,11 @@ function readSupplier(actor:AuthUser,supplierRaw:unknown){
  access(actor);const supplier=canonicalEnumValue('SUPPLIER',supplierRaw,'',{allowInactive:true});
  const costs=db.prepare('SELECT c.*,l.order_id,l.lot_number FROM vnd_supplier_costs c JOIN order_lots l ON l.id=c.lot_id WHERE c.supplier=? ORDER BY c.id DESC').all(supplier) as Row[];
  const reviews=db.prepare('SELECT r.* FROM vnd_supplier_reviews r JOIN vnd_supplier_costs c ON c.id=r.cost_id WHERE c.supplier=? ORDER BY r.id').all(supplier);
+ const templates=supplierTemplates(supplier);
  const projection=costs.map(c=>({...c,estimated:vndLotEstimate(Number(c.lot_id)),approved_cost_id:approvedVndLot(Number(c.lot_id),supplier)?.id??null}));
- if(actor.role==='ADMIN')return {currency:'VND',supplier,costs:projection,reviews,import_rows:supplierImportView(supplier)};
+ if(actor.role==='ADMIN')return {currency:'VND',supplier,costs:projection,reviews,templates,import_rows:supplierImportView(supplier)};
  const entries=db.prepare('SELECT * FROM vnd_supplier_ledger WHERE supplier=? ORDER BY id').all(supplier) as Row[];
- return {currency:'VND',supplier,costs:projection,reviews,import_rows:supplierImportView(supplier),...supplierClaimView(supplier),...supplierPeriodView(supplier),payable:sumVnd(entries.map(e=>String(e.delta))),entries};
+ return {currency:'VND',supplier,costs:projection,reviews,templates,import_rows:supplierImportView(supplier),...supplierClaimView(supplier),...supplierPeriodView(supplier),payable:sumVnd(entries.map(e=>String(e.delta))),entries};
 }
 export function vndSupplierAction(actor:AuthUser,input:Row){
  return db.transaction(()=>{
@@ -43,7 +45,9 @@ export function vndSupplierAction(actor:AuthUser,input:Row){
  const cursor=supplierPostingCursor();
  if(action==='close_period'){
   closeSupplierPeriod(actor,supplier,input,reason);
- }else if(action==='import'||action==='review_import'){
+ }else if(action==='save_import_template'){
+  saveSupplierTemplate(supplier,actor.id,input);
+ }else if(action==='import'||action==='review_import'||action==='import_workbook'){
   applySupplierImport(actor,supplier,input,reason);
  }else if(action.startsWith('claim_')){
   applySupplierClaim(actor,supplier,input,reason);

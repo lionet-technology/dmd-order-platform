@@ -59,3 +59,7 @@ Những quy tắc đã duyệt còn chờ triển khai hoặc xác minh gồm Cr
 Claim nhiều Order dùng số khai báo nhân số lượng làm trọng số phần vượt, kể cả khi khai khác loại tiền. Không áp FX. Tổng trọng số bằng 0 thì chia đều. Quyết định và revision giữ cơ sở bất biến. Xem [Feature 42](42-vnd-claim-refund-next.md).
 
 [Bằng chứng kiểm thử và kiểm tra Git/Jenkins](../../artifacts/gd1-refund-weight-2026-11-19/VERIFICATION.md).
+
+## Đợt đóng Supplier Excel · 20/11/2026
+
+Template Supplier × Service/Sub-Service có phiên bản, preview trong queue, hai nhóm cộng tiền độc lập, định danh dòng chứng từ và duyệt Actual/payable đã triển khai theo [Feature 40](40-vnd-post-shipping-import-reconciliation.md). Cấu hình mẫu trên chứng từ thật thuộc pilot. Credit Term và lịch chốt tuần vẫn mở.

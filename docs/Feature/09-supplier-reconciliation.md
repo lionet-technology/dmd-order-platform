@@ -125,3 +125,7 @@ Sổ [phải trả Supplier](13-supplier-payables.md) được Owner đưa vào 
 - GP có phân trang riêng 50 Order, ghi rõ không dùng bộ lọc Lot. Không thay đổi giá, cách tính tiền, eligibility, coverage hoặc hành vi đối soát.
 - Regression pure filter/selection gồm nhiều ID, tiếng Việt không dấu, tổ hợp filter, giữ/bỏ selection theo trang, ranh giới 200; HTTP và browser verification xem biên bản Internal UAT.
 - Bộ đếm Unmatched cost ở Tổng quan dùng `matched_order_id`, không so tracking chính của Order; cost ghép trực tiếp Lot hoặc tracking thay thế không bị đếm nhầm là chưa ghép.
+
+## Mapping Excel Supplier VNĐ · 20/11/2026
+
+[Feature 40](40-vnd-post-shipping-import-reconciliation.md#template-excel-có-phiên-bản--20112026) mô tả template theo tuyến, nhóm tổng hoặc cộng nhiều cấu phần, định danh chứng từ/dòng, duyệt trước khi ghi Actual và quy trình nhập lại sau khi đổi phiên bản.

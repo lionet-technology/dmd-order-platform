@@ -1,7 +1,7 @@
 require('./service-v1-test-env.cjs');
 const assert=require('node:assert/strict'),{db}=require('../src/lib/db.ts'),auth=require('../src/lib/auth.ts'),finance=require('../src/lib/finance.ts'),ops=require('../src/lib/vnd-operational.ts'),supplier=require('../src/lib/vnd-supplier.ts');
 let checks=0,n=0;const eq=(a,b)=>{checks++;assert.deepEqual(a,b)},bad=(f,re)=>{checks++;assert.throws(f,re)},key=()=> 'supplier-import-'+(++n);
-try{
+(async()=>{try{
  require('./seed-epacket.cjs').seed();
  const admin=db.prepare('SELECT * FROM users WHERE is_root_admin=1').get(),make=role=>auth.createUser({username:key(),display_name:'TEST',password:'TestPass123!',role}),fin=make('FINANCE'),sales=make('SALES'),client=auth.createUser({username:key(),display_name:'TEST',password:'TestPass123!',role:'CLIENT',sales_user_id:sales.id});
  ops.vndAction(admin,{action:'activate',client_id:client.id,credit_limit:'0',reason:'TEST',request_key:key()});
@@ -53,7 +53,72 @@ try{
  call('review_import',{decision:'accept',items:pair.map(item)});
  eq(view().payable,require('../src/lib/vnd-money.ts').addVnd(beforeBulk,'3'));
  eq(supplier.approvedVndLot(c.lot.id).amount,'1');eq(supplier.approvedVndLot(d.lot.id).amount,'2');
+ // Round-trip a realistic Supplier workbook through the production Excel reader.
+ const Excel=require('exceljs'),{workbookRows}=require('../src/lib/importers.ts');
+ const mapping={tracking:'Mã vận đơn',line:'Mã phí',weight:'Kg',currency:'Currency',
+  actual:{mode:'SUM',columns:['Freight','Last mile']},surcharge:{mode:'SUM',columns:['Fuel','Remote']},surcharge_in_actual:true};
+ const save=(version,changes={})=>call('save_import_template',{service:'ePacket',sub_service:'Standard',expected_version:version,mapping:{...mapping,...changes}},admin).templates[0];
+ bad(()=>save(0,{actual:{mode:'TOTAL',columns:['Freight','Last mile']}}),/một cột tổng/);
+ bad(()=>save(0,{surcharge:{mode:'SUM',columns:['Freight','Remote']}}),/map một lần/);
+ const template=save(0);
+ bad(()=>save(0),/đã thay đổi/);
+ const labels=[['000123',c],['000456',d]];
+ for(const [code,{o}] of labels)db.prepare("INSERT INTO order_trackings(order_id,lot_number,tracking,normalized_tracking) VALUES (?,1,?,?)").run(o.id,code,code);
+ const headers=['Mã vận đơn','Mã phí','Kg','Currency','Freight','Last mile','Fuel','Remote'];
+ async function grid(lines){
+  const book=new Excel.Workbook(),sheet=book.addWorksheet('Report');sheet.addRow(headers);lines.forEach(r=>sheet.addRow(r));
+  return workbookRows(Buffer.from(await book.xlsx.writeBuffer()));
+ }
+ const original=await grid([
+  ['000123','FRT-01',3,'VND','20.000001',10,3,2],
+  ['000456','FRT-02',1,'VND',9,1,null,0],
+  ['MISSING','FRT-03',1,'VND',5,1,0,0],
+  ['000456','FRT-04',1,'USD','INVALID',1,0,0],
+ ]);
+ const upload=(document,template_id,grid)=>call('import_workbook',{document,template_id,grid,file_name:'TEST-supplier.xlsx'},admin);
+ const find=(document,line)=>view().import_rows.find(r=>r.data.source?.document===document&&r.data.source.line===line);
+ const review=(decision,r)=>call('review_import',{decision,items:[item(r)]},decision==='skip'?admin:fin);
+ const moneyBeforeWorkbook=view().payable;
+ upload('INV-01',template.id,original);upload('INV-01',template.id,original);
+ eq(view().import_rows.filter(r=>r.data.source?.document==='INV-01').length,4);
+ eq(view().payable,moneyBeforeWorkbook);
+ const freight=find('INV-01','FRT-01');
+ eq(freight.data.amount,'30.000001');eq(freight.data.source.surcharge.total,'5');
+ eq(freight.data.source.cells[0],'000123');eq(freight.data.source.version,1);
+ eq(freight.errors.includes('WEIGHT_ABOVE_DMD'),true);
+ eq(find('INV-01','FRT-03').errors,['ORDER_NOT_MATCHED']);
+ const malformed=find('INV-01','FRT-04');eq(malformed.data.parse_errors.length,2);
+ bad(()=>review('accept',malformed),/lỗi Excel/);
+ bad(()=>upload('DUP-LINE',template.id,[headers,original[1],original[1]]),/Mã dòng trùng/);
+ eq(find('DUP-LINE','FRT-01'),undefined);
+ review('accept',freight);eq(supplier.approvedVndLot(c.lot.id).amount,'30.000001');
+ review('skip',find('INV-01','FRT-02'));review('skip',malformed);
+ const v2=save(1,{surcharge_in_actual:false});
+ upload('INV-01',v2.id,original);
+ eq(find('INV-01','FRT-01').data.source.version,1);
+ const remapped=view().import_rows.filter(r=>r.data.reference==='INV-01 / FRT-02');
+ eq(remapped.map(r=>r.data.source.version),[2,1]);
+ const altered=original.map(r=>r.slice());altered[1][4]=999;
+ bad(()=>upload('INV-01',v2.id,altered),/chứng từ điều chỉnh/);
+ const supplement=save(2,{actual:null,surcharge_in_actual:false});
+ const fees=await grid([['000123','FEE-01',1,'VNĐ',null,null,2,'0.000001'],['000123','FEE-02',1,'VNĐ',null,null,2,'0.000001']]);
+ upload('INV-FEES',supplement.id,fees);
+ review('accept',find('INV-FEES','FEE-01'));review('accept',find('INV-FEES','FEE-02'));
+ upload('INV-FEES',supplement.id,fees);
+ eq(supplier.approvedVndLot(c.lot.id).amount,'34.000003');
+ // A historical close is immutable even when an identified Lot receives a correcting total today.
+ const historicalCost=db.prepare("INSERT INTO vnd_supplier_costs(lot_id,supplier,amount,reference,reason,actor_id) VALUES (?,'DMD','34.000003','HISTORICAL','TEST',?)").run(c.lot.id,fin.id).lastInsertRowid;
+ db.prepare("INSERT INTO vnd_supplier_ledger(supplier,kind,delta,cost_id,reference,reason,actor_id,created_at) VALUES ('DMD','ACTUAL','0',?,'HISTORICAL','TEST',?,'2025-01-02 00:00:00')").run(historicalCost,fin.id);
+ call('close_period',{period_start:'2025-01-01',period_end:'2025-01-31',expected_previous_period_id:0});
+ const frozen=view().periods[0].snapshot_json;
+ const correction=await grid([['000123','CORR-01',1,'VND',25,10,2,3]]);
+ upload('CORRECTION-INV-01',v2.id,correction);
+ const beforeCorrection=view().payable;
+ review('accept',find('CORRECTION-INV-01','CORR-01'));
+ eq(supplier.approvedVndLot(c.lot.id).amount,'40');
+ eq(view().payable,require('../src/lib/vnd-money.ts').addVnd(beforeCorrection,'5.999997'));
+ eq(view().periods[0].snapshot_json,frozen);eq(view().late_adjustments.length,1);
  bad(()=>db.prepare('DELETE FROM vnd_supplier_import_rows').run(),/Immutable/);bad(()=>db.prepare("UPDATE vnd_supplier_import_decisions SET reason='x'").run(),/Immutable/);
  eq(ops.vndBalance(client.id),balance);eq(JSON.stringify(db.prepare('SELECT * FROM vnd_ledger').all()),journal);eq(db.pragma('integrity_check',{simple:true}),'ok');
  console.log('VND SUPPLIER IMPORT PASS ('+checks+' assertions)');
-}finally{db.close();}
+ }finally{db.close();}})().catch(error=>{console.error(error);process.exitCode=1;});

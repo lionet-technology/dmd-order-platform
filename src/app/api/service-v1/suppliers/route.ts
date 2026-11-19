@@ -8,6 +8,10 @@ async function supplierInput(req:NextRequest){
  const form=await req.formData(),file=form.get('file');
  if(!(file instanceof File)||file.size>10*1024*1024)throw Error('Cần Excel tối đa 10 MB.');
  const [header,...rows]=await workbookRows(Buffer.from(await file.arrayBuffer())) as unknown as unknown[][];
+ if(form.get('template_id'))return {
+  action:'import_workbook',supplier:form.get('supplier'),reason:form.get('reason'),request_key:form.get('request_key'),
+  template_id:form.get('template_id'),document:form.get('document'),file_name:file.name,grid:[header,...rows],
+ };
  const headings=(header??[]).map(c=>String(c??'').trim());
  if(!['Tracking','Order ID'].includes(headings[0])||headings.slice(1).join('|')!=='Actual Net VNĐ|Cân Supplier kg|Tham chiếu|Lý do')throw Error('Header: Tracking (hoặc Order ID) | Actual Net VNĐ | Cân Supplier kg | Tham chiếu | Lý do.');
  const items=rows.filter(r=>r.some(c=>c!==null&&String(c).trim()!=='')).map(r=>{
