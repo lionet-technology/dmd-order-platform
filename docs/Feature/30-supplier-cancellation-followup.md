@@ -57,3 +57,13 @@ Full Cancel & Duplicate is not implemented or enabled. It must call the common c
 Unified Edit/Client confirmation/scoped Sales override and Purchase/ledger VND are also incomplete.
 Excel located read-only at /Users/quan/Downloads/Bảng Net Cost Dịch vụ.xlsx (ePacket, Yun Express, UPS); absence of the workbook is no longer a blocker. Need actual import/mapping validation and operational financial integration, not renewed approval of known Owner rules.
 Owner confirmed pending-consent financial behavior: keep the original Reserve, block issuance, and replace Reserve only after Client confirmation or an authorized Admin/scoped Sales override and a successful financial recheck. If insufficient, retain the pending revision and original Reserve. [Confirmed decisions and implementation limits](28-order-edit-v1.md).
+
+## Phase 4 · Void độc lập và hàng đợi Incident · 20/11/2026
+
+Admin có thể mở hồ sơ void cho Order đang hoạt động, chưa bàn giao, theo Route gốc. Khi Admin chuyển tuyến thành công từ Emergency Hold, hệ thống tự mở hồ sơ cho Supplier rời đi, một hồ sơ mỗi cặp Incident ID và Order. Hàng đợi tổng và hàng đợi theo Supplier dành cho Admin/Finance/BOD; API từ chối Client/Sales/Kho. Phạm vi này dùng nhân sự nội bộ theo dõi từng Supplier. Hệ thống hiện chưa có vai trò đăng nhập Supplier.
+
+Snapshot giữ Service/Sub-Service, Route, Lot, Tracking/Label đang hiệu lực, phí và yêu cầu chứng từ tại lúc mở. Admin cấu hình phí VNĐ cố định theo phiên bản Route; tuyến thiếu cấu hình hiển thị rõ, không suy ra phí. Trạng thái xác nhận, từ chối và hết hạn lưu cùng ghi chú/chứng từ, người ghi và thời điểm. Retry dùng request key và lần cập nhật trước để chống ghi lặp. Hủy Client Order tiếp tục đi qua luồng hiện hữu.
+
+Hồ sơ void và xác nhận chỉ là dữ liệu đối soát nội bộ. Ghi nhận tiền tiếp tục qua Reconciliation/Claim. Chuyển tuyến giữ nguyên giao dịch Client; nếu đổi Tracking/Label, Client chỉ thấy thông báo cập nhật Tracking/Label. Route-only giữ thông tin Incident nội bộ. Các lần A → B → A hoặc cùng Supplier có hồ sơ tuyến rời đi riêng, nhưng định danh fulfillment attempt cho chứng từ và Actual/payable chưa được triển khai. Không áp dụng pilot đối soát chứng từ Emergency đến muộn dựa trên các hồ sơ này.
+
+[Bằng chứng TEST Phase 4](../../artifacts/gd1-phase4-2026-11-20/VERIFICATION.md).

@@ -18,6 +18,8 @@ pilotDb.prepare("UPDATE vnd_accounts SET created_at=?,credit_term_weeks=2 WHERE 
 pilotDb.prepare("UPDATE vnd_accounts SET created_at=? WHERE client_id=?").run(relativeDay(-7)+' 02:00:00',fixture.client.id);
 pilotDb.prepare("INSERT INTO vnd_ledger(client_id,kind,delta,reason,actor_id,request_key,created_at) VALUES (?,'ADJUSTMENT','-100','TEST overdue',?,'TEST-WEEKLY-UI-POST',?)").run(weeklyClient.id,fixture.fin.id,firstMonday+' 02:00:00');
 const {lastMonth,monthlyOrders}=fixture;
+const voidRoute=pilotDb.prepare(`SELECT r.id FROM service_route_configs r JOIN orders o
+ ON r.service=o.service AND r.sub_service=o.sub_service AND r.supplier=o.supplier WHERE o.id=?`).get(fixture.claimOrder.id);
 pilotDb.close();
 let server,browser,checks=0;const check=(v,m)=>{checks++;assert.ok(v,m)};
 (async()=>{try{
@@ -74,6 +76,27 @@ let server,browser,checks=0;const check=(v,m)=>{checks++;assert.ok(v,m)};
  const afterChoice=await (await context.request.get(base+'/api/service-v1/operations?client_id='+fixture.client.id)).json();check(beforeChoice.balance===afterChoice.balance&&JSON.stringify(beforeChoice.ledger)===JSON.stringify(afterChoice.ledger),'follow-up choice does not post Client money');
  await followArticle.getByText('History',{exact:true}).click();await followArticle.getByText('12.5% × 100.123456 VNĐ = 12.515432 VNĐ',{exact:false}).waitFor();await followArticle.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(output,'uat-admin-supplier-refund-choice.png'),fullPage:false});
  await page.screenshot({path:path.join(output,'uat-admin-desktop.png'),fullPage:true});
+ const adminVoid=followup.getByText('Mở void hoặc cấu hình phí',{exact:true});
+ await adminVoid.click();
+ const voidForm=followup.locator('form').filter({has:page.getByRole('button',{name:'Mở yêu cầu void',exact:true})});
+ await voidForm.getByLabel('Order ID',{exact:true}).fill(String(fixture.claimOrder.id));
+ await voidForm.getByLabel('Route ID gốc',{exact:true}).fill(String(voidRoute.id));
+ await voidForm.getByLabel('Lý do void',{exact:true}).fill('TEST Chrome independent void');
+ const [openResponse]=await Promise.all([page.waitForResponse(r=>r.url().endsWith('/api/supplier-cancellations')&&r.request().method()==='POST'),voidForm.getByRole('button',{name:'Mở yêu cầu void',exact:true}).click()]);
+ check(openResponse.ok(),'Admin opens independent void from queue');
+ const openedVoid=(await openResponse.json()).id;
+ const voidArticle=followup.locator('article').filter({hasText:'Void #'+openedVoid+' ·'});
+ await voidArticle.getByText('TEST Chrome independent void',{exact:false}).first().waitFor();
+ await voidArticle.getByRole('combobox',{name:'Cập nhật',exact:true}).selectOption('CONFIRMED');
+ await voidArticle.getByLabel('Ghi chú / bằng chứng',{exact:true}).fill('TEST Chrome carrier confirmation');
+ const [confirmResponse]=await Promise.all([page.waitForResponse(r=>r.url().endsWith('/api/supplier-cancellations')&&r.request().method()==='POST'),voidArticle.getByRole('button',{name:'Lưu theo dõi',exact:true}).click()]);
+ check(confirmResponse.ok(),'Admin records carrier confirmation');
+ const actualAfterVoid=await (await context.request.get(base+'/api/service-v1/operations?client_id='+fixture.client.id)).json();
+ check(afterChoice.balance===actualAfterVoid.balance&&JSON.stringify(afterChoice.ledger)===JSON.stringify(actualAfterVoid.ledger),'Independent void preserves Client balance and ledger');
+ await followup.getByRole('combobox',{name:'Trạng thái',exact:true}).selectOption('CONFIRMED');
+ await voidArticle.getByText('History',{exact:true}).click();
+ await voidArticle.getByText('TEST Chrome carrier confirmation',{exact:false}).waitFor();
+ await page.screenshot({path:path.join(output,'uat-admin-supplier-void.png'),fullPage:false});
  // Claim approval/execution and Supplier actual-to-payable through authenticated UI.
  const refunds=page.getByRole('region',{name:'Claim và Refund VNĐ',exact:true}),suppliers=page.getByRole('region',{name:'Supplier finance VNĐ',exact:true});
  const refundSubmit=async()=>{await refunds.getByRole('button',{name:'Ghi Claim / Refund',exact:true}).click();await refunds.getByRole('status').filter({hasText:'Đã ghi nhận Claim / Refund.'}).waitFor();};
@@ -354,7 +377,7 @@ let server,browser,checks=0;const check=(v,m)=>{checks++;assert.ok(v,m)};
   for(const table of tables){assert.ok(before[table].length,table+' fixture must have rows');assert.deepEqual(snapshot(restored,table),before[table]);}
  }finally{restored.close();}
  fs.writeFileSync(path.join(output,'claim-restore.json'),JSON.stringify({status:'PASS',database:'owned disposable Chrome TEST fixture',integrity:'ok',foreign_key_violations:0,tables:tables.map(name=>({name,rows:before[name].length}))},null,2));
- fs.writeFileSync(path.join(output,'browser-uat.json'),JSON.stringify({status:'PASS',checks,roles:['ADMIN','SALES','CLIENT','FINANCE','BOD'],database:'owned disposable',scope:'Weekly VNĐ startup catch-up, dashboard and internal overdue alerts, Admin term change and Finance idempotent retry, Client and Supplier watchlists and case creation from Order selection, Processing chronology, explicit completion and manual case linking, BOD case-level unallocated Refund tracking, HTTP mixed-currency excess allocation, Supplier frozen period/late current correction/original reference, Control Tower role privacy, GP-Net versus commission reference, Client Excel surcharge/tax preview/import/cross-key replay and immutable Statement, Supplier Excel versioned multi-column mapping and replay, inclusive surcharge preview, typed errors and explicit Actual payable delta, Admin manual Supplier refund percentage/evidence with no posting, Supplier Claim receivable approval/partial Bank/offset/reversal and overlimit, durable Claim notification acknowledgement, Claim creation/approval, partial Bank/Balance payout and overpool rejection, bank privacy, Supplier actual/payment RBAC, Add-on, Statement, BOD report, shipping edit, desktop/mobile render',errors},null,2));
+ fs.writeFileSync(path.join(output,'browser-uat.json'),JSON.stringify({status:'PASS',checks,roles:['ADMIN','SALES','CLIENT','FINANCE','BOD'],database:'owned disposable',scope:'Weekly VNĐ startup catch-up, dashboard and internal overdue alerts, Admin term change and Finance idempotent retry, Client and Supplier watchlists and case creation from Order selection, Processing chronology, explicit completion and manual case linking, BOD case-level unallocated Refund tracking, HTTP mixed-currency excess allocation, Supplier frozen period/late current correction/original reference, Control Tower role privacy, GP-Net versus commission reference, Client Excel surcharge/tax preview/import/cross-key replay and immutable Statement, Supplier Excel versioned multi-column mapping and replay, inclusive surcharge preview, typed errors and explicit Actual payable delta, Admin manual Supplier refund percentage/evidence and independent void/confirmation with no posting, Supplier Claim receivable approval/partial Bank/offset/reversal and overlimit, durable Claim notification acknowledgement, Claim creation/approval, partial Bank/Balance payout and overpool rejection, bank privacy, Supplier actual/payment RBAC, Add-on, Statement, BOD report, shipping edit, desktop/mobile render',errors},null,2));
  console.log('BROWSER VND PASS ('+checks+' assertions; 5 roles, synthetic DB, actual Chrome)');
 }catch(e){if(browser){const failedPage=browser.contexts()[0]?.pages()[0];if(failedPage){fs.writeFileSync(path.join(output,'uat-failure.txt'),await failedPage.locator('body').ariaSnapshot());await failedPage.screenshot({path:path.join(output,'uat-failure.png'),fullPage:true});}}throw e;}finally{if(browser)await browser.close();if(server)server.kill('SIGTERM');}
 })().catch(e=>{console.error(e);process.exitCode=1});

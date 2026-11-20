@@ -5,6 +5,7 @@ import {normalizeTracking,linkSupplierCostsForOrder} from "./order-operations";
 import {assertRouteCartons} from "./carton-policy";
 import {reconcileLots} from "./reconciliation";
 import {emergencyException,recordEmergencyError} from "./emergency-hold";
+import {recordSupplierVoid} from "./supplier-cancellation";
 import {ensureOrderShipmentStructure} from "./order-shipments";
 
 type Row=Record<string,unknown>;
@@ -20,6 +21,14 @@ export function emergencySwitchOrder(actor:AuthUser,holdId:number,orderId:number
    WHERE i.hold_id=? AND i.order_id=?`).get(holdId,orderId) as Row|undefined;
   if(!item)throw Error("Order không thuộc Emergency Hold.");
   if(item.resolved_at){
+   const receipt=db.prepare("SELECT route_id FROM supplier_void_cases WHERE incident_id=? AND order_id=?").get(holdId,orderId) as Row|undefined;
+   if(receipt){
+    const event=db.prepare("SELECT after_json FROM order_events WHERE order_id=? AND event_type='EMERGENCY_ROUTE_SWITCH' AND json_extract(after_json,'$.hold_id')=? ORDER BY id DESC LIMIT 1").get(orderId,holdId) as {after_json:string}|undefined;
+    const outcome=event&&JSON.parse(event.after_json);
+    if(outcome&&item.switch_request_json===request&&receipt.route_id!==newRouteId&&outcome.result?.route_id===newRouteId&&outcome.requested_estimate===String(estimatedNetCost??'').trim())
+     return {...outcome.result,updated_trackings:0,replayed:true};
+    throw Error("Order đã được chuyển Route với thông tin khác; không thể ghi đè.");
+   }
    const current=db.prepare("SELECT * FROM orders WHERE id=?").get(orderId) as Row|undefined;
    const original=db.prepare("SELECT old_tracking_id,new_tracking_id FROM emergency_switch_cost_pending WHERE hold_id=? AND order_id=?").all(holdId,orderId) as Row[];
    const byOld=new Map(original.map(x=>[Number(x.old_tracking_id),Number(x.new_tracking_id)]));
@@ -69,6 +78,7 @@ export function emergencySwitchOrder(actor:AuthUser,holdId:number,orderId:number
    const components=db.prepare("SELECT 1 FROM lot_cost_components c JOIN order_lots l ON l.id=c.lot_id WHERE l.order_id=? LIMIT 1").get(orderId);
    if(components||(lots.length>1&&configured))throw Error("Estimate đã phân bổ theo Lot/component; để trống Net Cost và cập nhật qua Reconciliation, không tự chia lại.");
   }
+  recordSupplierVoid(before,actor,Number(item.route_id),holdId,String(item.hold_reason),"incident:"+holdId+":"+orderId);
   const ledgerBefore=db.prepare("SELECT COUNT(*) n FROM ledger_entries").get() as {n:number};
   const originalDue=Number(before.total_due);
   // Context is inserted and removed inside one IMMEDIATE transaction. Held order/Tracking
@@ -119,9 +129,10 @@ export function emergencySwitchOrder(actor:AuthUser,holdId:number,orderId:number
   reconcileLots(orderId);
   const ledgerAfter=db.prepare("SELECT COUNT(*) n FROM ledger_entries").get() as {n:number};
   if(ledgerAfter.n!==ledgerBefore.n)throw Error("Emergency Switch không được ghi Ledger.");
-  logInternalEvent({orderId,eventType:"EMERGENCY_ROUTE_SWITCH",summary:"Chuyển Route do Emergency Hold; giá bán và Balance không đổi.",actorId:actor.id,before:{route:[before.service,before.sub_service,before.supplier],estimated_net_cost:before.est_net_cost,trackings:previous},after:{route:[newRoute.service,newRoute.sub_service,newRoute.supplier],estimated_net_cost:after.est_net_cost,trackings:changed,tracking_mode:trackings.length?"REPLACE_ALL":"KEEP",admin_review:{confirmed:true,actor_id:actor.id,tracking_label_action:trackings.length?"REPLACE_ALL":"KEEP",estimated_net_cost_action:hasEstimate?"UPDATE":"KEEP"},cost_exposure:db.prepare("SELECT supplier,SUM(total_net_cost) actual_net_cost FROM supplier_costs WHERE matched_order_id=? GROUP BY supplier").all(orderId),hold_id:holdId}});
-  publishPublicNote({orderId,eventType:trackings.length?"TRACKING_LABEL_CHANGED":"ROUTE_CHANGED",summary:trackings.length?"DMD đã thay đổi Tracking/Label do điều chỉnh tuyến vận chuyển; giá bán Order không đổi.":"DMD đã điều chỉnh tuyến vận chuyển, giữ nguyên Tracking/Label và giá bán Order.",actorId:actor.id,publicData:{hold_id:holdId,route_changed:true}});
-  return {order_id:orderId,hold_id:holdId,route_id:newRouteId,updated_trackings:changed.length,original_price:originalDue};
+  const result={order_id:orderId,hold_id:holdId,route_id:newRouteId,updated_trackings:changed.length,original_price:originalDue};
+  logInternalEvent({orderId,eventType:"EMERGENCY_ROUTE_SWITCH",summary:"Chuyển Route do Emergency Hold; giá bán và Balance không đổi.",actorId:actor.id,before:{route:[before.service,before.sub_service,before.supplier],estimated_net_cost:before.est_net_cost,trackings:previous},after:{route:[newRoute.service,newRoute.sub_service,newRoute.supplier],estimated_net_cost:after.est_net_cost,trackings:changed,tracking_mode:trackings.length?"REPLACE_ALL":"KEEP",admin_review:{confirmed:true,actor_id:actor.id,tracking_label_action:trackings.length?"REPLACE_ALL":"KEEP",estimated_net_cost_action:hasEstimate?"UPDATE":"KEEP"},cost_exposure:db.prepare("SELECT supplier,SUM(total_net_cost) actual_net_cost FROM supplier_costs WHERE matched_order_id=? GROUP BY supplier").all(orderId),hold_id:holdId,result,requested_estimate:String(estimatedNetCost??"").trim()}});
+  if(trackings.length)publishPublicNote({orderId,eventType:"TRACKING_LABEL_CHANGED",summary:"DMD đã cập nhật Tracking/Label. Giá bán Order giữ nguyên.",actorId:actor.id});
+  return result;
  }).immediate();
  }catch(error){recordEmergencyError(holdId,orderId,(error as Error).message);throw error;}
 }

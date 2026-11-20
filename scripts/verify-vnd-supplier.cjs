@@ -58,6 +58,9 @@ try{
  db.prepare("INSERT INTO enum_values(enum_type,value,active) VALUES ('SUPPLIER',?,1)").run(alternate);
  const from=db.prepare("SELECT id FROM service_route_configs WHERE service='ePacket' AND sub_service='Standard' AND supplier='DMD'").get().id;
  const to=Number(db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier,active,max_cartons_per_order) VALUES ('ePacket','Standard',?,1,1)").run(alternate).lastInsertRowid);
+ const voids=require('../src/lib/supplier-cancellation.ts');
+ const feeId=voids.submitSupplierVoid(admin,{action:'configure_void',route_id:from,fee_vnd:'150.25',evidence_required:'TEST carrier email'}).id;
+ const supplierEntriesBefore=view().entries;
  const hold=startEmergencyHold(admin,from,'TEST reroute');
  bad(()=>emergencySwitchOrder(admin,hold.id,o.id,to,[],'31.000001',true),/Order VNĐ/);
  emergencySwitchOrder(admin,hold.id,o.id,to,[],undefined,true);
@@ -65,6 +68,12 @@ try{
  eq(db.prepare('SELECT * FROM order_trackings WHERE order_id=?').all(o.id),trackingBefore);
  eq(supplier.approvedVndLot(lot.id),undefined);
  eq(view().payable,'-9.000002');
+ const departing=voids.supplierVoidQueue(fin,{supplier:'DMD',incident:hold.id}).find(row=>row.order_id===o.id);
+ eq(departing.tracking_label.policy.id,feeId);
+ eq(departing.tracking_label.policy.fee_vnd,'150.25');
+ voids.submitSupplierVoid(fin,{action:'update_void',case_id:departing.id,status:'CONFIRMED',note:'TEST carrier confirmed fee',expected_event_id:departing.history.at(-1).id,request_key:'TEST-VOID-RECEIPT'});
+ eq(view().entries,supplierEntriesBefore,'Void confirmation preserves payables and existing journal entries');
+ eq(ops.vndBalance(client.id),balance,'Void confirmation preserves Client Balance');
  call('submit',{supplier:alternate,lot_id:lot.id,amount:'18.001',reference:'TEST new supplier'});
  const newView=()=>supplier.vndSupplierView(fin,alternate);
  call('approve',{supplier:alternate,cost_id:newView().costs[0].id,expected_approved_cost_id:0});

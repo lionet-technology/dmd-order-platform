@@ -63,3 +63,9 @@ Claim nhiều Order dùng số khai báo nhân số lượng làm trọng số p
 ## Đợt đóng Supplier Excel · 20/11/2026
 
 Template Supplier × Service/Sub-Service có phiên bản, preview trong queue, hai nhóm cộng tiền độc lập, định danh dòng chứng từ và duyệt Actual/payable đã triển khai theo [Feature 40](40-vnd-post-shipping-import-reconciliation.md). Cấu hình mẫu trên chứng từ thật thuộc pilot. Phase 2 triển khai [Credit Term và chốt Statement tuần](44-vnd-credit-term-weekly-statement.md) cho sổ VNĐ. Phase 3 triển khai [chốt Commission tháng và điều chỉnh sau khóa kỳ](45-vnd-monthly-commission-closing.md). Phase 4 còn mở gồm Supplier Void, Emergency và Supplier Add-on. Khi triển khai cần kiểm chứng lần lượt bằng chứng void/credit nhà cung cấp, hạch toán Emergency theo Supplier thực hiện và quy trình ghi nhận Add-on với nhật ký đối chiếu. [Kiểm chứng Phase 2](../../artifacts/gd1-credit-term-2026-11-20/VERIFICATION.md).
+
+## Phase 4 · Supplier Void và Emergency · 20/11/2026
+
+**PARTIAL.** Hàng đợi void độc lập, cấu hình phí VNĐ theo Route, snapshot tuyến/Lot/Tracking, phân quyền nội bộ và lọc Incident đã triển khai theo [Feature 30](30-supplier-cancellation-followup.md). Hồ sơ void tự sinh khi chuyển Emergency thành công, ghi cùng giao dịch và không tạo bút toán. Phần đối soát chứng từ đến trễ và chống gắn nhầm Actual/payable theo fulfillment attempt vẫn mở, nhất là cùng Supplier và A → B → A. Supplier Add-on BUY/SELL vẫn mở.
+
+[Bằng chứng TEST Phase 4](../../artifacts/gd1-phase4-2026-11-20/VERIFICATION.md).
