@@ -2,12 +2,12 @@ import {db} from './db';
 import {validateOrderEnums} from './enums';
 import {vndEpacketDestination} from './vnd-routing';
 import {saveOrderShipmentStructure,type ShipmentCartonInput} from './order-shipments';
-import {vnd,compareVnd} from './vnd-money';
+import {vnd,compareVnd,sumVnd} from './vnd-money';
 import {automaticVndOrderQuote,automaticSourceKind} from './service-v1-order-quote';
 type Row=Record<string,unknown>;
 const fields=['service','sub_service','supplier','recipient_name','address1','address2','city','state','zip','country','phone','recipient_email','item','material'];
 export class ServicePriceChoiceRequired extends Error {
- constructor(readonly prices:{offer:string;automatic:string|null;automatic_error:string|null;can_keep:boolean}){
+ constructor(readonly prices:{offer:string;automatic:string|null;automatic_error:string|null;can_keep:boolean;offer_below_net:boolean}){
   super('Chọn giá khi xác nhận đổi Service.');
  }
 }
@@ -35,31 +35,50 @@ export function editVndShipping(order:Row,input:Row){
  if(input.cartons){
   const current=db.prepare('SELECT snapshot_json FROM vnd_auto_quotes WHERE order_id=?').get(id) as {snapshot_json:string}|undefined;
   const quote=JSON.parse(current?.snapshot_json??'{}');
-  const lotPrices=quote.source==='MANUAL_CUSTOM'?quote.lots as Array<{lot_number:number}>|undefined:undefined;
+  const lotPrices=quote.source==='MANUAL_CUSTOM'?quote.lots as Array<{
+   lot_number:number;selling_vnd?:string;net_vnd?:string;base_vnd?:string;
+  }>|undefined:undefined;
   const structure=saveOrderShipmentStructure(id,{cartons:input.cartons as ShipmentCartonInput[]},true);
   if(!serviceChanged&&lotPrices?.length){
    const lotNumbers=new Set(structure.cartons.map(carton=>Number(carton.lot_number)));
-   if(lotNumbers.size!==lotPrices.length||lotPrices.some(lot=>!lotNumbers.has(lot.lot_number)))
-    throw Error('Chuyển giá theo Lot lên Order trước khi thay đổi danh sách Lot.');
+   const remaining=lotPrices.filter(lot=>lotNumbers.has(lot.lot_number));
+   if(lotNumbers.size!==remaining.length)
+    throw Error('Chuyển giá theo Lot lên Order trước khi thêm Lot chưa có giá.');
+   if(remaining.length!==lotPrices.length){
+    for(const field of ['selling_vnd','net_vnd','base_vnd'] as const){
+     if(lotPrices.some(lot=>lot[field]!==undefined))
+      quote[field]=sumVnd(remaining.map(lot=>lot[field]!));
+    }
+    if(compareVnd(quote.selling_vnd,'0')<=0)throw Error('Tổng Selling Price phải lớn hơn 0.');
+    quote.lots=remaining;
+    const snapshot=JSON.stringify(quote);
+    db.prepare('UPDATE vnd_auto_quotes SET snapshot_json=? WHERE order_id=?').run(snapshot,id);
+    db.prepare('INSERT INTO vnd_auto_quote_history(order_id,snapshot_json) VALUES (?,?)').run(id,snapshot);
+    if(r&&r.offer!==quote.selling_vnd)
+     db.prepare("UPDATE vnd_purchase_requests SET offer=?,revision=revision+1,status='PRICE_CONFIRMATION_REQUIRED',accepted_revision=NULL WHERE order_id=?").run(quote.selling_vnd,id);
+   }
   }
  }
  let confirmedAutomatic:string|null=null;
  if(serviceChanged&&r&&manual&&r.offer!==null){
   let automatic:string|null=null,automatic_error:string|null=null;
+  let offer_below_net=false;
   if(automaticSourceKind(String(next.service),String(next.sub_service))){
    try{
     const quote=automaticVndOrderQuote(id);
     if(compareVnd(quote.total_vnd,'0')<=0)throw Error('Giá tự động phải lớn hơn 0.');
     automatic=quote.total_vnd;
+    offer_below_net=compareVnd(String(r.offer),quote.net_vnd)<0;
    }
    catch(error){
     if(error&&typeof error==='object'&&'code' in error)throw error;
     automatic_error=error instanceof Error?error.message:'Không có giá tự động.';
    }
   }else automatic_error='Service yêu cầu báo giá thủ công.';
-  const prices={offer:String(r.offer),automatic,automatic_error,can_keep:automatic!==null||String(next.service).toLowerCase()==='chuyên tuyến'};
+  const prices={offer:String(r.offer),automatic,automatic_error,offer_below_net,can_keep:automatic!==null||String(next.service).toLowerCase()==='chuyên tuyến'};
   if(!['KEEP_OFFER','AUTOMATIC'].includes(String(input.price_selection))||
-     input.expected_offer!==prices.offer||input.expected_automatic!==prices.automatic)
+     input.expected_offer!==prices.offer||input.expected_automatic!==prices.automatic||
+     (input.price_selection==='KEEP_OFFER'&&prices.offer_below_net&&input.confirm_below_net!==true))
    throw new ServicePriceChoiceRequired(prices);
   if(input.price_selection==='AUTOMATIC'?automatic===null:!prices.can_keep)throw Error(automatic_error??'Không có giá tự động.');
   if(input.price_selection==='AUTOMATIC')confirmedAutomatic=automatic;

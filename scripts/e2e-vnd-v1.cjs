@@ -62,6 +62,7 @@ let server,browser,checks=0;const check=(v,m)=>{checks++;assert.ok(v,m)};
  await tools.getByRole('button',{name:'Thực hiện',exact:true}).click();
  const priceDialog=page.getByRole('dialog',{name:'Chọn giá khi đổi Service'});
  await priceDialog.getByText('Offer hiện hành: 300.001 VNĐ',{exact:true}).waitFor();
+ check(await priceDialog.getByRole('alert').filter({hasText:'thấp hơn Net Cost'}).isVisible(),'below-net Keep Offer warning visible to Admin');
  check(await priceDialog.getByRole('button',{name:'Áp giá tự động',exact:true}).isEnabled(),'New Service automatic quote is available');
  await page.screenshot({path:path.join(output,'uat-service-price-choice.png')});
  await priceDialog.getByRole('button',{name:'Quay lại',exact:true}).click();
@@ -349,6 +350,13 @@ let server,browser,checks=0;const check=(v,m)=>{checks++;assert.ok(v,m)};
  await periods.getByRole('button',{name:'Tải kỳ Supplier',exact:true}).click();await periods.getByRole('status').filter({hasText:'Đã tải kỳ Supplier.'}).waitFor();check(await periods.getByText('TEST late correction to original',{exact:true}).count()===1,'late audit visible in UI');await periods.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(output,'uat-supplier-period-late.png'),fullPage:false});
  await page.setViewportSize({width:390,height:844});check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'period mobile layout contained');await periods.getByRole('heading',{name:'Khóa kỳ Supplier VNĐ',exact:true}).scrollIntoViewIfNeeded();await page.screenshot({path:path.join(output,'uat-supplier-period-mobile.png'),fullPage:false});await page.setViewportSize({width:1440,height:1000});
  const tower=page.getByRole('region',{name:'Control Tower VNĐ',exact:true});await tower.getByRole('button',{name:/Đối soát Supplier chờ xử lý/}).click();await tower.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(output,'uat-control-tower.png'),fullPage:false});
+ for(const r of ['SALES','CLIENT']){
+  await role(r);
+  for(const endpoint of ['purchase-export','purchase-export/generic']){
+   const response=await context.request.post(base+'/api/'+endpoint,{data:{order_ids:[fixture.claimOrder.id,2147483647]}});
+   check(response.status()===403,'bulk purchase export denied to '+r+' at '+endpoint);
+  }
+ }
  for(const r of ['SALES','CLIENT']){await role(r);const exceptionResponse=await context.request.get(base+'/api/service-v1/exceptions');const ex=await exceptionResponse.json();check(exceptionResponse.ok(),'scoped exceptions available '+r);check(ex.counts.supplier_import===0&&ex.counts.missing_actual===0,'no Supplier Actual queues for '+r);check(!JSON.stringify(ex).includes('actual_net')&&!JSON.stringify(ex).includes('net_vnd'),'no Net in exception response '+r);check((await context.request.get(base+'/api/service-v1/suppliers?supplier=DMD')).status()===403,'Supplier journal denied '+r);await page.getByRole('heading',{name:'Control Tower VNĐ',exact:true}).waitFor();}
  await role('BOD');await tools.getByLabel('Tháng báo cáo',{exact:true}).fill(today.slice(0,7));await tools.getByRole('button',{name:'Xem báo cáo VNĐ',exact:true}).click();await tools.getByRole('columnheader',{name:'Hoa hồng tham khảo VNĐ',exact:true}).waitFor();check(await tools.getByRole('heading',{name:'Đối chiếu GP-Net trước Refund',exact:true}).count()===1,'GP Net reconciliation distinct from commission');
  await role('CLIENT');

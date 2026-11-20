@@ -27,7 +27,7 @@ export default function VndTools({client,user,onChange}:{client:string;user:User
    setMessage('Đã tải kiện và giá hiện hành. Kiểm tra thay đổi trước khi lưu.');
   }catch(e){setMessage(e instanceof Error?e.message:'Không tải được Order.');}finally{setBusy(false);}
  }
- const [pendingPrices,setPendingPrices]=useState<{body:Record<string,unknown>;offer:string;automatic:string|null;automatic_error:string|null;can_keep:boolean}|null>(null);
+ const [pendingPrices,setPendingPrices]=useState<{body:Record<string,unknown>;offer:string;automatic:string|null;automatic_error:string|null;can_keep:boolean;offer_below_net:boolean}|null>(null);
  const priceDialog=useRef<HTMLDialogElement>(null);
  useEffect(()=>{if(pendingPrices&&!priceDialog.current?.open)priceDialog.current?.showModal();else if(!pendingPrices)priceDialog.current?.close();},[pendingPrices]);
  const receipt=useRef<{payload:string;key:string}|null>(null);
@@ -51,7 +51,7 @@ export default function VndTools({client,user,onChange}:{client:string;user:User
     if(mode==='addon_edit'){body.addon_id=Number(addonId);body.expected_revision=Number(revision);}
    }
    if(['debt','debt_rate','extend_debt'].includes(mode)){body.amount=amount;body.deadline=deadline;body.daily_rate_pct=rate;}
-   if(selection&&pendingPrices)body={...pendingPrices.body,price_selection:selection,expected_offer:pendingPrices.offer,expected_automatic:pendingPrices.automatic};
+   if(selection&&pendingPrices)body={...pendingPrices.body,price_selection:selection,expected_offer:pendingPrices.offer,expected_automatic:pendingPrices.automatic,confirm_below_net:pendingPrices.offer_below_net};
    const payload=JSON.stringify(body);if(receipt.current?.payload!==payload)receipt.current={payload,key:crypto.randomUUID()};
    body.request_key=receipt.current!.key;
    const r=await fetch('/api/service-v1/'+(mode.startsWith('addon')?'addons':'operations'),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}),d=await r.json();
@@ -78,7 +78,7 @@ export default function VndTools({client,user,onChange}:{client:string;user:User
    {['edit','addon_edit'].includes(mode)&&<label>Revision hiện hành <input required value={revision} onChange={e=>setRevision(e.target.value)}/></label>}
    {mode==='edit'&&<>
     <button type="button" disabled={busy||!order} onClick={()=>void loadOrder()}>Tải kiện và giá hiện hành</button>
-    {cartons.length>0&&<div style={{overflowX:'auto'}}><table><thead><tr><th>Kiện</th><th>Lot</th><th>Kg</th><th>Dài cm</th><th>Rộng cm</th><th>Cao cm</th></tr></thead><tbody>{cartons.map((c,i)=><tr key={c.carton_number}><td>{c.carton_number}</td>{(['lot_number','weight','length','width','height'] as const).map(field=><td key={field}><input aria-label={'Kiện '+c.carton_number+' '+field} type="number" min={field==='lot_number'?1:0.001} step={field==='lot_number'?1:'any'} style={{width:75}} value={c[field]} onChange={e=>setCartons(rows=>rows.map((row,j)=>j===i?{...row,[field]:Number(e.target.value)}:row))}/></td>)}</tr>)}</tbody></table></div>}
+    {cartons.length>0&&<div style={{overflowX:'auto'}}><table><thead><tr><th>Kiện</th><th>Lot</th><th>Kg</th><th>Dài cm</th><th>Rộng cm</th><th>Cao cm</th><th>Thao tác</th></tr></thead><tbody>{cartons.map((c,i)=><tr key={c.carton_number}><td>{c.carton_number}</td>{(['lot_number','weight','length','width','height'] as const).map(field=><td key={field}><input aria-label={'Kiện '+c.carton_number+' '+field} type="number" min={field==='lot_number'?1:0.001} step={field==='lot_number'?1:'any'} style={{width:75}} value={c[field]} onChange={e=>setCartons(rows=>rows.map((row,j)=>j===i?{...row,[field]:Number(e.target.value)}:row))}/></td>)}<td><button type="button" disabled={busy||cartons.length===1} onClick={()=>setCartons(rows=>rows.filter((_,j)=>j!==i))}>Xóa kiện {c.carton_number}</button></td></tr>)}</tbody></table></div>}
     <p>Chỉ điền trường cần sửa; bỏ trống để giữ dữ liệu hiện hành.</p>
     <label>Quốc gia (mã) <input value={country} onChange={e=>setCountry(e.target.value.toUpperCase())}/></label>
     <label>China region <select value={region} onChange={e=>setRegion(e.target.value)}><option value="">Giữ hiện hành</option><option value="SOUTH">China South</option><option value="OTHER">China excluding South</option></select></label>
@@ -103,6 +103,7 @@ export default function VndTools({client,user,onChange}:{client:string;user:User
     <h3 id="service-price-heading">Chọn giá khi đổi Service</h3>
     <p>Offer hiện hành: {pendingPrices.offer} VNĐ</p>
     <p>Giá tự động: {pendingPrices.automatic===null?pendingPrices.automatic_error:pendingPrices.automatic+' VNĐ'}</p>
+    {pendingPrices.offer_below_net&&<p role="alert">Offer hiện hành thấp hơn Net Cost ước tính của Service mới.</p>}
     <button disabled={busy||!pendingPrices.can_keep} onClick={()=>void submit('KEEP_OFFER')}>Giữ offer</button>
     <button disabled={busy||pendingPrices.automatic===null} onClick={()=>void submit('AUTOMATIC')}>Áp giá tự động</button>
     <button disabled={busy} onClick={()=>setPendingPrices(null)}>Quay lại</button>

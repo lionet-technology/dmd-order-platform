@@ -44,3 +44,7 @@ New verify-vnd-period-close and verify-vnd-exceptions suites; expanded commissio
 - Supplier tax/pass-through accounting import, large-volume queue pagination/performance, comprehensive legacy cutover remain separate gaps.
 - Group-spanning Client Refund remains explicitly unallocated; final commission decisions/payments remain manual. Before-Refund GP reconciliation does not certify final GP after whole-Client pool adjustments.
 - Claim/watchlist/case creation/Complete Claim/manual Client–Supplier linking are deferred to the NEXT phase. Existing financial Claim journal is retained.
+
+## Lot trống sau sửa kiện
+
+Đối chiếu Actual sử dụng Lot có kiện và Lot có chi phí Supplier đã lưu. Slot Lot trống do đánh số hoặc bỏ kiện không tạo yêu cầu Actual. Những lượt có chứng từ của Lot tiếp tục tham gia đối chiếu theo quy tắc lịch sử ở trên.

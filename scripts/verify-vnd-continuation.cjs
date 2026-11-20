@@ -90,6 +90,7 @@ try{
  const beforePreview=JSON.stringify(ops.vndView(client.id,owner));
  let prices;
  try{call('edit',edit);assert.fail('Expected Service price choices');}catch(error){assert.match(error.message,/Chọn giá/);prices=error.prices;}
+ eq(prices.offer_below_net,true);
  eq(prices.offer,'100');eq(typeof prices.automatic,'string');
  eq(JSON.stringify(ops.vndView(client.id,owner)),beforePreview,'Selection has no financial side effects');
  bad(()=>call('edit',{...edit,price_selection:'AUTOMATIC',expected_offer:'100',expected_automatic:'0'}),/Chọn giá/);
@@ -97,7 +98,8 @@ try{
  bad(()=>call('edit',{...selection,price_selection:'KEEP_OFFER'},sales),/Admin/);
  const keepRollback=new Error('rollback keep offer fixture');
  bad(()=>db.transaction(()=>{
-  call('edit',{...selection,price_selection:'KEEP_OFFER'});
+  bad(()=>call('edit',{...selection,price_selection:'KEEP_OFFER'}),/Chọn giá/);
+  call('edit',{...selection,price_selection:'KEEP_OFFER',confirm_below_net:true});
   eq(ops.vndRequest(auto.id).offer,'100');
   eq(ops.vndRequest(auto.id).status,'PRICE_CONFIRMATION_REQUIRED');
   eq(ops.vndRequest(auto.id).accepted_revision,null);

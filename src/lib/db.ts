@@ -532,7 +532,7 @@ db.exec(`
 // Backfill normalized Order -> Lot -> Carton -> SKU structures without
 // inventing carton-level facts for legacy multi-carton Orders.
 db.transaction(()=>{
-  const legacyOrders=db.prepare("SELECT id,expected_lot_count,carton_count,item,material,declared_value,weight,length,width,height,volume,chargeable_weight FROM orders ORDER BY id").all() as Array<Record<string,unknown>>;
+  const legacyOrders=db.prepare("SELECT id,measurement_mode,expected_lot_count,carton_count,item,material,declared_value,weight,length,width,height,volume,chargeable_weight FROM orders ORDER BY id").all() as Array<Record<string,unknown>>;
   const insertLot=db.prepare("INSERT OR IGNORE INTO order_lots(order_id,lot_number) VALUES (?,?)");
   const insertCarton=db.prepare("INSERT OR IGNORE INTO order_cartons(order_id,order_lot_id,carton_number) VALUES (?,?,?)");
   const updateSimpleCarton=db.prepare("UPDATE order_cartons SET order_lot_id=?,weight=?,length=?,width=?,height=?,volume=?,chargeable_weight=?,details_complete=?,updated_at=CURRENT_TIMESTAMP WHERE order_id=? AND carton_number=1");
@@ -544,8 +544,13 @@ db.transaction(()=>{
   const activeTrackings=db.prepare("SELECT id,lot_number FROM order_trackings WHERE order_id=? AND status='ACTIVE' ORDER BY id");
   const mapTracking=db.prepare("UPDATE order_trackings SET carton_id=?,lot_number=? WHERE id=? AND (carton_id IS NOT ? OR lot_number IS NOT ?)");
   const inheritReplacementCarton=db.prepare("UPDATE order_trackings SET carton_id=(SELECT newer.carton_id FROM order_trackings newer WHERE newer.id=order_trackings.replaced_by_tracking_id) WHERE order_id=? AND carton_id IS NULL AND replaced_by_tracking_id IS NOT NULL");
+  const explicitCartons=db.prepare('SELECT 1 FROM order_cartons WHERE order_id=? GROUP BY order_id HAVING COUNT(*)=? AND COUNT(order_lot_id)=COUNT(*)');
   for(const order of legacyOrders){
     const orderId=Number(order.id);
+    if(order.measurement_mode==='CARTON'&&explicitCartons.get(orderId,Number(order.carton_count))){
+      inheritReplacementCarton.run(orderId);
+      continue;
+    }
     const lotCount=Math.max(1,Math.trunc(Number(order.expected_lot_count||1)));
     const cartonCount=Math.max(1,Math.trunc(Number(order.carton_count||1)));
     for(let lotNo=1;lotNo<=lotCount;lotNo++)insertLot.run(orderId,lotNo);

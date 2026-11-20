@@ -52,3 +52,7 @@ Reconcile Work handoff; implement operational VND price and financial path; then
 Thao tác Edit tính giá cho dữ liệu vận chuyển, vùng China và kiện/Lot sau chỉnh sửa. Hộp thoại hiển thị offer hiện hành, giá tự động hoặc lý do thiếu giá. Admin chọn giữ offer hoặc áp giá tự động. Tuyến Manual Quote cho phép giữ offer. Tuyến tự động cần báo giá hợp lệ. Mỗi lần xác nhận kiểm tra revision và tính lại hai mức giá trên server. Nếu giá đã đổi, Admin xem và chọn lại. Lần hiện hộp thoại và nút Quay lại không ghi thay đổi, hàng đợi hay bút toán.
 
 Sau khi lưu, offer giữ lại là mức giá cấp Order. Chi phí ước tính theo tuyến cũ và chi tiết mức giá theo Lot vẫn tra được trong lịch sử báo giá. Client cần chấp thuận revision mới kể cả khi số tiền giữ nguyên. Reserve cũ vẫn có hiệu lực trong lúc chờ consent hoặc chờ sức mua. Chỉ thay Reserve trong giao dịch nguyên tử sau khi đủ điều kiện. Khi đã từng có Tracking hoặc Label, Edit bị khóa ở server.
+
+## Cảnh báo giữ offer dưới Net khi đổi Service
+
+Khi dự toán Net của Service mới vượt offer đang có, popup Edit cảnh báo Admin trước khi chọn **Giữ offer**. API yêu cầu xác nhận cảnh báo nếu chọn giữ trong tình huống này. Sau khi lưu, offer vẫn giữ nguyên, Client xác nhận revision mới và Reserve cũ được giữ cho tới khi đủ điều kiện thay thế.

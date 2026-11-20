@@ -52,6 +52,31 @@ let n=0,checks=0;const eq=(a,b,m)=>{checks++;assert.deepEqual(a,b,m)},throws=(fn
  throws(()=>ops.vndAction(admin,{...payment,delta:'1'}),/request_key/);
  eq(ops.vndRequest(a.id).status,'RESERVED','FIFO first');eq(ops.vndRequest(b.id).status,'AWAITING_FUNDS','No overspend');
  eq(ops.vndBalance(client.id).reserved,'100000.123456');
+ const edit={order_id:a.id,expected_revision:ops.vndRequest(a.id).revision,request_key:'TEST-REMOVE-LOT',
+  cartons:[{carton_number:2,lot_number:2,weight:1,length:10,width:5,height:3,items:[{description:'Shirt',material:'Cotton',quantity:1}]}]};
+ const beforeRemoval=JSON.stringify(ops.vndView(client.id,admin));
+ db.exec("CREATE TRIGGER test_lot_edit_failure BEFORE INSERT ON vnd_commands WHEN NEW.request_key='TEST-REMOVE-LOT' BEGIN SELECT RAISE(ABORT,'TEST Lot rollback'); END;");
+ throws(()=>call('edit',edit),/TEST Lot rollback/);
+ eq(JSON.stringify(ops.vndView(client.id,admin)),beforeRemoval);
+ eq(shipments.getOrderShipmentStructure(a.id).cartons.length,2);
+ db.exec('DROP TRIGGER test_lot_edit_failure');
+ throws(()=>db.transaction(()=>{
+  const result=call('edit',edit);eq(call('edit',edit),result);
+  const request=ops.vndRequest(a.id);
+  eq(request.offer,'0.003456');eq(request.reserve,price.amount);
+  eq(request.status,'PRICE_CONFIRMATION_REQUIRED');eq(request.accepted_revision,null);
+  const updated=JSON.parse(db.prepare('SELECT snapshot_json FROM vnd_auto_quotes WHERE order_id=?').get(a.id).snapshot_json);
+  eq([updated.selling_vnd,updated.net_vnd,updated.base_vnd],['0.003456','0.000001',price.base_vnd]);
+  consent(a);eq(ops.vndRequest(a.id).reserve,'0.003456');
+  const remainingCartons=shipments.getOrderShipmentStructure(a.id).cartons;
+  eq(remainingCartons.map(c=>[c.carton_number,c.lot_number]),[[2,2]]);
+  const onlyCarton=remainingCartons[0];
+  tracking.addOrderTracking({orderId:a.id,cartonId:onlyCarton.id,tracking:'VND-REVISED',labelUrl:'https://labels.test/revised.pdf',actorId:admin.id});
+  require('../src/lib/credit.ts').completeReserve(a.id,admin.id);
+  eq(db.prepare("SELECT delta FROM vnd_ledger WHERE order_id=? AND kind='ORDER_CHARGE'").all(a.id),[{delta:'-0.003456'}]);
+  throw Error('TEST isolated Lot fixture complete');
+ }).immediate(),/TEST isolated Lot fixture complete/);
+
  offer(a,'120000.987654');eq(ops.vndBalance(client.id).reserved,'100000.123456','Old reserve held during consent');
  throws(()=>tracking.addOrderTracking({orderId:a.id,tracking:'NO-CONSENT',actorId:admin.id}),/Chờ/);
  consent(a);eq(ops.vndRequest(a.id).status,'AWAITING_FUNDS');eq(ops.vndRequest(a.id).reserve,'100000.123456','Old reserve held on insufficient replacement');

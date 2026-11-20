@@ -27,7 +27,10 @@ function readReport(month:string){
   if(q&&entries.length){const quote=JSON.parse(String(q.snapshot_json));if(typeof quote.net_vnd!=='string'||typeof quote.base_vnd!=='string')group.missing_estimate=true;group.estimated_net=addVnd(group.estimated_net,quote.net_vnd??'0');group.estimated_base=addVnd(group.estimated_base,quote.base_vnd??'0');}
   groups.set(key,group);
  }
- const actuals=orders.map(o=>{const lots=db.prepare('SELECT id FROM order_lots WHERE order_id=?').all(o.id) as {id:number}[];const costs=lots.map(l=>{
+ const actuals=orders.map(o=>{const lots=db.prepare(`SELECT l.id FROM order_lots l WHERE l.order_id=? AND (
+  EXISTS (SELECT 1 FROM order_cartons c WHERE c.order_lot_id=l.id)
+  OR EXISTS (SELECT 1 FROM vnd_supplier_costs s WHERE s.lot_id=l.id)
+ )`).all(o.id) as {id:number}[];const costs=lots.map(l=>{
   const history=lotFulfillments(l.id);
   if(!history||history.incomplete)return null;
   const actual=history.attempts.map(a=>approvedFulfillment(l.id,a.supplier,a.id));

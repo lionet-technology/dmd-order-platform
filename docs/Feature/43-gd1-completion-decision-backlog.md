@@ -92,3 +92,7 @@ Template Supplier × Service/Sub-Service có phiên bản, preview trong queue, 
 | UI/UAT/pilot | Chấp nhận vận hành và dữ liệu thật | Admin/Sales/Client/Finance/BOD cần nghiệm thu quy trình, kiểm tra carrier/void policy, mẫu chứng từ, mapping và bảng giá/zone/cap thật. Theo dõi riêng deploy và restore DEV/TEST, đối chiếu tài khoản USD cũ và chấp nhận pilot. |
 
 [Bằng chứng kiểm thử GĐ1](../../artifacts/gd1-final-2026-11-20/VERIFICATION.md).
+
+## Functional Acceptance Audit · 20/11/2026
+
+[Checklist GĐ1](46-gd1-acceptance-checklist.md) ghi kết quả từng luồng, cảnh báo dưới Net, giao dịch xóa Lot trước phát hành, các quyết định cần chốt và điều kiện UAT/pilot.

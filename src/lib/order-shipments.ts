@@ -40,6 +40,9 @@ export type OrderShipmentStructure={
 export function ensureOrderShipmentStructure(orderId:number):OrderShipmentStructure{
   const order=db.prepare("SELECT * FROM orders WHERE id=?").get(orderId) as Record<string,unknown>|undefined;
   if(!order)throw new Error("Order không tồn tại.");
+  if(order.measurement_mode==='CARTON'&&db.prepare(
+    'SELECT 1 FROM order_cartons WHERE order_id=? GROUP BY order_id HAVING COUNT(*)=? AND COUNT(order_lot_id)=COUNT(*)'
+  ).get(orderId,Number(order.carton_count)))return getOrderShipmentStructure(orderId,false);
   const lotCount=Math.max(1,Math.trunc(Number(order.expected_lot_count||1)));
   const cartonCount=Math.max(1,Math.trunc(Number(order.carton_count||1)));
   const insertLot=db.prepare("INSERT OR IGNORE INTO order_lots(order_id,lot_number) VALUES (?,?)");
