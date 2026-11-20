@@ -79,7 +79,7 @@ let checks=0,n=0;const eq=(a,b)=>{checks++;assert.deepEqual(a,b)},bad=(f,re)=>{c
  eq(JSON.stringify(ops.vndView(client.id,admin)),state);
  bad(()=>db.prepare("UPDATE vnd_refund_events SET delta='0'").run(),/Immutable/);
 
- call('statement',{period_start:vndDay(),period_end:vndDay()},fin);
+ st.closeVndWeeklyStatements(client.id,{actorId:fin.id,reason:'TEST'},new Date(Date.now()+7*86400000));
  const snapshot=st.vndStatementHistory(client.id)[0].snapshot;
  eq(snapshot.closing.refund_balance,'-30');eq(snapshot.closing.balance,ops.vndBalance(client.id).balance);eq(JSON.stringify(snapshot).includes('BANK SECRET'),false);
  const frozen=JSON.stringify(snapshot);decide('20',2);eq(JSON.stringify(st.vndStatementHistory(client.id)[0].snapshot),frozen);

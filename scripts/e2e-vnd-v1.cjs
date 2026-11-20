@@ -6,7 +6,18 @@ const root=path.resolve(__dirname,'..'),dir=path.dirname(fixture.dbPath),output=
 fs.mkdirSync(output,{recursive:true});
 // Explicit historical TEST evidence for close/late-correction rehearsal; owned fixture DB only.
 const pilotDb=new(require('better-sqlite3'))(fixture.dbPath);
-const pilotOriginal=Number(pilotDb.prepare("INSERT INTO vnd_supplier_ledger(supplier,kind,delta,reference,reason,actor_id,created_at) VALUES ('DMD','ADJUSTMENT','123.123456','TEST-PILOT-ORIGINAL','TEST FIXTURE NOT REAL DOCUMENT',?,'2026-01-02 12:00:00')").run(fixture.fin.id).lastInsertRowid);pilotDb.close();
+const pilotOriginal=Number(pilotDb.prepare("INSERT INTO vnd_supplier_ledger(supplier,kind,delta,reference,reason,actor_id,created_at) VALUES ('DMD','ADJUSTMENT','123.123456','TEST-PILOT-ORIGINAL','TEST FIXTURE NOT REAL DOCUMENT',?,'2026-01-02 12:00:00')").run(fixture.fin.id).lastInsertRowid);
+// Leave the primary workflow fixture balances intact. A separate Client exercises
+// the real startup scheduler and the dashboard with historical TEST postings.
+const {weeklyClient,weeklyToken}=fixture;
+const today=require('../src/lib/vnd-debt.ts').vndDay();
+const current=new Date(today+'T00:00:00Z'),monday=1-(current.getUTCDay()||7);
+const relativeDay=days=>new Date(current.getTime()+(monday+days)*86400000).toISOString().slice(0,10);
+const firstMonday=relativeDay(-14),firstSunday=relativeDay(-8);
+pilotDb.prepare("UPDATE vnd_accounts SET created_at=?,credit_term_weeks=2 WHERE client_id=?").run(firstMonday+' 02:00:00',weeklyClient.id);
+pilotDb.prepare("UPDATE vnd_accounts SET created_at=? WHERE client_id=?").run(relativeDay(-7)+' 02:00:00',fixture.client.id);
+pilotDb.prepare("INSERT INTO vnd_ledger(client_id,kind,delta,reason,actor_id,request_key,created_at) VALUES (?,'ADJUSTMENT','-100','TEST overdue',?,'TEST-WEEKLY-UI-POST',?)").run(weeklyClient.id,fixture.fin.id,firstMonday+' 02:00:00');
+pilotDb.close();
 let server,browser,checks=0;const check=(v,m)=>{checks++;assert.ok(v,m)};
 (async()=>{try{
  const port=await new Promise(resolve=>{const s=require('node:net').createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p));});}),base='http://127.0.0.1:'+port,log=fs.openSync(path.join(dir,'uat-server.log'),'a');
@@ -118,8 +129,35 @@ let server,browser,checks=0;const check=(v,m)=>{checks++;assert.ok(v,m)};
  const clientData=await context.request.get(base+'/api/service-v1/addons?client_id='+fixture.client.id);const text=await clientData.text();check(!text.includes('TEST private vendor')&&!text.includes('123.000001'),'HTTP client privacy');
  await page.setViewportSize({width:390,height:844});check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Client mobile has no page overflow');await page.screenshot({path:path.join(output,'uat-client-mobile.png'),fullPage:true});
  await page.setViewportSize({width:1440,height:1000});
- await role('FINANCE');await action().selectOption('statement');const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Ho_Chi_Minh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
- await tools.getByLabel('Từ ngày',{exact:true}).fill(today);await tools.getByLabel('Đến ngày',{exact:true}).fill(today);await tools.getByLabel('Lý do / tham chiếu',{exact:true}).fill('TEST Chrome statement');await tools.getByRole('button',{name:'Thực hiện',exact:true}).click();await tools.getByRole('status').filter({hasText:'Đã ghi nhận.'}).waitFor();await tools.getByRole('button',{name:'Xem Statement',exact:true}).click();await tools.getByText('Kỳ '+today+' → '+today,{exact:false}).waitFor();check(true,'Finance finalizes immutable VND statement through UI');
+ await context.addCookies([{name:'dmd_session',value:weeklyToken,url:base}]);
+ await page.goto(base+'/');await page.getByRole('alert').filter({hasText:'tuần quá hạn'}).waitFor();
+ check(true,'Client dashboard displays overdue weeks from startup scheduler');
+ await page.screenshot({path:path.join(output,'client-credit-term.png'),fullPage:false});
+ await page.getByRole('link',{name:'Xem tài khoản VNĐ',exact:true}).click();
+ await page.getByRole('button',{name:'Tải tài khoản',exact:true}).click();
+ await page.getByRole('alert').filter({hasText:'tuần quá hạn'}).waitFor();
+ check(await page.getByRole('option',{name:'Đổi Credit Term',exact:true}).count()===0,'Client has no Credit Term controls');
+ await role('ADMIN');
+ await page.getByLabel('Client ID',{exact:true}).fill(String(weeklyClient.id));
+ await page.getByRole('button',{name:'Tải tài khoản',exact:true}).click();
+ await page.getByRole('alert').filter({hasText:'tuần quá hạn'}).waitFor();
+ const balanceForm=page.locator('form').filter({has:page.getByRole('option',{name:'Đổi Credit Term',exact:true})});
+ await balanceForm.getByRole('combobox',{name:'Thao tác',exact:true}).selectOption('credit_term');
+ await balanceForm.getByLabel('Credit Term (tuần)',{exact:true}).fill('52');
+ await balanceForm.getByLabel('Lý do / tham chiếu',{exact:true}).fill('TEST change term');
+ await balanceForm.getByRole('button',{name:'Thực hiện',exact:true}).click();
+ await page.getByText(/Credit Term 52 tuần/).waitFor();
+ check(await page.getByRole('alert').filter({hasText:'tuần quá hạn'}).count()===0,'Admin changes term, clearing live overdue warning');
+ await role('FINANCE');await page.getByLabel('Client ID',{exact:true}).fill(String(weeklyClient.id));
+ await action().selectOption('statement');
+ await tools.getByLabel('Lý do / tham chiếu',{exact:true}).fill('TEST Chrome weekly retry');await tools.getByRole('button',{name:'Thực hiện',exact:true}).click();
+ await tools.getByRole('status').filter({hasText:'Đã ghi nhận.'}).waitFor();
+ await tools.getByRole('button',{name:'Xem Statement',exact:true}).click();
+ await tools.getByText('Kỳ '+firstMonday+' → '+firstSunday,{exact:false}).waitFor();
+ const weeklyData=await (await context.request.get(base+'/api/service-v1/statements?client_id='+weeklyClient.id)).json();
+ check(weeklyData.statements[0].snapshot.close.source==='SCHEDULED','Finance retry preserves scheduler snapshot and audit');
+ check(weeklyData.statements.filter(s=>s.period_end===firstSunday).length===1,'Finance retry creates no duplicate');
+ await page.getByLabel('Client ID',{exact:true}).fill(String(fixture.client.id));
  await page.screenshot({path:path.join(output,'uat-finance-statement.png'),fullPage:true});
  // Add an isolated prior-cohort Order to an approved TEST case for the BOD reporting fixture.
  const reportDb=new(require('better-sqlite3'))(fixture.dbPath);
@@ -286,7 +324,7 @@ let server,browser,checks=0;const check=(v,m)=>{checks++;assert.ok(v,m)};
   for(const table of tables){assert.ok(before[table].length,table+' fixture must have rows');assert.deepEqual(snapshot(restored,table),before[table]);}
  }finally{restored.close();}
  fs.writeFileSync(path.join(output,'claim-restore.json'),JSON.stringify({status:'PASS',database:'owned disposable Chrome TEST fixture',integrity:'ok',foreign_key_violations:0,tables:tables.map(name=>({name,rows:before[name].length}))},null,2));
- fs.writeFileSync(path.join(output,'browser-uat.json'),JSON.stringify({status:'PASS',checks,roles:['ADMIN','SALES','CLIENT','FINANCE','BOD'],database:'owned disposable',scope:'Client and Supplier watchlists and case creation from Order selection, Processing chronology, explicit completion and manual case linking, BOD case-level unallocated Refund tracking, HTTP mixed-currency excess allocation, Supplier frozen period/late current correction/original reference, Control Tower role privacy, GP-Net versus commission reference, Client Excel surcharge/tax preview/import/cross-key replay and immutable Statement, Supplier Excel versioned multi-column mapping and replay, inclusive surcharge preview, typed errors and explicit Actual payable delta, Admin manual Supplier refund percentage/evidence with no posting, Supplier Claim receivable approval/partial Bank/offset/reversal and overlimit, durable Claim notification acknowledgement, Claim creation/approval, partial Bank/Balance payout and overpool rejection, bank privacy, Supplier actual/payment RBAC, Add-on, Statement, BOD report, shipping edit, desktop/mobile render',errors},null,2));
+ fs.writeFileSync(path.join(output,'browser-uat.json'),JSON.stringify({status:'PASS',checks,roles:['ADMIN','SALES','CLIENT','FINANCE','BOD'],database:'owned disposable',scope:'Weekly VNĐ startup catch-up, dashboard and internal overdue alerts, Admin term change and Finance idempotent retry, Client and Supplier watchlists and case creation from Order selection, Processing chronology, explicit completion and manual case linking, BOD case-level unallocated Refund tracking, HTTP mixed-currency excess allocation, Supplier frozen period/late current correction/original reference, Control Tower role privacy, GP-Net versus commission reference, Client Excel surcharge/tax preview/import/cross-key replay and immutable Statement, Supplier Excel versioned multi-column mapping and replay, inclusive surcharge preview, typed errors and explicit Actual payable delta, Admin manual Supplier refund percentage/evidence with no posting, Supplier Claim receivable approval/partial Bank/offset/reversal and overlimit, durable Claim notification acknowledgement, Claim creation/approval, partial Bank/Balance payout and overpool rejection, bank privacy, Supplier actual/payment RBAC, Add-on, Statement, BOD report, shipping edit, desktop/mobile render',errors},null,2));
  console.log('BROWSER VND PASS ('+checks+' assertions; 5 roles, synthetic DB, actual Chrome)');
 }catch(e){if(browser){const failedPage=browser.contexts()[0]?.pages()[0];if(failedPage){fs.writeFileSync(path.join(output,'uat-failure.txt'),await failedPage.locator('body').ariaSnapshot());await failedPage.screenshot({path:path.join(output,'uat-failure.png'),fullPage:true});}}throw e;}finally{if(browser)await browser.close();if(server)server.kill('SIGTERM');}
 })().catch(e=>{console.error(e);process.exitCode=1});

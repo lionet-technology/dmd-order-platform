@@ -1,3 +1,7 @@
+## Credit Term và Weekly Statement Client VNĐ · 20/11/2026
+
+[Feature 44](44-vnd-credit-term-weekly-statement.md) mô tả điều khoản theo tuần, cảnh báo và chốt bù tự động.
+
 ## Audit kỹ thuật GĐ1 · 18/11/2026
 
 [Backlog GĐ1 cập nhật](43-gd1-completion-decision-backlog.md) ghi luồng nhập Net/Base cho Chuyên tuyến, kiểm chứng Actual Emergency qua Supplier khác và các điểm cần chốt.

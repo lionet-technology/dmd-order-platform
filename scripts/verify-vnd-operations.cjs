@@ -57,6 +57,21 @@ let n=0,checks=0;const eq=(a,b,m)=>{checks++;assert.deepEqual(a,b,m)},throws=(fn
  call('tax',{order_id:a.id,amount:'1.000009'});
  eq(ops.vndBalance(client.id).balance,'-30001.00001','Financial posting exceeds credit without Debt');
  eq(db.prepare('SELECT count(*) n FROM credit_debts WHERE client_id=?').get(client.id).n,0);
+ eq(ops.vndView(client.id,client).credit_term.overdue,true);
+ eq(ops.vndRequest(b.id).status,'AWAITING_FUNDS');
+ const overdueOrder=make();request(overdueOrder);
+ eq(ops.vndRequest(overdueOrder.id).status,'AWAITING_QUOTE','Credit Term does not block Purchase');
+ call('purchase_lock',{locked:true});
+ throws(()=>request(make()),/khóa/);
+ call('purchase_lock',{locked:false});
+ // Separately verify the Debt deadline under an open Credit Term without
+ // leaving fixture debt or affecting later cancellation and reserve assertions.
+ throws(()=>db.transaction(()=>{
+  call('credit_term',{weeks:2});
+  call('debt',{amount:'1',deadline:require('../src/lib/vnd-debt.ts').vndDay()});
+  db.prepare("UPDATE vnd_debts SET deadline='2026-01-01' WHERE client_id=?").run(client.id);
+  request(make());
+ }).immediate(),/Debt đã quá hạn/);
  const beforeCancel=JSON.stringify(ops.vndView(client.id,admin));
  db.exec("CREATE TRIGGER test_vnd_cancel_failure BEFORE INSERT ON vnd_history WHEN NEW.event='CANCELLED' BEGIN SELECT RAISE(ABORT,'TEST cancellation rollback'); END;");
  throws(()=>cancel.cancelOrder(a.id,admin,{reason:'TEST failure'}),/rollback/);

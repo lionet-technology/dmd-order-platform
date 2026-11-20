@@ -9,6 +9,7 @@ import { normalizeCountry } from "@/lib/epacket-pricing";
 import { OperationsWorkspace } from "./operations-workspace";
 import { ReconciliationWorkspace } from "./reconciliation-workspace";
 import { FinanceHub } from "./finance-hub";
+import { ClientCreditTermAlert } from './vnd-credit-term';
 import { AdminActionDashboard } from './admin-action-dashboard';
 import { ClientPurchasePanel } from "./client-purchase-panel";
 
@@ -1084,6 +1085,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
       </div>
 
       <div className="pageContent">
+        {role==="CLIENT"&&<ClientCreditTermAlert key={user.id} clientId={user.id}/>}
         {role==="ADMIN"&&section==="dashboard"&&<>
           <PageHeader eyebrow="OVERVIEW" title={"Chào, "+user.display_name} description="Theo dõi nhanh Orders, doanh thu và các mục cần xử lý."/>
           <section className={role==="ADMIN"?"metricGrid":"metricGrid salesMetricGrid"}>

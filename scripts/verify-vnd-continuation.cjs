@@ -108,7 +108,10 @@ try{
   call('consent',{order_id:mixedOrder.id,expected_revision:ops.vndRequest(mixedOrder.id).revision},client);
   const mixedCarton=db.prepare('SELECT id FROM order_cartons WHERE order_id=?').get(mixedOrder.id);
   tracking.addOrderTracking({orderId:mixedOrder.id,cartonId:mixedCarton.id,tracking:'TEST-UAT-MIXED-TRACKING',labelUrl:'https://labels.test/mixed.pdf',actorId:owner.id});
-  module.exports={claimOrder,mixedOrder,claimLotId:claimCarton.order_lot_id,client,owner,sales,bod,fin,replacement,dbPath:process.env.DMD_DB_PATH,tokens:Object.fromEntries(Object.entries({ADMIN:owner,SALES:sales,CLIENT:client,BOD:bod,FINANCE:fin}).map(([role,user])=>[role,auth.createSession(user.id).token]))};
+  const weeklyClient=auth.createUser({username:'test-weekly-ui',display_name:'TEST Weekly Statement',password:'TestPass123!',role:'CLIENT',sales_user_id:sales.id});
+  const weeklyToken=auth.createSession(weeklyClient.id).token;
+  ops.vndAction(owner,{action:'activate',client_id:weeklyClient.id,request_key:'test-weekly-ui-activate'});
+  module.exports={weeklyClient,weeklyToken,claimOrder,mixedOrder,claimLotId:claimCarton.order_lot_id,client,owner,sales,bod,fin,replacement,dbPath:process.env.DMD_DB_PATH,tokens:Object.fromEntries(Object.entries({ADMIN:owner,SALES:sales,CLIENT:client,BOD:bod,FINANCE:fin}).map(([role,user])=>[role,auth.createSession(user.id).token]))};
  }
  console.log('VND CONTINUATION PASS ('+checks+' assertions)');
 }finally{db.close();}

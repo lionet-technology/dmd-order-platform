@@ -32,17 +32,16 @@ try{
  const future=new Date(Date.parse(debt.vndDay()+'T00:00:00Z')+86400000).toISOString().slice(0,10);
  call('extend_debt',{deadline:future});eq(debt.vndDebt(client.id).deadline,future);
  bad(()=>ops.vndView(client.id,other),/quyền/);
- call('statement',{period_start:yesterday,period_end:yesterday});
- const first=statements.vndStatementHistory(client.id)[0];eq(first.snapshot.closing.balance,'0');
- call('statement',{period_start:debt.vndDay(),period_end:debt.vndDay()});
- const history=statements.vndStatementHistory(client.id),frozen=history[1].snapshot_json;
- eq(history[1].snapshot.closing.balance,ops.vndBalance(client.id).balance);
- eq(history[1].snapshot.closing.debt_principal,debt.vndDebt(client.id).principal);
- eq(history[1].snapshot.closing.debt_interest,debt.vndDebt(client.id).interest);
+ const nextWeek=new Date(Date.now()+7*86400000);
+ statements.closeVndWeeklyStatements(client.id,undefined,nextWeek);
+ const history=statements.vndStatementHistory(client.id),closed=history.at(-1),frozen=closed.snapshot_json;
+ eq(closed.snapshot.closing.balance,ops.vndBalance(client.id).balance);
+ eq(closed.snapshot.closing.debt_principal,debt.vndDebt(client.id).principal);
+ eq(closed.snapshot.closing.debt_interest,debt.vndDebt(client.id).interest);
  bad(()=>db.prepare("UPDATE vnd_statements SET snapshot_json='{}'").run(),/Immutable/);
- call('post',{kind:'ADJUSTMENT',delta:'-5.000001'});eq(statements.vndStatementHistory(client.id)[1].snapshot_json,frozen);
- bad(()=>call('statement',{period_start:debt.vndDay(),period_end:debt.vndDay()}),/nối tiếp/);
- bad(()=>call('statement',{period_start:future,period_end:future}),/kết thúc/);
+ call('post',{kind:'ADJUSTMENT',delta:'-5.000001'});eq(statements.vndStatementHistory(client.id).at(-1).snapshot_json,frozen);
+ bad(()=>call('statement',{period_start:debt.vndDay(),period_end:debt.vndDay()}),/thứ Hai/);
+ bad(()=>statements.makeVndStatement(client.id,future,future),/kết thúc/);
  // Payments settle remaining principal before increasing wallet, conserving total obligations.
  const remaining=String(debt.vndDebt(client.id).principal),balance=ops.vndBalance(client.id).balance;
  const pay={action:'post',client_id:client.id,kind:'PAYMENT',delta:money.addVnd(remaining,'50'),reason:'TEST',request_key:key()};

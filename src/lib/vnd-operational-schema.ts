@@ -25,6 +25,18 @@ export function installVndOperationalSchema(db:Database.Database) {
  CREATE TRIGGER IF NOT EXISTS vnd_no_legacy_ledger_update BEFORE UPDATE ON ledger_entries WHEN EXISTS(SELECT 1 FROM vnd_accounts WHERE client_id=NEW.client_user_id) BEGIN SELECT RAISE(ABORT,'Use VND financial posting'); END;
 
  `);
+ db.transaction(()=>{
+  const accountColumns=db.pragma('table_info(vnd_accounts)') as {name:string}[];
+  const debtEventColumns=db.pragma('table_info(vnd_debt_events)') as {name:string}[];
+  if(!accountColumns.some(c=>c.name==='credit_term_weeks'))db.exec('ALTER TABLE vnd_accounts ADD COLUMN credit_term_weeks INTEGER NOT NULL DEFAULT 0 CHECK(credit_term_weeks>=0)');
+  if(!debtEventColumns.some(c=>c.name==='payment_ledger_id'))db.exec('ALTER TABLE vnd_debt_events ADD COLUMN payment_ledger_id INTEGER REFERENCES vnd_ledger(id)');
+  if(!debtEventColumns.some(c=>c.name==='ledger_watermark'))db.exec('ALTER TABLE vnd_debt_events ADD COLUMN ledger_watermark INTEGER');
+ }).immediate();
+ db.exec(`
+ CREATE INDEX IF NOT EXISTS vnd_ledger_client_id ON vnd_ledger(client_id,id);
+ CREATE INDEX IF NOT EXISTS vnd_debt_events_client_id ON vnd_debt_events(client_id,id);
+ CREATE UNIQUE INDEX IF NOT EXISTS vnd_debt_payment_ledger ON vnd_debt_events(payment_ledger_id) WHERE payment_ledger_id IS NOT NULL;
+ `);
  db.exec(`CREATE TABLE IF NOT EXISTS vnd_claims(id INTEGER PRIMARY KEY,client_id INTEGER NOT NULL REFERENCES vnd_accounts(client_id),category TEXT NOT NULL,orders_json TEXT NOT NULL,evidence TEXT NOT NULL,note TEXT NOT NULL,actor_id INTEGER NOT NULL REFERENCES users(id),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
  CREATE TABLE IF NOT EXISTS vnd_refund_events(id INTEGER PRIMARY KEY,client_id INTEGER NOT NULL REFERENCES vnd_accounts(client_id),claim_id INTEGER REFERENCES vnd_claims(id),kind TEXT NOT NULL,delta TEXT NOT NULL,approved TEXT,revision INTEGER,category TEXT,context_json TEXT,bank_json TEXT,executed_day TEXT,reason TEXT NOT NULL,actor_id INTEGER NOT NULL REFERENCES users(id),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);`);
  for(const table of ['vnd_claims','vnd_refund_events'])for(const op of ['UPDATE','DELETE'])db.exec(`CREATE TRIGGER IF NOT EXISTS immutable_${table}_${op} BEFORE ${op} ON ${table} BEGIN SELECT RAISE(ABORT,'Immutable VND refund history'); END;`);

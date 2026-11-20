@@ -3,7 +3,7 @@ import {db} from './db';
 import {applyVndRefund,vndRefundView} from './vnd-refunds';
 import {vndEpacketDestination} from './vnd-routing';
 import {vndDebt,vndDebtProjection,accrueVndDebt,settleVndPayment,vndDebtAction} from './vnd-debt';
-import {finalizeVndStatement,vndCreditOverdue} from './vnd-statements';
+import {closeVndWeeklyStatements,vndCreditStatus} from './vnd-statements';
 import {duplicateVndOrder} from './vnd-duplicate';
 import {editVndShipping} from './vnd-shipping-edit';
 import {automaticVndOrderQuote,automaticSourceKind} from './service-v1-order-quote';
@@ -25,7 +25,7 @@ class VndEligibilityError extends Error {}
 /** Eligibility never uses a monetary failure to bypass an account/service/data hold. */
 function eligible(o:Row){
  const c=user(Number(o.client_user_id)),r=route(o);
- if(vndDebtProjection(Number(o.client_user_id)).overdue||vndCreditOverdue(Number(o.client_user_id),vndBalance(Number(o.client_user_id)).balance))throw new VndEligibilityError('Debt hoặc Balance theo Credit Term đã quá hạn.');
+ if(vndDebtProjection(Number(o.client_user_id)).overdue)throw new VndEligibilityError('Debt đã quá hạn.');
  if(!c?.active||c.purchase_locked)throw new VndEligibilityError('Client ngừng hoạt động hoặc bị khóa mua.');
  if(!r?.active||r.warehouse_hold||routeState(Number(r.id))!=='ACTIVE'||o.workflow_status==='HOLD'||['CANCELLED','CLOSED','DELIVERED'].includes(String(o.workflow_status)))throw new VndEligibilityError('Order / route không cho phép mua.');
  if(db.prepare("SELECT id FROM warehouse_order_holds WHERE order_id=? AND released_at IS NULL").get(o.id))throw new VndEligibilityError('Order đang Hold.');
@@ -46,7 +46,7 @@ export function vndBalance(clientId:number){
  return {currency:'VND',balance,ledger_balance,debt:vndDebtProjection(clientId),reserved,credit_limit:String(account.credit_limit),available:subtractVnd(addVnd(balance,String(account.credit_limit)),reserved)};
 }
 function append(clientId:number,orderId:number|null,kind:string,delta:string,reason:string,actorId:number,key:string){
- db.prepare('INSERT INTO vnd_ledger(client_id,order_id,kind,delta,reason,actor_id,request_key) VALUES (?,?,?,?,?,?,?)').run(clientId,orderId,kind,vnd(delta),reason,actorId,key);
+ return Number(db.prepare('INSERT INTO vnd_ledger(client_id,order_id,kind,delta,reason,actor_id,request_key) VALUES (?,?,?,?,?,?,?)').run(clientId,orderId,kind,vnd(delta),reason,actorId,key).lastInsertRowid);
 }
 export function refreshAutomatic(r:Row){
  const o=order(Number(r.order_id));
@@ -125,7 +125,7 @@ export function cancelVndMoney(orderId:number,percent:number,reason:string,actor
 export function vndView(clientId:number,actor:AuthUser){
  return db.transaction(()=>{
  vndAccess(actor,clientId);
- return {...vndBalance(clientId),refunds:vndRefundView(clientId,actor),replacements:db.prepare('SELECT source_order_id,replacement_order_id FROM vnd_replacements r JOIN orders o ON o.id=r.source_order_id WHERE o.client_user_id=?').all(clientId),requests:(db.prepare('SELECT * FROM vnd_purchase_requests WHERE client_id=? ORDER BY id').all(clientId) as Row[]).map(r=>({...r,pricing_error:(db.prepare('SELECT pricing_error FROM vnd_auto_quotes WHERE order_id=?').get(r.order_id) as Row|undefined)?.pricing_error??null,cartons:db.prepare('SELECT id,carton_number FROM order_cartons WHERE order_id=? ORDER BY carton_number').all(r.order_id)})),
+ return {...vndBalance(clientId),credit_term:vndCreditStatus(clientId),purchase_locked:Boolean(user(clientId)?.purchase_locked),refunds:vndRefundView(clientId,actor),replacements:db.prepare('SELECT source_order_id,replacement_order_id FROM vnd_replacements r JOIN orders o ON o.id=r.source_order_id WHERE o.client_user_id=?').all(clientId),requests:(db.prepare('SELECT * FROM vnd_purchase_requests WHERE client_id=? ORDER BY id').all(clientId) as Row[]).map(r=>({...r,pricing_error:(db.prepare('SELECT pricing_error FROM vnd_auto_quotes WHERE order_id=?').get(r.order_id) as Row|undefined)?.pricing_error??null,cartons:db.prepare('SELECT id,carton_number FROM order_cartons WHERE order_id=? ORDER BY carton_number').all(r.order_id)})),
  ledger:db.prepare('SELECT * FROM vnd_ledger WHERE client_id=? ORDER BY id DESC LIMIT 200').all(clientId),
  history:(db.prepare('SELECT * FROM vnd_history WHERE client_id=? ORDER BY id DESC LIMIT 200').all(clientId) as Row[]).map(h=>['CLIENT','SALES'].includes(actor.role)?{id:h.id,client_id:h.client_id,order_id:h.order_id,event:h.event,actor_id:h.actor_id,created_at:h.created_at}:h)};
  }).deferred();
@@ -155,7 +155,18 @@ export function vndAction(actor:AuthUser,input:Row){
    applyVndRefund(actor,clientId,input,key,reason);
   }else if(action==='statement'){
    if(!finance||!reason)throw Error('Chốt Statement cần Finance/Admin/BOD và lý do.');
-   finalizeVndStatement(clientId,input,actor.id);
+   if(input.period_start!==undefined||input.period_end!==undefined)throw Error('Hệ thống tự chọn các kỳ thứ Hai–Chủ nhật đã kết thúc.');
+   closeVndWeeklyStatements(clientId,{actorId:actor.id,reason});
+  }else if(action==='credit_term'){
+   if(actor.role!=='ADMIN'||!reason)throw Error('Đổi Credit Term cần Admin và lý do.');
+   const weeks=input.weeks;
+   if(typeof weeks!=='number'||!Number.isSafeInteger(weeks)||weeks<0)throw Error('Credit Term phải là số tuần nguyên không âm.');
+   const {credit_term_weeks:before}=db.prepare('SELECT credit_term_weeks FROM vnd_accounts WHERE client_id=?').get(clientId) as {credit_term_weeks:number};
+   db.prepare('UPDATE vnd_accounts SET credit_term_weeks=? WHERE client_id=?').run(weeks,clientId);
+   history(clientId,null,'CREDIT_TERM_CHANGED',{before,weeks,reason},actor.id);
+  }else if(action==='purchase_lock'){
+   if(actor.role!=='ADMIN'||!reason||typeof input.locked!=='boolean')throw Error('Khóa/mở mua thủ công cần Admin, trạng thái và lý do.');
+   db.prepare('UPDATE users SET purchase_locked=?,purchase_lock_reason=? WHERE id=?').run(input.locked?1:0,reason,clientId);
   }else if(['debt','debt_rate','extend_debt'].includes(action)){
    if(!admin||!reason)throw Error('Debt cần Admin/BOD và lý do.');
    vndDebtAction(clientId,action,input,vndBalance(clientId).balance,actor.id,reason);
@@ -219,7 +230,7 @@ export function vndAction(actor:AuthUser,input:Row){
   }else if(action==='post'||action==='credit_limit'){
    if(!finance||!reason)throw Error('Cần quyền Finance và lý do.');
    if(action==='credit_limit')db.prepare('UPDATE vnd_accounts SET credit_limit=? WHERE client_id=?').run(nonnegative(input.amount),clientId);
-   else {const kind=String(input.kind);if(!['PAYMENT','ADJUSTMENT'].includes(kind))throw Error('Loại posting không hợp lệ.');const delta=vnd(String(input.delta));if(kind==='PAYMENT'&&compareVnd(delta,'0')<=0)throw Error('Payment phải dương.');append(clientId,null,kind,delta,reason,actor.id,key);if(kind==='PAYMENT')settleVndPayment(clientId,delta,actor.id,reason);}
+   else {const kind=String(input.kind);if(!['PAYMENT','ADJUSTMENT'].includes(kind))throw Error('Loại posting không hợp lệ.');const delta=vnd(String(input.delta));if(kind==='PAYMENT'&&compareVnd(delta,'0')<=0)throw Error('Payment phải dương.');const ledgerId=append(clientId,null,kind,delta,reason,actor.id,key);if(kind==='PAYMENT')settleVndPayment(clientId,delta,actor.id,reason,ledgerId);}
   }else{
    const id=Number(input.order_id),o=order(id);if(Number(o.client_user_id)!==clientId)throw Error('Order không thuộc Client.');
    const before=vndRequest(id);
