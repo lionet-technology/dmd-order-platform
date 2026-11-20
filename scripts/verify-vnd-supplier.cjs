@@ -52,7 +52,7 @@ try{
  bad(()=>call('payment',{amount:'1',reference:'TEST fail',executed_day:vndDay(),request_key:'TEST-SUPPLIER-FAIL'}),/rollback/);
  eq(JSON.stringify(view()),before);
  eq(ops.vndBalance(client.id),balance);eq(JSON.stringify(db.prepare('SELECT * FROM orders').all()),orders);
- const {startEmergencyHold}=require('../src/lib/emergency-hold.ts');
+ const {startEmergencyHold,undoEmergencyHold}=require('../src/lib/emergency-hold.ts');
  const {emergencySwitchOrder}=require('../src/lib/emergency-switch.ts');
  const alternate='TEST VNĐ Supplier';
  db.prepare("INSERT INTO enum_values(enum_type,value,active) VALUES ('SUPPLIER',?,1)").run(alternate);
@@ -60,6 +60,8 @@ try{
  const to=Number(db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier,active,max_cartons_per_order) VALUES ('ePacket','Standard',?,1,1)").run(alternate).lastInsertRowid);
  const voids=require('../src/lib/supplier-cancellation.ts');
  const feeId=voids.submitSupplierVoid(admin,{action:'configure_void',route_id:from,fee_vnd:'150.25',evidence_required:'TEST carrier email'}).id;
+ call('submit',{lot_id:lot.id,amount:'5',reference:'TEST pending before departure'});
+ const pendingBeforeDeparture=view().costs[0];
  const supplierEntriesBefore=view().entries;
  const hold=startEmergencyHold(admin,from,'TEST reroute');
  bad(()=>emergencySwitchOrder(admin,hold.id,o.id,to,[],'31.000001',true),/Order VNĐ/);
@@ -73,7 +75,15 @@ try{
  eq(departing.tracking_label.policy.fee_vnd,'150.25');
  voids.submitSupplierVoid(fin,{action:'update_void',case_id:departing.id,status:'CONFIRMED',note:'TEST carrier confirmed fee',expected_event_id:departing.history.at(-1).id,request_key:'TEST-VOID-RECEIPT'});
  eq(view().entries,supplierEntriesBefore,'Void confirmation preserves payables and existing journal entries');
+ bad(()=>call('approve',{cost_id:pendingBeforeDeparture.id,expected_approved_cost_id:pendingBeforeDeparture.approved_cost_id}),/fulfillment/);
+ eq(view().entries,supplierEntriesBefore,'Pending direct approval cannot bypass fulfillment review');
  eq(ops.vndBalance(client.id),balance,'Void confirmation preserves Client Balance');
+ call('import',{items:[{tracking:'VND-EMERGENCY-001',amount:'2',reference:'TEST late prior fulfillment'}]});
+ const historical=view().import_rows[0];
+ eq(historical.errors.includes('FULFILLMENT_REVIEW_REQUIRED'),true);
+ eq(historical.lot_id,null);
+ bad(()=>call('review_import',{decision:'accept',items:[{id:historical.id,token:historical.token,lot_id:lot.id,expected_approved_cost_id:0}]}),/fulfillment/);
+ eq(view().entries,supplierEntriesBefore);
  call('submit',{supplier:alternate,lot_id:lot.id,amount:'18.001',reference:'TEST new supplier'});
  const newView=()=>supplier.vndSupplierView(fin,alternate);
  call('approve',{supplier:alternate,cost_id:newView().costs[0].id,expected_approved_cost_id:0});
@@ -90,6 +100,20 @@ try{
  supplier.vndSupplierAction(fin,accept);supplier.vndSupplierAction(fin,accept);
  eq(newView().entries.map(e=>e.delta),['18.001','1.001']);
  eq(report().actual_net,'19.002');
+ undoEmergencyHold(admin,from,hold.id);
+ const returnHold=startEmergencyHold(admin,to,'TEST return to first supplier');
+ emergencySwitchOrder(admin,returnHold.id,o.id,from,[],undefined,true);
+ call('import',{items:[{lot_id:lot.id,amount:'7',reference:'TEST same supplier returned'}]});
+ const returned=view().import_rows[0];
+ eq(returned.errors.includes('FULFILLMENT_REVIEW_REQUIRED'),true);
+ bad(()=>call('review_import',{decision:'accept',items:[{id:returned.id,token:returned.token,expected_approved_cost_id:0}]}),/fulfillment/);
+ const costsBeforeDirect=view().costs;
+ call('submit',{lot_id:lot.id,amount:'7',reference:'TEST direct submit after return'});
+ eq(view().import_rows[0].errors.includes('FULFILLMENT_REVIEW_REQUIRED'),true);
+ eq(view().costs,costsBeforeDirect);
+ eq(view().entries,supplierEntriesBefore);
+ eq(newView().entries.map(e=>e.delta),['18.001','1.001']);
+
  eq(view().payable,'-9.000002');
  eq(ops.vndBalance(client.id),balance);
  bad(()=>db.prepare("UPDATE vnd_supplier_ledger SET delta='0'").run(),/Immutable/);

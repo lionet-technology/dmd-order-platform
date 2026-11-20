@@ -14,7 +14,7 @@ suites.push("verify-purchase-consent","verify-shared-funds-race");
 suites.push("verify-service-v1-config","verify-service-v1-pricing","verify-supplier-cost-review","verify-ups-v1-core","verify-ups-v1-accounts","verify-service-v1-quotes");
 suites.push("verify-service-v1-fx","verify-supplier-cancellation","verify-atomic-reserve","verify-vnd-money");
 suites.push("verify-vnd-operations","verify-final-source","verify-vnd-auto","verify-vnd-continuation","verify-vnd-financial-cutover");
-suites.push("verify-vnd-commission","verify-vnd-refunds","verify-vnd-supplier","verify-vnd-supplier-claims","verify-production-db-identity","verify-vnd-supplier-import","verify-vnd-charge-import");
+suites.push("verify-vnd-commission","verify-vnd-refunds","verify-vnd-supplier","verify-vnd-supplier-addons","verify-vnd-supplier-claims","verify-production-db-identity","verify-vnd-supplier-import","verify-vnd-charge-import");
 suites.push("verify-vnd-period-close","verify-vnd-exceptions","verify-vnd-weekly-statement","verify-vnd-monthly-commission");
 const env={...process.env,NODE_ENV:"test"};
 // Every suite must select its own disposable DB; never inherit a DB selected by an operator.

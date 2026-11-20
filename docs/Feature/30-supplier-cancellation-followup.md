@@ -67,3 +67,7 @@ Snapshot giữ Service/Sub-Service, Route, Lot, Tracking/Label đang hiệu lự
 Hồ sơ void và xác nhận chỉ là dữ liệu đối soát nội bộ. Ghi nhận tiền tiếp tục qua Reconciliation/Claim. Chuyển tuyến giữ nguyên giao dịch Client; nếu đổi Tracking/Label, Client chỉ thấy thông báo cập nhật Tracking/Label. Route-only giữ thông tin Incident nội bộ. Các lần A → B → A hoặc cùng Supplier có hồ sơ tuyến rời đi riêng, nhưng định danh fulfillment attempt cho chứng từ và Actual/payable chưa được triển khai. Không áp dụng pilot đối soát chứng từ Emergency đến muộn dựa trên các hồ sơ này.
 
 [Bằng chứng TEST Phase 4](../../artifacts/gd1-phase4-2026-11-20/VERIFICATION.md).
+
+## Chứng từ Supplier cần đối soát lượt fulfillment
+
+Chứng từ VNĐ của Supplier đã rời tuyến và chứng từ gắn với Lot có Tracking bị thay được đánh dấu cần đối soát lượt fulfillment. Hàng đợi giữ dòng nguồn. Accept và phê duyệt Actual trực tiếp chờ đến khi xác định đúng lượt. Bút toán đã ghi giữ nguyên. Định danh lượt và ghi Actual lịch sử vẫn mở.

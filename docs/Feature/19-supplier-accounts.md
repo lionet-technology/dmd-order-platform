@@ -78,3 +78,13 @@ Regression: `scripts/verify-supplier-account.cjs` (synthetic temp DB), included 
 [Previous MVP checks, evidence and limits](VERIFICATION-SUPPLIER-ACCOUNTS-2026-10-24.md): 35 domain suites, Supplier Account 70 assertions, typecheck/lint/build and desktop/mobile browser checks PASS.
 
 Current continuation: [25/10 verification, data-safety incident and remaining exceptions](VERIFICATION-SUPPLIER-CONTINUATION-2026-10-25.md). Prior [Supplier Refund Receivable verification](VERIFICATION-SUPPLIER-RECEIVABLES-2026-10-24.md).
+
+## Supplier Add-on VNĐ thủ công
+
+Admin, Finance và BOD có thể tạo khoản BUY hoặc SELL với tên Supplier nhập tự do, nội dung, số VNĐ và tham chiếu chứng từ. BUY ghi nghĩa vụ trả. SELL ngoài Client Balance ghi nghĩa vụ thu. Mỗi khoản thu hoặc trả thực tế có số tiền, ngày thực hiện và tham chiếu riêng, được ghi từng phần đến đủ nghĩa vụ. Màn hình tổng hợp theo tháng giao dịch tiền và Supplier. Sales và Client không truy cập sổ Supplier.
+
+SELL gắn tài khoản Client VNĐ ghi toàn bộ phí một lần vào Client Balance bằng bút toán ADDON_REVENUE. Khoản phí là nghĩa vụ đã phát sinh và có thể vượt hạn mức. Các lần Client trả qua luồng nạp tiền hiện tại theo quyết định Owner ngày 20/11/2026. Sổ Supplier Add-on không nhận settlement riêng cho khoản này. Giao dịch Client ghi nhận trên sổ Client. Bảng dòng tiền Add-on thể hiện riêng các khoản thực thu hoặc trả được nhập vào Add-on.
+
+Các bút toán mới lưu cùng giao dịch với chứng từ và khóa gửi lại. Cùng Supplier, hướng và tham chiếu chứng từ chỉ tạo một nghĩa vụ. Cùng Supplier và tham chiếu thanh toán chỉ ghi một lần. Lịch sử chỉ ghi thêm. Add-on BUY/SELL ngoài Client Balance được tổng hợp tại sổ Add-on. Luồng này không phát sinh bút toán trong Supplier Actual/payable hoặc bảng Client Add-on cũ.
+
+API nội bộ ở `/api/service-v1/supplier-addons`, với màn hình trong công cụ VNĐ và kiểm thử ở [verify-vnd-supplier-addons.cjs](../../scripts/verify-vnd-supplier-addons.cjs).

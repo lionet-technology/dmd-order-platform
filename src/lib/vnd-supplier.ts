@@ -1,6 +1,6 @@
 import {db} from './db';
 import {supplierPeriodView,closeSupplierPeriod,supplierPostingCursor,linkSupplierPostings} from './vnd-supplier-periods';
-import {supplierImportView,applySupplierImport} from './vnd-supplier-import';
+import {supplierImportView,applySupplierImport,needsFulfillmentReview,unresolvedFulfillment} from './vnd-supplier-import';
 import {applySupplierClaim,supplierClaimView} from './vnd-supplier-claims';
 import {saveSupplierTemplate,supplierTemplates} from './vnd-supplier-templates';
 import type {AuthUser} from './auth';
@@ -51,6 +51,10 @@ export function vndSupplierAction(actor:AuthUser,input:Row){
   applySupplierImport(actor,supplier,input,reason);
  }else if(action.startsWith('claim_')){
   applySupplierClaim(actor,supplier,input,reason);
+ }else if(action==='submit'&&unresolvedFulfillment(input,supplier)){
+  const identity=input.tracking?{tracking:input.tracking}:{lot_id:input.lot_id};
+  if(input.tracking&&input.lot_id!==undefined)throw Error('Chọn Tracking hoặc Lot, không đồng thời.');
+  applySupplierImport(actor,supplier,{...input,action:'import',items:[{...identity,amount:input.amount,reference:input.reference}]},reason);
  }else if(action==='submit'){
   let lotId=Number(input.lot_id);
   if(input.tracking){
@@ -67,6 +71,8 @@ export function vndSupplierAction(actor:AuthUser,input:Row){
   if(action==='keep_old'&&!['ADMIN','FINANCE'].includes(actor.role))throw Error('Xử lý trùng cần Admin/Finance.');
   const cost=db.prepare('SELECT * FROM vnd_supplier_costs WHERE id=? AND supplier=?').get(Number(input.cost_id),supplier) as Row|undefined;
   if(!cost)throw Error('Không có chứng từ.');
+  if(action==='approve'&&needsFulfillmentReview(Number(cost.lot_id),supplier))
+   throw Error('Cần đối soát đúng lượt fulfillment trước khi ghi Actual/payable.');
   const old=approvedVndLot(Number(cost.lot_id),supplier);
   if(input.expected_approved_cost_id!==Number(old?.id??0))throw Error('Actual đã thay đổi; tải lại.');
   if(db.prepare('SELECT id FROM vnd_supplier_reviews WHERE cost_id=?').get(cost.id))throw Error('Chứng từ đã xử lý.');

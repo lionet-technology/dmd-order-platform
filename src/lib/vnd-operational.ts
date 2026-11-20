@@ -130,6 +130,13 @@ export function vndView(clientId:number,actor:AuthUser){
  history:(db.prepare('SELECT * FROM vnd_history WHERE client_id=? ORDER BY id DESC LIMIT 200').all(clientId) as Row[]).map(h=>['CLIENT','SALES'].includes(actor.role)?{id:h.id,client_id:h.client_id,order_id:h.order_id,event:h.event,actor_id:h.actor_id,created_at:h.created_at}:h)};
  }).deferred();
 }
+// Called by the Supplier Add-on command inside its transaction.
+export function postSupplierAddonClientCharge(actor:AuthUser,clientId:number,addonId:number,amount:string){
+ vndAccess(actor,clientId);
+ if(!db.inTransaction||!isVndClient(clientId)||!['ADMIN','FINANCE','BOD'].includes(actor.role))throw Error('Cần tài khoản Client VNĐ và quyền ghi Add-on.');
+ return append(clientId,null,'ADDON_REVENUE',subtractVnd('0',amount),'Phí Add-on [Supplier Add-on '+addonId+']',actor.id,'vnd-supplier-addon:'+addonId);
+}
+
 export function vndAction(actor:AuthUser,input:Row){
  return db.transaction(()=>{
  const clientId=Number(input.client_id),action=String(input.action),key=String(input.request_key||''),reason=String(input.reason||'').trim();

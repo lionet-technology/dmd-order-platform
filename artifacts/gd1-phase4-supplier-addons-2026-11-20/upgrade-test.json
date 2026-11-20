@@ -1,0 +1,32 @@
+{
+  "status": "PASS",
+  "fixture": "pre-Add-on synthetic restored database",
+  "preserved": [
+    {
+      "name": "vnd_supplier_costs",
+      "rows": 3
+    },
+    {
+      "name": "vnd_supplier_ledger",
+      "rows": 4
+    },
+    {
+      "name": "vnd_supplier_periods",
+      "rows": 2
+    },
+    {
+      "name": "vnd_ledger",
+      "rows": 0
+    },
+    {
+      "name": "vnd_accounts",
+      "rows": 1
+    }
+  ],
+  "newEmptyTables": [
+    "vnd_supplier_addons",
+    "vnd_supplier_addon_settlements"
+  ],
+  "integrity": "ok",
+  "foreignKeyViolations": 0
+}

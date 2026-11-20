@@ -118,6 +118,18 @@ let checks=0,n=0;const eq=(a,b)=>{checks++;assert.deepEqual(a,b)},bad=(f,re)=>{c
  eq(supplier.approvedVndLot(c.lot.id).amount,'40');
  eq(view().payable,require('../src/lib/vnd-money.ts').addVnd(beforeCorrection,'5.999997'));
  eq(view().periods[0].snapshot_json,frozen);eq(view().late_adjustments.length,1);
+ db.prepare("UPDATE order_trackings SET status='REPLACED' WHERE tracking='000123' AND order_id=?").run(c.o.id);
+ const replacement=await grid([['000123','LATE-01',1,'VND',25,10,2,3]]);
+ const beforeReplacement=view();
+ upload('REPLACED-TRACKING-INV',v2.id,replacement);
+ upload('REPLACED-TRACKING-INV',v2.id,replacement);
+ const replaced=find('REPLACED-TRACKING-INV','LATE-01');
+ eq(view().import_rows.filter(r=>r.data.source?.document==='REPLACED-TRACKING-INV').length,1);
+ eq(replaced.errors,['FULFILLMENT_REVIEW_REQUIRED']);
+ bad(()=>review('accept',replaced),/fulfillment/);
+ eq(view().entries,beforeReplacement.entries);
+ eq(view().periods[0].snapshot_json,frozen);
+ eq(view().late_adjustments,beforeReplacement.late_adjustments);
  bad(()=>db.prepare('DELETE FROM vnd_supplier_import_rows').run(),/Immutable/);bad(()=>db.prepare("UPDATE vnd_supplier_import_decisions SET reason='x'").run(),/Immutable/);
  eq(ops.vndBalance(client.id),balance);eq(JSON.stringify(db.prepare('SELECT * FROM vnd_ledger').all()),journal);eq(db.pragma('integrity_check',{simple:true}),'ok');
  console.log('VND SUPPLIER IMPORT PASS ('+checks+' assertions)');

@@ -20,6 +20,34 @@ function estimate(lot:Row){
  const count=(db.prepare('SELECT count(*) n FROM order_lots WHERE order_id=?').get(lot.order_id) as {n:number}).n;
  return count===1&&typeof q.net_vnd==='string'?q.net_vnd:null;
 }
+// The legacy Actual key (Lot, Supplier) cannot distinguish a departed
+// fulfillment from a later return to the same Supplier.
+export function needsFulfillmentReview(lotId: number, supplier: string) {
+ return Boolean(db.prepare(`
+  SELECT 1 FROM order_lots l WHERE l.id=? AND (
+   EXISTS (
+    SELECT 1 FROM emergency_hold_orders h
+    WHERE h.order_id=l.order_id AND h.resolved_at IS NOT NULL
+     AND json_extract(h.snapshot_json,'$.supplier')=? COLLATE NOCASE
+   ) OR EXISTS (
+    SELECT 1 FROM order_trackings t WHERE t.order_id=l.order_id
+     AND t.lot_number=l.lot_number AND t.status='REPLACED'
+   )
+  )
+ `).get(lotId,supplier));
+}
+
+export function unresolvedFulfillment(data: Row, supplier: string) {
+ const lots = db.prepare(`
+  SELECT l.id FROM order_lots l JOIN orders o ON o.id=l.order_id
+  WHERE l.id=? OR o.order_id=? OR EXISTS (
+   SELECT 1 FROM order_trackings t WHERE t.order_id=l.order_id
+    AND t.lot_number=l.lot_number AND t.tracking=?
+  )
+ `).all(data.lot_id ?? null,data.order_code || null,data.tracking || null) as {id:number}[];
+ return lots.some(lot=>needsFulfillmentReview(lot.id,supplier));
+}
+
 function eligible(lotId:number,supplier:string){
  return db.prepare("SELECT l.*,o.order_id order_code,o.service,o.sub_service FROM order_lots l JOIN orders o ON o.id=l.order_id JOIN vnd_purchase_requests p ON p.order_id=o.id WHERE l.id=? AND o.supplier=? AND p.status IN ('CHARGED','CANCELLED')").get(lotId,supplier) as Row|undefined;
 }
@@ -37,9 +65,10 @@ export function supplierImportState(row:Row){
  const data=JSON.parse(String(row.data_json)) as Row;
  const source=data.source as Row|undefined;
  const parseErrors=(data.parse_errors??[]) as string[];
- const ids=parseErrors.length?[]:matching(data,String(row.supplier)).filter(id=>matchesRoute(eligible(id,String(row.supplier)),source));
+ const needsReview=parseErrors.length===0&&unresolvedFulfillment(data,String(row.supplier));
+ const ids=parseErrors.length||needsReview?[]:matching(data,String(row.supplier)).filter(id=>matchesRoute(eligible(id,String(row.supplier)),source));
  const lot=ids.length===1?eligible(ids[0],String(row.supplier)):undefined,old=lot?approvedVndLot(Number(lot.id),String(row.supplier)):undefined;
- const errors=[...parseErrors];if(!ids.length&&!parseErrors.length)errors.push('ORDER_NOT_MATCHED');if(ids.length>1)errors.push('AMBIGUOUS_MATCH');
+ const errors=[...parseErrors];if(needsReview)errors.push('FULFILLMENT_REVIEW_REQUIRED');else if(!ids.length&&!parseErrors.length)errors.push('ORDER_NOT_MATCHED');if(ids.length>1)errors.push('AMBIGUOUS_MATCH');
  let net:string|null=null,weight:string|null=null;
  if(lot){
   net=estimate(lot);
@@ -118,6 +147,8 @@ export function applySupplierImport(actor:AuthUser,supplier:string,input:Row,rea
   if(input.decision==='accept'){
    lotId=item.lot_id===undefined?Number(state.lot_id):Number(item.lot_id);
    if(Array.isArray(state.data.parse_errors)&&state.data.parse_errors.length)throw Error('Dòng lỗi Excel cần sửa hoặc map lại trước khi Accept.');
+   if(state.errors.includes('FULFILLMENT_REVIEW_REQUIRED')||needsFulfillmentReview(lotId,supplier))
+    throw Error('Cần đối soát đúng lượt fulfillment trước khi ghi Actual/payable.');
    const lot=eligible(lotId,supplier);
    if(!lot||!matchesRoute(lot,state.data.source as Row|undefined))throw Error('Cần chọn Lot VNĐ đã charge đúng Supplier và tuyến của template.');
    if(lots.has(lotId))throw Error('Một batch chỉ accept một dòng mỗi Lot; review lần lượt để tránh đếm trùng.');lots.add(lotId);

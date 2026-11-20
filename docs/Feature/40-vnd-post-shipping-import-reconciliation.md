@@ -51,3 +51,7 @@ Not delivered: Supplier tax/pass-through accounting import (do not disguise tax 
 - Import hoặc bỏ qua chưa ghi Actual/payable. Finance/BOD Accept ghi Actual, delta payable và quyết định một lần trong cùng transaction. Điều chỉnh nhập sau khóa kỳ dùng ngày ghi sổ hiện tại và nối kỳ gốc theo cơ chế Supplier period. Luồng Excel chuẩn cũ tiếp tục khả dụng.
 
 Admin, Finance và BOD dùng cùng màn hình cấu hình/nhập. Chỉ Finance/BOD Accept được. API Supplier hiện có nhận `save_import_template`, Excel multipart theo `template_id` và `review_import`. [Mapping và lịch sử](../../src/lib/vnd-supplier-templates.ts) · [Hồi quy Excel](../../scripts/verify-vnd-supplier-import.cjs) · [Kiểm chứng trên TEST](../../artifacts/gd1-supplier-template-2026-11-20/VERIFICATION.md).
+
+## Chứng từ Supplier cần đối soát lượt fulfillment
+
+Queue hiển thị `FULFILLMENT_REVIEW_REQUIRED` khi dòng trỏ tới Lot có Tracking bị thay hoặc có lượt Emergency đã rời tuyến thuộc Supplier trên chứng từ. Ghép Lot thủ công vẫn áp dụng chốt kiểm tra này. Finance/BOD có thể xem dòng chứng từ và quyết định bỏ qua. Ghi Actual theo lượt lịch sử vẫn mở.
