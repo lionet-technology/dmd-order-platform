@@ -1,3 +1,4 @@
+import {captureTrackingFulfillment,recordTrackingFulfillment} from '@/lib/vnd-fulfillment';
 import {vndRequest} from "@/lib/vnd-operational";
 import {hasPartialLabelOverride,labelFingerprint} from "@/lib/partial-label";
 import {withFinancialPrivacy} from "@/lib/financial-privacy";
@@ -54,7 +55,9 @@ async function handlePOST(req:NextRequest,{params}:{params:Promise<{id:string}>}
     }else{
       const supplier=body.supplier?canonicalEnumValue("SUPPLIER",String(body.supplier)):String(access.order?.supplier||"");
       const expectedLotCount=Math.max(1,Math.trunc(Number(body.expected_lot_count||access.order?.expected_lot_count||1)));
+      const priorFulfillment=captureTrackingFulfillment(id);
       db.prepare("UPDATE orders SET supplier=?,internal_note=?,expected_lot_count=?,updated_by_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(supplier||null,String(body.internal_note||""),expectedLotCount,auth.user.id,id);
+      recordTrackingFulfillment(id,priorFulfillment,auth.user.id);
       ensureOrderShipmentStructure(id);
       const cartons=db.prepare("SELECT id FROM order_cartons WHERE order_id=? ORDER BY carton_number").all(id) as Array<{id:number}>;
       const trackingRows=Array.isArray(body.trackings)?body.trackings:[];

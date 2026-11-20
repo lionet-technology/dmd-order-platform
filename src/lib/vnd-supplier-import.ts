@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import {db} from './db';
-import {approvedVndLot} from './vnd-supplier';
+import {approvedFulfillment,hasPostedSupplierReference,lotFulfillments,resolveFulfillment} from './vnd-fulfillment';
 import {installSupplierTemplateSchema,mappedSupplierRows} from './vnd-supplier-templates';
 import type {AuthUser} from './auth';
 import {vnd,compareVnd,addVnd,subtractVnd,sumVnd} from './vnd-money';
@@ -20,44 +20,6 @@ function estimate(lot:Row){
  const count=(db.prepare('SELECT count(*) n FROM order_lots WHERE order_id=?').get(lot.order_id) as {n:number}).n;
  return count===1&&typeof q.net_vnd==='string'?q.net_vnd:null;
 }
-// The legacy Actual key (Lot, Supplier) cannot distinguish a departed
-// fulfillment from a later return to the same Supplier.
-export function needsFulfillmentReview(lotId: number, supplier: string) {
- return Boolean(db.prepare(`
-  SELECT 1 FROM order_lots l WHERE l.id=? AND (
-   EXISTS (
-    SELECT 1 FROM emergency_hold_orders h
-    WHERE h.order_id=l.order_id AND h.resolved_at IS NOT NULL
-     AND json_extract(h.snapshot_json,'$.supplier')=? COLLATE NOCASE
-   ) OR EXISTS (
-    SELECT 1 FROM order_trackings t WHERE t.order_id=l.order_id
-     AND t.lot_number=l.lot_number AND t.status='REPLACED'
-   )
-  )
- `).get(lotId,supplier));
-}
-
-export function unresolvedFulfillment(data: Row, supplier: string) {
- const lots = db.prepare(`
-  SELECT l.id FROM order_lots l JOIN orders o ON o.id=l.order_id
-  WHERE l.id=? OR o.order_id=? OR EXISTS (
-   SELECT 1 FROM order_trackings t WHERE t.order_id=l.order_id
-    AND t.lot_number=l.lot_number AND t.tracking=?
-  )
- `).all(data.lot_id ?? null,data.order_code || null,data.tracking || null) as {id:number}[];
- return lots.some(lot=>needsFulfillmentReview(lot.id,supplier));
-}
-
-function eligible(lotId:number,supplier:string){
- return db.prepare("SELECT l.*,o.order_id order_code,o.service,o.sub_service FROM order_lots l JOIN orders o ON o.id=l.order_id JOIN vnd_purchase_requests p ON p.order_id=o.id WHERE l.id=? AND o.supplier=? AND p.status IN ('CHARGED','CANCELLED')").get(lotId,supplier) as Row|undefined;
-}
-function matching(data:Row,supplier:string){
- if(data.lot_id)return eligible(Number(data.lot_id),supplier)?[Number(data.lot_id)]:[];
- const rows=data.tracking
- ?db.prepare("SELECT DISTINCT l.id FROM order_trackings t JOIN order_lots l ON l.order_id=t.order_id AND l.lot_number=t.lot_number JOIN orders o ON o.id=l.order_id JOIN vnd_purchase_requests p ON p.order_id=o.id WHERE t.tracking=? AND o.supplier=? AND p.status IN ('CHARGED','CANCELLED')").all(data.tracking,supplier)
- :db.prepare("SELECT l.id FROM order_lots l JOIN orders o ON o.id=l.order_id JOIN vnd_purchase_requests p ON p.order_id=o.id WHERE o.order_id=? AND o.supplier=? AND p.status IN ('CHARGED','CANCELLED')").all(data.order_code,supplier);
- return (rows as {id:number}[]).map(r=>r.id);
-}
 function matchesRoute(lot:Row|undefined,source:Row|undefined){
  return !source||(lot?.service===source.service&&lot?.sub_service===source.sub_service);
 }
@@ -65,10 +27,15 @@ export function supplierImportState(row:Row){
  const data=JSON.parse(String(row.data_json)) as Row;
  const source=data.source as Row|undefined;
  const parseErrors=(data.parse_errors??[]) as string[];
- const needsReview=parseErrors.length===0&&unresolvedFulfillment(data,String(row.supplier));
- const ids=parseErrors.length||needsReview?[]:matching(data,String(row.supplier)).filter(id=>matchesRoute(eligible(id,String(row.supplier)),source));
- const lot=ids.length===1?eligible(ids[0],String(row.supplier)):undefined,old=lot?approvedVndLot(Number(lot.id),String(row.supplier)):undefined;
- const errors=[...parseErrors];if(needsReview)errors.push('FULFILLMENT_REVIEW_REQUIRED');else if(!ids.length&&!parseErrors.length)errors.push('ORDER_NOT_MATCHED');if(ids.length>1)errors.push('AMBIGUOUS_MATCH');
+ const supplier=String(row.supplier);
+ const resolution=parseErrors.length?undefined:resolveFulfillment(data,supplier,source);
+ const attempt=resolution?.attempt;
+ const actual=attempt?approvedFulfillment(attempt.lot_id,supplier,attempt.id):undefined;
+ const lot=attempt?lotFulfillments(attempt.lot_id)?.lot:undefined,old=actual?.approved;
+ const errors=[...parseErrors];
+ if(resolution?.requiresReview||actual?.uncertain)errors.push('FULFILLMENT_REVIEW_REQUIRED');
+ else if(resolution&&!resolution.ids.length)errors.push('ORDER_NOT_MATCHED');
+ if(resolution&&resolution.ids.length>1)errors.push('AMBIGUOUS_MATCH');
  let net:string|null=null,weight:string|null=null;
  if(lot){
   net=estimate(lot);
@@ -84,14 +51,15 @@ export function supplierImportState(row:Row){
   if(data.supplier_weight&&(!weight||compareVnd(String(data.supplier_weight),weight)>0))errors.push(weight?'WEIGHT_ABOVE_DMD':'MISSING_DMD_WEIGHT');
   if(data.kind==='SUPPLEMENT'&&!old)errors.push('MISSING_APPROVED_BASE');
   if(old&&data.kind==='TOTAL')errors.push('DUPLICATE_HISTORY');
-  if(db.prepare('SELECT id FROM vnd_supplier_costs WHERE lot_id=? AND supplier=?').get(lot.id,row.supplier)&&!old&&data.kind==='TOTAL')errors.push('DUPLICATE_HISTORY');
+  if(db.prepare('SELECT id FROM vnd_supplier_costs WHERE lot_id=? AND supplier=? AND fulfillment_epoch IS ?').get(lot.id,row.supplier,attempt!.id)&&!old&&data.kind==='TOTAL')errors.push('DUPLICATE_HISTORY');
  }
  const peers=source?[]:db.prepare('SELECT * FROM vnd_supplier_import_rows WHERE supplier=? AND id<>?').all(row.supplier,row.id) as Row[];
- const identity=(d:Row)=>d.tracking?'tracking:'+d.tracking:d.lot_id?'lot:'+d.lot_id:'order:'+d.order_code;
+ const identity=(d:Row)=>JSON.stringify([d.tracking||null,d.label_url||null,d.lot_id??null,d.order_code||null]);
  const duplicates=peers.filter(p=>{const d=JSON.parse(String(p.data_json));return identity(d)===identity(data)&&(data.kind==='TOTAL'||(d.kind===data.kind&&d.amount===data.amount&&d.reason===data.reason));});
  if(!source&&duplicates.some(p=>p.batch_key===row.batch_key))errors.push('DUPLICATE_IN_FILE');
  if(duplicates.some(p=>p.batch_key!==row.batch_key)&&!errors.includes('DUPLICATE_HISTORY'))errors.push('DUPLICATE_HISTORY');
- const state={lot_id:lot?.id??null,order_code:lot?.order_code??null,estimated:net,dmd_weight:weight,approved_cost_id:Number(old?.id??0),approved_amount:old?.amount??null,errors};
+ const state={lot_id:lot?.id??null,order_code:lot?.order_code??null,fulfillment_epoch:attempt?.id??null,
+  fulfillment_candidates:resolution?.ids??[],estimated:net,dmd_weight:weight,approved_cost_id:Number(old?.id??0),approved_amount:old?.amount??null,errors};
  return {...row,data,...state,token:createHash('sha256').update(JSON.stringify(state)).digest('hex')};
 }
 export function supplierImportView(supplier:string){
@@ -127,16 +95,18 @@ export function applySupplierImport(actor:AuthUser,supplier:string,input:Row,rea
   if(!Array.isArray(input.items)||input.items.length<1||input.items.length>200)throw Error('Import 1–200 dòng.');
   input.items.forEach((raw:Row,i:number)=>{
    const kind=String(raw.kind??'TOTAL');if(!['TOTAL','SUPPLEMENT'].includes(kind))throw Error('Loại TOTAL hoặc SUPPLEMENT.');
+   const label_url=text(raw.label_url,true);
    const tracking=text(raw.tracking,true),order_code=text(raw.order_code,true),lot_id=raw.lot_id===undefined?null:Number(raw.lot_id);
    if([!!tracking,!!order_code,lot_id!==null].filter(Boolean).length!==1|| (lot_id!==null&&(!Number.isSafeInteger(lot_id)||lot_id<1)))throw Error('Mỗi dòng cần một Tracking, Order ID hoặc Lot ID.');
-   const data={kind,tracking,order_code,lot_id,amount:amount(raw.amount),supplier_weight:raw.supplier_weight?amount(raw.supplier_weight):null,reference:text(raw.reference),reason:text(raw.reason??reason)};
+   if(label_url&&!tracking)throw Error('Label cần Tracking trên chứng từ.');
+   const data={kind,tracking,label_url,order_code,lot_id,amount:amount(raw.amount),supplier_weight:raw.supplier_weight?amount(raw.supplier_weight):null,reference:text(raw.reference),reason:text(raw.reason??reason)};
    db.prepare('INSERT INTO vnd_supplier_import_rows(supplier,batch_key,position,data_json,actor_id) VALUES (?,?,?,?,?)').run(supplier,input.request_key,i+1,JSON.stringify(data),actor.id);
   });return;
  }
  if(!Array.isArray(input.items)||!input.items.length||input.items.length>200)throw Error('Review 1–200 dòng.');
  if(!['accept','skip'].includes(String(input.decision)))throw Error('Chọn accept hoặc skip.');
  if(input.decision==='accept'&&!['FINANCE','BOD'].includes(actor.role))throw Error('Accept Actual cần Finance/BOD.');
- const seen=new Set<number>(),lots=new Set<number>();
+ const seen=new Set<number>(),attempts=new Set<string>();
  for(const item of input.items as Row[]){
   const id=Number(item.id);if(seen.has(id))throw Error('Trùng dòng review.');seen.add(id);
   const row=db.prepare('SELECT * FROM vnd_supplier_import_rows WHERE id=? AND supplier=?').get(id,supplier) as Row|undefined;
@@ -147,15 +117,27 @@ export function applySupplierImport(actor:AuthUser,supplier:string,input:Row,rea
   if(input.decision==='accept'){
    lotId=item.lot_id===undefined?Number(state.lot_id):Number(item.lot_id);
    if(Array.isArray(state.data.parse_errors)&&state.data.parse_errors.length)throw Error('Dòng lỗi Excel cần sửa hoặc map lại trước khi Accept.');
-   if(state.errors.includes('FULFILLMENT_REVIEW_REQUIRED')||needsFulfillmentReview(lotId,supplier))
+   if(state.errors.includes('FULFILLMENT_REVIEW_REQUIRED'))
     throw Error('Cần đối soát đúng lượt fulfillment trước khi ghi Actual/payable.');
-   const lot=eligible(lotId,supplier);
-   if(!lot||!matchesRoute(lot,state.data.source as Row|undefined))throw Error('Cần chọn Lot VNĐ đã charge đúng Supplier và tuyến của template.');
-   if(lots.has(lotId))throw Error('Một batch chỉ accept một dòng mỗi Lot; review lần lượt để tránh đếm trùng.');lots.add(lotId);
-   const old=approvedVndLot(lotId,supplier);if(item.expected_approved_cost_id!==Number(old?.id??0))throw Error('Actual đã thay đổi; tải lại.');
+   const history=lotFulfillments(lotId);
+   const manual=item.lot_id!==undefined && state.lot_id!==lotId;
+   if(manual && (history?.incomplete || history && history.attempts.length>1 || state.fulfillment_epoch!==null ||
+     (state.fulfillment_candidates.length>0 && !state.fulfillment_candidates.includes(lotId))))
+    throw Error('Cần đối soát đúng lượt fulfillment trước khi ghi Actual/payable.');
+   const attempt=history?.attempts.find(a=>a.id===(state.fulfillment_epoch??0)&&a.supplier===supplier);
+   if(!attempt||!matchesRoute(attempt,state.data.source as Row|undefined))
+    throw Error('Cần chọn Lot VNĐ đã charge đúng Supplier và tuyến của template.');
+   const scope=JSON.stringify([lotId,attempt.id]);
+   if(attempts.has(scope))throw Error('Một batch chỉ accept một dòng mỗi lượt fulfillment.');
+   attempts.add(scope);
+   const actual=approvedFulfillment(lotId,supplier,attempt.id),old=actual.approved;
+   if(actual.uncertain)throw Error('Cần đối soát đúng lượt fulfillment của Actual cũ.');
+   if(item.expected_approved_cost_id!==Number(old?.id??0))throw Error('Actual đã thay đổi; tải lại.');
+   if(hasPostedSupplierReference(supplier,lotId,state.data.reference))
+    throw Error('Tham chiếu chứng từ đã ghi Actual cho Lot này.');
    if(state.data.kind==='SUPPLEMENT'&&!old)throw Error('Phụ phí cần Actual gốc đã chốt.');
    const total=state.data.kind==='SUPPLEMENT'?addVnd(String(old!.amount),String(state.data.amount)):String(state.data.amount);
-   costId=Number(db.prepare('INSERT INTO vnd_supplier_costs(lot_id,supplier,amount,reference,reason,actor_id) VALUES (?,?,?,?,?,?)').run(lotId,supplier,total,state.data.reference,reason,actor.id).lastInsertRowid);
+   costId=Number(db.prepare('INSERT INTO vnd_supplier_costs(lot_id,supplier,amount,reference,reason,actor_id,fulfillment_epoch) VALUES (?,?,?,?,?,?,?)').run(lotId,supplier,total,state.data.reference,reason,actor.id,attempt.id).lastInsertRowid);
    db.prepare("INSERT INTO vnd_supplier_reviews(cost_id,action,reason,actor_id) VALUES (?,'approve',?,?)").run(costId,reason,actor.id);
    db.prepare("INSERT INTO vnd_supplier_ledger(supplier,kind,delta,cost_id,reference,reason,actor_id) VALUES (?,'ACTUAL',?,?,?,?,?)").run(supplier,subtractVnd(total,String(old?.amount??'0')),costId,state.data.reference,reason,actor.id);
   }

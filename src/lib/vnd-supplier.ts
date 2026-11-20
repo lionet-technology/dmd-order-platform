@@ -1,6 +1,7 @@
 import {db} from './db';
 import {supplierPeriodView,closeSupplierPeriod,supplierPostingCursor,linkSupplierPostings} from './vnd-supplier-periods';
-import {supplierImportView,applySupplierImport,needsFulfillmentReview,unresolvedFulfillment} from './vnd-supplier-import';
+import {supplierImportView,applySupplierImport} from './vnd-supplier-import';
+import {approvedFulfillment,hasPostedSupplierReference,lotFulfillments,resolveFulfillment} from './vnd-fulfillment';
 import {applySupplierClaim,supplierClaimView} from './vnd-supplier-claims';
 import {saveSupplierTemplate,supplierTemplates} from './vnd-supplier-templates';
 import type {AuthUser} from './auth';
@@ -12,9 +13,12 @@ function access(actor:AuthUser){const u=db.prepare('SELECT role,active FROM user
 function money(value:unknown){if(typeof value!=='string')throw Error('Cần chuỗi VNĐ.');const n=vnd(value);if(compareVnd(n,'0')<0)throw Error('Cost không được âm.');return n;}
 function required(value:unknown){const s=typeof value==='string'?value.trim():'';if(!s||s.length>2000)throw Error('Cần lý do/chứng từ.');return s;}
 export function approvedVndLot(lotId:number,supplier?:string){
- const currentSupplier=supplier??(db.prepare('SELECT o.supplier FROM order_lots l JOIN orders o ON o.id=l.order_id WHERE l.id=?').get(lotId) as {supplier:string}|undefined)?.supplier;
- if(!currentSupplier)return undefined;
- return db.prepare("SELECT c.* FROM vnd_supplier_costs c JOIN vnd_supplier_ledger l ON l.cost_id=c.id AND l.kind='ACTUAL' WHERE c.lot_id=? AND c.supplier=? ORDER BY l.id DESC LIMIT 1").get(lotId,currentSupplier) as Row|undefined;
+ const history=lotFulfillments(lotId);
+ if(!history||history.incomplete)return undefined;
+ const attempt=supplier===undefined?history.attempts.at(-1):history.attempts.filter(a=>a.supplier===supplier).at(-1);
+ if(!attempt)return undefined;
+ const {approved,uncertain}=approvedFulfillment(lotId,attempt.supplier,attempt.id);
+ return uncertain?undefined:approved;
 }
 export function vndLotEstimate(lotId:number){
  const lot=db.prepare('SELECT * FROM order_lots WHERE id=?').get(lotId) as Row|undefined;if(!lot)return null;
@@ -30,7 +34,7 @@ function readSupplier(actor:AuthUser,supplierRaw:unknown){
  const costs=db.prepare('SELECT c.*,l.order_id,l.lot_number FROM vnd_supplier_costs c JOIN order_lots l ON l.id=c.lot_id WHERE c.supplier=? ORDER BY c.id DESC').all(supplier) as Row[];
  const reviews=db.prepare('SELECT r.* FROM vnd_supplier_reviews r JOIN vnd_supplier_costs c ON c.id=r.cost_id WHERE c.supplier=? ORDER BY r.id').all(supplier);
  const templates=supplierTemplates(supplier);
- const projection=costs.map(c=>({...c,estimated:vndLotEstimate(Number(c.lot_id)),approved_cost_id:approvedVndLot(Number(c.lot_id),supplier)?.id??null}));
+ const projection=costs.map(c=>({...c,estimated:vndLotEstimate(Number(c.lot_id)),approved_cost_id:approvedFulfillment(Number(c.lot_id),supplier,Number(c.fulfillment_epoch??0)).approved?.id??null}));
  if(actor.role==='ADMIN')return {currency:'VND',supplier,costs:projection,reviews,templates,import_rows:supplierImportView(supplier)};
  const entries=db.prepare('SELECT * FROM vnd_supplier_ledger WHERE supplier=? ORDER BY id').all(supplier) as Row[];
  return {currency:'VND',supplier,costs:projection,reviews,templates,import_rows:supplierImportView(supplier),...supplierClaimView(supplier),...supplierPeriodView(supplier),payable:sumVnd(entries.map(e=>String(e.delta))),entries};
@@ -51,32 +55,34 @@ export function vndSupplierAction(actor:AuthUser,input:Row){
   applySupplierImport(actor,supplier,input,reason);
  }else if(action.startsWith('claim_')){
   applySupplierClaim(actor,supplier,input,reason);
- }else if(action==='submit'&&unresolvedFulfillment(input,supplier)){
-  const identity=input.tracking?{tracking:input.tracking}:{lot_id:input.lot_id};
-  if(input.tracking&&input.lot_id!==undefined)throw Error('Chọn Tracking hoặc Lot, không đồng thời.');
-  applySupplierImport(actor,supplier,{...input,action:'import',items:[{...identity,amount:input.amount,reference:input.reference}]},reason);
  }else if(action==='submit'){
-  let lotId=Number(input.lot_id);
-  if(input.tracking){
-   if(input.lot_id!==undefined)throw Error('Chọn Tracking hoặc Lot, không đồng thời.');
-   const lots=db.prepare("SELECT DISTINCT l.id FROM order_trackings t JOIN order_lots l ON l.order_id=t.order_id AND l.lot_number=t.lot_number JOIN vnd_purchase_requests r ON r.order_id=l.order_id JOIN orders o ON o.id=l.order_id WHERE t.tracking=? AND o.supplier=?").all(required(input.tracking),supplier) as Row[];
-   if(lots.length!==1)throw Error('Tracking không ánh xạ duy nhất tới Lot VNĐ.');lotId=Number(lots[0].id);
+  if(input.tracking&&input.lot_id!==undefined)throw Error('Chọn Tracking hoặc Lot, không đồng thời.');
+  if(input.label_url&&!input.tracking)throw Error('Label cần Tracking trên chứng từ.');
+  const identity=input.tracking?{tracking:required(input.tracking),label_url:input.label_url}:{lot_id:input.lot_id};
+  const fulfillment=resolveFulfillment(identity,supplier);
+  if(fulfillment.changed||input.label_url){
+   applySupplierImport(actor,supplier,{...input,action:'import',items:[{...identity,amount:input.amount,reference:input.reference}]},reason);
+  }else{
+   const attempt=fulfillment.attempt;
+   if(!attempt)throw Error(input.tracking?'Tracking không ánh xạ duy nhất tới Lot VNĐ.':'Cần Lot VNĐ đã charge của Supplier.');
+   // Every documentary total is pending; it never replaces current Actual automatically.
+   db.prepare('INSERT INTO vnd_supplier_costs(lot_id,supplier,amount,reference,reason,actor_id,fulfillment_epoch) VALUES (?,?,?,?,?,?,?)').run(attempt.lot_id,supplier,money(input.amount),required(input.reference),reason,actor.id,attempt.id);
   }
-  const lot=db.prepare('SELECT l.*,o.supplier,r.status FROM order_lots l JOIN orders o ON o.id=l.order_id JOIN vnd_purchase_requests r ON r.order_id=o.id WHERE l.id=?').get(lotId) as Row|undefined;
-  if(!lot||lot.supplier!==supplier||!['CHARGED','CANCELLED'].includes(String(lot.status)))throw Error('Cần Lot VNĐ đã charge của Supplier.');
-  // Every documentary total is pending; duplicates never replace/add the current actual automatically.
-  db.prepare('INSERT INTO vnd_supplier_costs(lot_id,supplier,amount,reference,reason,actor_id) VALUES (?,?,?,?,?,?)').run(lotId,supplier,money(input.amount),required(input.reference),reason,actor.id);
  }else if(action==='approve'||action==='keep_old'){
   if(action==='approve'&&!['FINANCE','BOD'].includes(actor.role))throw Error('Chốt payable cần Finance/BOD.');
   if(action==='keep_old'&&!['ADMIN','FINANCE'].includes(actor.role))throw Error('Xử lý trùng cần Admin/Finance.');
   const cost=db.prepare('SELECT * FROM vnd_supplier_costs WHERE id=? AND supplier=?').get(Number(input.cost_id),supplier) as Row|undefined;
   if(!cost)throw Error('Không có chứng từ.');
-  if(action==='approve'&&needsFulfillmentReview(Number(cost.lot_id),supplier))
+  const history=lotFulfillments(Number(cost.lot_id));
+  if(action==='approve'&&(!history||history.incomplete||history.attempts.length!==1||history.attempts[0].supplier!==supplier))
    throw Error('Cần đối soát đúng lượt fulfillment trước khi ghi Actual/payable.');
-  const old=approvedVndLot(Number(cost.lot_id),supplier);
+  const {approved:old,uncertain}=approvedFulfillment(Number(cost.lot_id),supplier,Number(cost.fulfillment_epoch??0));
+  if(action==='approve'&&uncertain)throw Error('Cần đối soát đúng lượt fulfillment của Actual cũ.');
   if(input.expected_approved_cost_id!==Number(old?.id??0))throw Error('Actual đã thay đổi; tải lại.');
   if(db.prepare('SELECT id FROM vnd_supplier_reviews WHERE cost_id=?').get(cost.id))throw Error('Chứng từ đã xử lý.');
   if(action==='keep_old'&&!old)throw Error('Chưa có Actual cũ để giữ.');
+  if(action==='approve'&&hasPostedSupplierReference(supplier,Number(cost.lot_id),cost.reference))
+   throw Error('Tham chiếu chứng từ đã ghi Actual cho Lot này.');
   db.prepare('INSERT INTO vnd_supplier_reviews(cost_id,action,reason,actor_id) VALUES (?,?,?,?)').run(cost.id,action,reason,actor.id);
   if(action==='approve')db.prepare("INSERT INTO vnd_supplier_ledger(supplier,kind,delta,cost_id,reference,reason,actor_id) VALUES (?,'ACTUAL',?,?,?,?,?)").run(supplier,subtractVnd(String(cost.amount),String(old?.amount??'0')),cost.id,cost.reference,reason,actor.id);
  }else if(action==='payment'||action==='adjustment'){

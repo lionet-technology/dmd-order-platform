@@ -1,3 +1,4 @@
+import {captureTrackingFulfillment,recordTrackingFulfillment} from "./vnd-fulfillment";
 import {isVndClient,assertVndIssuance} from "./vnd-operational";
 import {isManualPriceRoute} from "./manual-route-price";
 import { completeReserve, localDay, audit, syncStatements } from "./credit";
@@ -85,6 +86,7 @@ export function addOrderTracking(input:Parameters<typeof addOrderTrackingRaw>[0]
 }
 
 export function updateOrderTracking(input:{orderId:number;id:number;labelUrl?:unknown;lotNumber?:unknown;cartonId?:number|null;costMatchType?:CostMatchType;costParentTrackingId?:number|null;isPrimary?:boolean}){
+ return db.transaction(()=>{
   assertOrderOpen(input.orderId);
   if(isVndClient(Number((db.prepare("SELECT client_user_id FROM orders WHERE id=?").get(input.orderId) as Record<string,unknown>)?.client_user_id)))assertVndIssuance(input.orderId);
   const row=db.prepare("SELECT * FROM order_trackings WHERE id=? AND order_id=?").get(input.id,input.orderId) as OrderTracking|undefined;
@@ -100,26 +102,33 @@ export function updateOrderTracking(input:{orderId:number;id:number;labelUrl?:un
     const valid=db.prepare("SELECT id FROM order_trackings WHERE id=? AND order_id=?").get(parent,input.orderId);
     if(!valid)throw new Error("Tracking gánh chi phí không thuộc Order này.");
   }
+  const fulfillment=captureTrackingFulfillment(input.orderId);
   if(input.isPrimary)db.prepare("UPDATE order_trackings SET is_primary=0 WHERE order_id=?").run(input.orderId);
   db.prepare("UPDATE order_trackings SET lot_number=?,carton_id=?,label_url=?,cost_match_type=?,cost_parent_tracking_id=?,is_primary=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
     .run(lot,input.cartonId===undefined?row.carton_id:carton?.id||null,input.labelUrl===undefined?row.label_url:text(input.labelUrl)||null,match,parent,input.isPrimary?1:row.is_primary,row.id);
+  recordTrackingFulfillment(input.orderId,fulfillment);
   if(text(input.labelUrl))completeReserve(input.orderId,0);
   syncLegacyPrimary(input.orderId);
   recomputeOrderFinancials(input.orderId);
+ }).immediate();
 }
 
 export function replaceOrderTracking(input:{orderId:number;oldTrackingId:number;newTracking:unknown;newLabelUrl?:unknown;reason?:unknown;actorId?:number|null}){
+ return db.transaction(()=>{
   assertOrderOpen(input.orderId);
   const old=db.prepare("SELECT * FROM order_trackings WHERE id=? AND order_id=? AND status='ACTIVE'").get(input.oldTrackingId,input.orderId) as OrderTracking|undefined;
   if(!old)throw new Error("Tracking cũ không hợp lệ hoặc đã được thay thế.");
   trackingReplacementReason(input.reason);
+  const fulfillment=captureTrackingFulfillment(input.orderId);
   const created=addOrderTracking({orderId:input.orderId,tracking:input.newTracking,labelUrl:input.newLabelUrl,lotNumber:old.lot_number,cartonId:old.carton_id,actorId:input.actorId,isPrimary:Boolean(old.is_primary),costMatchType:old.cost_match_type,costParentTrackingId:old.cost_parent_tracking_id});
   db.prepare("UPDATE order_trackings SET status='REPLACED',is_primary=0,replaced_by_tracking_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(created.id,old.id);
   db.prepare("UPDATE order_trackings SET cost_parent_tracking_id=?,updated_at=CURRENT_TIMESTAMP WHERE order_id=? AND cost_parent_tracking_id=?").run(created.id,input.orderId,old.id);
   syncLegacyPrimary(input.orderId);
+  recordTrackingFulfillment(input.orderId,fulfillment,input.actorId);
   publishPublicNote({orderId:input.orderId,eventType:"TRACKING_LABEL_CHANGED",summary:`Tracking ${old.tracking} đã được thay thế bằng ${created.tracking}. Label đã được cập nhật.`,actorId:input.actorId,publicData:{old_tracking:old.tracking,new_tracking:created.tracking,label_updated:Boolean(text(input.newLabelUrl))}});
   matchSupplierCostsForOrder(input.orderId);
   return created;
+ }).immediate();
 }
 
 // Link supplier evidence independently from legacy quote/Charge recomputation.

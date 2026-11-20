@@ -65,8 +65,8 @@ let checks=0,n=0;const eq=(a,b)=>{checks++;assert.deepEqual(a,b)},bad=(f,re)=>{c
  const labels=[['000123',c],['000456',d]];
  for(const [code,{o}] of labels)db.prepare("INSERT INTO order_trackings(order_id,lot_number,tracking,normalized_tracking) VALUES (?,1,?,?)").run(o.id,code,code);
  const headers=['Mã vận đơn','Mã phí','Kg','Currency','Freight','Last mile','Fuel','Remote'];
- async function grid(lines){
-  const book=new Excel.Workbook(),sheet=book.addWorksheet('Report');sheet.addRow(headers);lines.forEach(r=>sheet.addRow(r));
+ async function grid(lines,columns=headers){
+  const book=new Excel.Workbook(),sheet=book.addWorksheet('Report');sheet.addRow(columns);lines.forEach(r=>sheet.addRow(r));
   return workbookRows(Buffer.from(await book.xlsx.writeBuffer()));
  }
  const original=await grid([
@@ -130,6 +130,35 @@ let checks=0,n=0;const eq=(a,b)=>{checks++;assert.deepEqual(a,b)},bad=(f,re)=>{c
  eq(view().entries,beforeReplacement.entries);
  eq(view().periods[0].snapshot_json,frozen);
  eq(view().late_adjustments,beforeReplacement.late_adjustments);
+ const labelCase=order();
+ const {addOrderTracking,updateOrderTracking,replaceOrderTracking}=require('../src/lib/order-operations.ts');
+ const labelCarton=db.prepare('SELECT id FROM order_cartons WHERE order_id=?').get(labelCase.o.id);
+ const oldLabel='https://labels.test/original.pdf',freshLabel='https://labels.test/new.pdf';
+ const t=addOrderTracking({orderId:labelCase.o.id,cartonId:labelCarton.id,tracking:'LABEL-001',labelUrl:oldLabel,actorId:admin.id});
+ updateOrderTracking({orderId:labelCase.o.id,id:t.id,labelUrl:freshLabel});
+ const lateTemplate=save(3,{label_url:'URL Label'});
+ const labelled=async(url,line)=>grid([['LABEL-001',line,1,'VND',25,10,2,3,url]],['Mã vận đơn','Mã phí','Kg','Currency','Freight','Last mile','Fuel','Remote','URL Label']);
+ upload('LABEL-OLD',lateTemplate.id,await labelled(oldLabel,'OLD'));
+ upload('LABEL-NEW',lateTemplate.id,await labelled(freshLabel,'NEW'));
+ const oldLabelRow=find('LABEL-OLD','OLD'),newLabelRow=find('LABEL-NEW','NEW');
+ eq(oldLabelRow.fulfillment_epoch,0);eq(newLabelRow.fulfillment_epoch>0,true);
+ call('review_import',{decision:'accept',items:[item(oldLabelRow),item(newLabelRow)]});
+ eq(view().entries.slice(-2).map(e=>e.delta),['35','35']);
+ const legacyCase=order();
+ const legacyCarton=db.prepare('SELECT id FROM order_cartons WHERE order_id=?').get(legacyCase.o.id);
+ const legacy=addOrderTracking({orderId:legacyCase.o.id,cartonId:legacyCarton.id,tracking:'LEGACY-ORIGINAL',labelUrl:oldLabel,actorId:admin.id});
+ const successor=replaceOrderTracking({orderId:legacyCase.o.id,oldTrackingId:legacy.id,newTracking:'LEGACY-SUCCESSOR',newLabelUrl:freshLabel,actorId:admin.id});
+ // Rehearse the pre-upgrade event shape from the Tracking API.
+ db.prepare("DELETE FROM order_events WHERE order_id=? AND event_type='VND_FULFILLMENT_TRACKING_CHANGE'").run(legacyCase.o.id);
+ require('../src/lib/order-audit.ts').logOrderEvent({orderId:legacyCase.o.id,eventType:'TRACKING_REPLACED',summary:'TEST legacy event',actorId:admin.id,before:{tracking:legacy.tracking,label_url:oldLabel},after:successor});
+ call('import',{items:[{tracking:legacy.tracking,amount:'9',reference:'TEST legacy lineage'}]});
+ const legacyRow=view().import_rows[0];
+ eq(legacyRow.fulfillment_epoch,0);
+ review('accept',legacyRow);
+ eq(view().entries.at(-1).delta,'9');
+ eq(supplier.approvedVndLot(legacyCase.lot.id),undefined);
+ eq(view().periods[0].snapshot_json,frozen);
+ eq(view().late_adjustments.length,1);
  bad(()=>db.prepare('DELETE FROM vnd_supplier_import_rows').run(),/Immutable/);bad(()=>db.prepare("UPDATE vnd_supplier_import_decisions SET reason='x'").run(),/Immutable/);
  eq(ops.vndBalance(client.id),balance);eq(JSON.stringify(db.prepare('SELECT * FROM vnd_ledger').all()),journal);eq(db.pragma('integrity_check',{simple:true}),'ok');
  console.log('VND SUPPLIER IMPORT PASS ('+checks+' assertions)');

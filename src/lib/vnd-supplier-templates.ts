@@ -9,6 +9,7 @@ type Mapping = {
   line: string;
   weight: string;
   currency?: string;
+  label_url?: string;
   actual: Bucket | null;
   surcharge: Bucket | null;
   surcharge_in_actual: boolean;
@@ -66,11 +67,12 @@ export function saveSupplierTemplate(supplier: string, actorId: number, input: I
   const mapping: Mapping = {
     tracking: label(config.tracking), line: label(config.line), weight: config.weight ? label(config.weight) : '',
     currency: config.currency ? label(config.currency) : '',
+    label_url: config.label_url ? label(config.label_url) : '',
     actual: bucket(config.actual), surcharge: bucket(config.surcharge), surcharge_in_actual: config.surcharge_in_actual,
   };
   if ((!mapping.actual && !mapping.surcharge) || (mapping.surcharge_in_actual && (!mapping.actual || !mapping.surcharge)))
     throw Error('Cần nhóm Actual/Phụ phí hợp lệ.');
-  const headings = [mapping.tracking, mapping.line, mapping.weight, mapping.currency, ...(mapping.actual?.columns ?? []), ...(mapping.surcharge?.columns ?? [])].filter((column): column is string => Boolean(column));
+  const headings = [mapping.tracking, mapping.line, mapping.weight, mapping.currency, mapping.label_url, ...(mapping.actual?.columns ?? []), ...(mapping.surcharge?.columns ?? [])].filter((column): column is string => Boolean(column));
   if (new Set(headings).size !== headings.length) throw Error('Một cột chỉ được map một lần.');
   const current = supplierTemplates(supplier).find(t => t.service === service && t.sub_service === subService);
   if (input.expected_version !== (current?.version ?? 0)) throw Error('Template đã thay đổi; tải lại trước khi lưu.');
@@ -98,7 +100,7 @@ export function mappedSupplierRows(supplier: string, input: Input) {
   const headings = header.map(cell => String(cell ?? '').trim());
   const mapping = template.mapping;
   const index = new Map<string, number>();
-  for (const column of [mapping.tracking, mapping.line, mapping.weight, mapping.currency, ...(mapping.actual?.columns ?? []), ...(mapping.surcharge?.columns ?? [])].filter((column): column is string => Boolean(column))) {
+  for (const column of [mapping.tracking, mapping.line, mapping.weight, mapping.currency, mapping.label_url, ...(mapping.actual?.columns ?? []), ...(mapping.surcharge?.columns ?? [])].filter((column): column is string => Boolean(column))) {
     const position = headings.indexOf(column);
     if (position < 0 || position !== headings.lastIndexOf(column)) throw Error('Cột bị thiếu hoặc xuất hiện nhiều lần: ' + column);
     index.set(column, position);
@@ -127,6 +129,13 @@ export function mappedSupplierRows(supplier: string, input: Input) {
     if (requiredBucket.mode === 'SUM' && requiredBucket.columns.every(column => cell(column) == null || cell(column) === ''))
       parseErrors.push('Nhóm chi phí chính trống; nhập 0 nếu số tiền bằng 0.');
     const tracking = parse(mapping.tracking, () => label(cell(mapping.tracking)));
+    const labelColumn = mapping.label_url;
+    const labelUrl = labelColumn && cell(labelColumn) != null && cell(labelColumn) !== ''
+      ? parse(labelColumn, () => {
+        const value = cell(labelColumn);
+        if (typeof value !== 'string' || !value.trim() || value.length > 2000) throw Error('Label cần là URL dạng text.');
+        return value.trim();
+      }) : null;
     const line = parse(mapping.line, () => label(cell(mapping.line)));
     const supplierWeight = mapping.weight && cell(mapping.weight) != null && cell(mapping.weight) !== ''
       ? parse(mapping.weight, () => decimal(cell(mapping.weight), false)) : null;
@@ -141,7 +150,7 @@ export function mappedSupplierRows(supplier: string, input: Input) {
     const amount = parseErrors.length ? null
       : sumVnd([actual?.total ?? '0', mapping.surcharge_in_actual ? '0' : surcharge?.total ?? '0']);
     return [{
-      kind: actual ? 'TOTAL' : 'SUPPLEMENT', tracking, amount, supplier_weight: supplierWeight,
+      kind: actual ? 'TOTAL' : 'SUPPLEMENT', tracking, label_url:labelUrl, amount, supplier_weight: supplierWeight,
       reference: document + ' / ' + (line ?? 'Excel ' + (offset + 2)),
       source: {
         document, line, excel_row: offset + 2, file_name: typeof input.file_name === 'string' ? input.file_name.slice(0, 255) : null, template_id: template.id, version: template.version,

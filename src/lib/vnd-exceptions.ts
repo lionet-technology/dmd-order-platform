@@ -1,4 +1,5 @@
 import {db} from './db';
+import {approvedVndLot} from './vnd-supplier';
 import type {AuthUser} from './auth';
 import {vndBalance} from './vnd-operational';
 import {compareVnd} from './vnd-money';
@@ -19,7 +20,8 @@ function read(actor:AuthUser){
    if(['AWAITING_QUOTE','PRICE_CONFIRMATION_REQUIRED','AWAITING_FUNDS'].includes(String(r.status))||q?.pricing_error)purchase.push({order_id:r.order_id,order_code:r.order_code,client_id:c.client_id,status:r.status,pricing_error:!!q?.pricing_error});
    if(q&&['ADMIN','BOD','SALES'].includes(actor.role)){const quote=JSON.parse(String(q.snapshot_json));if(typeof quote.base_vnd==='string'&&typeof r.offer==='string'&&compareVnd(r.offer,quote.base_vnd)<=0)pricing.push({order_id:r.order_id,client_id:c.client_id,status:'SELLING_AT_OR_BELOW_BASE'});}
    if(internal&&r.status==='CHARGED'){
-    const lots=db.prepare("SELECT l.id FROM order_lots l WHERE l.order_id=? AND NOT EXISTS(SELECT 1 FROM vnd_supplier_costs c JOIN vnd_supplier_ledger e ON e.cost_id=c.id AND e.kind='ACTUAL' WHERE c.lot_id=l.id)").all(r.order_id);
+    const lots=(db.prepare('SELECT id FROM order_lots WHERE order_id=?').all(r.order_id) as {id:number}[])
+     .filter(lot=>!approvedVndLot(lot.id));
     if(lots.length)missing.push({order_id:r.order_id,client_id:c.client_id,supplier:r.supplier,status:'MISSING_APPROVED_ACTUAL',lots:lots.length});
    }
   }

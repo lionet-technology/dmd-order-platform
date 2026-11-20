@@ -393,7 +393,34 @@ let server,browser,checks=0;const check=(v,m)=>{checks++;assert.ok(v,m)};
   check(viewer==='BOD'||viewer==='ADMIN'?result.ok():result.status()===403,viewer+' Supplier Add-on access');
   check((await page.getByRole('region',{name:'Supplier Add-on VNĐ'}).count())===(viewer==='BOD'||viewer==='ADMIN'?1:0),viewer+' Supplier Add-on UI access');
  }
- const tables=['vnd_claim_processing','vnd_claim_watchlist','vnd_claim_links','vnd_claims','vnd_refund_events','vnd_supplier_claims','vnd_supplier_claim_events','vnd_supplier_periods','vnd_supplier_posting_links','vnd_supplier_addons','vnd_supplier_addon_settlements','vnd_commands','vnd_ledger'];
+ await role('FINANCE');
+ await suppliers.getByLabel('Supplier VNĐ',{exact:true}).fill('SGBay');
+ const fulfillmentWorkbook=await xlsx(['Tracking','Actual Net VNĐ','Cân Supplier kg','Tham chiếu','Lý do','URL Label'],[
+  ['TEST-UAT-EPOCH','12','','TEST-UAT-EPOCH-AMBIG','TEST reused Tracking',''],
+  ['TEST-UAT-EPOCH','7','','TEST-UAT-EPOCH-HISTORICAL','TEST old Label','https://labels.test/first-epoch.pdf'],
+ ]);
+ await qi.getByLabel('File Supplier VNĐ',{exact:true}).setInputFiles({name:'TEST-fulfillment.xlsx',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer:fulfillmentWorkbook});
+ await qi.getByLabel('Lý do review/import',{exact:true}).fill('TEST đối soát lượt fulfillment');
+ await qi.getByRole('button',{name:'Import vào queue',exact:true}).click();
+ await qi.getByRole('status').filter({hasText:'Đã lưu;'}).waitFor();
+ const fulfillmentState=await loadSupplier();
+ const ambiguous=fulfillmentState.import_rows.find(r=>r.data.reference==='TEST-UAT-EPOCH-AMBIG');
+ const historical=fulfillmentState.import_rows.find(r=>r.data.reference==='TEST-UAT-EPOCH-HISTORICAL');
+ check(ambiguous.errors.includes('FULFILLMENT_REVIEW_REQUIRED')&&historical.fulfillment_epoch===0,'Tracking reused across label epochs requires documentary Label evidence');
+ await qi.getByLabel('Chọn dòng Supplier '+ambiguous.id,{exact:true}).check();
+ check(await qi.getByRole('button',{name:'Accept 1 dòng đã chọn',exact:true}).isDisabled(),'ambiguous fulfillment cannot be accepted from UI');
+ check(await qi.getByLabel('Ghép Lot dòng '+ambiguous.id,{exact:true}).count()===0,'ambiguous row offers no manual Lot override');
+ const denial=await context.request.post(base+'/api/service-v1/suppliers',{data:{action:'review_import',supplier:'SGBay',decision:'accept',reason:'TEST forced Lot',request_key:'TEST-UAT-FORCED-EPOCH',items:[{id:ambiguous.id,token:ambiguous.token,lot_id:historical.lot_id,expected_approved_cost_id:0}]}});
+ check(denial.status()===400&&(await loadSupplier()).payable===fulfillmentState.payable,'HTTP Lot override cannot post an ambiguous Actual');
+ await qi.getByLabel('Chọn dòng Supplier '+ambiguous.id,{exact:true}).uncheck();
+ await qi.getByLabel('Chọn dòng Supplier '+historical.id,{exact:true}).check();
+ await qi.getByRole('button',{name:'Accept 1 dòng đã chọn',exact:true}).click();
+ await qi.getByLabel('Chọn dòng Supplier '+historical.id,{exact:true}).waitFor({state:'detached'});
+ const fulfillmentApproved=await loadSupplier();
+ check(fulfillmentApproved.payable===require('../src/lib/vnd-money.ts').addVnd(fulfillmentState.payable,'7')&&fulfillmentApproved.import_rows.find(r=>r.id===historical.id).decision.decision==='accept','Finance browser acceptance posts only the identified historical epoch');
+ await qi.scrollIntoViewIfNeeded();
+ await page.screenshot({path:path.join(output,'uat-fulfillment-queue.png'),fullPage:false});
+ const tables=['vnd_claim_processing','vnd_claim_watchlist','vnd_claim_links','vnd_claims','vnd_refund_events','vnd_supplier_claims','vnd_supplier_claim_events','vnd_supplier_periods','vnd_supplier_posting_links','vnd_supplier_costs','vnd_supplier_import_rows','vnd_supplier_import_decisions','vnd_supplier_ledger','vnd_supplier_addons','vnd_supplier_addon_settlements','vnd_commands','vnd_ledger'];
  const backup=path.join(dir,'claim-cases-backup.db'),copy=path.join(dir,'claim-cases-restore.db');
  const original=new Database(fixture.dbPath,{readonly:true});
  const snapshot=(connection,table)=>connection.prepare('SELECT * FROM '+table+' ORDER BY rowid').all();
@@ -407,7 +434,7 @@ let server,browser,checks=0;const check=(v,m)=>{checks++;assert.ok(v,m)};
   for(const table of tables){assert.ok(before[table].length,table+' fixture must have rows');assert.deepEqual(snapshot(restored,table),before[table]);}
  }finally{restored.close();}
  fs.writeFileSync(path.join(output,'claim-restore.json'),JSON.stringify({status:'PASS',database:'owned disposable Chrome TEST fixture',integrity:'ok',foreign_key_violations:0,tables:tables.map(name=>({name,rows:before[name].length}))},null,2));
- fs.writeFileSync(path.join(output,'browser-uat.json'),JSON.stringify({status:'PASS',checks,roles:['ADMIN','SALES','CLIENT','FINANCE','BOD'],database:'owned disposable',scope:'Weekly VNĐ startup catch-up, dashboard and internal overdue alerts, Admin term change and Finance idempotent retry, Client and Supplier watchlists and case creation from Order selection, Processing chronology, explicit completion and manual case linking, BOD case-level unallocated Refund tracking, HTTP mixed-currency excess allocation, Supplier frozen period/late current correction/original reference, Control Tower role privacy, GP-Net versus commission reference, Client Excel surcharge/tax preview/import/cross-key replay and immutable Statement, Supplier Excel versioned multi-column mapping and replay, inclusive surcharge preview, typed errors and explicit Actual payable delta, Admin manual Supplier refund percentage/evidence and independent void/confirmation with no posting, Supplier Claim receivable approval/partial Bank/offset/reversal and overlimit, durable Claim notification acknowledgement, Claim creation/approval, partial Bank/Balance payout and overpool rejection, bank privacy, Supplier actual/payment RBAC, Client Add-on and Supplier BUY/SELL, partial settlement, Client Balance idempotence, roles, Statement, BOD report, shipping edit, desktop/mobile render',errors},null,2));
+ fs.writeFileSync(path.join(output,'browser-uat.json'),JSON.stringify({status:'PASS',checks,roles:['ADMIN','SALES','CLIENT','FINANCE','BOD'],database:'owned disposable',scope:'Weekly VNĐ startup catch-up, dashboard and internal overdue alerts, Admin term change and Finance idempotent retry, Client and Supplier watchlists and case creation from Order selection, Processing chronology, explicit completion and manual case linking, BOD case-level unallocated Refund tracking, HTTP mixed-currency excess allocation, Supplier frozen period/late current correction/original reference, Control Tower role privacy, GP-Net versus commission reference, Client Excel surcharge/tax preview/import/cross-key replay and immutable Statement, Supplier Excel versioned multi-column mapping and replay, inclusive surcharge preview, typed errors and explicit Actual payable delta, fulfillment Label evidence and blocked manual Lot override, Admin manual Supplier refund percentage/evidence and independent void/confirmation with no posting, Supplier Claim receivable approval/partial Bank/offset/reversal and overlimit, durable Claim notification acknowledgement, Claim creation/approval, partial Bank/Balance payout and overpool rejection, bank privacy, Supplier actual/payment RBAC, Client Add-on and Supplier BUY/SELL, partial settlement, Client Balance idempotence, roles, Statement, BOD report, shipping edit, desktop/mobile render',errors},null,2));
  console.log('BROWSER VND PASS ('+checks+' assertions; 5 roles, synthetic DB, actual Chrome)');
 }catch(e){if(browser){const failedPage=browser.contexts()[0]?.pages()[0];if(failedPage){fs.writeFileSync(path.join(output,'uat-failure.txt'),await failedPage.locator('body').ariaSnapshot());await failedPage.screenshot({path:path.join(output,'uat-failure.png'),fullPage:true});}}throw e;}finally{if(browser)await browser.close();if(server)server.kill('SIGTERM');}
 })().catch(e=>{console.error(e);process.exitCode=1});

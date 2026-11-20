@@ -13,10 +13,12 @@ async function supplierInput(req:NextRequest){
   template_id:form.get('template_id'),document:form.get('document'),file_name:file.name,grid:[header,...rows],
  };
  const headings=(header??[]).map(c=>String(c??'').trim());
- if(!['Tracking','Order ID'].includes(headings[0])||headings.slice(1).join('|')!=='Actual Net VNĐ|Cân Supplier kg|Tham chiếu|Lý do')throw Error('Header: Tracking (hoặc Order ID) | Actual Net VNĐ | Cân Supplier kg | Tham chiếu | Lý do.');
+ const hasLabel=headings[0]==='Tracking'&&headings.length===6&&headings[5]==='URL Label';
+ if(!['Tracking','Order ID'].includes(headings[0])||headings.slice(1,hasLabel?5:undefined).join('|')!=='Actual Net VNĐ|Cân Supplier kg|Tham chiếu|Lý do')throw Error('Header: Tracking (hoặc Order ID) | Actual Net VNĐ | Cân Supplier kg | Tham chiếu | Lý do.');
  const items=rows.filter(r=>r.some(c=>c!==null&&String(c).trim()!=='')).map(r=>{
   if(typeof r[0]!=='string')throw Error('Tracking/Order ID phải là text để giữ số 0 đầu.');
-  return {[headings[0]==='Tracking'?'tracking':'order_code']:r[0],kind:form.get('kind'),amount:String(r[1]??''),supplier_weight:r[2]===null||r[2]===undefined||r[2]===''?null:String(r[2]),reference:r[3],reason:r[4]||form.get('reason')};
+  if(hasLabel&&r[5]!=null&&typeof r[5]!=='string')throw Error('URL Label phải là text.');
+  return {[headings[0]==='Tracking'?'tracking':'order_code']:r[0],label_url:hasLabel?r[5]:null,kind:form.get('kind'),amount:String(r[1]??''),supplier_weight:r[2]===null||r[2]===undefined||r[2]===''?null:String(r[2]),reference:r[3],reason:r[4]||form.get('reason')};
  });
  return {action:'import',supplier:form.get('supplier'),reason:form.get('reason'),request_key:form.get('request_key'),items};
 }

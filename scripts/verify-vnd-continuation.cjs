@@ -108,6 +108,12 @@ try{
   call('consent',{order_id:mixedOrder.id,expected_revision:ops.vndRequest(mixedOrder.id).revision},client);
   const mixedCarton=db.prepare('SELECT id FROM order_cartons WHERE order_id=?').get(mixedOrder.id);
   tracking.addOrderTracking({orderId:mixedOrder.id,cartonId:mixedCarton.id,tracking:'TEST-UAT-MIXED-TRACKING',labelUrl:'https://labels.test/mixed.pdf',actorId:owner.id});
+  const fulfillmentOrder=make('UPS','SAVER');
+  call('request',{order_id:fulfillmentOrder.id},client);
+  call('consent',{order_id:fulfillmentOrder.id,expected_revision:ops.vndRequest(fulfillmentOrder.id).revision},client);
+  const fulfillmentCarton=db.prepare('SELECT id FROM order_cartons WHERE order_id=?').get(fulfillmentOrder.id);
+  const fulfillmentTracking=tracking.addOrderTracking({orderId:fulfillmentOrder.id,cartonId:fulfillmentCarton.id,tracking:'TEST-UAT-EPOCH',labelUrl:'https://labels.test/first-epoch.pdf',actorId:owner.id});
+  tracking.updateOrderTracking({orderId:fulfillmentOrder.id,id:fulfillmentTracking.id,labelUrl:'https://labels.test/second-epoch.pdf'});
   const weeklyClient=auth.createUser({username:'test-weekly-ui',display_name:'TEST Weekly Statement',password:'TestPass123!',role:'CLIENT',sales_user_id:sales.id});
   const weeklyToken=auth.createSession(weeklyClient.id).token;
   ops.vndAction(owner,{action:'activate',client_id:weeklyClient.id,request_key:'test-weekly-ui-activate'});

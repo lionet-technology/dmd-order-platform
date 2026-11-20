@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import {db} from './db';
+import {postingAttempt} from './vnd-fulfillment';
 import type {AuthUser} from './auth';
 import {sumVnd,subtractVnd} from './vnd-money';
 import {validVndDay,vndDay,nextVndDay} from './vnd-debt';
@@ -45,8 +46,12 @@ export function linkSupplierPostings(actor:AuthUser,supplier:string,input:Row,re
   let found=false;
   for(const p of periods){
    const snap=JSON.parse(String(p.snapshot_json));
-   const lot=e.cost_id?(db.prepare('SELECT lot_id FROM vnd_supplier_costs WHERE id=?').get(e.cost_id) as Row).lot_id:null;
-   const original=lot?snap.actual_costs.filter((x:Row)=>(x.cost as Row).lot_id===lot).at(-1):snap.entries.find((x:Row)=>x.id===input.original_ledger_id);
+   const cost=e.cost_id?db.prepare('SELECT * FROM vnd_supplier_costs WHERE id=?').get(e.cost_id) as Row:undefined;
+   const epoch=cost?postingAttempt(cost,e):null;
+   const original=cost?snap.actual_costs.filter((x:Row)=>{
+    const frozen=x.cost as Row;
+    return frozen.lot_id===cost.lot_id&&epoch!==null&&postingAttempt(frozen,x)===epoch;
+   }).at(-1):snap.entries.find((x:Row)=>x.id===input.original_ledger_id);
    if(original){link('LEDGER',e.id,originalPeriod(original.created_at),original.id);found=true;break;}
   }
   if(e.kind==='ADJUSTMENT'&&periods.length&&!found)throw Error('Điều chỉnh sau khóa cần original_ledger_id thuộc kỳ gốc của Supplier.');

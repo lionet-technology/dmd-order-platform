@@ -98,6 +98,11 @@ export function installVndOperationalSchema(db:Database.Database) {
  CREATE INDEX IF NOT EXISTS vnd_claim_links_supplier ON vnd_claim_links(supplier_claim_id,client_claim_id);
  `);
  for(const table of ['vnd_claim_processing','vnd_claim_watchlist','vnd_claim_links'])for(const op of ['UPDATE','DELETE'])db.exec(`CREATE TRIGGER IF NOT EXISTS immutable_${table}_${op} BEFORE ${op} ON ${table} BEGIN SELECT RAISE(ABORT,'Immutable VND case history'); END;`);
+ db.transaction(()=>{
+  if (!(db.pragma('table_info(vnd_supplier_costs)') as {name:string}[]).some(column => column.name === 'fulfillment_epoch'))
+   db.exec('ALTER TABLE vnd_supplier_costs ADD COLUMN fulfillment_epoch INTEGER');
+  db.exec('CREATE INDEX IF NOT EXISTS vnd_supplier_cost_scope ON vnd_supplier_costs(lot_id,supplier,fulfillment_epoch)');
+ }).immediate();
  installSupplierImportSchema(db);
  installSupplierPeriodSchema(db);
  for(const table of ['vnd_supplier_claims','vnd_supplier_claim_events','vnd_claim_notifications','vnd_claim_reads'])for(const op of ['UPDATE','DELETE'])db.exec(`CREATE TRIGGER IF NOT EXISTS immutable_${table}_${op} BEFORE ${op} ON ${table} BEGIN SELECT RAISE(ABORT,'Immutable VND claim history'); END;`);

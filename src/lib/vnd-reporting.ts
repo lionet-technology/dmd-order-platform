@@ -1,5 +1,5 @@
 import {db} from './db';
-import {approvedVndLot} from './vnd-supplier';
+import {approvedFulfillment,lotFulfillments} from './vnd-fulfillment';
 import {vndCommissionInputs} from './vnd-commission';
 import {addVnd,subtractVnd,sumVnd} from './vnd-money';
 import {validVndDay} from './vnd-debt';
@@ -27,7 +27,13 @@ function readReport(month:string){
   if(q&&entries.length){const quote=JSON.parse(String(q.snapshot_json));if(typeof quote.net_vnd!=='string'||typeof quote.base_vnd!=='string')group.missing_estimate=true;group.estimated_net=addVnd(group.estimated_net,quote.net_vnd??'0');group.estimated_base=addVnd(group.estimated_base,quote.base_vnd??'0');}
   groups.set(key,group);
  }
- const actuals=orders.map(o=>{const lots=db.prepare('SELECT id FROM order_lots WHERE order_id=?').all(o.id) as {id:number}[];const costs=lots.map(l=>approvedVndLot(l.id));const complete=lots.length>0&&costs.every(Boolean);return {order_id:Number(o.id),actual_net:complete?sumVnd(costs.map(c=>String(c!.amount))):null,status:complete?'APPROVED_TOTAL':'MISSING_ACTUAL',coverage:String(o.service)==='ePacket'&&['Standard','Eco'].includes(String(o.sub_service))?'WORKBOOK_INCLUSIVE_MID_LAST_MILE':'TOTAL',component_breakdown:String(o.service)==='ePacket'&&['Standard','Eco'].includes(String(o.sub_service))?'DEFERRED':'NOT_SPECIFIED'};});
+ const actuals=orders.map(o=>{const lots=db.prepare('SELECT id FROM order_lots WHERE order_id=?').all(o.id) as {id:number}[];const costs=lots.map(l=>{
+  const history=lotFulfillments(l.id);
+  if(!history||history.incomplete)return null;
+  const actual=history.attempts.map(a=>approvedFulfillment(l.id,a.supplier,a.id));
+  if(actual.some(a=>a.uncertain)||!actual.at(-1)?.approved)return null;
+  return sumVnd(actual.flatMap(a=>a.approved?[String(a.approved.amount)]:[]));
+ });const complete=lots.length>0&&costs.every(c=>c!==null);return {order_id:Number(o.id),actual_net:complete?sumVnd(costs.map(String)):null,status:complete?'APPROVED_TOTAL':'MISSING_ACTUAL',coverage:String(o.service)==='ePacket'&&['Standard','Eco'].includes(String(o.sub_service))?'WORKBOOK_INCLUSIVE_MID_LAST_MILE':'TOTAL',component_breakdown:String(o.service)==='ePacket'&&['Standard','Eco'].includes(String(o.sub_service))?'DEFERRED':'NOT_SPECIFIED'};});
  const decisionRows=db.prepare("SELECT category,delta,context_json FROM vnd_refund_events WHERE kind='DECISION' AND substr(datetime(created_at,'+7 hours'),1,7)=?").all(month) as Row[];
  const decisions=new Map<string,{sales_user_id:number|null;category:string;delta:string}>();
  for(const d of decisionRows){const ids=[...new Set((JSON.parse(String(d.context_json)).orders as Row[]).map(o=>o.sales_user_id))];const sales=ids.length===1&&Number(ids[0])>0?Number(ids[0]):null;const k=String(sales)+':'+d.category;const g=decisions.get(k)??{sales_user_id:sales,category:String(d.category),delta:'0'};g.delta=addVnd(g.delta,String(d.delta));decisions.set(k,g);}

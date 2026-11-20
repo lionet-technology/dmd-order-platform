@@ -1,0 +1,51 @@
+{
+  "status": "PASS",
+  "baseline": "7bec0dc822f573e223f91d5c7c849e8c7695044a",
+  "source": "Disposable SQLite fixture from the baseline Supplier import suite",
+  "integrity": "ok",
+  "foreign_key_violations": 0,
+  "reinstall": "PASS",
+  "tables": [
+    {
+      "name": "vnd_supplier_costs",
+      "rows": 11
+    },
+    {
+      "name": "vnd_supplier_ledger",
+      "rows": 11
+    },
+    {
+      "name": "vnd_supplier_reviews",
+      "rows": 10
+    },
+    {
+      "name": "vnd_supplier_import_rows",
+      "rows": 19
+    },
+    {
+      "name": "vnd_supplier_import_decisions",
+      "rows": 13
+    },
+    {
+      "name": "vnd_supplier_templates",
+      "rows": 3
+    },
+    {
+      "name": "vnd_supplier_document_lines",
+      "rows": 10
+    },
+    {
+      "name": "vnd_supplier_periods",
+      "rows": 1
+    },
+    {
+      "name": "vnd_supplier_posting_links",
+      "rows": 1
+    },
+    {
+      "name": "vnd_ledger",
+      "rows": 0
+    }
+  ],
+  "legacy_fulfillment_epochs": "Original cost rows keep NULL epoch. Closed snapshots and source links are byte-identical."
+}
