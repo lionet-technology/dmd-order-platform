@@ -2,6 +2,7 @@ import {withFinancialPrivacy} from '@/lib/financial-privacy';
 import {NextRequest,NextResponse} from 'next/server';
 import {requireAnyRole} from '@/lib/auth';
 import {vndAction,vndView} from '@/lib/vnd-operational';
+import {ServicePriceChoiceRequired} from '@/lib/vnd-shipping-edit';
 export const runtime='nodejs';
 export const GET=withFinancialPrivacy(handleGET);
 export const POST=withFinancialPrivacy(handlePOST);
@@ -13,5 +14,5 @@ async function handleGET(req:NextRequest){
 async function handlePOST(req:NextRequest){
  const a=requireAnyRole(req,['ADMIN','BOD','FINANCE','SALES','CLIENT']);if(a.error)return a.error;
  try{return NextResponse.json(vndAction(a.user,await req.json()));}
- catch(e){if(e&&typeof e==='object'&&'code' in e&&String(e.code).startsWith('SQLITE_BUSY'))console.error('VND transaction busy',e);return NextResponse.json({error:e instanceof Error?e.message:'Không thể xử lý.'},{status:400});}
+ catch(e){if(e instanceof ServicePriceChoiceRequired)return NextResponse.json({error:e.message,prices:e.prices},{status:409});if(e&&typeof e==='object'&&'code' in e&&String(e.code).startsWith('SQLITE_BUSY'))console.error('VND transaction busy',e);return NextResponse.json({error:e instanceof Error?e.message:'Không thể xử lý.'},{status:400});}
 }

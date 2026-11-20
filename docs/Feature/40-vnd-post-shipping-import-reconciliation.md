@@ -61,3 +61,7 @@ Nếu bằng chứng chỉ ra một lượt duy nhất, Finance/BOD có thể ch
 TOTAL thay tổng của đúng lượt bằng delta. SUPPLEMENT cần Actual gốc của đúng lượt. Kỳ đóng giữ nguyên. Delta đến muộn liên kết bút toán đã khóa của cùng lượt, nếu có. Actual cũ chưa có mã lượt được đối chiếu với mốc ghi sổ và lịch sử tuyến. Khi thiếu bằng chứng để xác định phạm vi của Actual cũ, hàng đợi chặn ghi thêm.
 
 [Kiểm thử Phase 4](../../artifacts/gd1-phase4-fulfillment-epochs-2026-11-20/VERIFICATION.md).
+
+## Phạm vi kiện/Lot của phụ phí và thuế Client
+
+Dòng nhập bằng Tracking lưu ID Tracking, kiện và Lot nếu có trong hồ sơ. Dòng nhập bằng Order ID giữ phạm vi Order. Tham chiếu dòng vẫn duy nhất theo Client và tra lại được bằng Order ID hoặc Tracking của cùng dòng. Một tham chiếu đã gắn Tracking không được gắn lại sang Tracking khác. Mỗi dòng tạo một bút toán Client cấp Order. Bản ghi cũ vẫn đọc được với tham chiếu kiện/Lot để trống.

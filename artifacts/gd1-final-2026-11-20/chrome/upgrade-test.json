@@ -1,0 +1,34 @@
+{
+  "status": "PASS",
+  "fixture": "Disposable backup with pre-change charge-source schema",
+  "legacy_charge_rows": 2,
+  "unchanged_tables": [
+    "vnd_auto_quotes",
+    "vnd_auto_quote_history",
+    "vnd_purchase_requests",
+    "vnd_claim_processing",
+    "vnd_claim_watchlist",
+    "vnd_claim_links",
+    "vnd_claims",
+    "vnd_refund_events",
+    "vnd_supplier_claims",
+    "vnd_supplier_claim_events",
+    "vnd_supplier_periods",
+    "vnd_supplier_posting_links",
+    "vnd_supplier_costs",
+    "vnd_supplier_import_rows",
+    "vnd_supplier_import_decisions",
+    "vnd_supplier_ledger",
+    "vnd_supplier_addons",
+    "vnd_supplier_addon_settlements",
+    "vnd_commands",
+    "vnd_ledger"
+  ],
+  "nullable_attribution": [
+    "tracking_id",
+    "carton_id",
+    "lot_id"
+  ],
+  "integrity": "ok",
+  "foreign_key_violations": 0
+}

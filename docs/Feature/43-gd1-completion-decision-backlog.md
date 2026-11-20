@@ -78,4 +78,17 @@ Template Supplier × Service/Sub-Service có phiên bản, preview trong queue, 
 
 Đã triển khai [Supplier Add-on thủ công](19-supplier-accounts.md#supplier-add-on-vnđ-thủ-công) với Supplier nhập tự do, ghi thanh toán từng phần và dòng tiền tháng. SELL gắn Client ghi phí vào Balance một lần. Client trả qua luồng nạp tiền hiện tại, ghi trên sổ Client và không phân bổ lại các lần nạp cho từng Add-on.
 
-**Còn mở:** Chuyên tuyến nhập giá/chi phí theo Order hoặc Lot và popup chọn giữ offer hay dùng giá tự động khi đổi Service. Pilot chứng từ thật và xác minh DEV/TEST theo dõi riêng.
+## Audit kỹ thuật GĐ1 · 20/11/2026
+
+| Trạng thái | Luồng | Phạm vi |
+|---|---|---|
+| Technical DONE | Chuyên tuyến nhiều Lot | Nhập Selling Price, Estimated Net và Base theo từng trường tại Order hoặc Lot. Một địa chỉ, một Purchase Request, tổng giá bán dùng chung cho consent, FIFO, Reserve và Charge. [Feature 33](33-vnd-manual-purchase.md) |
+| Technical DONE | Đổi Service có offer | So sánh hai giá khi xác nhận, giữ offer hoặc áp giá tự động, làm mới consent và giữ Reserve cũ đến khi đủ điều kiện thay thế. Khóa Edit sau Tracking/Label. [Feature 28](28-order-edit-v1.md) |
+| Technical DONE | Order, Finance và kho | Published pricing theo ePacket/Yun/UPS, Purchase và Charge, Edit/Cancel & Duplicate, surcharge/tax có nguồn Tracking/kiện/Lot, Credit Term, Weekly Statement, Hold và Manifest trong phạm vi VNĐ đã kiểm thử. |
+| Technical DONE | Supplier | Actual và payable theo đúng Lot/lượt fulfillment, template Excel, queue review, void/Emergency, kỳ khóa và adjustment, BUY/SELL, receivable. Đối soát chứng từ thật thuộc pilot. |
+| Technical DONE | Claim/Refund và Commission | Phân bổ Refund theo quyết định đã duyệt, Bank/Balance hoặc Bank/Offset, chốt hoa hồng theo tháng và ghi delta vào kỳ mới. GP-Net sau Refund liên nhóm và xu hướng nhiều tháng nằm ở hàng quyết định/báo cáo bên dưới. |
+| Optional deferred | Nhiều Supplier trong một Order Chuyên tuyến | Route, eligibility và Supplier chính của fulfillment epoch hiện lưu cấp Order. Cho Supplier riêng từng Lot sẽ đổi khóa tuyến, chính sách void, trạng thái Emergency và nối chứng từ với các journal đã khóa. GĐ1 tiếp tục dùng chung Supplier trong Order. |
+| Decision / reporting | Credit note và thuế Supplier, GP-Net liên nhóm, xu hướng nhiều tháng, phân quyền nhạy cảm | Cần quyết định về tham chiếu chứng từ xuyên payable/receivable, thuế pass-through, công thức GP-Net sau Refund liên nhóm, phạm vi báo cáo xu hướng và quyền nhạy cảm. Module Credit Note riêng đã hoãn. |
+| UI/UAT/pilot | Chấp nhận vận hành và dữ liệu thật | Admin/Sales/Client/Finance/BOD cần nghiệm thu quy trình, kiểm tra carrier/void policy, mẫu chứng từ, mapping và bảng giá/zone/cap thật. Theo dõi riêng deploy và restore DEV/TEST, đối chiếu tài khoản USD cũ và chấp nhận pilot. |
+
+[Bằng chứng kiểm thử GĐ1](../../artifacts/gd1-final-2026-11-20/VERIFICATION.md).

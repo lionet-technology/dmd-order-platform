@@ -86,8 +86,27 @@ try{
  bad(()=>finance.upsertOrder({client_user_id:client.id,order_id:key(),service:'ePacket',sub_service:'Standard',supplier:'DMD',country:'ZZ',carton_count:1,weight:.05,length:1,width:1,height:1,item:'TEST',material:'Cotton'}),/mapping|quốc gia/);
  db.prepare("UPDATE orders SET sub_service='Standard',supplier='DMD' WHERE id=?").run(auto.id);
  call('request',{order_id:auto.id},client);eq(db.prepare('SELECT sub_service FROM orders WHERE id=?').get(auto.id).sub_service,'EU');call('offer',{order_id:auto.id,amount:'100',expected_revision:ops.vndRequest(auto.id).revision});
- bad(()=>call('edit',{order_id:auto.id,expected_revision:ops.vndRequest(auto.id).revision,shipping:{service:'UPS',sub_service:'SAVER',supplier:'SGBay',country:'US'}}),/chọn giá/);
- call('edit',{order_id:auto.id,expected_revision:ops.vndRequest(auto.id).revision,shipping:{service:'UPS',sub_service:'SAVER',supplier:'SGBay',country:'US'},price_selection:'AUTOMATIC'});
+ const edit={order_id:auto.id,expected_revision:ops.vndRequest(auto.id).revision,shipping:{service:'UPS',sub_service:'SAVER',supplier:'SGBay',country:'US'}};
+ const beforePreview=JSON.stringify(ops.vndView(client.id,owner));
+ let prices;
+ try{call('edit',edit);assert.fail('Expected Service price choices');}catch(error){assert.match(error.message,/Chọn giá/);prices=error.prices;}
+ eq(prices.offer,'100');eq(typeof prices.automatic,'string');
+ eq(JSON.stringify(ops.vndView(client.id,owner)),beforePreview,'Selection has no financial side effects');
+ bad(()=>call('edit',{...edit,price_selection:'AUTOMATIC',expected_offer:'100',expected_automatic:'0'}),/Chọn giá/);
+ const selection={...edit,expected_offer:prices.offer,expected_automatic:prices.automatic};
+ bad(()=>call('edit',{...selection,price_selection:'KEEP_OFFER'},sales),/Admin/);
+ const keepRollback=new Error('rollback keep offer fixture');
+ bad(()=>db.transaction(()=>{
+  call('edit',{...selection,price_selection:'KEEP_OFFER'});
+  eq(ops.vndRequest(auto.id).offer,'100');
+  eq(ops.vndRequest(auto.id).status,'PRICE_CONFIRMATION_REQUIRED');
+  eq(ops.vndRequest(auto.id).accepted_revision,null);
+  throw keepRollback;
+ })(),/rollback keep offer/);
+ eq(JSON.stringify(ops.vndView(client.id,owner)),beforePreview);
+ call('edit',{...selection,price_selection:'AUTOMATIC'});
+ eq(ops.vndRequest(auto.id).offer,prices.automatic);
+ eq(ops.vndRequest(auto.id).revision,edit.expected_revision+1);
  eq(ops.vndRequest(auto.id).status,'PRICE_CONFIRMATION_REQUIRED');
  call('addon',{name:'TEST Add-on',revenue:'999999999.123456',cost:null,supplier:'FREE TEXT'},sales);
  const addon=db.prepare('SELECT * FROM vnd_addons WHERE client_id=?').get(client.id),before=ops.vndBalance(client.id).balance;
@@ -133,7 +152,13 @@ try{
    db.prepare("INSERT INTO vnd_ledger(client_id,order_id,kind,delta,reason,actor_id,request_key,created_at) VALUES (?,?,'ORDER_CHARGE','-100','TEST',?,?,?)").run(clientId,order.id,owner.id,'monthly-ui-'+i,time);
    return order.id;
   });
-  module.exports={lastMonth,monthlyOrders,weeklyClient,weeklyToken,claimOrder,mixedOrder,claimLotId:claimCarton.order_lot_id,client,owner,sales,bod,fin,replacement,dbPath:process.env.DMD_DB_PATH,tokens:Object.fromEntries(Object.entries({ADMIN:owner,SALES:sales,CLIENT:client,BOD:bod,FINANCE:fin}).map(([role,user])=>[role,auth.createSession(user.id).token]))};
+  db.prepare("INSERT OR IGNORE INTO enum_values(enum_type,value,parent_value,active) VALUES ('SUB_SERVICE','LOT TEST','Chuyên tuyến',1)").run();
+  db.prepare("INSERT INTO service_route_configs(service,sub_service,supplier,active,client_self_purchase,max_cartons_per_order) VALUES ('Chuyên tuyến','LOT TEST','SGBay',1,1,10)").run();
+  db.prepare("INSERT INTO client_service_settings(client_user_id,service,sub_service,is_enabled) VALUES (?,'Chuyên tuyến','LOT TEST',1)").run(client.id);
+  const lotOrder=make('Chuyên tuyến','LOT TEST');
+  require('../src/lib/order-shipments.ts').saveOrderShipmentStructure(lotOrder.id,{cartons:[1,2].map(lot_number=>({carton_number:lot_number,lot_number,weight:1,length:1,width:1,height:1,items:[{description:'TEST',material:'Cotton',quantity:1}]}))});
+  call('request',{order_id:lotOrder.id},client);
+  module.exports={lotOrder,lastMonth,monthlyOrders,weeklyClient,weeklyToken,claimOrder,mixedOrder,claimLotId:claimCarton.order_lot_id,client,owner,sales,bod,fin,replacement,dbPath:process.env.DMD_DB_PATH,tokens:Object.fromEntries(Object.entries({ADMIN:owner,SALES:sales,CLIENT:client,BOD:bod,FINANCE:fin}).map(([role,user])=>[role,auth.createSession(user.id).token]))};
  }
  console.log('VND CONTINUATION PASS ('+checks+' assertions)');
 }finally{db.close();}

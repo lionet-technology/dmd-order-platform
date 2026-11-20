@@ -1,5 +1,5 @@
 ## VND continuation — 17/11/2026
-Separate Admin shipping edit is implemented for VND Draft/Purchasing before any Tracking OR Label, including carton/Lot changes and explicit China region. After a manual offer, Service change requires an explicit new offer or automatic-price choice, then consent; retain reserve during pending consent/funds. Existing offer, post-charge correction and Tracking/Label operations remain separate.
+Separate Admin shipping edit is implemented for VND Draft/Purchasing before any Tracking OR Label, including carton/Lot changes and explicit China region. After a manual offer, the confirmation dialog shows the current offer and the proposed Service's automatic price. Admin chooses to keep the offer or apply the automatic price, then the Client confirms the new revision. Keep the prior reserve during pending consent/funds. Existing offer, post-charge correction and Tracking/Label operations remain separate.
 
 [Current implementation, acceptance and remaining boundaries](35-service-v1-completion.md). This delta supersedes earlier delivery-status statements below only within the named new-account VND scope; broader V1 completion is not claimed.
 
@@ -46,3 +46,9 @@ Regression: `scripts/verify-purchase-consent.cjs` covers legacy tracking-only an
 
 ## Remaining work
 Reconcile Work handoff; implement operational VND price and financial path; then unified atomic edit/consent, permissions, cancellation/replacement with transactional eligibility/idempotency, source linkage and processing Purchase Request. Add full API/UI and cancellation/duplicate/ledger race/retry/rollback regressions and browser acceptance. This document does not claim those features are delivered. A scoped implementation commit must not be described as complete rollout; required whole-flow gates remain pending.
+
+## Xác nhận đổi Service khi có offer
+
+Thao tác Edit tính giá cho dữ liệu vận chuyển, vùng China và kiện/Lot sau chỉnh sửa. Hộp thoại hiển thị offer hiện hành, giá tự động hoặc lý do thiếu giá. Admin chọn giữ offer hoặc áp giá tự động. Tuyến Manual Quote cho phép giữ offer. Tuyến tự động cần báo giá hợp lệ. Mỗi lần xác nhận kiểm tra revision và tính lại hai mức giá trên server. Nếu giá đã đổi, Admin xem và chọn lại. Lần hiện hộp thoại và nút Quay lại không ghi thay đổi, hàng đợi hay bút toán.
+
+Sau khi lưu, offer giữ lại là mức giá cấp Order. Chi phí ước tính theo tuyến cũ và chi tiết mức giá theo Lot vẫn tra được trong lịch sử báo giá. Client cần chấp thuận revision mới kể cả khi số tiền giữ nguyên. Reserve cũ vẫn có hiệu lực trong lúc chờ consent hoặc chờ sức mua. Chỉ thay Reserve trong giao dịch nguyên tử sau khi đủ điều kiện. Khi đã từng có Tracking hoặc Label, Edit bị khóa ở server.

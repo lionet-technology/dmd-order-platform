@@ -5,7 +5,7 @@ import VndTools from '../vnd-tools';
 import VndCommissionStatementPanel from '../vnd-commission-statement-panel';
 import VndExceptionTools from '../vnd-exception-tools';
 import {useEffect,useRef,useState} from 'react';
-type Purchase={order_id:number;status:string;offer:string|null;revision:number;reserve:string;pricing_error?:string|null;cartons:Array<{id:number;carton_number:number}>};
+type Purchase={order_id:number;status:string;offer:string|null;revision:number;reserve:string;pricing_error?:string|null;service?:string;lots?:Array<{lot_number:number}>;cartons:Array<{id:number;carton_number:number}>};
 type Entry={id:number;kind:string;delta:string;reason:string;created_at:string};
 type Account={currency:string;balance:string;reserved:string;available:string;credit_limit:string;credit_term:CreditTerm;purchase_locked:boolean;debt?:{principal:string;interest:string;projected_interest:string;deadline:string|null;overdue:boolean};requests:Purchase[];ledger:Entry[]};
 type User={id:number;role:string};
@@ -15,6 +15,9 @@ export default function VndWorkspace(){
  const [action,setAction]=useState('request'),[order,setOrder]=useState(''),[amount,setAmount]=useState(''),[reason,setReason]=useState(''),[revision,setRevision]=useState(''),[tracking,setTracking]=useState(''),[label,setLabel]=useState(''),[carton,setCarton]=useState('');
  const [weeks,setWeeks]=useState('0'),[locked,setLocked]=useState(true);
  const [net,setNet]=useState(''),[base,setBase]=useState('');
+ const [lotPrices,setLotPrices]=useState<Record<number,Partial<Record<'selling_vnd'|'net_vnd'|'base_vnd',string>>>>({});
+ const customLots=account?.requests.find(r=>r.order_id===Number(order)&&r.service?.toLowerCase()==='chuyên tuyến')?.lots??[];
+ const lotSelling=customLots.some(lot=>lotPrices[lot.lot_number]?.selling_vnd);
  const receipt=useRef<{payload:string;key:string}|null>(null);
  useEffect(()=>{fetch('/api/auth/status').then(r=>r.json()).then(d=>{setUser(d.user);if(['FINANCE','BOD'].includes(d.user?.role))setAction('payment');if(d.user?.role==='CLIENT')setClient(String(d.user.id));}).catch(()=>setMessage('Không đọc được phiên đăng nhập.'));},[]);
  async function load(){setBusy(true);try{const r=await fetch('/api/service-v1/operations?client_id='+encodeURIComponent(client));const d=await r.json();if(!r.ok)throw Error(d.error);setAccount(d);setMessage('Đã tải tài khoản.');}catch(e){setMessage(e instanceof Error?e.message:'Không tải được.');}finally{setBusy(false);}}
@@ -29,7 +32,13 @@ export default function VndWorkspace(){
     if(['request','offer','consent','override','correction','surcharge','tax'].includes(action))body.order_id=Number(order);
     if(['offer','consent','override','correction'].includes(action))body.expected_revision=Number(revision);
     if(['offer','correction','surcharge','tax','credit_limit'].includes(action))body.amount=amount;
-    if(action==='offer'&&user?.role==='ADMIN'&&(net||base))Object.assign(body,{net_vnd:net,base_vnd:base});
+    if(action==='offer'&&user?.role==='ADMIN'){
+     if(!amount)delete body.amount;
+     if(net)body.net_vnd=net;
+     if(base)body.base_vnd=base;
+     const rows=customLots.map(({lot_number})=>({lot_number,...Object.fromEntries(Object.entries(lotPrices[lot_number]??{}).filter(([,value])=>value!==''))})).filter(row=>Object.keys(row).length>1);
+     if(rows.length)body.lot_prices=rows;
+    }
     if(action==='credit_term')body.weeks=Number(weeks);
     if(action==='purchase_lock')body.locked=locked;
     if(action==='activate')body.credit_limit=amount||'0';
@@ -58,7 +67,7 @@ export default function VndWorkspace(){
     {account.purchase_locked&&<p role="alert">Admin đã khóa mua thủ công.</p>}
     {account.available.startsWith("-")&&<p role="alert">Sức mua đang âm. Posting đã ghi nhận; Purchase mới tiếp tục chờ đủ sức mua. Không tự tạo Debt.</p>}
     <p>Debt gốc: {account.debt?.principal??'0'} VNĐ · Lãi đã ghi: {account.debt?.interest??'0'} · Lãi tạm tính: {account.debt?.projected_interest??'0'} · Hạn: {account.debt?.deadline??'Không có Debt'}{account.debt?.overdue?' · Đã quá hạn':''}</p>
-    <h2>Yêu cầu mua</h2><div style={{overflowX:'auto',maxWidth:'100%'}}><table><thead><tr><th>Order</th><th>Trạng thái</th><th>Giá VNĐ</th><th>Reserve VNĐ</th><th>Revision</th><th>Chọn</th></tr></thead><tbody>{account.requests.map(r=><tr key={r.order_id}><td>{r.order_id}</td><td>{labels[r.status]}</td><td>{r.offer??'Chưa báo'}{r.pricing_error&&<p role="alert">Cần xử lý giá: {r.pricing_error}</p>}</td><td>{r.reserve}</td><td>{r.revision}</td><td><button onClick={()=>{setOrder(String(r.order_id));setCarton(String(r.cartons[0]?.id??''));setRevision(String(r.revision));setAmount(r.offer??'');setNet('');setBase('');}}>Chọn Order</button></td></tr>)}</tbody></table></div>
+    <h2>Yêu cầu mua</h2><div style={{overflowX:'auto',maxWidth:'100%'}}><table><thead><tr><th>Order</th><th>Trạng thái</th><th>Giá VNĐ</th><th>Reserve VNĐ</th><th>Revision</th><th>Chọn</th></tr></thead><tbody>{account.requests.map(r=><tr key={r.order_id}><td>{r.order_id}</td><td>{labels[r.status]}</td><td>{r.offer??'Chưa báo'}{r.pricing_error&&<p role="alert">Cần xử lý giá: {r.pricing_error}</p>}</td><td>{r.reserve}</td><td>{r.revision}</td><td><button onClick={()=>{setOrder(String(r.order_id));setCarton(String(r.cartons[0]?.id??''));setRevision(String(r.revision));setAmount(r.offer??'');setNet('');setBase('');setLotPrices({});}}>Chọn Order</button></td></tr>)}</tbody></table></div>
    </>}
    <h2>Thao tác</h2>
    <form onSubmit={e=>{e.preventDefault();void submit();}} style={{display:'grid',gap:12,maxWidth:600}}>
@@ -72,12 +81,22 @@ export default function VndWorkspace(){
      {user.role==='ADMIN'&&<><option value="credit_term">Đổi Credit Term</option><option value="purchase_lock">Khóa / mở mua thủ công</option></>}
      {admin&&<option value="activate">Mở VNĐ cho Client mới chưa có dữ liệu</option>}
     </select></label>
-    {['request','offer','consent','override','correction','surcharge','tax','tracking','cancel'].includes(action)&&<label>Order ID <input required value={order} onChange={e=>{setOrder(e.target.value);setNet('');setBase('');}}/></label>}
+    {['request','offer','consent','override','correction','surcharge','tax','tracking','cancel'].includes(action)&&<label>Order ID <input required value={order} onChange={e=>{setOrder(e.target.value);setNet('');setBase('');setLotPrices({});}}/></label>}
     {['offer','consent','override','correction'].includes(action)&&<label>Revision đang xem <input required value={revision} onChange={e=>setRevision(e.target.value)}/></label>}
-    {['offer','correction','surcharge','tax','payment','adjustment','credit_limit','activate'].includes(action)&&<label>Số tiền VNĐ <input required inputMode="decimal" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="100000.123456"/></label>}
+    {['offer','correction','surcharge','tax','payment','adjustment','credit_limit','activate'].includes(action)&&<label>Số tiền VNĐ <input required={action!=='offer'||!lotSelling} inputMode="decimal" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="100000.123456"/></label>}
     {action==='credit_term'&&<label>Credit Term (tuần) <input required type="number" min="0" step="1" value={weeks} onChange={e=>setWeeks(e.target.value)}/></label>}
     {action==='purchase_lock'&&<label>Trạng thái mua <select value={String(locked)} onChange={e=>setLocked(e.target.value==='true')}><option value="true">Khóa</option><option value="false">Mở</option></select></label>}
-    {action==='offer'&&user.role==='ADMIN'&&<><label>Estimated Net VNĐ · Chuyên tuyến <input inputMode="decimal" value={net} required={Boolean(base)} onChange={e=>setNet(e.target.value)}/></label><label>Base VNĐ · Chuyên tuyến <input inputMode="decimal" value={base} required={Boolean(net)} onChange={e=>setBase(e.target.value)}/></label></>}
+    {action==='offer'&&user.role==='ADMIN'&&<><label>Estimated Net VNĐ · Chuyên tuyến <input inputMode="decimal" value={net} onChange={e=>setNet(e.target.value)}/></label><label>Base VNĐ · Chuyên tuyến <input inputMode="decimal" value={base} onChange={e=>setBase(e.target.value)}/></label></>}
+    {action==='offer'&&user.role==='ADMIN'&&customLots.length>0&&<fieldset>
+     <legend>Báo giá theo Lot (VNĐ)</legend>
+     <p>Với mỗi trường, điền ở cấp Order hoặc điền cho tất cả Lot. Xóa số tiền cấp Order trước khi nhập Selling Price theo Lot.</p>
+     {customLots.map(({lot_number})=><div key={lot_number}>
+      <strong>Lot {lot_number}</strong>
+      {(['selling_vnd','net_vnd','base_vnd'] as const).map((field,i)=><label key={field}>
+       {['Selling Price','Estimated Net','Base'][i]} <input aria-label={'Lot '+lot_number+' '+['Selling Price','Estimated Net','Base'][i]} inputMode="decimal" value={lotPrices[lot_number]?.[field]??''} onChange={e=>setLotPrices(rows=>({...rows,[lot_number]:{...rows[lot_number],[field]:e.target.value}}))}/>
+      </label>)}
+     </div>)}
+    </fieldset>}
     {action==='tracking'&&<><label>Kiện hàng <select required value={carton} onChange={e=>setCarton(e.target.value)}><option value="">Chọn kiện</option>{account?.requests.find(r=>r.order_id===Number(order))?.cartons.map(c=><option key={c.id} value={c.id}>Kiện {c.carton_number}</option>)}</select></label><label>Tracking <input required value={tracking} onChange={e=>setTracking(e.target.value)}/></label><label>Link Label PDF <input required type="url" value={label} onChange={e=>setLabel(e.target.value)}/></label></>}
     <label>Lý do / tham chiếu <input value={reason} onChange={e=>setReason(e.target.value)} required={!['request','consent','tracking','activate'].includes(action)}/></label>
     {['consent','override'].includes(action)&&<p>Giá xác nhận: {account?.requests.find(r=>r.order_id===Number(order))?.offer??'Hãy tải và chọn Order'} VNĐ. Xác nhận không bỏ qua sức mua hoặc điều kiện dịch vụ.</p>}

@@ -1,3 +1,7 @@
+## Audit kỹ thuật GĐ1 · 20/11/2026
+
+[Feature 43](43-gd1-completion-decision-backlog.md#audit-kỹ-thuật-gđ1--20112026) ghi trạng thái Chuyên tuyến nhiều Lot, popup giá khi đổi Service và các việc còn lại để nghiệm thu.
+
 ## Chốt hoa hồng VNĐ theo tháng · 20/11/2026
 
 [Feature 45](45-vnd-monthly-commission-closing.md) mô tả chốt tháng tự động, điều chỉnh Order kỳ đã khóa và Excel theo quyền Sales.

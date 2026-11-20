@@ -25,7 +25,8 @@ try{
  eq(ops.vndCancellationAmounts(o.id,100).refund,'3.123457');
  db.exec("CREATE TRIGGER TEST_charge_rollback BEFORE INSERT ON vnd_history WHEN NEW.event='IMPORT_CHARGE' BEGIN SELECT RAISE(ABORT,'TEST rollback'); END;");
  bad(()=>call([doc('tax')]),/rollback/);eq(JSON.stringify(ops.vndView(client.id,admin)),before);db.exec('DROP TRIGGER TEST_charge_rollback');
- db.prepare("INSERT INTO order_trackings(order_id,tracking,normalized_tracking) VALUES (?,'001-234','001234')").run(o.id);
+ const carton=db.prepare('SELECT * FROM order_cartons WHERE order_id=?').get(o.id);
+ const trackingId=Number(db.prepare("INSERT INTO order_trackings(order_id,carton_id,tracking,normalized_tracking) VALUES (?,?,'001-234','001234')").run(o.id,carton.id).lastInsertRowid);
  const {order_code:orderCode,...existingCharge}=items[0];
  call([{...existingCharge,tracking:'001 234'}],sales);
  eq(ops.vndBalance(client.id).balance,'-3.123457');
@@ -40,6 +41,7 @@ try{
  bad(()=>call([{...existingCharge,tracking:1234}]),/text/);
  const trackingCharge={...existingCharge,amount:'0.000001',reference:key(),tracking:'001-234'};
  call([trackingCharge],sales);
+ eq(db.prepare('SELECT tracking_id,carton_id,lot_id FROM vnd_charge_sources WHERE reference=?').get(trackingCharge.reference),{tracking_id:trackingId,carton_id:carton.id,lot_id:carton.order_lot_id});
  eq(ops.vndBalance(client.id).balance,'-3.123458');
  const {tracking,...chargeFields}=trackingCharge;
  call([{...chargeFields,order_code:orderCode}]);

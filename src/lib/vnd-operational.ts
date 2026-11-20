@@ -5,6 +5,7 @@ import {vndEpacketDestination} from './vnd-routing';
 import {vndDebt,vndDebtProjection,accrueVndDebt,settleVndPayment,vndDebtAction} from './vnd-debt';
 import {closeVndWeeklyStatements,vndCreditStatus} from './vnd-statements';
 import {duplicateVndOrder} from './vnd-duplicate';
+import {customVndOffer} from './vnd-custom-offer';
 import {editVndShipping} from './vnd-shipping-edit';
 import {automaticVndOrderQuote,automaticSourceKind} from './service-v1-order-quote';
 import {findTrackingOwner} from './order-operations';
@@ -125,7 +126,8 @@ export function cancelVndMoney(orderId:number,percent:number,reason:string,actor
 export function vndView(clientId:number,actor:AuthUser){
  return db.transaction(()=>{
  vndAccess(actor,clientId);
- return {...vndBalance(clientId),credit_term:vndCreditStatus(clientId),purchase_locked:Boolean(user(clientId)?.purchase_locked),refunds:vndRefundView(clientId,actor),replacements:db.prepare('SELECT source_order_id,replacement_order_id FROM vnd_replacements r JOIN orders o ON o.id=r.source_order_id WHERE o.client_user_id=?').all(clientId),requests:(db.prepare('SELECT * FROM vnd_purchase_requests WHERE client_id=? ORDER BY id').all(clientId) as Row[]).map(r=>({...r,pricing_error:(db.prepare('SELECT pricing_error FROM vnd_auto_quotes WHERE order_id=?').get(r.order_id) as Row|undefined)?.pricing_error??null,cartons:db.prepare('SELECT id,carton_number FROM order_cartons WHERE order_id=? ORDER BY carton_number').all(r.order_id)})),
+ return {...vndBalance(clientId),credit_term:vndCreditStatus(clientId),purchase_locked:Boolean(user(clientId)?.purchase_locked),refunds:vndRefundView(clientId,actor),replacements:db.prepare('SELECT source_order_id,replacement_order_id FROM vnd_replacements r JOIN orders o ON o.id=r.source_order_id WHERE o.client_user_id=?').all(clientId),requests:(db.prepare('SELECT * FROM vnd_purchase_requests WHERE client_id=? ORDER BY id').all(clientId) as Row[]).map(r=>({...r,pricing_error:(db.prepare('SELECT pricing_error FROM vnd_auto_quotes WHERE order_id=?').get(r.order_id) as Row|undefined)?.pricing_error??null,cartons:db.prepare('SELECT id,carton_number FROM order_cartons WHERE order_id=? ORDER BY carton_number').all(r.order_id),
+ ...(actor.role==='ADMIN'?{lots:db.prepare('SELECT DISTINCT l.lot_number FROM order_lots l JOIN order_cartons c ON c.order_lot_id=l.id WHERE l.order_id=? ORDER BY l.lot_number').all(r.order_id),service:order(Number(r.order_id)).service}: {})})),
  ledger:db.prepare('SELECT * FROM vnd_ledger WHERE client_id=? ORDER BY id DESC LIMIT 200').all(clientId),
  history:(db.prepare('SELECT * FROM vnd_history WHERE client_id=? ORDER BY id DESC LIMIT 200').all(clientId) as Row[]).map(h=>['CLIENT','SALES'].includes(actor.role)?{id:h.id,client_id:h.client_id,order_id:h.order_id,event:h.event,actor_id:h.actor_id,created_at:h.created_at}:h)};
  }).deferred();
@@ -200,13 +202,19 @@ export function vndAction(actor:AuthUser,input:Row){
     if(!['surcharge','tax'].includes(kind)||!reference||reference.length>200||!note||note.length>2000)throw Error('Cần loại surcharge/tax, tham chiếu dòng duy nhất và lý do.');
     if(seen.has(reference))throw Error('Trùng tham chiếu trong file.');seen.add(reference);
     const amount=nonnegative(raw.amount);if(compareVnd(amount,'0')<=0)throw Error('Phí/thuế phải dương.');
-    let id=Number(raw.order_id);
+    let id=Number(raw.order_id), trackingId:number|null=null, cartonId:number|null=null, lotId:number|null=null;
     if([raw.order_id,raw.order_code,raw.tracking].filter(value=>value!==undefined).length!==1)throw Error('Chọn đúng một định danh Order ID, DB ID hoặc Tracking.');
     if(raw.tracking!==undefined){
      if(typeof raw.tracking!=='string'||!raw.tracking.trim())throw Error('Tracking phải là text.');
      const match=findTrackingOwner(raw.tracking);
      if(!match||match.client_user_id!==clientId)throw Error('Tracking không match trong Client.');
      id=match.order_id;
+     trackingId=match.id;
+     cartonId=match.carton_id;
+     const allocation=db.prepare(`SELECT COALESCE(c.order_lot_id,l.id) AS lot_id
+      FROM order_trackings t LEFT JOIN order_cartons c ON c.id=t.carton_id AND c.order_id=t.order_id
+      LEFT JOIN order_lots l ON l.order_id=t.order_id AND l.lot_number=t.lot_number WHERE t.id=?`).get(match.id) as {lot_id:number|null};
+     lotId=allocation.lot_id;
     }else if(raw.order_code!==undefined){
      const matches=db.prepare('SELECT id FROM orders WHERE client_user_id=? AND order_id=?').all(clientId,String(raw.order_code).trim()) as Row[];
      if(matches.length!==1)throw Error('Order ID không match duy nhất trong Client.');id=Number(matches[0].id);
@@ -215,10 +223,10 @@ export function vndAction(actor:AuthUser,input:Row){
     const r=vndRequest(id);if(r?.status!=='CHARGED')throw Error('Phí/thuế chỉ nhập cho Order VNĐ đã charge và chưa huỷ.');
     const priorSource=db.prepare('SELECT * FROM vnd_charge_sources WHERE client_id=? AND reference=?').get(clientId,reference) as Row|undefined;
     if(priorSource){
-     if(priorSource.order_id!==id||priorSource.kind!==kind||priorSource.amount!==amount||priorSource.reason!==note)throw Error('Tham chiếu đã dùng với nội dung khác.');
+     if(priorSource.order_id!==id||priorSource.kind!==kind||priorSource.amount!==amount||priorSource.reason!==note||(trackingId!==null&&priorSource.tracking_id!==null&&priorSource.tracking_id!==trackingId))throw Error('Tham chiếu đã dùng với nội dung khác.');
      continue;
     }
-    const sourceId=Number(db.prepare('INSERT INTO vnd_charge_sources(client_id,order_id,kind,amount,reference,reason,actor_id) VALUES (?,?,?,?,?,?,?)').run(clientId,id,kind,amount,reference,note,actor.id).lastInsertRowid);
+    const sourceId=Number(db.prepare('INSERT INTO vnd_charge_sources(client_id,order_id,kind,amount,reference,reason,actor_id,tracking_id,carton_id,lot_id) VALUES (?,?,?,?,?,?,?,?,?,?)').run(clientId,id,kind,amount,reference,note,actor.id,trackingId,cartonId,lotId).lastInsertRowid);
     append(clientId,id,kind==='tax'?'ORDER_TAX':'ORDER_SURCHARGE',subtractVnd('0',amount),note+' ['+reference+']',actor.id,'vnd-import-charge:'+sourceId);
     history(clientId,id,'IMPORT_CHARGE',{source_id:sourceId,kind,amount,reference,reason:note,batch_reason:reason},actor.id);
    }
@@ -268,18 +276,16 @@ export function vndAction(actor:AuthUser,input:Row){
      if(!['ADMIN','SALES'].includes(actor.role)||!reason)throw Error('Offer cần Admin/Sales và lý do.');
      if(r.status==='CHARGED'||issued(id))throw Error('Đã Tracking/Label; dùng Financial Correction sau charge.');
      if(automaticSourceKind(String(o.service),String(o.sub_service)))db.prepare('UPDATE vnd_auto_quotes SET manual_offer=1 WHERE order_id=?').run(id);
-     const amount=nonnegative(input.amount);if(compareVnd(amount,'0')<=0)throw Error('Offer phải lớn hơn 0; không tạo giá 0 thay báo giá thiếu.');
      if(Number(input.expected_revision)!==r.revision)throw Error('Revision đã thay đổi.');
-     if(input.net_vnd!==undefined||input.base_vnd!==undefined){
-      if(actor.role!=='ADMIN'||String(o.service).toLowerCase()!=='chuyên tuyến')throw Error('Net/Base VNĐ thủ công chỉ dành cho Admin trên Chuyên tuyến.');
-      const net=nonnegative(input.net_vnd),base=nonnegative(input.base_vnd);
-      const snapshot=JSON.stringify({source:'MANUAL_CUSTOM',net_vnd:net,base_vnd:base});
-      const previous=db.prepare('SELECT snapshot_json FROM vnd_auto_quotes WHERE order_id=?').get(id) as Row|undefined;
-      if(previous?.snapshot_json!==snapshot){
-       db.prepare('INSERT INTO vnd_auto_quote_history(order_id,snapshot_json) VALUES (?,?)').run(id,snapshot);
-       db.prepare('INSERT INTO vnd_auto_quotes(order_id,snapshot_json,manual_offer) VALUES (?,?,1) ON CONFLICT(order_id) DO UPDATE SET snapshot_json=excluded.snapshot_json,manual_offer=1,pricing_error=NULL').run(id,snapshot);
-      }
+     let amount:string;
+     if(input.net_vnd!==undefined||input.base_vnd!==undefined||input.lot_prices!==undefined){
+      if(actor.role!=='ADMIN'||String(o.service).toLowerCase()!=='chuyên tuyến')throw Error('Giá theo Lot hoặc Net/Base VNĐ thủ công chỉ dành cho Admin trên Chuyên tuyến.');
+      amount=customVndOffer(id,input,r.offer,nonnegative);
+     }else{
+      amount=nonnegative(input.amount);
+      if(String(o.service).toLowerCase()==='chuyên tuyến')customVndOffer(id,input,r.offer,nonnegative);
      }
+     if(compareVnd(amount,'0')<=0)throw Error('Offer phải lớn hơn 0; không tạo giá 0 thay báo giá thiếu.');
      if(r.offer!==amount)db.prepare("UPDATE vnd_purchase_requests SET offer=?,revision=revision+1,status='PRICE_CONFIRMATION_REQUIRED' WHERE order_id=?").run(amount,id);
     }else if(action==='consent'||action==='override'){
      if(action==='consent'&&(actor.role!=='CLIENT'||actor.id!==clientId))throw Error('Client xác nhận giá; Admin/Sales dùng override có lý do.');

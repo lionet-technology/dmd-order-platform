@@ -101,6 +101,9 @@ export function installVndOperationalSchema(db:Database.Database) {
  db.transaction(()=>{
   if (!(db.pragma('table_info(vnd_supplier_costs)') as {name:string}[]).some(column => column.name === 'fulfillment_epoch'))
    db.exec('ALTER TABLE vnd_supplier_costs ADD COLUMN fulfillment_epoch INTEGER');
+  const chargeColumns=db.pragma('table_info(vnd_charge_sources)') as {name:string}[];
+  for(const [column,parent] of [['tracking_id','order_trackings'],['carton_id','order_cartons'],['lot_id','order_lots']])
+   if(!chargeColumns.some(field=>field.name===column))db.exec('ALTER TABLE vnd_charge_sources ADD COLUMN '+column+' INTEGER REFERENCES '+parent+'(id)');
   db.exec('CREATE INDEX IF NOT EXISTS vnd_supplier_cost_scope ON vnd_supplier_costs(lot_id,supplier,fulfillment_epoch)');
  }).immediate();
  installSupplierImportSchema(db);

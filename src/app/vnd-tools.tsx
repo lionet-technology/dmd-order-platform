@@ -1,5 +1,5 @@
 "use client";
-import {useState,useRef} from 'react';
+import {useState,useRef,useEffect} from 'react';
 import VndChargeImportTools from './vnd-charge-import-tools';
 import VndRefundTools from './vnd-refund-tools';
 import VndSupplierTools from './vnd-supplier-tools';
@@ -11,7 +11,7 @@ type Carton={carton_number:number;lot_number:number;weight:number;length:number;
 type Statement={id:number;period_start:string;period_end:string;snapshot:{closing:{balance:string;debt_principal:string;debt_interest:string}}};
 export default function VndTools({client,user,onChange}:{client:string;user:User;onChange:()=>void}){
  const [mode,setMode]=useState(user.role==='ADMIN'?'edit':['BOD','SALES'].includes(user.role)?'addon':'statement'),[order,setOrder]=useState(''),[revision,setRevision]=useState(''),[reason,setReason]=useState(''),[amount,setAmount]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false);
- const [country,setCountry]=useState(''),[region,setRegion]=useState(''),[city,setCity]=useState(''),[address,setAddress]=useState(''),[service,setService]=useState(''),[sub,setSub]=useState(''),[supplier,setSupplier]=useState(''),[choice,setChoice]=useState('');
+ const [country,setCountry]=useState(''),[region,setRegion]=useState(''),[city,setCity]=useState(''),[address,setAddress]=useState(''),[service,setService]=useState(''),[sub,setSub]=useState(''),[supplier,setSupplier]=useState('');
  const [name,setName]=useState(''),[cost,setCost]=useState(''),[note,setNote]=useState(''),[addonId,setAddonId]=useState(''),[addons,setAddons]=useState<Addon[]>([]),[statements,setStatements]=useState<Statement[]>([]),[deadline,setDeadline]=useState(''),[rate,setRate]=useState('0');
  const [month,setMonth]=useState(''),[report,setReport]=useState<{performance:Array<{service:string;sub_service:string;client_id:number;orders:number;revenue:string;refunds:string;estimated_gp_net:string|null;actual_cost_status:string}>;commission:{orders:Array<{order_id:number;sales_user_id:number|null;live_after_refund:{allocated_refund_vnd:string;net_revenue_vnd:string|null;gp_base_vnd:string|null;commission_vnd:string|null}}>;unallocated_claims:Array<{claim_id:number;order_ids:number[];approved_vnd:string}>;performance:Array<{sales_user_id:number|null;group:string;orders:number;revenue:string;signed_gp_base:string|null;gp_base_for_consideration:string|null;commission_reference:string|null;refund_review_required:boolean;claim_refund:string|null;gp_base_minus_claim_refund:string|null}>};cash_flow:Array<{kind:string;delta:string}>;refund_obligations:Array<{sales_user_id:number|null;category:string;delta:string}>;refund_cash:Array<{kind:string;delta:string;executed_day:string}>;gp_reconciliation:Array<{order_id:number;freight_revenue:string;surcharge_revenue:string;actual_net:string|null;gp_net_before_client_refunds:string|null}>;supplier_actuals:Array<{order_id:number;actual_net:string|null;status:string;coverage:string}>}|null>(null);
  async function loadReport(){
@@ -27,31 +27,37 @@ export default function VndTools({client,user,onChange}:{client:string;user:User
    setMessage('Đã tải kiện và giá hiện hành. Kiểm tra thay đổi trước khi lưu.');
   }catch(e){setMessage(e instanceof Error?e.message:'Không tải được Order.');}finally{setBusy(false);}
  }
+ const [pendingPrices,setPendingPrices]=useState<{body:Record<string,unknown>;offer:string;automatic:string|null;automatic_error:string|null;can_keep:boolean}|null>(null);
+ const priceDialog=useRef<HTMLDialogElement>(null);
+ useEffect(()=>{if(pendingPrices&&!priceDialog.current?.open)priceDialog.current?.showModal();else if(!pendingPrices)priceDialog.current?.close();},[pendingPrices]);
  const receipt=useRef<{payload:string;key:string}|null>(null);
  const admin=user.role==='ADMIN',finance=['ADMIN','BOD','FINANCE'].includes(user.role),seller=['ADMIN','BOD','SALES'].includes(user.role);
  async function read(kind:'addons'|'statements'){
   setBusy(true);try{const r=await fetch('/api/service-v1/'+kind+'?client_id='+encodeURIComponent(client)),d=await r.json();if(!r.ok)throw Error(d.error);if(kind==='addons')setAddons(d.addons);else setStatements(d.statements);setMessage('Đã tải.');}catch(e){setMessage(e instanceof Error?e.message:'Không tải được.');}finally{setBusy(false);}
  }
- async function submit(){
-  setBusy(true);try{
-   const body:Record<string,unknown>={action:mode,client_id:Number(client),reason};
+ async function submit(selection?:'KEEP_OFFER'|'AUTOMATIC'){
+  setBusy(true);setMessage('');try{
+   let body:Record<string,unknown>={action:mode,client_id:Number(client),reason};
    if(['edit','duplicate'].includes(mode))body.order_id=Number(order);
    if(mode==='edit'){
     body.expected_revision=Number(revision);
     if(cartons.length)body.cartons=cartons;
     body.shipping=Object.fromEntries(Object.entries({country,city,address1:address,service,sub_service:sub,supplier}).filter(([,v])=>v.trim()));
     if(region)body.china_region=region;
-    if(choice){body.price_selection=choice;if(choice==='NEW_OFFER')body.amount=amount;}
+
    }
    if(mode==='addon'||mode==='addon_edit'){
     body.name=name;body.revenue=amount;body.cost=cost||null;body.supplier=supplier;body.note=note;
     if(mode==='addon_edit'){body.addon_id=Number(addonId);body.expected_revision=Number(revision);}
    }
    if(['debt','debt_rate','extend_debt'].includes(mode)){body.amount=amount;body.deadline=deadline;body.daily_rate_pct=rate;}
+   if(selection&&pendingPrices)body={...pendingPrices.body,price_selection:selection,expected_offer:pendingPrices.offer,expected_automatic:pendingPrices.automatic};
    const payload=JSON.stringify(body);if(receipt.current?.payload!==payload)receipt.current={payload,key:crypto.randomUUID()};
    body.request_key=receipt.current!.key;
    const r=await fetch('/api/service-v1/'+(mode.startsWith('addon')?'addons':'operations'),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}),d=await r.json();
+   if(r.status===409&&d.prices){setPendingPrices({body,...d.prices});return;}
    if(!r.ok)throw Error(d.error);
+   setPendingPrices(null);
    setMessage('Đã ghi nhận.');onChange();
   }catch(e){setMessage(e instanceof Error?e.message:'Không xử lý được.');}finally{setBusy(false);}
  }
@@ -81,10 +87,9 @@ export default function VndTools({client,user,onChange}:{client:string;user:User
     <label>Service <input value={service} onChange={e=>setService(e.target.value)}/></label>
     <label>Sub-Service <input value={sub} onChange={e=>setSub(e.target.value)}/></label>
     <label>Supplier <input value={supplier} onChange={e=>setSupplier(e.target.value)}/></label>
-    <label>Giá khi đổi Service <select value={choice} onChange={e=>setChoice(e.target.value)}><option value="">Chọn khi đổi Service</option><option value="AUTOMATIC">Dùng giá tự động</option><option value="NEW_OFFER">Nhập offer mới</option></select></label>
    </>}
    {mode.startsWith('addon')&&<><label>Tên dịch vụ <input required value={name} onChange={e=>setName(e.target.value)}/></label>{mode==='addon_edit'&&<label>Add-on ID <input required value={addonId} onChange={e=>setAddonId(e.target.value)}/></label>}<label>Cost VNĐ (trống = chờ cost) <input value={cost} onChange={e=>setCost(e.target.value)}/></label><label>Supplier tự nhập <input value={supplier} onChange={e=>setSupplier(e.target.value)}/></label><label>Note <input value={note} onChange={e=>setNote(e.target.value)}/></label></>}
-   {(mode.startsWith('addon')||mode==='debt'||mode==='edit'&&choice==='NEW_OFFER')&&<label>{mode.startsWith('addon')?'Doanh thu VNĐ':'Số tiền VNĐ'} <input required value={amount} onChange={e=>setAmount(e.target.value)}/></label>}
+   {(mode.startsWith('addon')||mode==='debt')&&<label>{mode.startsWith('addon')?'Doanh thu VNĐ':'Số tiền VNĐ'} <input required value={amount} onChange={e=>setAmount(e.target.value)}/></label>}
    {mode==='statement'&&<p>Chốt bù các kỳ tuần đã kết thúc, đến hết Chủ nhật theo giờ Việt Nam.</p>}
    {['debt','extend_debt'].includes(mode)&&<label>Debt deadline <input type="date" required value={deadline} onChange={e=>setDeadline(e.target.value)}/></label>}
    {['debt','debt_rate'].includes(mode)&&<label>Lãi suất %/ngày <input required value={rate} onChange={e=>setRate(e.target.value)}/></label>}
@@ -93,6 +98,17 @@ export default function VndTools({client,user,onChange}:{client:string;user:User
    <button disabled={busy||!client}>{busy?'Đang xử lý…':'Thực hiện'}</button>
    <button type="button" onClick={()=>{receipt.current=null;setMessage('Đã bắt đầu thao tác mới.');}}>Bắt đầu thao tác mới</button>
   </form>}
+  <dialog ref={priceDialog} aria-labelledby="service-price-heading" onCancel={e=>{e.preventDefault();if(!busy)setPendingPrices(null);}}>
+   {pendingPrices&&<>
+    <h3 id="service-price-heading">Chọn giá khi đổi Service</h3>
+    <p>Offer hiện hành: {pendingPrices.offer} VNĐ</p>
+    <p>Giá tự động: {pendingPrices.automatic===null?pendingPrices.automatic_error:pendingPrices.automatic+' VNĐ'}</p>
+    <button disabled={busy||!pendingPrices.can_keep} onClick={()=>void submit('KEEP_OFFER')}>Giữ offer</button>
+    <button disabled={busy||pendingPrices.automatic===null} onClick={()=>void submit('AUTOMATIC')}>Áp giá tự động</button>
+    <button disabled={busy} onClick={()=>setPendingPrices(null)}>Quay lại</button>
+    {message&&<p role="alert">{message}</p>}
+   </>}
+  </dialog>
   <p role="status">{message}</p>
  </section></>;
 }
