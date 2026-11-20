@@ -65,3 +65,7 @@ TOTAL thay tổng của đúng lượt bằng delta. SUPPLEMENT cần Actual g�
 ## Phạm vi kiện/Lot của phụ phí và thuế Client
 
 Dòng nhập bằng Tracking lưu ID Tracking, kiện và Lot nếu có trong hồ sơ. Dòng nhập bằng Order ID giữ phạm vi Order. Tham chiếu dòng vẫn duy nhất theo Client và tra lại được bằng Order ID hoặc Tracking của cùng dòng. Một tham chiếu đã gắn Tracking không được gắn lại sang Tracking khác. Mỗi dòng tạo một bút toán Client cấp Order. Bản ghi cũ vẫn đọc được với tham chiếu kiện/Lot để trống.
+
+## Xung đột tham chiếu qua sổ Supplier
+
+Finance/BOD duyệt Actual sau khi kiểm tra tham chiếu, theo Supplier và không phân biệt hoa thường. Tham chiếu đã có trong payment, adjustment, các dòng offset hoặc hồ sơ/sự kiện Supplier Claim phát sinh lỗi `SUPPLIER_REFERENCE_IN_USE` ở queue hoặc thông báo lỗi khi duyệt Actual thủ công. Người xử lý có thể bỏ qua dòng queue kèm lý do. Khi một bút toán làm tình trạng tham chiếu thay đổi, tải lại queue trước khi rà soát. [Memo P0](47-gd1-p0-decision-memo.md).

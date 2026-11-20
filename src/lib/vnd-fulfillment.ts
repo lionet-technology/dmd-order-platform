@@ -181,3 +181,14 @@ export function hasPostedSupplierReference(supplier: string, lotId: number, refe
  return Boolean(db.prepare(`SELECT 1 FROM vnd_supplier_ledger e JOIN vnd_supplier_costs c ON c.id=e.cost_id
   WHERE e.supplier=? AND e.kind='ACTUAL' AND lower(e.reference)=lower(?) AND c.lot_id=?`).get(supplier,reference,lotId));
 }
+
+export function hasSupplierReferenceOutsideActual(supplier: string, reference: unknown) {
+ return Boolean(db.prepare(`
+  SELECT 1 FROM vnd_supplier_ledger WHERE supplier=@supplier AND lower(reference)=lower(@reference) AND kind<>'ACTUAL'
+  UNION ALL
+  SELECT 1 FROM vnd_supplier_claims WHERE supplier=@supplier AND lower(reference)=lower(@reference)
+  UNION ALL
+  SELECT 1 FROM vnd_supplier_claim_events e JOIN vnd_supplier_claims c ON c.id=e.claim_id
+   WHERE c.supplier=@supplier AND lower(e.reference)=lower(@reference)
+  LIMIT 1`).get({supplier,reference}));
+}

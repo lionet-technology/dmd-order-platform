@@ -96,3 +96,7 @@ Template Supplier × Service/Sub-Service có phiên bản, preview trong queue, 
 ## Functional Acceptance Audit · 20/11/2026
 
 [Checklist GĐ1](46-gd1-acceptance-checklist.md) ghi kết quả từng luồng, cảnh báo dưới Net, giao dịch xóa Lot trước phát hành, các quyết định cần chốt và điều kiện UAT/pilot.
+
+## Đối chiếu quyết định P0 · 21/11/2026
+
+[Memo quyết định và hiện trạng triển khai](47-gd1-p0-decision-memo.md) cập nhật ba P0, thuế Supplier và quyền ghi nhạy cảm.

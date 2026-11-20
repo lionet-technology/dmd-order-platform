@@ -42,6 +42,11 @@ try{
  call('payment',{amount:'10.000001',reference:'TEST bank payment',executed_day:vndDay()});
  eq(view().payable,'20.999998');
  bad(()=>call('payment',{amount:'1',reference:'test BANK payment',executed_day:vndDay()}),/trùng/);
+ bad(()=>call('adjustment',{amount:'-1',reference:'test CORRECTED total'}),/trùng/);
+ call('submit',{lot_id:lot.id,amount:'20',reference:'test BANK payment'},admin);
+ const beforeConflict=JSON.stringify(view());
+ bad(()=>call('approve',{cost_id:view().costs[0].id,expected_approved_cost_id:third}),/Tham chiếu đã dùng/);
+ eq(JSON.stringify(view()),beforeConflict);
  call('payment',{amount:'30',reference:'TEST prepayment',executed_day:vndDay()});eq(view().payable,'-9.000002');
  eq(supplier.vndSupplierView(admin,'DMD').payable,undefined);eq(supplier.vndSupplierView(admin,'DMD').entries,undefined);
  bad(()=>supplier.vndSupplierView(sales,'DMD'),/quyền/);bad(()=>supplier.vndSupplierView(client,'DMD'),/quyền/);

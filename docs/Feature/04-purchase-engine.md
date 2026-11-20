@@ -77,3 +77,7 @@ Purchase mới ePacket Standard/Eco DMD bị chặn nếu version active thiếu
 ## Cập nhật 14/10/2026 — Debt gate
 - Purchase gọi credit gate hiện hành: Debt/statement quá hạn block, không bypass bằng credit limit.
 - Chuyển receivable sang một active Debt giải phóng room không tạo Payment; trả Debt không tăng room lần hai. Xem [Finance](./08-finance-balance.md).
+
+## Bulk Purchase · Hàng đợi Cần xử lý
+
+Tab Cần xử lý hiển thị lỗi theo Order và khóa các ô Sub-Service, Supplier, số Lot và giá thủ công cùng các ô Tracking/Label. Các thao tác chỉnh hoặc lưu trong spreadsheet thuộc tab Sẵn sàng mua. [Kiểm chứng Chrome desktop/mobile](../../artifacts/gd1-p0-2026-11-21/VERIFICATION.md).

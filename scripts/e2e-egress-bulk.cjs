@@ -49,6 +49,17 @@ for(const width of [1440,390]){
  const sheet=p.locator('.bulkSheet');await sheet.locator('tbody tr').first().waitFor();
  await sheet.locator('.bulkFilterField').filter({hasText:'Dịch vụ'}).locator('select').selectOption('UPS');await sheet.locator('.bulkFilterField').filter({hasText:'Sub-Service'}).locator('select').selectOption('');await pause(400);
  check(await sheet.locator('tbody tr').count()===4,'two multi-Carton Orders form four queue rows '+width);check(await sheet.locator('tbody tr.orderGroupStart').count()===2&&await sheet.locator('td[rowspan="2"]').count()>=2,'Order fields span both Cartons '+width);
+ const issueOrder='MULTI-'+width+'-A';
+ db.prepare("UPDATE orders SET phone='' WHERE order_id=?").run(issueOrder);
+ await sheet.getByRole('button',{name:/Cần xử lý/}).click();
+ const issueGroup=sheet.locator('tbody tr.orderGroupStart').filter({hasText:issueOrder});
+ await issueGroup.getByText('Lỗi dữ liệu',{exact:true}).waitFor();
+ check(await issueGroup.locator('input:enabled,select:enabled').count()===0,'Issues prevents edits with no save action '+width);
+ check(await sheet.getByRole('button',{name:'Lưu Tracking/Label',exact:true}).count()===0,'Issues hides Tracking save '+width);
+ await p.screenshot({path:path.join(evidence,'admin-purchase-issues-'+width+'.png'),fullPage:true});
+ db.prepare("UPDATE orders SET phone='2025550100' WHERE order_id=?").run(issueOrder);
+ await sheet.getByRole('button',{name:/Sẵn sàng mua/}).click();
+ await sheet.locator('tbody tr').filter({hasText:issueOrder}).first().waitFor();
  const colors=await sheet.locator('tbody tr td:first-child').evaluateAll(es=>[...new Set(es.map(e=>getComputedStyle(e).backgroundColor))]);check(colors.length===2,'alternating Order colors '+width);
  await sheet.getByText(/Chọn tất cả .* Order sau filter/).click();
  const downloadEvent=p.waitForEvent('download');await sheet.getByRole('link',{name:'Tải file Tracking',exact:true}).click();const download=await downloadEvent,file=path.join(dir,'tracking-'+width+'.xlsx');await download.saveAs(file);
@@ -70,7 +81,22 @@ for(const width of [1440,390]){
  await sheet.getByRole('button',{name:'Lưu Tracking/Label',exact:true}).click();await sheet.locator('.bulkSheetFooter').filter({hasText:/Đã lưu/}).waitFor();
  const charges=db.prepare("SELECT e.amount FROM ledger_entries e JOIN orders o ON e.reference_id=CAST(o.id AS TEXT) WHERE e.entry_type='ORDER_CHARGE' AND e.reference_type='ORDER' AND o.order_id LIKE ?").all('MULTI-'+width+'-%');check(charges.length===2&&charges.every(c=>c.amount===35),'multi-Carton purchase charges 35 once per Order '+width);
  check(db.prepare('SELECT COUNT(*) n FROM order_trackings WHERE tracking LIKE ?').get('BULK-'+width+'-%').n===n,'UI save persists every filtered Tracking '+width);
- await p.locator('.modalHeader button').click();await p.getByRole('button',{name:'Dịch vụ',exact:true}).click();await p.locator('.routeTable tbody tr').filter({hasText:'ePacket'}).first().waitFor();await fit(p,'Admin setup '+width);await p.screenshot({path:path.join(evidence,'admin-setup-'+width+'.png'),fullPage:true});await admin.context.close();
+ await p.locator('.modalHeader button').click();
+ await p.getByRole('textbox',{name:/Tìm Orders/}).fill(issueOrder);
+ const listedOrder=p.getByRole('row').filter({has:p.getByRole('cell',{name:issueOrder,exact:true})});
+ await listedOrder.getByRole('button',{name:'View',exact:true}).click();
+ const detail=p.locator('.orderDetail');
+ await detail.getByText(issueOrder,{exact:true}).waitFor();
+ check(await detail.getByRole('button',{name:'Giá & Đối soát',exact:true}).isVisible(),'Admin Order search opens matching detail '+width);
+ await detail.getByRole('button',{name:'Carton & SKU',exact:true}).click();
+ await fit(p,'Admin Order detail '+width);
+ await p.screenshot({path:path.join(evidence,'admin-order-detail-'+width+'.png'),fullPage:true});
+ await p.locator('.modalHeader button').click();
+ await p.getByRole('button',{name:'Balance Ledger',exact:true}).click();
+ await p.getByRole('heading',{name:'Balance Ledger',exact:true}).waitFor();
+ await fit(p,'Admin Balance Ledger '+width);
+ await p.screenshot({path:path.join(evidence,'admin-balance-ledger-'+width+'.png'),fullPage:true});
+ await p.getByRole('button',{name:'Dịch vụ',exact:true}).click();await p.locator('.routeTable tbody tr').filter({hasText:'ePacket'}).first().waitFor();await fit(p,'Admin setup '+width);await p.screenshot({path:path.join(evidence,'admin-setup-'+width+'.png'),fullPage:true});await admin.context.close();
  for(const role of ['SALES','WAREHOUSE','FINANCE','BOD']){const q=await pageFor(role,width);check(await q.page.getByRole('button',{name:'Dịch vụ',exact:true}).count()===0,role+' setup hidden '+width);await fit(q.page,role+' '+width);await q.context.close()}
 }
 check(pageErrors.length===0,'no browser runtime errors: '+pageErrors.join('; '));

@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import {db} from './db';
-import {approvedFulfillment,hasPostedSupplierReference,lotFulfillments,resolveFulfillment} from './vnd-fulfillment';
+import {approvedFulfillment,hasPostedSupplierReference,hasSupplierReferenceOutsideActual,lotFulfillments,resolveFulfillment} from './vnd-fulfillment';
 import {installSupplierTemplateSchema,mappedSupplierRows} from './vnd-supplier-templates';
 import type {AuthUser} from './auth';
 import {vnd,compareVnd,addVnd,subtractVnd,sumVnd} from './vnd-money';
@@ -58,6 +58,7 @@ export function supplierImportState(row:Row){
  const duplicates=peers.filter(p=>{const d=JSON.parse(String(p.data_json));return identity(d)===identity(data)&&(data.kind==='TOTAL'||(d.kind===data.kind&&d.amount===data.amount&&d.reason===data.reason));});
  if(!source&&duplicates.some(p=>p.batch_key===row.batch_key))errors.push('DUPLICATE_IN_FILE');
  if(duplicates.some(p=>p.batch_key!==row.batch_key)&&!errors.includes('DUPLICATE_HISTORY'))errors.push('DUPLICATE_HISTORY');
+ if(hasSupplierReferenceOutsideActual(String(row.supplier),data.reference))errors.push('SUPPLIER_REFERENCE_IN_USE');
  const state={lot_id:lot?.id??null,order_code:lot?.order_code??null,fulfillment_epoch:attempt?.id??null,
   fulfillment_candidates:resolution?.ids??[],estimated:net,dmd_weight:weight,approved_cost_id:Number(old?.id??0),approved_amount:old?.amount??null,errors};
  return {...row,data,...state,token:createHash('sha256').update(JSON.stringify(state)).digest('hex')};
@@ -133,6 +134,8 @@ export function applySupplierImport(actor:AuthUser,supplier:string,input:Row,rea
    const actual=approvedFulfillment(lotId,supplier,attempt.id),old=actual.approved;
    if(actual.uncertain)throw Error('Cần đối soát đúng lượt fulfillment của Actual cũ.');
    if(item.expected_approved_cost_id!==Number(old?.id??0))throw Error('Actual đã thay đổi; tải lại.');
+   if(state.errors.includes('SUPPLIER_REFERENCE_IN_USE'))
+    throw Error('Tham chiếu đã dùng trong sổ hoặc Claim Supplier; đối chiếu chứng từ trước khi duyệt Actual.');
    if(hasPostedSupplierReference(supplier,lotId,state.data.reference))
     throw Error('Tham chiếu chứng từ đã ghi Actual cho Lot này.');
    if(state.data.kind==='SUPPLEMENT'&&!old)throw Error('Phụ phí cần Actual gốc đã chốt.');

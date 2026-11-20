@@ -53,6 +53,17 @@ let checks=0,n=0;const eq=(a,b)=>{checks++;assert.deepEqual(a,b)},bad=(f,re)=>{c
  call('review_import',{decision:'accept',items:pair.map(item)});
  eq(view().payable,require('../src/lib/vnd-money.ts').addVnd(beforeBulk,'3'));
  eq(supplier.approvedVndLot(c.lot.id).amount,'1');eq(supplier.approvedVndLot(d.lot.id).amount,'2');
+ const sharedReference='TEST cross-journal document line';
+ call('import',{items:[doc({lot_id:c.lot.id,reference:sharedReference})]});
+ const beforePosting=view().import_rows[0];
+ call('adjustment',{reference:sharedReference.toUpperCase(),amount:'0'});
+ const conflict=view().import_rows[0];
+ eq(conflict.errors.includes('SUPPLIER_REFERENCE_IN_USE'),true);
+ const beforeConflict=JSON.stringify(view());
+ bad(()=>call('review_import',{decision:'accept',items:[item(beforePosting)]}),/thay đổi/);
+ bad(()=>call('review_import',{decision:'accept',items:[item(conflict)]}),/Tham chiếu đã dùng/);
+ eq(JSON.stringify(view()),beforeConflict);
+ call('review_import',{decision:'skip',items:[item(conflict)]},admin);
  // Round-trip a realistic Supplier workbook through the production Excel reader.
  const Excel=require('exceljs'),{workbookRows}=require('../src/lib/importers.ts');
  const mapping={tracking:'Mã vận đơn',line:'Mã phí',weight:'Kg',currency:'Currency',

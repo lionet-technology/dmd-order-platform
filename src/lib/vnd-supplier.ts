@@ -1,7 +1,7 @@
 import {db} from './db';
 import {supplierPeriodView,closeSupplierPeriod,supplierPostingCursor,linkSupplierPostings} from './vnd-supplier-periods';
 import {supplierImportView,applySupplierImport} from './vnd-supplier-import';
-import {approvedFulfillment,hasPostedSupplierReference,lotFulfillments,resolveFulfillment} from './vnd-fulfillment';
+import {approvedFulfillment,hasPostedSupplierReference,hasSupplierReferenceOutsideActual,lotFulfillments,resolveFulfillment} from './vnd-fulfillment';
 import {applySupplierClaim,supplierClaimView} from './vnd-supplier-claims';
 import {saveSupplierTemplate,supplierTemplates} from './vnd-supplier-templates';
 import type {AuthUser} from './auth';
@@ -81,6 +81,8 @@ export function vndSupplierAction(actor:AuthUser,input:Row){
   if(input.expected_approved_cost_id!==Number(old?.id??0))throw Error('Actual đã thay đổi; tải lại.');
   if(db.prepare('SELECT id FROM vnd_supplier_reviews WHERE cost_id=?').get(cost.id))throw Error('Chứng từ đã xử lý.');
   if(action==='keep_old'&&!old)throw Error('Chưa có Actual cũ để giữ.');
+  if(action==='approve'&&hasSupplierReferenceOutsideActual(supplier,cost.reference))
+   throw Error('Tham chiếu đã dùng trong sổ hoặc Claim Supplier; đối chiếu chứng từ trước khi duyệt Actual.');
   if(action==='approve'&&hasPostedSupplierReference(supplier,Number(cost.lot_id),cost.reference))
    throw Error('Tham chiếu chứng từ đã ghi Actual cho Lot này.');
   db.prepare('INSERT INTO vnd_supplier_reviews(cost_id,action,reason,actor_id) VALUES (?,?,?,?)').run(cost.id,action,reason,actor.id);
