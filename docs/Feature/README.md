@@ -1,3 +1,7 @@
+## Chốt hoa hồng VNĐ theo tháng · 20/11/2026
+
+[Feature 45](45-vnd-monthly-commission-closing.md) mô tả chốt tháng tự động, điều chỉnh Order kỳ đã khóa và Excel theo quyền Sales.
+
 ## Credit Term và Weekly Statement Client VNĐ · 20/11/2026
 
 [Feature 44](44-vnd-credit-term-weekly-statement.md) mô tả điều khoản theo tuần, cảnh báo và chốt bù tự động.
@@ -12,7 +16,7 @@
 
 ## Claim NEXT · Triển khai vận hành 18/11/2026
 
-[Feature 42](42-vnd-claim-refund-next.md) cập nhật Claim Client/Supplier nhiều Order, chronology Processing, Complete, hai watchlist và link thủ công. GP/commission sau Refund liên nhóm giữ OPEN. Pilot chứng từ thật và rehearsal môi trường triển khai tiếp tục chờ xác nhận. Các mốc cũ bên dưới mô tả phạm vi từng đợt trước.
+[Feature 42](42-vnd-claim-refund-next.md) cập nhật Claim Client/Supplier nhiều Order, chronology Processing, Complete, hai watchlist và link thủ công. GP-Net sau Refund liên nhóm còn mở. Hoa hồng tháng theo Feature 45. Pilot chứng từ thật và rehearsal môi trường triển khai tiếp tục chờ xác nhận. Các mốc cũ bên dưới mô tả phạm vi từng đợt trước.
 
 ## Claim và Refund NEXT — 18/11/2026
 [Feature 42](42-vnd-claim-refund-next.md) ghi đặc tả Claim/Refund, hiện trạng, checklist pilot và phần truy vết case chưa phân bổ trong báo cáo BOD.

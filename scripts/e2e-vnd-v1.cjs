@@ -17,6 +17,7 @@ const firstMonday=relativeDay(-14),firstSunday=relativeDay(-8);
 pilotDb.prepare("UPDATE vnd_accounts SET created_at=?,credit_term_weeks=2 WHERE client_id=?").run(firstMonday+' 02:00:00',weeklyClient.id);
 pilotDb.prepare("UPDATE vnd_accounts SET created_at=? WHERE client_id=?").run(relativeDay(-7)+' 02:00:00',fixture.client.id);
 pilotDb.prepare("INSERT INTO vnd_ledger(client_id,kind,delta,reason,actor_id,request_key,created_at) VALUES (?,'ADJUSTMENT','-100','TEST overdue',?,'TEST-WEEKLY-UI-POST',?)").run(weeklyClient.id,fixture.fin.id,firstMonday+' 02:00:00');
+const {lastMonth,monthlyOrders}=fixture;
 pilotDb.close();
 let server,browser,checks=0;const check=(v,m)=>{checks++;assert.ok(v,m)};
 (async()=>{try{
@@ -32,6 +33,35 @@ let server,browser,checks=0;const check=(v,m)=>{checks++;assert.ok(v,m)};
  const tools=page.getByRole('region',{name:'Công cụ tài khoản VNĐ',exact:true});
  const action=()=>tools.getByRole('combobox',{name:'Thao tác',exact:true});
  await role('ADMIN');
+ const monthly=page.getByRole('region',{name:'Kỳ hoa hồng VNĐ',exact:true});
+ const monthlyUrl=base+'/api/service-v1/commission-statements?month='+lastMonth;
+ await monthly.getByLabel('Tháng hoa hồng',{exact:true}).fill(lastMonth);
+ await monthly.getByRole('button',{name:'Xem kỳ hoa hồng',exact:true}).click();
+ await monthly.getByText('Đã khóa · Trạng thái chi trả theo dõi riêng',{exact:true}).waitFor();
+ check(await monthly.getByRole('cell',{name:'7.3',exact:true}).count()>=2,'Admin sees startup monthly close');
+ await monthly.scrollIntoViewIfNeeded();
+ await page.screenshot({path:path.join(output,'uat-monthly-commission.png'),fullPage:false});
+ for(const r of ['ADMIN','BOD','FINANCE','SALES','CLIENT']){
+  const headers={Cookie:'dmd_session='+fixture.tokens[r]};
+  const result=await context.request.get(monthlyUrl,{headers});
+  const excel=await context.request.get(monthlyUrl+'&format=xlsx',{headers});
+  if(r==='CLIENT'){
+   check(result.status()===403&&excel.status()===403,'Client denied monthly JSON and Excel');
+   continue;
+  }
+  check(result.ok()&&excel.ok(),'Monthly report and Excel for '+r);
+  const data=await result.json();
+  const expected=r==='SALES'?monthlyOrders.slice(0,1):monthlyOrders;
+  check(data.status==='CLOSED'&&expected.every(id=>data.lines.some(line=>line.order_id===id)),'Startup snapshot visible for '+r);
+  const book=new(require('exceljs')).Workbook();
+  await book.xlsx.load(await excel.body());
+  const ids=book.getWorksheet('Theo Order').getSheetValues().slice(2).map(row=>row[4]);
+  check(expected.every(id=>ids.includes(id)),'Monthly Excel matches report for '+r);
+  if(r==='SALES'){
+   check(!ids.includes(monthlyOrders[1])&&!data.lines.some(line=>line.order_id===monthlyOrders[1]),'Sales cannot see other Sales Order in JSON or Excel');
+   check(data.lines.every(line=>line.sales_user_id===fixture.sales.id&&line.evidence.base_vnd===null),'Sales report uses captured attribution and hides Base');
+  }
+ }
  await action().selectOption('addon');await tools.getByLabel('Tên dịch vụ',{exact:true}).fill('Chrome UAT add-on');await tools.getByLabel('Doanh thu VNĐ',{exact:true}).fill('100000.123456');await tools.getByLabel('Cost VNĐ (trống = chờ cost)',{exact:true}).fill('123.000001');await tools.getByLabel('Supplier tự nhập',{exact:true}).fill('TEST private vendor');await tools.getByLabel('Lý do / tham chiếu',{exact:true}).fill('TEST Chrome financial posting');await tools.getByRole('button',{name:'Thực hiện',exact:true}).click();await tools.getByRole('status').filter({hasText:'Đã ghi nhận.'}).waitFor();
  await tools.getByRole('button',{name:'Xem Add-on',exact:true}).click();await tools.getByText('Chrome UAT add-on',{exact:true}).waitFor();check(await tools.getByText('TEST private vendor',{exact:true}).count()===1,'Admin addon creation posts');
  const followup=page.getByRole('region',{name:'Theo dõi huỷ Supplier',exact:true});
@@ -163,7 +193,7 @@ let server,browser,checks=0;const check=(v,m)=>{checks++;assert.ok(v,m)};
  const reportDb=new(require('better-sqlite3'))(fixture.dbPath);
  const reportOrder=reportDb.prepare("SELECT id FROM orders WHERE client_user_id=? AND id<>? AND service_purchased_at IS NOT NULL ORDER BY id LIMIT 1").get(fixture.client.id,fixture.claimOrder.id);
  assert.ok(reportOrder,'prior-cohort report fixture Order exists');
- reportDb.prepare("UPDATE orders SET service_purchased_at='2000-01-01 12:00:00' WHERE id=?").run(reportOrder.id);
+ reportDb.prepare('UPDATE orders SET service_purchased_at=? WHERE id=?').run(lastMonth+'-03 12:00:00',reportOrder.id);
  const reportOrders=[fixture.claimOrder.id,reportOrder.id];
  const crossCohortClaim=Number(reportDb.prepare("INSERT INTO vnd_claims(client_id,category,orders_json,evidence,note,actor_id) VALUES (?,'SHIPPING_ISSUE',?,'TEST','TEST',?)").run(fixture.client.id,JSON.stringify(reportOrders),fixture.owner.id).lastInsertRowid);
  reportDb.prepare("INSERT INTO vnd_refund_events(client_id,claim_id,kind,delta,approved,revision,category,context_json,reason,actor_id) VALUES (?,?,'DECISION','10','10',1,'SHIPPING_ISSUE',?,'TEST',?)").run(fixture.client.id,crossCohortClaim,JSON.stringify({orders:reportOrders.map(order_id=>({order_id,sales_user_id:fixture.sales.id}))}),fixture.owner.id);

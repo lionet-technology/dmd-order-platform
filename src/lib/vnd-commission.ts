@@ -3,18 +3,25 @@ import {subtractVnd,sumVnd,compareVnd,vnd,addVnd,multiplyVnd} from './vnd-money'
 type Row=Record<string,unknown>;
 type Allocation = {order_id:number;selling_vnd:string;surcharge_vnd:string;tax_vnd:string;compensation_vnd:string;total_vnd:string};
 /** Reference formula approved in Owner continuation 17/11; never a payout or pool allocation. */
-export function vndCommissionInputs(orders:Row[]){
- const details=orders.map(o=>{
-  const entries=db.prepare("SELECT kind,delta FROM vnd_ledger WHERE order_id=? AND kind IN ('ORDER_CHARGE','ORDER_CORRECTION','ORDER_SURCHARGE','ORDER_TAX') ORDER BY id").all(o.id) as Row[];
+export function vndCommissionOrderInputs(orders:Row[], cutoff:string|null=null){
+ return orders.map(o=>{
+  const entries=db.prepare("SELECT kind,delta FROM vnd_ledger WHERE order_id=? AND kind IN ('ORDER_CHARGE','ORDER_CORRECTION','ORDER_SURCHARGE','ORDER_TAX') AND (? IS NULL OR julianday(created_at)<julianday(?)) ORDER BY id").all(o.id,cutoff,cutoff) as Row[];
   const charged=entries.some(e=>e.kind==='ORDER_CHARGE');
   const revenue=subtractVnd('0',sumVnd(entries.filter(e=>e.kind==='ORDER_CHARGE'||e.kind==='ORDER_CORRECTION').map(e=>String(e.delta))));
-  const q=db.prepare('SELECT snapshot_json FROM vnd_auto_quotes WHERE order_id=?').get(o.id) as Row|undefined;
-  const quote=q?JSON.parse(String(q.snapshot_json)):null;
+  const q=db.prepare(`
+   SELECT COALESCE(
+    (SELECT h.snapshot_json FROM vnd_auto_quote_history h WHERE h.order_id=q.order_id
+      AND julianday(h.created_at)<julianday(?) ORDER BY h.id DESC LIMIT 1),
+    CASE WHEN ? IS NULL OR NOT EXISTS (SELECT 1 FROM vnd_auto_quote_history h WHERE h.order_id=q.order_id)
+      THEN q.snapshot_json END
+   ) snapshot_json FROM vnd_auto_quotes q WHERE q.order_id=?
+  `).get(cutoff,cutoff,o.id) as Row|undefined;
+  const quote=q?.snapshot_json?JSON.parse(String(q.snapshot_json)):null;
   const base=charged&&typeof quote?.base_vnd==='string'?vnd(quote.base_vnd):null;
   const signed=base===null?null:subtractVnd(revenue,base);
-  const cancelled=o.status==='CANCELLED'||o.workflow_status==='CANCELLED';
+  const cancelled=cutoff===null ? o.status==='CANCELLED'||o.workflow_status==='CANCELLED' : o.cancelled_before_cutoff===1;
   const attributed=Number.isInteger(o.sales_user_id)&&Number(o.sales_user_id)>0;
-  const claims=db.prepare('SELECT c.id,c.category,e.approved,e.context_json FROM vnd_claims c JOIN json_each(c.orders_json) j ON j.value=? LEFT JOIN vnd_refund_events e ON e.id=(SELECT d.id FROM vnd_refund_events d WHERE d.claim_id=c.id AND d.kind=\'DECISION\' ORDER BY d.id DESC LIMIT 1) WHERE c.client_id=? ORDER BY c.id').all(o.id,o.client_user_id) as Row[];
+  const claims=db.prepare('SELECT c.id,COALESCE(e.category,c.category) category,e.id decision_id,e.approved,e.context_json FROM vnd_claims c JOIN json_each(c.orders_json) j ON j.value=? LEFT JOIN vnd_refund_events e ON e.id=(SELECT d.id FROM vnd_refund_events d WHERE d.claim_id=c.id AND d.kind=\'DECISION\' AND (? IS NULL OR julianday(d.created_at)<julianday(?)) ORDER BY d.id DESC LIMIT 1) WHERE c.client_id=? ORDER BY c.id').all(o.id,cutoff,cutoff,o.client_user_id) as Row[];
   const approvedClaims=claims.filter(c=>c.approved!==null&&compareVnd(String(c.approved),'0')>0);
   const allocation = approvedClaims.map(c => {
    const snapshot = c.context_json ? JSON.parse(String(c.context_json)) : null;
@@ -28,22 +35,26 @@ export function vndCommissionInputs(orders:Row[]){
   const salesAfterRefund = subtractVnd(revenue, freightRefund);
   const baseAfterRefund = base === null ? null : subtractVnd(salesAfterRefund, base);
   const commissionAfterRefund = cancelled || !charged ? '0' :
-   unallocated || !attributed || baseAfterRefund === null ? null :
+   (unallocated && cutoff===null) || !attributed || baseAfterRefund === null ? null :
    compareVnd(baseAfterRefund, '0') > 0 && compareVnd(salesAfterRefund, '0') > 0
     ? addVnd(multiplyVnd(salesAfterRefund, '0.001'), multiplyVnd(baseAfterRefund, '0.12')) : '0';
   const categories=[...new Set(approvedClaims.map(c=>String(c.category)))];
   const claim=categories.length===1?categories[0]:categories.length>1?'MULTIPLE_CATEGORIES':null;
   const formula=cancelled||!charged?'0':!attributed||signed===null?null:compareVnd(signed,'0')>0?addVnd(multiplyVnd(revenue,'0.001'),multiplyVnd(signed,'0.12')):'0';
   const group=cancelled?'CANCELLATION':!charged?'UNCHARGED':!attributed?'ATTRIBUTION_REVIEW':signed===null?'MISSING_BASE':claim?'CLAIM_'+claim:'NON_CANCELLATION';
-  return {commission_reference:formula,live_after_refund:{
+  return {claim_evidence:approvedClaims.map((c,i)=>({claim_id:Number(c.id),decision_id:Number(c.decision_id),category:String(c.category),allocation:allocation[i]??null})),commission_reference:formula,live_after_refund:{
    allocated_refund_vnd:totalRefund, incomplete:unallocated,
    net_revenue_vnd:unallocated?null:subtractVnd(subtractVnd('0',sumVnd(entries.map(e=>String(e.delta)))),totalRefund),
    freight_sales_vnd:unallocated?null:salesAfterRefund,
    gp_base_vnd:unallocated?null:baseAfterRefund, commission_vnd:commissionAfterRefund,
   },claim_ids:claims.map(c=>c.id),approved_claim_ids:approvedClaims.map(c=>c.id),legacy_claim_ids:approvedClaims.filter((_,i)=>allocation[i]===undefined).map(c=>c.id),refund_review_required:unallocated,order_id:Number(o.id),sales_user_id:attributed?Number(o.sales_user_id):null,client_id:Number(o.client_user_id),group,revenue,base_vnd:base,signed_gp_base:signed,
    gp_base_for_consideration:cancelled||!charged?'0':!attributed||signed===null?null:compareVnd(signed,'0')>0?signed:'0',
-   cancellation_refund:sumVnd((db.prepare("SELECT delta FROM vnd_ledger WHERE order_id=? AND kind='CANCELLATION_REFUND'").all(o.id) as Row[]).map(e=>String(e.delta)))};
+   cancellation_refund:sumVnd((db.prepare("SELECT delta FROM vnd_ledger WHERE order_id=? AND kind='CANCELLATION_REFUND' AND (? IS NULL OR julianday(created_at)<julianday(?))").all(o.id,cutoff,cutoff) as Row[]).map(e=>String(e.delta)))};
  });
+}
+
+export function vndCommissionInputs(orders:Row[]){
+ const details=vndCommissionOrderInputs(orders);
  const keys=[...new Set(details.map(o=>JSON.stringify([o.sales_user_id,o.group])))];
  const unallocated = new Map<number, { claim_id: number; order_ids: number[]; approved_vnd: string }>();
  const performance=keys.map(key=>{

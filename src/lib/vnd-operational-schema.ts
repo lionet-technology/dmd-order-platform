@@ -4,6 +4,12 @@ import {installSupplierImportSchema} from './vnd-supplier-import';
 /** Explicit new-account cutover only; never reinterpret legacy USD rows. */
 export function installVndOperationalSchema(db:Database.Database) {
  db.exec(`
+ CREATE TABLE IF NOT EXISTS vnd_commission_statements(month TEXT PRIMARY KEY, closed_at TEXT NOT NULL, snapshot_json TEXT NOT NULL);
+ CREATE TRIGGER IF NOT EXISTS vnd_commission_no_replace BEFORE INSERT ON vnd_commission_statements
+ WHEN EXISTS (SELECT 1 FROM vnd_commission_statements WHERE month=NEW.month)
+ BEGIN SELECT RAISE(ABORT,'Commission statement is immutable'); END;
+ CREATE TRIGGER IF NOT EXISTS vnd_commission_no_update BEFORE UPDATE ON vnd_commission_statements BEGIN SELECT RAISE(ABORT,'Commission statement is immutable'); END;
+ CREATE TRIGGER IF NOT EXISTS vnd_commission_no_delete BEFORE DELETE ON vnd_commission_statements BEGIN SELECT RAISE(ABORT,'Commission statement is immutable'); END;
  CREATE TABLE IF NOT EXISTS vnd_statements(id INTEGER PRIMARY KEY,client_id INTEGER NOT NULL REFERENCES vnd_accounts(client_id),period_start TEXT NOT NULL,period_end TEXT NOT NULL,last_ledger_id INTEGER NOT NULL,last_debt_event_id INTEGER NOT NULL,snapshot_json TEXT NOT NULL,actor_id INTEGER NOT NULL REFERENCES users(id),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(client_id,period_end));
  CREATE TABLE IF NOT EXISTS vnd_debts(client_id INTEGER PRIMARY KEY REFERENCES vnd_accounts(client_id),principal TEXT NOT NULL DEFAULT '0',interest TEXT NOT NULL DEFAULT '0',deadline TEXT NOT NULL,daily_rate_pct TEXT NOT NULL DEFAULT '0');
  CREATE TABLE IF NOT EXISTS vnd_debt_events(id INTEGER PRIMARY KEY,client_id INTEGER NOT NULL REFERENCES vnd_accounts(client_id),day TEXT NOT NULL,principal TEXT NOT NULL,interest TEXT NOT NULL,principal_delta TEXT NOT NULL,interest_delta TEXT NOT NULL,daily_rate_pct TEXT NOT NULL,kind TEXT NOT NULL,reason TEXT NOT NULL,actor_id INTEGER NOT NULL REFERENCES users(id),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);

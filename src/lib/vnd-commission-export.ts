@@ -3,6 +3,37 @@ import {db} from './db';
 import {vndBusinessReport} from './vnd-reporting';
 import {subtractVnd} from './vnd-money';
 
+import type {readVndMonthlyCommission} from './vnd-commission-statements';
+
+export async function vndMonthlyCommissionExcel(statement:ReturnType<typeof readVndMonthlyCommission>){
+ const workbook=new ExcelJS.Workbook();
+ const summary=workbook.addWorksheet('Theo Sales');
+ summary.addRow(['Tháng','Trạng thái','Thời điểm chốt UTC','Sales ID','Kỳ gốc VNĐ','Điều chỉnh VNĐ','Tổng VNĐ','Order cần rà soát']);
+ if(!statement.sales.length)summary.addRow([statement.month,statement.status,statement.closed_at]);
+ for(const row of statement.sales){
+  summary.addRow([statement.month,statement.status,statement.closed_at,row.sales_user_id,row.base_vnd,
+   row.adjustment_vnd,row.total_vnd,row.unresolved_orders]);
+ }
+ const orders=workbook.addWorksheet('Theo Order');
+ orders.addRow(['Tháng ghi nhận','Kỳ gốc','Sales ID','Order ID','Hoa hồng Order VNĐ','Ghi nhận tháng VNĐ','Cước VNĐ','Base VNĐ','Claim test thiếu phân bổ']);
+ const evidence=workbook.addWorksheet('Nguồn đối chiếu');
+ evidence.addRow(['Tháng ghi nhận','Kỳ gốc','Sales ID','Order ID','Nguồn','ID','Claim ID','Loại','VNĐ','Thời điểm UTC']);
+ for(const row of statement.lines){
+  const key=[statement.month,row.origin_month,row.sales_user_id,row.order_id];
+  orders.addRow([...key,row.order_commission_vnd,row.posting_vnd,row.evidence.freight_vnd,row.evidence.base_vnd,
+   row.evidence.active_claims.filter(claim=>!claim.allocation).map(claim=>claim.claim_id).join(', ')]);
+  for(const item of row.evidence.ledger)evidence.addRow([...key,'LEDGER',item.id,null,item.kind,item.delta,item.created_at]);
+  for(const item of row.evidence.decisions)evidence.addRow([...key,'DECISION',item.id,item.claim_id,item.category,item.allocated_vnd,item.created_at]);
+  if(row.evidence.cancellation_at)evidence.addRow([...key,'ORDER',row.order_id,null,'CANCELLATION',null,row.evidence.cancellation_at]);
+ }
+ for(const sheet of workbook.worksheets){
+  sheet.views=[{state:'frozen',ySplit:1}];
+  sheet.getRow(1).font={bold:true};
+  for(const column of sheet.columns)column.width=23;
+ }
+ return new Uint8Array(await workbook.xlsx.writeBuffer() as ArrayBuffer);
+}
+
 type DecisionContext = {
  allocation_version?: number;
  allocation?: {order_id: number; total_vnd: string}[];

@@ -1,0 +1,14 @@
+{
+  "status": "PASS",
+  "checks": 131,
+  "roles": [
+    "ADMIN",
+    "SALES",
+    "CLIENT",
+    "FINANCE",
+    "BOD"
+  ],
+  "database": "owned disposable",
+  "scope": "Weekly VNĐ startup catch-up, dashboard and internal overdue alerts, Admin term change and Finance idempotent retry, Client and Supplier watchlists and case creation from Order selection, Processing chronology, explicit completion and manual case linking, BOD case-level unallocated Refund tracking, HTTP mixed-currency excess allocation, Supplier frozen period/late current correction/original reference, Control Tower role privacy, GP-Net versus commission reference, Client Excel surcharge/tax preview/import/cross-key replay and immutable Statement, Supplier Excel versioned multi-column mapping and replay, inclusive surcharge preview, typed errors and explicit Actual payable delta, Admin manual Supplier refund percentage/evidence with no posting, Supplier Claim receivable approval/partial Bank/offset/reversal and overlimit, durable Claim notification acknowledgement, Claim creation/approval, partial Bank/Balance payout and overpool rejection, bank privacy, Supplier actual/payment RBAC, Add-on, Statement, BOD report, shipping edit, desktop/mobile render",
+  "errors": []
+}

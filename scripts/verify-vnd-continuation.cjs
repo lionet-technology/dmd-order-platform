@@ -111,7 +111,23 @@ try{
   const weeklyClient=auth.createUser({username:'test-weekly-ui',display_name:'TEST Weekly Statement',password:'TestPass123!',role:'CLIENT',sales_user_id:sales.id});
   const weeklyToken=auth.createSession(weeklyClient.id).token;
   ops.vndAction(owner,{action:'activate',client_id:weeklyClient.id,request_key:'test-weekly-ui-activate'});
-  module.exports={weeklyClient,weeklyToken,claimOrder,mixedOrder,claimLotId:claimCarton.order_lot_id,client,owner,sales,bod,fin,replacement,dbPath:process.env.DMD_DB_PATH,tokens:Object.fromEntries(Object.entries({ADMIN:owner,SALES:sales,CLIENT:client,BOD:bod,FINANCE:fin}).map(([role,user])=>[role,auth.createSession(user.id).token]))};
+  const commissionToday=require('../src/lib/vnd-debt.ts').vndDay();
+  const lastMonth=new Date(Date.UTC(Number(commissionToday.slice(0,4)),Number(commissionToday.slice(5,7))-2,1)).toISOString().slice(0,7);
+  const extraSales=auth.createUser({username:'test-monthly-second-sales',display_name:'TEST Second Sales',password:'TestPass123!',role:'SALES'});
+  const extraClient=auth.createUser({username:'test-monthly-second-client',display_name:'TEST Second Client',password:'TestPass123!',role:'CLIENT',sales_user_id:extraSales.id});
+  const firstClient=auth.createUser({username:'test-monthly-first-client',display_name:'TEST First Client',password:'TestPass123!',role:'CLIENT',sales_user_id:sales.id});
+  const monthlyOrders=[firstClient.id,extraClient.id].map((clientId,i)=>{
+   ops.vndAction(owner,{action:'activate',client_id:clientId,credit_limit:'0',reason:'TEST',request_key:'monthly-client-'+i});
+   db.prepare("INSERT INTO client_service_settings(client_user_id,service,sub_service,is_enabled,discount_percent) VALUES (?,'ePacket','Standard',1,0)").run(clientId);
+   const order=finance.upsertOrder({client_user_id:clientId,order_id:'TEST-MONTHLY-'+i,service:'ePacket',sub_service:'Standard',supplier:'DMD',country:'US',carton_count:1,weight:1,length:1,width:1,height:1,item:'TEST',material:'Cotton'});
+   const time=lastMonth+'-02 12:00:00';
+   db.prepare('UPDATE orders SET service_purchased_at=? WHERE id=?').run(time,order.id);
+   db.prepare("INSERT INTO vnd_purchase_requests(order_id,client_id,status,offer,confirmed_at,request_actor_id) VALUES (?,?,'CHARGED','100',?,?)").run(order.id,clientId,time,owner.id);
+   db.prepare("INSERT INTO vnd_auto_quotes(order_id,snapshot_json) VALUES (?,?)").run(order.id,JSON.stringify({base_vnd:'40',net_vnd:'1'}));
+   db.prepare("INSERT INTO vnd_ledger(client_id,order_id,kind,delta,reason,actor_id,request_key,created_at) VALUES (?,?,'ORDER_CHARGE','-100','TEST',?,?,?)").run(clientId,order.id,owner.id,'monthly-ui-'+i,time);
+   return order.id;
+  });
+  module.exports={lastMonth,monthlyOrders,weeklyClient,weeklyToken,claimOrder,mixedOrder,claimLotId:claimCarton.order_lot_id,client,owner,sales,bod,fin,replacement,dbPath:process.env.DMD_DB_PATH,tokens:Object.fromEntries(Object.entries({ADMIN:owner,SALES:sales,CLIENT:client,BOD:bod,FINANCE:fin}).map(([role,user])=>[role,auth.createSession(user.id).token]))};
  }
  console.log('VND CONTINUATION PASS ('+checks+' assertions)');
 }finally{db.close();}

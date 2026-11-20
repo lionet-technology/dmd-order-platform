@@ -1,6 +1,8 @@
 ## Claim NEXT · Triển khai vận hành 18/11/2026
 
-[Feature 42](42-vnd-claim-refund-next.md) cập nhật Claim Client/Supplier nhiều Order, chronology Processing, Complete, hai watchlist và link thủ công. GP/commission sau Refund liên nhóm giữ OPEN. Pilot chứng từ thật và rehearsal môi trường triển khai tiếp tục chờ xác nhận. Các mốc cũ bên dưới mô tả phạm vi từng đợt trước.
+[Feature 45](45-vnd-monthly-commission-closing.md) ghi quyết định tự chốt snapshot hoa hồng VNĐ theo tháng lịch giờ Việt Nam. GĐ1 không có duyệt quyết toán hoặc chốt tay. Chi trả theo dõi riêng. Claim test cũ thiếu phân bổ được đánh dấu và bỏ qua trong snapshot. Điều chỉnh của Order kỳ đã khóa tính vào tháng quyết định/posting, kèm kỳ gốc.
+
+[Feature 42](42-vnd-claim-refund-next.md) cập nhật Claim Client/Supplier nhiều Order, chronology Processing, Complete, hai watchlist và link thủ công. GP-Net sau Refund liên nhóm còn mở. Hoa hồng tháng theo Feature 45. Pilot chứng từ thật và rehearsal môi trường triển khai tiếp tục chờ xác nhận. Các mốc cũ bên dưới mô tả phạm vi từng đợt trước.
 
 ## Claim và Refund NEXT — 18/11/2026
 [Feature 42](42-vnd-claim-refund-next.md) ghi đặc tả Claim/Refund, hiện trạng, checklist pilot và phần truy vết case chưa phân bổ trong báo cáo BOD.
