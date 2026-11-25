@@ -30,6 +30,10 @@ Audit chức năng VNĐ cho tài khoản mở mới, 20/11/2026, repo chính th�
 | DEFERRED | Tùy chọn | Supplier riêng theo Lot. Route, void và fulfillment attempt dùng khóa cấp Order. Giữ phạm vi từ Feature 43. |
 | DEFERRED | Sau GĐ1 | Báo cáo xu hướng tháng và đối chiếu/cutover tài khoản USD cũ. |
 
+## Đổi Tracking và Label hàng loạt · kiểm tra lại sau chỉnh sửa
+
+Admin kiểm tra dữ liệu để hiện mã Order, Client và người nhận. Sửa ô hoặc dán dữ liệu sẽ xoá kết quả đối chiếu của các dòng đã thay đổi và yêu cầu kiểm tra lại trước khi xác nhận. Sheet khóa nhập trong lúc chờ phản hồi để bảo toàn dữ liệu đang xử lý. [Checklist UI và pilot 26/11/2026](UAT-GD1-PILOT-2026-11-26.md).
+
 ## Điều kiện bàn giao
 
 UI/UX có thể tiếp nối sau khi các ca sửa đạt kiểm thử kỹ thuật. Các quyết định P0 chi phối màn hình hạch toán hoặc chỉ tiêu tương ứng. UAT Admin/Sales/Client/Finance/BOD và pilot cần chứng từ thật, template đã duyệt, rate/zone/cap, điều kiện void theo tuyến, bằng chứng ngân hàng và đối chiếu trên kỳ thật. Triển khai và phục hồi ở DEV/TEST cần xác nhận riêng. Jenkins HTTP 403 là kết quả lần bàn giao trước, trạng thái deploy hiện chưa xác minh.
