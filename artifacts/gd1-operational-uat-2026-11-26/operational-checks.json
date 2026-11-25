@@ -1,0 +1,103 @@
+{
+  "accounts": {
+    "ADMIN": {
+      "username": "epacket.admin",
+      "id": 1
+    },
+    "FINANCE": {
+      "username": "continuation-test-79",
+      "id": 9
+    },
+    "BOD": {
+      "username": "continuation-test-78",
+      "id": 8
+    },
+    "SALES": {
+      "username": "continuation-test-1",
+      "id": 6
+    },
+    "CLIENT": {
+      "username": "continuation-test-2",
+      "id": 7
+    }
+  },
+  "newClient": {
+    "id": 14,
+    "username": "gd1-dry-run-new-client"
+  },
+  "fixtureOrders": {
+    "claimOrder": "continuation-test-81",
+    "mixedOrder": "continuation-test-84",
+    "lotOrder": "continuation-test-90",
+    "monthlyOrders": [
+      55,
+      56
+    ],
+    "orderCodes": [
+      "TEST-DRY-CSV-01",
+      "TEST-DRY-CSV-02"
+    ]
+  },
+  "operational": [
+    {
+      "scenario": "Admin → Client account → Sales",
+      "expected": "201, Client login, Sales assignment",
+      "actual": "All three confirmed by HTTP; new Client #14",
+      "status": "PASS"
+    },
+    {
+      "scenario": "Client Orders → CSV import → automatic UPS quote → Purchase",
+      "expected": "2 VNĐ Drafts and 1 RESERVED",
+      "actual": "2 Drafts; quote details #60 · TEST-DRY-CSV-01 · 2505090.7757568 VNĐ Đặt mua | #61 · TEST-DRY-CSV-02 · 3111858.4742784 VNĐ Đặt mua; RESERVED",
+      "status": "PASS"
+    },
+    {
+      "scenario": "Admin Tracking and Label → Client Balance and visible Tracking",
+      "expected": "CHARGED once; exact debit and public Tracking without Supplier",
+      "actual": "Order 60 CHARGED 2505090.7757568 VNĐ with Tracking TEST-DRY-CSV-TRACK-01",
+      "status": "PASS"
+    },
+    {
+      "scenario": "ADMIN Orders → View VNĐ",
+      "expected": "Open the selected Order with context",
+      "actual": "Lands on /vnd with no order identifier or target detail",
+      "status": "BUG"
+    },
+    {
+      "scenario": "ADMIN sidebar → Control Tower",
+      "expected": "Tower is reachable from navigation",
+      "actual": "Heading rendered through sidebar click",
+      "status": "PASS"
+    },
+    {
+      "scenario": "SALES Orders → View VNĐ",
+      "expected": "Open the selected Order with context",
+      "actual": "Lands on /vnd with no order identifier or target detail",
+      "status": "BUG"
+    },
+    {
+      "scenario": "SALES sidebar → Control Tower",
+      "expected": "Tower is reachable from navigation",
+      "actual": "Heading rendered through sidebar click",
+      "status": "PASS"
+    },
+    {
+      "scenario": "CLIENT Orders → View VNĐ",
+      "expected": "Open the selected Order with context",
+      "actual": "Lands on /vnd with no order identifier or target detail",
+      "status": "BUG"
+    },
+    {
+      "scenario": "CLIENT sidebar → Control Tower",
+      "expected": "Tower is reachable from navigation",
+      "actual": "Heading rendered through sidebar click",
+      "status": "PASS"
+    },
+    {
+      "scenario": "Client sidebar → Balance Ledger → Refund",
+      "expected": "Refund tab reachable",
+      "actual": "Refund tab opened through normal desktop navigation",
+      "status": "PASS"
+    }
+  ]
+}

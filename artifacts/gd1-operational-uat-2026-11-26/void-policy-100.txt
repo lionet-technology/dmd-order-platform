@@ -1,0 +1,2 @@
+PASS 100% void: cap 0 VNĐ; proposed 4 VNĐ flagged by Cancel Fee > Policy assertion
+VND SUPPLIER IMPORT PASS (97 assertions)

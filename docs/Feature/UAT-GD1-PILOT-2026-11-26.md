@@ -25,3 +25,7 @@ Supplier Import kiểm tra trùng trong file và lịch sử. Khi Supplier đặ
 - Client cung cấp Order có cước, phụ phí và thuế thực thu khác chi phí Supplier, hồ sơ Refund đã duyệt và Claim Recovery liên kết. Finance đối chiếu từng Order với chứng từ gốc và kiểm tra lần sửa duyệt.
 - Finance ký số GP-Net theo tổng thu sau Client Refund trừ tổng chi sau Supplier Recovery. Recovery ghi đúng một lần khi duyệt. Bank và Payable Offset giảm số phải thu. Đối chiếu GP-Base và snapshot hoa hồng trước và sau bộ giao dịch. Claim lịch sử thiếu phân bổ cần hồ sơ theo Order trước khi ghi vào GP-Net của Order.
 - Dev ghi SHA đang chạy và health của DEV/TEST khi có bằng chứng triển khai. Điều hướng trên điện thoại thật và pilot chứng từ thật vẫn OPEN. Admin, Finance, BOD, Sales và Client ký theo từng kịch bản, đính kèm mã hồ sơ, số kỳ, kết quả mong đợi, kết quả thực tế và ảnh hoặc log đã loại thông tin nhạy cảm.
+
+## Operational dry run · 26/11/2026
+
+[Ma trận nghiệm thu, tài khoản TEST, bước tái hiện và ảnh](../../artifacts/gd1-operational-uat-2026-11-26/ACCEPTANCE-MATRIX.md). Trên Chrome desktop, nút View VNĐ của Admin, Sales và Client mở sổ chung và làm mất ngữ cảnh Order. Giữ lỗi điều hướng trong danh sách UX. Kết quả kiểm thử áp dụng cho bản build localhost với SQLite giả lập. Pilot chứng từ thật, điều hướng trên thiết bị thật và SHA/health DEV/TEST đang triển khai tiếp tục mở.
