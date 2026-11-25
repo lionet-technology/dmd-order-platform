@@ -184,8 +184,16 @@ type QueueRow={
   purchase_status:string;purchase_issue:string;purchase_error_type?:string;manifest_status:string;manifest_issue:string;
 };
 
-export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>void|Promise<void>}){
-  const [rows,setRows]=useState<QueueRow[]>([]);
+const queueRowKey=(row:QueueRow)=>row.order_pk+":"+(row.carton_id??"slot-"+row.carton_slot);
+
+export function BulkTrackingSheet({enums,onDone,onExitState}:{enums:EnumRow[];onDone:()=>void|Promise<void>;onExitState:(state:{busy:boolean;dirty:boolean})=>void}){
+  const [queueRows,setQueueRows]=useState<QueueRow[]>([]);
+  const [drafts,setDrafts]=useState<Record<string,Partial<QueueRow>>>({});
+  const [orderDrafts,setOrderDrafts]=useState<Record<number,Partial<QueueRow>>>({});
+  const [loadFailed,setLoadFailed]=useState(false);
+  const rows=queueRows.map(row=>({...row,...orderDrafts[row.order_pk],...drafts[queueRowKey(row)],tracking:row.tracking_id?row.tracking:drafts[queueRowKey(row)]?.tracking??row.tracking}));
+  const rowsWithCartonEdits=new Set(Object.keys(drafts).map(key=>Number(key.split(":")[0])));
+  const draftOrderCount=new Set([...Object.keys(orderDrafts).map(Number),...rowsWithCartonEdits]).size;
   const [mode]=useState<"PURCHASE"|"MANIFEST">("PURCHASE");
   const [view,setView]=useState<'READY'|'ISSUES'>('READY');
   const [counts,setCounts]=useState({ready:0,issues:0});
@@ -196,12 +204,14 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
   const [quickPaste,setQuickPaste]=useState("");
   const [busy,setBusy]=useState(false);
   const [message,setMessage]=useState("");
+  const dirty=draftOrderCount>0||Boolean(quickPaste.trim());
+  useEffect(()=>{onExitState({busy,dirty})},[busy,dirty,onExitState]);
   const suppliers=enums.filter(row=>row.enum_type==="SUPPLIER"&&row.active!==0);
   const services=enums.filter(row=>row.enum_type==="SERVICE"&&row.active!==0);
   const subs=enums.filter(row=>row.enum_type==="SUB_SERVICE"&&row.active!==0&&(!service||row.parent_value===service));
   const subsFor=(parent:string)=>enums.filter(row=>row.enum_type==="SUB_SERVICE"&&row.active!==0&&row.parent_value===parent);
   const load=useCallback(async()=>{
-    setBusy(true);
+    setBusy(true);setLoadFailed(false);setQueueRows([]);
     try{
       const params=new URLSearchParams();
       if(service)params.set("service",service);
@@ -211,25 +221,22 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
       const body=await json('/api/orders/tracking-queue?'+params);
       const nextRows=body.rows||[];
       setCounts(body.counts||{ready:0,issues:0});
-      setRows(nextRows);
+      setQueueRows(nextRows);
       const ids=new Set<number>(nextRows.map((row:QueueRow)=>row.order_pk));
       setSelectedOrders(prev=>prev.filter(id=>ids.has(id)));
-    }catch(error){setMessage("Lỗi: "+(error as Error).message)}
+    }catch(error){setLoadFailed(true);setMessage("Lỗi: Không tải được hàng chờ. "+(error as Error).message)}
     finally{setBusy(false)}
-  },[service,subService,supplierFilter,mode,view]);
+  },[service,subService,supplierFilter,mode,view,setMessage]);
   useEffect(()=>{setMessage("");void load()},[load]);
 
-  function update(index:number,key:keyof QueueRow,value:string){
-    setRows(prev=>prev.map((row,i)=>i===index?{
-      ...row,[key]:key==="expected_lot_count"?Number(value||1):key==="manual_total_price"?(value===''?null:Number(value)):value,
-    }:row));
+  function update(index:number,key:"tracking"|"label_url",value:string){
+    const rowKey=queueRowKey(rows[index]);
+    setDrafts(prev=>({...prev,[rowKey]:{...prev[rowKey],[key]:value}}));
   }
   function updateOrder(orderPk:number,key:"sub_service"|"supplier"|"expected_lot_count"|"manual_total_price",value:string){
-    setRows(prev=>prev.map(row=>row.order_pk===orderPk?{
-      ...row,[key]:key==="expected_lot_count"?Number(value||1):value,
-      purchase_status:key==="expected_lot_count"?row.purchase_status:"CHECK_AFTER_SAVE",
-      purchase_issue:key==="expected_lot_count"?row.purchase_issue:"Lưu thay đổi để kiểm tra lại template",
-    }:row));
+    const fieldValue=key==="expected_lot_count"?Number(value||1):key==="manual_total_price"?(value===""?null:Number(value)):value;
+    const status=key==="expected_lot_count"?{}:{purchase_status:"CHECK_AFTER_SAVE",purchase_issue:"Lưu thay đổi để kiểm tra lại template"};
+    setOrderDrafts(prev=>({...prev,[orderPk]:{...prev[orderPk],[key]:fieldValue,...status}}));
   }
   function parseTrackingPaste(raw:string){
     return raw.replace(/\r/g,"").split("\n")
@@ -246,14 +253,15 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
       .filter((values,index)=>!(index===0&&String(values[0]||"").trim().toLowerCase()==="tracking"));
   }
   function applyTrackingPaste(matrix:string[][],start=0){
-    setRows(prev=>{
-      const next=[...prev];
+    setDrafts(prev=>{
+      const next={...prev};
       matrix.forEach((values,offset)=>{
-        const index=start+offset;
-        if(!next[index])return;
-        next[index]={
-          ...next[index],
-          tracking:next[index].tracking_id?next[index].tracking:String(values[0]||"").trim(),
+        const row=rows[start+offset];
+        if(!row)return;
+        const key=queueRowKey(row);
+        next[key]={
+          ...next[key],
+          ...(row.tracking_id?{}:{tracking:String(values[0]||"").trim()}),
           label_url:String(values[1]||"").trim(),
         };
       });
@@ -279,14 +287,27 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
       const form=new FormData();form.set("file",file);
       const response=await fetch("/api/orders/tracking-queue",{method:"PUT",body:form});
       const body=await response.json();if(!response.ok)throw new Error(body.error);
-      setRows(body.rows||[]);setMessage("Đã nạp file vào sheet. Kiểm tra trước khi lưu.");
+      const imported:QueueRow[]=body.rows||[];
+      setQueueRows(imported);setSelectedOrders([]);
+      setDrafts(Object.fromEntries(imported.map(row=>[queueRowKey(row),{tracking:row.tracking,label_url:row.label_url}])));
+      setOrderDrafts(Object.fromEntries([...imported].reverse().map(row=>[row.order_pk,{
+        supplier:row.supplier,expected_lot_count:row.expected_lot_count,manual_total_price:row.manual_total_price,
+      }])));
+      setMessage("Đã nạp file vào sheet. Kiểm tra trước khi lưu.");
     }catch(error){setMessage("Lỗi: "+(error as Error).message)}
     finally{setBusy(false)}
   }
   async function persist(orderIds?:number[]){
-    const scopedRows=trackingSheetScope(rows,orderIds);
+    const editedOrders=rows.filter(row=>row.tracking.trim()&&(orderDrafts[row.order_pk]||rowsWithCartonEdits.has(row.order_pk))).map(row=>row.order_pk);
+    const scopedRows=trackingSheetScope(rows,orderIds??editedOrders);
     if(!scopedRows.length)throw new Error("Nhập Tracking/Label cho ít nhất một Order.");
-    return post("/api/orders/tracking-queue",{rows:scopedRows});
+    const result=await post("/api/orders/tracking-queue",{rows:scopedRows});
+    // The endpoint skips cartons without Tracking, even when other cartons in the Order save.
+    const savedKeys=new Set(scopedRows.filter(row=>row.tracking.trim()||!row.label_url.trim()).map(queueRowKey));
+    const savedOrders=new Set(scopedRows.map(row=>row.order_pk));
+    setDrafts(prev=>Object.fromEntries(Object.entries(prev).filter(([key])=>!savedKeys.has(key))));
+    setOrderDrafts(prev=>Object.fromEntries(Object.entries(prev).filter(([id])=>!savedOrders.has(Number(id)))));
+    return result;
   }
   async function save(){
     setBusy(true);setMessage("");
@@ -314,8 +335,9 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
   async function exportOrders(generic=false){
     if(!selectedOrders.length){setMessage("Lỗi: Chọn ít nhất một Order.");return}
     setBusy(true);setMessage("");
+    let saved=false;
     try{
-      if(mode==="PURCHASE")await persist(selectedOrders);
+      if(mode==="PURCHASE"){await persist(selectedOrders);saved=true}
       const endpoint=mode==="MANIFEST"?"/api/manifest-export":generic?"/api/purchase-export/generic":"/api/purchase-export";
       const response=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({order_ids:selectedOrders})});
       if(!response.ok){const body=await response.json();throw new Error(body.error+(body.missing?.length?" · "+body.missing.map((row:{dmd_id:string;reason:string})=>row.dmd_id+": "+row.reason).join(" | "):""))}
@@ -325,7 +347,7 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
         ?"Đã xuất Manifest"+(skipped.length?"; bỏ qua "+skipped.map(row=>row.dmd_id+" ("+row.reason+")").join(", "):".")
         :generic?"Đã xuất Generic cho "+selectedOrders.length+" Order.":"Đã xuất file mua đơn"+(skipped.length?"; bỏ qua "+skipped.map(row=>row.dmd_id+" ("+row.reason+")").join(", "):"."));
       await load();await onDone();
-    }catch(error){setMessage("Lỗi: "+(error as Error).message)}
+    }catch(error){if(saved)await load();setMessage((saved?"Đã lưu thay đổi. Lỗi xuất file: ":"Lỗi: ")+(error as Error).message)}
     finally{setBusy(false)}
   }
 
@@ -341,7 +363,7 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
   const allSelected=Boolean(allIds.length)&&allIds.every(id=>selectedOrders.includes(id));
   function toggleOrder(id:number){setSelectedOrders(prev=>prev.includes(id)?prev.filter(value=>value!==id):[...prev,id])}
 
-  return <div className="bulkSheet">
+  return <div className="bulkSheet"><fieldset disabled={busy} style={{display:"contents"}}>
     <div className="bulkSheetToolbar"><div><b>Mua đơn hàng loạt</b><span>Xuất file mua label rồi nhập Tracking. Manifest được scan riêng tại Xuất hàng.</span></div><div className="bulkFilters">
       <label className="bulkFilterField"><span>Dịch vụ</span><select value={service} onChange={e=>{setService(e.target.value);setSubService("")}}><option value="">Tất cả dịch vụ</option>{services.map(row=><option key={row.id}>{row.value}</option>)}</select></label>
       <label className="bulkFilterField"><span>Sub-Service</span><select value={subService} onChange={e=>setSubService(e.target.value)}><option value="">Tất cả Sub-Service</option>{subs.map(row=><option key={row.id}>{row.value}</option>)}</select></label>
@@ -355,7 +377,7 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
       {view==='READY'?<label><input type="checkbox" checked={allSelected} onChange={()=>setSelectedOrders(allSelected?[]:allIds)}/> Chọn tất cả {orderGroups.length} Order sau filter</label>:<span>Danh sách chỉ để kiểm tra lý do lỗi; không cho phép mua hoặc cấp Tracking tại view này.</span>}
       {mode==='PURCHASE'&&view==='READY'?<div>
         <a className="secondaryBtn" href={"/api/orders/tracking-queue?"+params.toString()}>Tải file Tracking</a>
-        <label className="secondaryBtn fileButton">Upload Tracking<input type="file" accept=".xlsx" onChange={e=>{const file=e.target.files?.[0];if(file)void upload(file)}}/></label>
+        <label className="secondaryBtn fileButton">Upload Tracking<input type="file" accept=".xlsx" onChange={e=>{const file=e.target.files?.[0];e.currentTarget.value="";if(file&&(!draftOrderCount||window.confirm("Nạp file mới sẽ thay dữ liệu chưa lưu của "+draftOrderCount+" Order. Tiếp tục?")))void upload(file)}}/></label>
         <button className="secondaryBtn" disabled={busy||!rows.length} onClick={()=>void save()}>Lưu Tracking/Label</button>
       </div>:null}
     </div>
@@ -386,7 +408,8 @@ export function BulkTrackingSheet({enums,onDone}:{enums:EnumRow[];onDone:()=>voi
         </tr>;
       }))}</tbody>
     </table></div>
-    <div className="bulkSheetFooter"><span>{orderGroups.length} Order · {rows.length} carton đang chờ · đã chọn {selectedOrders.length} Order</span><b className={message.startsWith("Lỗi")?"error":""}>{busy?"Đang xử lý…":message}</b></div>
+    </fieldset>
+    <div className="bulkSheetFooter"><span>{orderGroups.length} Order · {rows.length} carton đang chờ · đã chọn {selectedOrders.length} Order{draftOrderCount>0&&" · "+draftOrderCount+" Order có dữ liệu chưa lưu"}</span><b role="status" className={message.includes("Lỗi")?"error":""}>{busy?"Đang xử lý…":message}</b>{loadFailed&&<button className="secondaryBtn" disabled={busy} onClick={()=>{setMessage("");void load()}}>Tải lại hàng chờ</button>}</div>
   </div>;
 }
 

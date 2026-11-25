@@ -1,0 +1,12 @@
+{
+  "fixture": "Disposable SQLite TEST",
+  "checks": [
+    "Real Admin Chrome Bulk Purchase save wrote one Tracking/Label on synthetic SQLite",
+    "SubService hold covers both Suppliers and leaves unrelated SubService available",
+    "Resume one selected Order from Emergency workspace",
+    "Resume two selected Orders from Emergency workspace in one action",
+    "Per-Order Emergency switch changes Supplier and records replacement",
+    "Two selected Orders create one Supplier Claim, pending approval",
+    "Unselected Refund remains available separately"
+  ]
+}

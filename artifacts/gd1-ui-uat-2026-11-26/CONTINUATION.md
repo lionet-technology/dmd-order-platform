@@ -1,0 +1,17 @@
+# GĐ1 · Kiểm chứng UI và chuẩn bị UAT
+
+Nền GitHub main xác minh trước khi sửa là `ef3817972eb268d59cef5b5834e24aa214304018`. Toàn bộ thao tác kiểm thử dùng SQLite TEST riêng và ứng dụng Chrome localhost. Tài liệu nghiệm thu chính là [Checklist UI và pilot](../../docs/Feature/UAT-GD1-PILOT-2026-11-26.md).
+
+| Kết quả | Tình huống | Bằng chứng |
+|---|---|---|
+| BUG → PASS | Bulk Purchase mất dữ liệu khi đổi bộ lọc. Chrome xác nhận Tracking/Label giữ lại khi lọc Service, Sub-Service, Supplier, chuyển READY/ISSUES, lỗi tải 503 rồi tải lại, và lỗi lưu 400. Yêu cầu lưu chỉ gửi Order đang chỉnh. Một lần lưu thật qua Chrome ghi đúng Tracking và URL Label vào SQLite TEST. Hủy thao tác đóng sheet giữ dữ liệu nhập. | [Desktop](bulk-purchase-desktop.png), [Chrome 390 px](bulk-purchase-390px.png), [47 kiểm tra Chrome và HTTP](browser-and-role-checks.json) |
+| PASS | Exception Queue có đủ chín tag English, so sánh Actual đã duyệt với thành phần Supplier đề xuất và delta. Finance chọn các dòng đủ điều kiện, duyệt một phần và để dòng không match tiếp tục chờ. Excel điều chỉnh đi qua tải, sửa, xem trước, ghi đề xuất và duyệt. File cũ hoặc có formula bị từ chối. | [Exception Queue](supplier-exception-queue.png), [So sánh thành phần](supplier-component-comparison.png), [Chrome VNĐ](vnd-browser-uat.json) |
+| BUG → PASS | Control Tower ngừng tải khi gọi sổ USD với tài khoản VNĐ. Chrome xác nhận hàng đợi hiển thị trên dữ liệu hai loại tiền. Hồi quy xác nhận số liệu USD giữ đúng phạm vi và Claim của Client giữ phân quyền. | [Control Tower](control-tower-mixed-accounts.png), `verify-operations` |
+| PASS | Emergency Hold và Recovery qua hồi quy phạm vi SubService, chặn retry, nhiều lượt fulfillment, void, gom Order theo Supplier, sửa duyệt và tất toán từng phần. Chrome dùng nút Hold theo SubService, tiếp tục một và hai Order, rồi đổi riêng một Order từ Supplier A sang B kèm Tracking/Label mới. Worklist hiển thị hồ sơ thiếu căn cứ. Trên fixture có Refund chưa xử lý, Admin gom hai Order vào một Claim chờ duyệt và giữ Refund chưa chọn trong queue. | [Thao tác Admin](admin-workflow-checks.json), [Recovery đã gom](supplier-recovery-grouped.png), `verify-emergency-hold`, `verify-vnd-supplier-recovery` |
+| PASS | Chrome VNĐ chạy 184 kiểm tra trên Admin, Finance, BOD, Sales và Client. Kiểm tra Order, Refund, Statement/Ledger, báo cáo GP-Net, Control Tower, lịch sử kỳ và quyền đọc Supplier. Chrome 390 px là viewport mô phỏng. | [Phạm vi và kết quả Chrome](vnd-browser-uat.json) |
+| PASS | Khôi phục SQLite TEST, đối chiếu từng dòng của 23 bảng. Integrity OK và không có vi phạm khóa ngoại. | [Bảng và số dòng](sqlite-restore-23-tables.json) |
+| DEFERRED | Điều hướng điện thoại thật, ký UAT theo vai trò trên hồ sơ thật và xác nhận SHA/health ở môi trường triển khai. Hồ sơ cần nhiều kỳ Cost/Surcharge/Tax, void 90%/100%, Emergency A → B → A và Client Refund liên kết Recovery. | [Checklist pilot](../../docs/Feature/UAT-GD1-PILOT-2026-11-26.md) |
+
+Toàn bộ 72 bộ hồi quy, TypeScript, lint, build và `git diff --check` đều qua. Build vẫn ghi một cảnh báo Turbopack về truy cập đường dẫn SQLite động.
+
+GP-Net theo Order dùng tổng thu ghi nhận sau Client Refund trừ tổng chi ghi nhận sau Supplier Recovery, gồm cước, phụ phí và thuế. Recovery vào GP-Net khi duyệt. Bank và Payable Offset tất toán phải thu. GP-Base và snapshot hoa hồng theo quy tắc đã duyệt. Claim lịch sử thiếu phân bổ theo Order và chứng từ Supplier có nhiều mã cần đối chiếu thủ công bằng hồ sơ gốc.

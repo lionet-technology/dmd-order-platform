@@ -930,6 +930,13 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
   const [financeLanding,setFinanceLanding]=useState<'transactions'|'debts'|'statements'>('transactions');
   const [financeTarget,setFinanceTarget]=useState<number|null>(null);
   const [bulkTracking,setBulkTracking]=useState(false);
+  const [bulkTrackingExit,setBulkTrackingExit]=useState({busy:false,dirty:false});
+  function closeBulkTracking(){
+    if(bulkTrackingExit.busy)return;
+    if(bulkTrackingExit.dirty&&!window.confirm("Đóng sheet và bỏ dữ liệu Bulk Purchase chưa lưu?"))return;
+    setBulkTrackingExit({busy:false,dirty:false});
+    setBulkTracking(false);
+  }
   const [bulkReplacement,setBulkReplacement]=useState(false);
   const [importKind,setImportKind]=useState<ImportKind|null>(null);
   const [orderFilters,setOrderFilters]=useState({status:"",service:"",salesUserId:"",reconcile:""});
@@ -1188,7 +1195,7 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
     {role==="CLIENT"&&clientPurchase&&<Modal size="wide" title="Client · Đặt mua dịch vụ" onClose={()=>setClientPurchase(false)}><ClientPurchasePanel initial={clientDraft} onDone={()=>void refresh()}/></Modal>}
     {viewOrder&&<Modal size="wide" title="Chi tiết Order" onClose={()=>setViewOrder(null)}><OrderDetailPanel orderId={Number(viewOrder.id)} role={role} onDone={refresh} onEdit={row=>{setViewOrder(null);openEntry("order",row as RowData)}} onPurchase={role==="ADMIN"?row=>{setViewOrder(null);setPurchaseOrder(row as RowData)}:undefined}/></Modal>}
 
-    {role==="ADMIN"&&bulkTracking&&<Modal size="fullscreen" title="Mua đơn hàng loạt" onClose={()=>setBulkTracking(false)}><BulkTrackingSheet enums={enums} onDone={refresh}/></Modal>}
+    {role==="ADMIN"&&bulkTracking&&<Modal size="fullscreen" title="Mua đơn hàng loạt" onClose={closeBulkTracking}><BulkTrackingSheet enums={enums} onDone={refresh} onExitState={setBulkTrackingExit}/></Modal>}
 
     {role==="ADMIN"&&bulkReplacement&&<Modal size="fullscreen" title="Đổi Tracking & Label hàng loạt" onClose={()=>setBulkReplacement(false)}><TrackingReplacementSheet onDone={refresh}/></Modal>}
 

@@ -123,4 +123,13 @@ cases.caseAction(sales,{action:'review_hold',case_id:request.id,decision:'NO_HOL
 const holdRequest=cases.caseAction(client,{action:'create',kind:'CLAIM',visibility:'PUBLIC',order_ids:[b],summary:'Review Hold',hold_requested:true});const reviewed=cases.caseAction(sales,{action:'review_hold',case_id:holdRequest.id,decision:'PLACE_HOLD',reason:'Inspect packaging'});assert(cases.hasCaseHold(b)&&reviewed.hold_case_id,'Sales review creates audited internal Hold');cases.caseAction(sales,{action:'review_hold',case_id:holdRequest.id,decision:'PLACE_HOLD',reason:'Retry'});assert(db.prepare("SELECT COUNT(*) n FROM operation_cases c JOIN operation_case_orders co ON co.case_id=c.id WHERE co.order_id=? AND c.kind='HOLD' AND c.status='OPEN'").get(b).n===1,'Hold review retry does not create duplicate Holds');
 const projection=require('../src/lib/order-timeline.ts');assert(projection.orderTimeline(a,'CLIENT').some(e=>e.event_type==='WAREHOUSE_RECEIVED'),'Client timeline includes safe warehouse receipt');assert(!projection.orderTimeline(a,'CLIENT').some(e=>e.event_type==='WAREHOUSE_MEASURED'),'Internal measurement stays out of Client timeline');assert(projection.orderTimeline(a,'SALES').some(e=>e.event_type==='WAREHOUSE_MEASURED'),'Sales timeline includes warehouse measurement');
 
+const beforeMixedCurrency=controlTower(admin);
+const vndClient=createUser({username:'tower.vnd',display_name:'Tower VND',role:'CLIENT',sales_user_id:sales.id,password:'Demo12345!',created_by_user_id:admin.id});
+db.prepare('INSERT INTO vnd_accounts(client_id,actor_id) VALUES (?,?)').run(vndClient.id,admin.id);
+const vndClaim=cases.caseAction(vndClient,{action:'create',kind:'CLAIM',visibility:'PUBLIC',summary:'VND client needs follow-up',order_ids:[order(vndClient.id,'TOWER-VND')]});
+const mixedTower=controlTower(admin);
+assert(JSON.stringify(mixedTower.money)===JSON.stringify(beforeMixedCurrency.money),'Mixed accounts keep legacy Control Tower money in USD');
+assert(controlTower(vndClient).money.balance_cents===0,'VND Client Control Tower loads without reading the USD balance');
+assert(cases.casesFor(vndClient).some(c=>c.id===vndClaim.id)&&!cases.casesFor(client).some(c=>c.id===vndClaim.id),'VND Client cases keep account visibility boundaries');
+
 console.log(JSON.stringify({checks,ok:true}));db.close();for(const suffix of ["","-shm","-wal"])fs.rmSync(dbPath+suffix,{force:true});

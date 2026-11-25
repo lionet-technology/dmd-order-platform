@@ -302,7 +302,14 @@ let server,browser,checks=0;const check=(v,m)=>{checks++;assert.ok(v,m)};
  const pendingImport=await (await context.request.get(base+'/api/service-v1/suppliers?supplier=SGBay')).json(),queueRow=pendingImport.import_rows.find(r=>r.data.reference==='TEST-QUEUE-TOTAL');
  check(queueRow.errors.includes('WEIGHT_ABOVE_DMD')&&queueRow.errors.includes('DUPLICATE_HISTORY'),'queue classifies weight and historical duplicate');
  check(pendingImport.payable==='60','Supplier import never posts unaccepted Actual');
- await qi.getByLabel('Chọn dòng Supplier '+queueRow.id,{exact:true}).check();await qi.getByLabel('Lý do review/import',{exact:true}).fill('TEST evidence accepts reviewed higher cost');await qi.getByRole('button',{name:'Accept 1 dòng đã chọn',exact:true}).click();await qi.getByRole('status').filter({hasText:'Đã lưu;'}).waitFor();
+ check(await qi.getByLabel('Lọc theo tag').locator('option').count()===10,'Exception Queue offers all nine English tag filters');
+ await qi.getByRole('button',{name:'Chọn tối đa 200 dòng hiển thị'}).click();
+ await qi.getByLabel('Lý do review/import',{exact:true}).fill('TEST evidence accepts reviewed higher cost');
+ check(await qi.getByRole('button',{name:'Accept 2 dòng đã chọn',exact:true}).isDisabled(),'mixed selection blocks confirmation');
+ check(await qi.getByRole('status').filter({hasText:'1 dòng đã chọn cần xử lý'}).isVisible(),'blocked selection explains how to proceed');
+ await qi.getByRole('button',{name:'Chọn dòng có thể Accept (1)',exact:true}).click();
+ check(await qi.getByLabel('Chọn dòng Supplier '+queueRow.id,{exact:true}).isChecked(),'eligible selection retains the matched row');
+ await qi.getByRole('button',{name:'Accept 1 dòng đã chọn',exact:true}).click();await qi.getByRole('status').filter({hasText:'Đã lưu;'}).waitFor();
  const acceptedImport=await (await context.request.get(base+'/api/service-v1/suppliers?supplier=SGBay')).json();check(acceptedImport.payable==='160.000001','explicit accept replaces documentary total by exact payable delta');
  check(acceptedImport.import_rows.find(r=>r.data.reference==='TEST-QUEUE-MISSING').decision===null,'unselected error remains pending');
  await qi.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(output,'uat-supplier-import-queue.png'),fullPage:false});
@@ -436,7 +443,7 @@ let server,browser,checks=0;const check=(v,m)=>{checks++;assert.ok(v,m)};
   }
  }
  for(const r of ['SALES','CLIENT']){await role(r);const exceptionResponse=await context.request.get(base+'/api/service-v1/exceptions');const ex=await exceptionResponse.json();check(exceptionResponse.ok(),'scoped exceptions available '+r);check(ex.counts.supplier_import===0&&ex.counts.missing_actual===0,'no Supplier Actual queues for '+r);check(!JSON.stringify(ex).includes('actual_net')&&!JSON.stringify(ex).includes('net_vnd'),'no Net in exception response '+r);check((await context.request.get(base+'/api/service-v1/suppliers?supplier=DMD')).status()===403,'Supplier journal denied '+r);await page.getByRole('heading',{name:'Control Tower VNĐ',exact:true}).waitFor();}
- await role('BOD');await tools.getByLabel('Tháng báo cáo',{exact:true}).fill(today.slice(0,7));await tools.getByRole('button',{name:'Xem báo cáo VNĐ',exact:true}).click();await tools.getByRole('columnheader',{name:'Hoa hồng tham khảo VNĐ',exact:true}).waitFor();check(await tools.getByRole('heading',{name:'Đối chiếu GP-Net trước Refund',exact:true}).count()===1,'GP Net reconciliation distinct from commission');
+ await role('BOD');await tools.getByLabel('Tháng báo cáo',{exact:true}).fill(today.slice(0,7));await tools.getByRole('button',{name:'Xem báo cáo VNĐ',exact:true}).click();await tools.getByRole('columnheader',{name:'Hoa hồng tham khảo VNĐ',exact:true}).waitFor();check(await tools.getByRole('heading',{name:'GP-Net theo Order',exact:true}).count()===1,'GP Net reconciliation distinct from commission');
  await role('CLIENT');
  const draftUrl=base+'/api/client-orders';
  const catalog=await (await context.request.get(draftUrl)).json();

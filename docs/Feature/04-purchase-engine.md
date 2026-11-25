@@ -81,3 +81,9 @@ Purchase mới ePacket Standard/Eco DMD bị chặn nếu version active thiếu
 ## Bulk Purchase · Hàng đợi Cần xử lý
 
 Tab Cần xử lý hiển thị lỗi theo Order và khóa các ô Sub-Service, Supplier, số Lot và giá thủ công cùng các ô Tracking/Label. Các thao tác chỉnh hoặc lưu trong spreadsheet thuộc tab Sẵn sàng mua. [Kiểm chứng Chrome desktop/mobile](../../artifacts/gd1-p0-2026-11-21/VERIFICATION.md).
+
+## Bulk Purchase · Giữ dữ liệu nhập khi đổi bộ lọc
+
+Sheet Admin giữ Tracking và URL Label theo carton, cùng Sub-Service, Supplier, số lô và giá thủ công theo Order, trong phiên mở sheet. Đổi Service, Sub-Service, Supplier hoặc chuyển sang Cần xử lý chỉ đổi danh sách hiển thị. Sheet hiển thị số Order còn dữ liệu chưa lưu, kể cả khi bộ lọc đang ẩn Order đó. Lưu áp dụng cho Order đã chỉnh, có Tracking và đang hiển thị. Xuất file áp dụng cho Order đã chọn trong danh sách hiện tại. Dữ liệu chưa lưu của Order khác và URL Label chưa có Tracking vẫn còn trong sheet.
+
+Khi tải hàng chờ lỗi, Admin có thể tải lại ngay tại sheet. Lưu lỗi giữ nguyên dữ liệu để sửa và thử lại. Nếu lưu thành công rồi xuất file lỗi, sheet báo rõ bước nào đã hoàn tất. Đóng sheet hoặc nạp file thay thế yêu cầu xác nhận khi có dữ liệu chưa lưu. Quyền và quy tắc tài chính tiếp tục do API hiện có thực thi.

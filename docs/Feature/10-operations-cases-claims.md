@@ -53,3 +53,7 @@ Current Claim finalization/revisions now change only signed Refund Balance and r
 ## Delta 16/10
 - Shipment FAILED độc lập Case SOLVED (code RESOLVED/CLOSED), không tự resolve Claim, không refund tự động và không đưa shipment về IN_TRANSIT khi đóng Case. Admin có filter Failed riêng.
 - APPROVED: vượt giới hạn service cần Admin hold/reroute/return, khác trội cân hợp lệ tự tính phụ phí; nhánh inbound quote hiện throw/rollback, chưa hoàn tất lưu evidence/flow ngoại lệ. Xem [Operational Flow](OPERATIONAL-FLOW.md).
+
+## Control Tower · Tài khoản USD và VNĐ
+
+Control Tower vẫn tải hàng đợi vận hành khi phạm vi người xem có tài khoản VNĐ. Phần số dư và nợ quá hạn đọc sổ USD chỉ tính tài khoản USD. Sổ tiền và ngoại lệ tài chính VNĐ xem ở workspace VNĐ. Quyền xem Order và Case giữ theo phạm vi tài khoản hiện hành.

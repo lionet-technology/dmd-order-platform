@@ -87,3 +87,5 @@ Finance/BOD duyệt Actual sau khi kiểm tra tham chiếu, theo Supplier và kh
 - Đối chiếu phí hủy dùng chính sách được chụp lúc mở hồ sơ của lượt fulfillment. Xem [Feature 30](30-supplier-cancellation-followup.md#đối-chiếu-phí-void-trong-exception-queue).
 
 Quyết định của Claim từ [Pending Supplier Recovery](42-vnd-claim-refund-next.md#pending-supplier-recovery--25112026) đi vào journal Supplier Claim hiện có. Finance/BOD nhập tham chiếu của chứng từ quyết định. Cùng tham chiếu với Actual đã hạch toán bị từ chối. Actual và Credit Note nhập lại cùng tham chiếu đã dùng cho Supplier Claim tiếp tục đi theo kiểm tra xung đột hiện hành.
+
+Finance/BOD có thể chọn tối đa 200 dòng đang hiển thị đủ điều kiện Accept. Khi chọn lẫn dòng đang bị chặn, queue báo số dòng cần xử lý và khóa xác nhận. Dùng nút chọn dòng có thể Accept để duyệt một phần, giữ các dòng còn lại trong queue. Máy chủ tiếp tục xác minh điều kiện và phiên bản từng dòng khi lưu.
