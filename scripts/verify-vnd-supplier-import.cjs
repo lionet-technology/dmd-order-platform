@@ -170,6 +170,39 @@ let checks=0,n=0;const eq=(a,b)=>{checks++;assert.deepEqual(a,b)},bad=(f,re)=>{c
  eq(supplier.approvedVndLot(legacyCase.lot.id),undefined);
  eq(view().periods[0].snapshot_json,frozen);
  eq(view().late_adjustments.length,1);
+ const componentCase=order(),componentCarton=db.prepare('SELECT id FROM order_cartons WHERE order_id=?').get(componentCase.o.id);
+ addOrderTracking({orderId:componentCase.o.id,cartonId:componentCarton.id,tracking:'COMP-001',labelUrl:freshLabel,actorId:admin.id});
+ const componentTemplate=save(4,{components:[
+  {id:'FREIGHT',group:'Cost',column:'Freight'},
+  {id:'LAST_MILE',group:'Cost',column:'Last mile'},
+  {id:'FUEL',group:'Surcharge',column:'Fuel'},
+  {id:'TAX',group:'Tax',column:'Remote'},
+ ]});
+ const componentGrid=(line,amounts)=>grid([['COMP-001',line,1,'VND',...amounts]]);
+ const base=await componentGrid('BASE',[20,5,10,null]);
+ upload('COMP-BASE',componentTemplate.id,base);
+ let componentRow=find('COMP-BASE','BASE');
+ eq(componentRow.tags,[]);eq(componentRow.comparison.groups.map(g=>g.current),['25','10','0']);
+ review('accept',componentRow);
+ eq(view().entries.at(-1).delta,'35');
+ const amended=await componentGrid('ADJUST',[null,0,10,3]);
+ upload('COMP-ADJUST',componentTemplate.id,amended);
+ componentRow=find('COMP-ADJUST','ADJUST');
+ eq(componentRow.tags,['Duplicated - Processed Order','Additional Fee Found','Fee Adjustment Found']);
+ eq(componentRow.comparison.lines.map(c=>[c.id,c.old,c.amount,c.delta]),[
+  ['FREIGHT','20','20','0'],['LAST_MILE','5','0','-5'],['FUEL','10','10','0'],['TAX',null,'3','3'],
+ ]);
+ review('accept',componentRow);
+ eq(view().entries.at(-1).delta,'-2');
+ const postings=view().entries.length;
+ upload('COMP-UNCHANGED',componentTemplate.id,await componentGrid('UNCHANGED',[20,0,10,3]));
+ componentRow=find('COMP-UNCHANGED','UNCHANGED');
+ eq(componentRow.tags,['Duplicated - Processed Order']);
+ review('accept',componentRow);
+ eq(view().entries.length,postings);
+ upload('COMP-ADJUST',componentTemplate.id,amended);
+ eq(view().import_rows.filter(r=>r.data.source?.document==='COMP-ADJUST').length,1);
+ eq(view().entries.length,postings);
  bad(()=>db.prepare('DELETE FROM vnd_supplier_import_rows').run(),/Immutable/);bad(()=>db.prepare("UPDATE vnd_supplier_import_decisions SET reason='x'").run(),/Immutable/);
  eq(ops.vndBalance(client.id),balance);eq(JSON.stringify(db.prepare('SELECT * FROM vnd_ledger').all()),journal);eq(db.pragma('integrity_check',{simple:true}),'ok');
  console.log('VND SUPPLIER IMPORT PASS ('+checks+' assertions)');

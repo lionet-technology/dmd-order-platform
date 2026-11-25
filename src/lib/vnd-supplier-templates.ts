@@ -2,6 +2,8 @@ import {db} from './db';
 import {canonicalEnumValue} from './enums';
 import {compareVnd, sumVnd, vnd} from './vnd-money';
 
+import {componentGroups, type ComponentMapping} from './vnd-supplier-components';
+
 type Input = Record<string, unknown>;
 type Bucket = {mode: 'TOTAL' | 'SUM'; columns: string[]};
 type Mapping = {
@@ -10,6 +12,7 @@ type Mapping = {
   weight: string;
   currency?: string;
   label_url?: string;
+  components?: ComponentMapping[];
   actual: Bucket | null;
   surcharge: Bucket | null;
   surcharge_in_actual: boolean;
@@ -63,16 +66,24 @@ export function saveSupplierTemplate(supplier: string, actorId: number, input: I
   const service = canonicalEnumValue('SERVICE', label(input.service));
   const subService = canonicalEnumValue('SUB_SERVICE', label(input.sub_service), service);
   const config = input.mapping as Input | undefined;
-  if (!config || typeof config.surcharge_in_actual !== 'boolean') throw Error('Cần xác định phụ phí đã nằm trong Actual Net chưa.');
+  if (!config) throw Error('Cần cấu hình template Supplier.');
+  const components = Array.isArray(config.components) ? config.components.map((raw: Input) => {
+    const id = label(raw.id), column = label(raw.column);
+    const group = componentGroups.find(candidate => candidate === raw.group);
+    if (!group || !/^[A-Z][A-Z0-9_]{0,63}$/.test(id)) throw Error('Component ID hoặc nhóm không hợp lệ.');
+    return {id, column, group};
+  }) : undefined;
+  if (components && (!components.length || components.length > 60 || new Set(components.map(c => c.id)).size !== components.length || (components.length === 1 && (components[0].id !== 'COST' || components[0].group !== 'Cost')))) throw Error('Cần Component ID duy nhất. Tuyến một thành phần dùng COST trong nhóm Cost.');
+  if (!components && typeof config.surcharge_in_actual !== 'boolean') throw Error('Cần xác định phụ phí đã nằm trong Actual Net chưa.');
   const mapping: Mapping = {
     tracking: label(config.tracking), line: label(config.line), weight: config.weight ? label(config.weight) : '',
     currency: config.currency ? label(config.currency) : '',
     label_url: config.label_url ? label(config.label_url) : '',
-    actual: bucket(config.actual), surcharge: bucket(config.surcharge), surcharge_in_actual: config.surcharge_in_actual,
+    components, actual: components ? null : bucket(config.actual), surcharge: components ? null : bucket(config.surcharge), surcharge_in_actual: !components && config.surcharge_in_actual === true,
   };
-  if ((!mapping.actual && !mapping.surcharge) || (mapping.surcharge_in_actual && (!mapping.actual || !mapping.surcharge)))
+  if (!components && ((!mapping.actual && !mapping.surcharge) || (mapping.surcharge_in_actual && (!mapping.actual || !mapping.surcharge))))
     throw Error('Cần nhóm Actual/Phụ phí hợp lệ.');
-  const headings = [mapping.tracking, mapping.line, mapping.weight, mapping.currency, mapping.label_url, ...(mapping.actual?.columns ?? []), ...(mapping.surcharge?.columns ?? [])].filter((column): column is string => Boolean(column));
+  const headings = [mapping.tracking, mapping.line, mapping.weight, mapping.currency, mapping.label_url, ...(mapping.actual?.columns ?? []), ...(mapping.surcharge?.columns ?? []), ...(mapping.components?.map(c => c.column) ?? [])].filter((column): column is string => Boolean(column));
   if (new Set(headings).size !== headings.length) throw Error('Một cột chỉ được map một lần.');
   const current = supplierTemplates(supplier).find(t => t.service === service && t.sub_service === subService);
   if (input.expected_version !== (current?.version ?? 0)) throw Error('Template đã thay đổi; tải lại trước khi lưu.');
@@ -100,7 +111,7 @@ export function mappedSupplierRows(supplier: string, input: Input) {
   const headings = header.map(cell => String(cell ?? '').trim());
   const mapping = template.mapping;
   const index = new Map<string, number>();
-  for (const column of [mapping.tracking, mapping.line, mapping.weight, mapping.currency, mapping.label_url, ...(mapping.actual?.columns ?? []), ...(mapping.surcharge?.columns ?? [])].filter((column): column is string => Boolean(column))) {
+  for (const column of [mapping.tracking, mapping.line, mapping.weight, mapping.currency, mapping.label_url, ...(mapping.actual?.columns ?? []), ...(mapping.surcharge?.columns ?? []), ...(mapping.components?.map(c => c.column) ?? [])].filter((column): column is string => Boolean(column))) {
     const position = headings.indexOf(column);
     if (position < 0 || position !== headings.lastIndexOf(column)) throw Error('Cột bị thiếu hoặc xuất hiện nhiều lần: ' + column);
     index.set(column, position);
@@ -125,8 +136,15 @@ export function mappedSupplierRows(supplier: string, input: Input) {
       return {mode: config.mode, components, total};
     };
     const actual = readBucket(mapping.actual), surcharge = readBucket(mapping.surcharge);
-    const requiredBucket = mapping.actual ?? mapping.surcharge!;
-    if (requiredBucket.mode === 'SUM' && requiredBucket.columns.every(column => cell(column) == null || cell(column) === ''))
+    const components = mapping.components?.map(component => {
+      const value = cell(component.column);
+      const amount = value == null || (typeof value === 'string' && !value.trim())
+        ? null : parse(component.column, () => decimal(value, false));
+      return {...component, amount};
+    });
+    if (components?.every(component => component.amount === null)) parseErrors.push('Cần ít nhất một số tiền.');
+    const requiredBucket = mapping.actual ?? mapping.surcharge;
+    if (requiredBucket?.mode === 'SUM' && requiredBucket.columns.every(column => cell(column) == null || cell(column) === ''))
       parseErrors.push('Nhóm chi phí chính trống; nhập 0 nếu số tiền bằng 0.');
     const tracking = parse(mapping.tracking, () => label(cell(mapping.tracking)));
     const labelColumn = mapping.label_url;
@@ -148,9 +166,10 @@ export function mappedSupplierRows(supplier: string, input: Input) {
       return currency;
     });
     const amount = parseErrors.length ? null
+      : components ? sumVnd(components.map(component => component.amount ?? '0'))
       : sumVnd([actual?.total ?? '0', mapping.surcharge_in_actual ? '0' : surcharge?.total ?? '0']);
     return [{
-      kind: actual ? 'TOTAL' : 'SUPPLEMENT', tracking, label_url:labelUrl, amount, supplier_weight: supplierWeight,
+      components, kind: components || actual ? 'TOTAL' : 'SUPPLEMENT', tracking, label_url:labelUrl, amount, supplier_weight: supplierWeight,
       reference: document + ' / ' + (line ?? 'Excel ' + (offset + 2)),
       source: {
         document, line, excel_row: offset + 2, file_name: typeof input.file_name === 'string' ? input.file_name.slice(0, 255) : null, template_id: template.id, version: template.version,

@@ -26,7 +26,7 @@ function read(actor:AuthUser){
    }
   }
  }
- const imports=internal?(db.prepare('SELECT DISTINCT supplier FROM vnd_supplier_import_rows').all() as {supplier:string}[]).flatMap(s=>supplierImportView(s.supplier).filter(r=>!r.decision).map(r=>({id:(r as unknown as Row).id,supplier:s.supplier,lot_id:r.lot_id,status:r.errors.length?'REVIEW_ERRORS':'AWAITING_REVIEW',errors:r.errors}))):[];
+ const imports=internal?(db.prepare('SELECT DISTINCT supplier FROM vnd_supplier_import_rows').all() as {supplier:string}[]).flatMap(s=>supplierImportView(s.supplier).filter(r=>!r.decision).map(r=>({id:(r as unknown as Row).id,supplier:s.supplier,lot_id:r.lot_id,status:r.errors.length?'REVIEW_ERRORS':'AWAITING_REVIEW',errors:r.tags}))):[];
  const queues={purchasing:purchase,financial_flags:financial,pricing_flags:pricing,missing_actual:missing,supplier_import:imports};
  return {currency:'VND',queues,counts:Object.fromEntries(Object.entries(queues).map(([k,v])=>[k,v.length])),read_only:true};
 }

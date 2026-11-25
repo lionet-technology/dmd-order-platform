@@ -77,6 +77,7 @@ export function vndSupplierAction(actor:AuthUser,input:Row){
   if(action==='approve'&&(!history||history.incomplete||history.attempts.length!==1||history.attempts[0].supplier!==supplier))
    throw Error('Cần đối soát đúng lượt fulfillment trước khi ghi Actual/payable.');
   const {approved:old,uncertain}=approvedFulfillment(Number(cost.lot_id),supplier,Number(cost.fulfillment_epoch??0));
+  if(action==='approve'&&old&&db.prepare("SELECT 1 FROM vnd_supplier_import_decisions WHERE cost_id=? AND json_type(snapshot_json,'$.comparison.current')='array'").get(old.id))throw Error('Actual thành phần cần chứng từ thành phần.');
   if(action==='approve'&&uncertain)throw Error('Cần đối soát đúng lượt fulfillment của Actual cũ.');
   if(input.expected_approved_cost_id!==Number(old?.id??0))throw Error('Actual đã thay đổi; tải lại.');
   if(db.prepare('SELECT id FROM vnd_supplier_reviews WHERE cost_id=?').get(cost.id))throw Error('Chứng từ đã xử lý.');

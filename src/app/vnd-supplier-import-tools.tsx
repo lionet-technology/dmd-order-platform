@@ -1,15 +1,17 @@
 "use client";
-import {type FormEvent,useRef,useState} from 'react';
+import {Fragment,type FormEvent,useRef,useState} from 'react';
+import {supplierExceptionTags, type ComponentMapping} from '../lib/vnd-supplier-components';
+import type {compareSupplierComponents} from '../lib/vnd-supplier-components';
 type Bucket={mode:'TOTAL'|'SUM';columns:string[]};
-type Template={id:number;service:string;sub_service:string;version:number;mapping:{tracking:string;line:string;weight:string;currency?:string;label_url?:string;actual:Bucket|null;surcharge:Bucket|null;surcharge_in_actual:boolean}};
+type Template={id:number;service:string;sub_service:string;version:number;mapping:{components?:ComponentMapping[];tracking:string;line:string;weight:string;currency?:string;label_url?:string;actual:Bucket|null;surcharge:Bucket|null;surcharge_in_actual:boolean}};
 type ParsedBucket={total:string|null;components:{column:string;amount:string|null}[]};
 type ParsedSource={version:number;excel_row:number;actual:ParsedBucket|null;surcharge:ParsedBucket|null;surcharge_in_actual:boolean};
 const fieldGrid={display:'grid',gap:10,gridTemplateColumns:'repeat(auto-fit,minmax(min(100%, 14rem),1fr))'};
 const field={display:'grid',gap:4,alignContent:'start'};
-type ImportRow={id:number;position:number;data:{tracking:string;label_url?:string;order_code:string;kind:string;amount:string|null;reference:string;parse_errors?:string[];source?:ParsedSource};lot_id:number|null;fulfillment_epoch:number|null;estimated:string|null;dmd_weight:string|null;approved_cost_id:number;errors:string[];token:string;decision:unknown};
-const errors:Record<string,string>={SUPPLIER_REFERENCE_IN_USE:'Tham chiếu đã dùng trong sổ hoặc Claim Supplier. Đối chiếu chứng từ trước khi duyệt Actual.',ORDER_NOT_MATCHED:'Không tìm thấy Order',FULFILLMENT_REVIEW_REQUIRED:'Cần đối soát lượt fulfillment trước khi ghi Actual',AMBIGUOUS_MATCH:'Match nhiều Lot',NET_ABOVE_ESTIMATE:'Net cao hơn estimate',WEIGHT_ABOVE_DMD:'Cân Supplier cao hơn DMD',MISSING_DMD_WEIGHT:'Thiếu cân tính phí DMD',MISSING_ESTIMATE:'Thiếu estimate',MISSING_APPROVED_BASE:'Chưa có Actual gốc',DUPLICATE_HISTORY:'Trùng lịch sử',DUPLICATE_IN_FILE:'Trùng trong file'};
+type ImportRow={id:number;position:number;data:{tracking:string;label_url?:string;order_code:string;kind:string;amount:string|null;reference:string;parse_errors?:string[];source?:ParsedSource};lot_id:number|null;fulfillment_epoch:number|null;estimated:string|null;dmd_weight:string|null;approved_cost_id:number;tags:string[];revenue:string|null;revenue_below_obligation:boolean;component_blocked:boolean;comparison:ReturnType<typeof compareSupplierComponents>|null;errors:string[];token:string;decision:unknown};
 export default function VndSupplierImportTools({supplier,role,onChange}:{supplier:string;role:string;onChange:()=>void}){
  const [rows,setRows]=useState<ImportRow[]>([]),[selected,setSelected]=useState<number[]>([]),[mappings,setMappings]=useState<Record<number,string>>({}),[mappedCosts,setMappedCosts]=useState<Record<number,string>>({}),[reason,setReason]=useState(''),[file,setFile]=useState<File|null>(null),[kind,setKind]=useState('TOTAL'),[message,setMessage]=useState(''),[busy,setBusy]=useState(false),[onlyErrors,setOnlyErrors]=useState(false);
+ const [tag,setTag]=useState('');
  const [templates,setTemplates]=useState<Template[]>([]),[templateId,setTemplateId]=useState(''),[document,setDocument]=useState('');
  const template=templates.find(t=>String(t.id)===templateId);
  async function saveTemplate(event:FormEvent<HTMLFormElement>){
@@ -23,10 +25,16 @@ export default function VndSupplierImportTools({supplier,role,onChange}:{supplie
   };
   setBusy(true);
   try{
+   const componentText=String(form.get('components')).trim();
+   const components=componentText?componentText.split('\n').filter(line=>line.trim()).map(line=>{
+    const [id,group,column,...extra]=line.split('|').map(value=>value.trim());
+    if(!id||!group||!column||extra.length)throw Error('Mỗi dòng cần Component ID | Nhóm | Tên cột Excel.');
+    return {id,group,column};
+   }):undefined;
    const response=await fetch('/api/service-v1/suppliers',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({
     supplier,action:'save_import_template',request_key:crypto.randomUUID(),reason:'Cấu hình template Excel Supplier',
     service,sub_service:subService,expected_version:current?.version??0,mapping:{
-     tracking:form.get('tracking'),line:form.get('line'),weight:form.get('weight'),currency:form.get('currency'),label_url:form.get('label_url'),actual:bucket('actual'),
+     components, tracking:form.get('tracking'),line:form.get('line'),weight:form.get('weight'),currency:form.get('currency'),label_url:form.get('label_url'),actual:bucket('actual'),
      surcharge:bucket('surcharge'),surcharge_in_actual:form.get('included')==='on',
     },
    })});
@@ -55,7 +63,7 @@ export default function VndSupplierImportTools({supplier,role,onChange}:{supplie
    const d=await r.json();if(!r.ok)throw Error(d.error);setRows(d.import_rows??[]);setTemplates(d.templates??[]);setSelected([]);setMessage(mode==='load'?'Đã tải queue.':'Đã lưu; xem kết quả trong queue.');onChange();
   }catch(e){setMessage(e instanceof Error?e.message:'Không xử lý được.');}finally{setBusy(false);}
  }
- const pending=rows.filter(r=>!r.decision),visible=pending.filter(r=>!onlyErrors||r.errors.length>0);
+ const pending=rows.filter(r=>!r.decision),visible=pending.filter(r=>(!onlyErrors||r.tags.length>0)&&(!tag||r.tags.includes(tag)));
  return <section aria-label="Supplier import queue"><h3>Import và review Supplier VNĐ</h3><p>{templateId
   ? 'Dùng cùng mã chứng từ và mã dòng khi tải lại. Sau khi đổi template, bỏ qua bản chờ trước khi nhập lại theo phiên bản mới.'
   : 'Excel chuẩn dùng các cột Tracking hoặc Order ID, Actual Net VNĐ, Cân Supplier kg, Tham chiếu và Lý do.'} Actual và phải trả chỉ ghi sau khi Accept.</p>
@@ -76,6 +84,7 @@ export default function VndSupplierImportTools({supplier,role,onChange}:{supplie
  <label style={field}>Cột cân kg <input name="weight" defaultValue={template?.mapping.weight}/></label>
  <label style={field}>Cột loại tiền (nếu có) <input name="currency" defaultValue={template?.mapping.currency}/></label>
  </div>
+ <label style={field}>Thành phần V2 (Component ID | Cost, Surcharge hoặc Tax | Tên cột Excel)<textarea name="components" defaultValue={template?.mapping.components?.map(c=>[c.id,c.group,c.column].join(' | ')).join('\n')}/></label>
  <p>Nhập đúng tiêu đề Excel, mỗi tên cột trên một dòng. Dùng mã dòng dạng text, duy nhất trong chứng từ.</p>
  <div style={fieldGrid}>
  <BucketFields name="actual" label="Actual Net VNĐ" value={template?.mapping.actual}/>
@@ -93,12 +102,13 @@ export default function VndSupplierImportTools({supplier,role,onChange}:{supplie
  <button disabled={busy||!supplier||!file||!reason||(!!templateId&&!document.trim())} onClick={()=>void run('import')}>Import vào queue</button><button disabled={busy||!supplier} onClick={()=>void run('load')}>Tải queue Supplier</button>
  </div>
  <p>Chờ review: {pending.length}; có lỗi: {pending.filter(r=>r.errors.length).length}; lịch sử xử lý gần nhất (tối đa 200): {rows.length-pending.length}.</p>
- <label><input type="checkbox" checked={onlyErrors} onChange={e=>{setOnlyErrors(e.target.checked);setSelected([]);}}/>Chỉ hàng có lỗi</label>
- <div style={{overflowX:'auto'}}><table><thead><tr><th>Chọn</th><th>Dòng / mã</th><th>Loại / VNĐ</th><th>Lot / lượt / estimate</th><th>Loại lỗi</th><th>Ghép Lot thủ công</th></tr></thead><tbody>{visible.map(r=><tr key={r.id}><td><input aria-label={'Chọn dòng Supplier '+r.id} type="checkbox" checked={selected.includes(r.id)} onChange={e=>setSelected(e.target.checked?[...selected,r.id]:selected.filter(id=>id!==r.id))}/></td><td>{r.id} / {r.data.tracking||r.data.order_code}<br/>{r.data.reference}{r.data.label_url&&<div>Label: {r.data.label_url}</div>}{r.data.source&&<details><summary>Excel dòng {r.data.source.excel_row} · v{r.data.source.version}</summary><CostBreakdown label="Actual Net" bucket={r.data.source.actual}/>
+ <div style={{display:'flex',flexWrap:'wrap',gap:12,alignItems:'center'}}><label><input type="checkbox" checked={onlyErrors} onChange={e=>{setOnlyErrors(e.target.checked);setSelected([]);}}/>Chỉ hàng có lỗi</label>
+ <label>Lọc theo tag <select value={tag} onChange={e=>{setTag(e.target.value);setSelected([]);}}><option value="">Tất cả</option>{supplierExceptionTags.map(value=><option key={value}>{value}</option>)}</select></label></div>
+ <div style={{overflowX:'auto'}}><table><thead><tr><th>Chọn</th><th>Dòng / mã</th><th>Loại / VNĐ</th><th>Lot / lượt / estimate</th><th>Loại lỗi</th><th>Ghép Lot thủ công</th></tr></thead><tbody>{visible.map(r=><Fragment key={r.id}><tr><td><input aria-label={'Chọn dòng Supplier '+r.id} type="checkbox" checked={selected.includes(r.id)} onChange={e=>setSelected(e.target.checked?[...selected,r.id]:selected.filter(id=>id!==r.id))}/></td><td>{r.id} / {r.data.tracking||r.data.order_code}<br/>{r.data.reference}{r.data.label_url&&<div>Label: {r.data.label_url}</div>}{r.data.source&&<details><summary>Excel dòng {r.data.source.excel_row} · v{r.data.source.version}</summary><CostBreakdown label="Actual Net" bucket={r.data.source.actual}/>
  <CostBreakdown label={r.data.source.surcharge_in_actual?'Phụ phí đã gồm trong Actual':'Phụ phí cộng riêng'} bucket={r.data.source.surcharge}/>
- <details><summary>Dữ liệu Excel gốc</summary><pre>{JSON.stringify(r.data.source,null,2)}</pre></details></details>}</td><td>{r.data.kind} / {r.data.amount}</td><td>{r.lot_id??'Chưa match'} / {r.fulfillment_epoch===0?'Gốc':r.fulfillment_epoch??'Chưa rõ'} / {r.estimated??'Thiếu'}</td><td>{r.errors.map(e=>errors[e]??e).join('; ')||'Chờ review'}</td><td>{!r.lot_id&&!r.errors.includes('FULFILLMENT_REVIEW_REQUIRED')&&<><input placeholder="Lot ID" aria-label={'Ghép Lot dòng '+r.id} value={mappings[r.id]??''} onChange={e=>setMappings({...mappings,[r.id]:e.target.value})}/><input placeholder="Actual cost ID hiện tại (0 nếu chưa có)" aria-label={'Actual cũ dòng '+r.id} value={mappedCosts[r.id]??'0'} onChange={e=>setMappedCosts({...mappedCosts,[r.id]:e.target.value})}/></>}</td></tr>)}</tbody></table></div>
+ <details><summary>Dữ liệu Excel gốc</summary><pre>{JSON.stringify(r.data.source,null,2)}</pre></details></details>}</td><td>{r.data.kind} / {r.data.amount}</td><td>{r.lot_id??'Chưa match'} / {r.fulfillment_epoch===0?'Gốc':r.fulfillment_epoch??'Chưa rõ'} / {r.estimated??'Thiếu'}</td><td>{r.tags.map(tag=><div key={tag}>{tag}</div>)}{!r.tags.length&&'Chờ review'}{r.errors.includes('SUPPLIER_REFERENCE_IN_USE')&&<p>Tham chiếu đã dùng trong sổ hoặc Claim Supplier.</p>}{r.errors.some(error=>error==='FULFILLMENT_REVIEW_REQUIRED'||error==='AMBIGUOUS_MATCH')&&<p>Cần đối soát đúng lượt fulfillment bằng chứng từ trước khi Accept.</p>}{r.data.parse_errors?.map((error,index)=><div key={index}>{error}</div>)}{r.component_blocked&&<p>Cần xác minh dữ liệu thành phần đã duyệt trước khi Accept.</p>}{r.revenue_below_obligation&&<p>Doanh thu Order {r.revenue} VNĐ thấp hơn nghĩa vụ Supplier của dòng này. Cần rà soát phụ phí Client.</p>}</td><td>{!r.lot_id&&!r.comparison&&!r.errors.includes('AMBIGUOUS_MATCH')&&!r.errors.includes('FULFILLMENT_REVIEW_REQUIRED')&&<><input placeholder="Lot ID" aria-label={'Ghép Lot dòng '+r.id} value={mappings[r.id]??''} onChange={e=>setMappings({...mappings,[r.id]:e.target.value})}/><input placeholder="Actual cost ID hiện tại (0 nếu chưa có)" aria-label={'Actual cũ dòng '+r.id} value={mappedCosts[r.id]??'0'} onChange={e=>setMappedCosts({...mappedCosts,[r.id]:e.target.value})}/></>}</td></tr>{r.comparison&&<tr><td colSpan={6}><details id={'supplier-comparison-'+r.id}><summary>So sánh thành phần</summary><p>Tổng nghĩa vụ sau báo giá {r.comparison.total} VNĐ</p><div style={{overflowX:'auto'}}><table style={{minWidth:550}}><thead><tr><th>Nhóm / Thành phần</th><th>Đã duyệt</th><th>Supplier báo</th><th>Sau báo giá</th><th>Chênh lệch</th></tr></thead><tbody>{r.comparison.groups.map(group=><tr key={group.group}><th>{group.group}</th><td>{group.old}</td><td>—</td><td>{group.current}</td><td>{group.delta}</td></tr>)}{r.comparison.lines.map(line=><tr key={line.id}><td>{line.group} / {line.id}</td><td>{line.old??'—'}</td><td>{line.quoted??'—'}</td><td>{line.amount}</td><td>{line.delta}</td></tr>)}</tbody></table></div></details></td></tr>}</Fragment>)}</tbody></table></div>
  <button disabled={busy||!visible.length} onClick={()=>setSelected(visible.slice(0,200).map(r=>r.id))}>Chọn tối đa 200 dòng hiển thị</button>
- {role!=='ADMIN'&&<button disabled={busy||!selected.length||!reason||pending.some(r=>selected.includes(r.id)&&(r.data.parse_errors?.length||r.errors.includes('FULFILLMENT_REVIEW_REQUIRED')||r.errors.includes('SUPPLIER_REFERENCE_IN_USE')))} onClick={()=>void run('accept')}>Accept {selected.length} dòng đã chọn</button>}
+ {role!=='ADMIN'&&<button disabled={busy||!selected.length||!reason||pending.some(r=>selected.includes(r.id)&&(r.component_blocked||(r.comparison&&!r.lot_id)||r.errors.includes('AMBIGUOUS_MATCH')||r.data.parse_errors?.length||r.errors.includes('FULFILLMENT_REVIEW_REQUIRED')||r.errors.includes('SUPPLIER_REFERENCE_IN_USE')))} onClick={()=>void run('accept')}>Accept {selected.length} dòng đã chọn</button>}
  <button disabled={busy||!selected.length||!reason} onClick={()=>void run('skip')}>Bỏ qua {selected.length} dòng đã chọn</button><p role="status">{message}</p>
  <details><summary>Lịch sử xử lý</summary>{rows.filter(r=>r.decision).map(r=><pre key={r.id}>{JSON.stringify({id:r.id,decision:r.decision},null,2)}</pre>)}</details></section>;
 }

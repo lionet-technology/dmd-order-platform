@@ -62,6 +62,14 @@ TOTAL thay tổng của đúng lượt bằng delta. SUPPLEMENT cần Actual g�
 
 [Kiểm thử Phase 4](../../artifacts/gd1-phase4-fulfillment-epochs-2026-11-20/VERIFICATION.md).
 
+## Supplier Reconciliation V2 · triển khai từng phần
+
+Form cấu hình và API Supplier hỗ trợ `mapping.components` với `column`, `id`, `group` (Cost, Surcharge, Tax). Ô trống giữ giá trị đã duyệt của Component ID, số 0 là giá trị có chủ đích. Tổng từng nhóm được cộng từ thành phần. Đối chiếu Estimated Net dùng nhóm Cost của template V2. Cân Supplier V2 so với tổng cân đo của kiện trong Lot khi đầy đủ. Queue cảnh báo khi tổng nghĩa vụ của một dòng V2 đã vượt toàn bộ doanh thu thương mại đã ghi sổ của Order. Quyết định Accept lưu snapshot so sánh, và luồng Finance/BOD hiện tại ghi chênh lệch tổng nghĩa vụ theo lượt. Nếu Actual cũ chỉ có tổng hoặc Component ID bị chuyển nhóm, dòng V2 bị chặn để tránh suy diễn chi tiết từ tổng lịch sử. Control Tower và queue hiển thị nhãn tiếng Anh từ cùng danh mục. Queue lọc theo tag và cho xem số cũ, số sau báo giá và delta theo nhóm và thành phần. Finance/BOD tiếp tục chọn từng dòng hoặc chọn nhiều dòng để duyệt có lý do.
+
+[Bằng chứng TEST đợt 1](../../artifacts/supplier-reconciliation-v2-2026-11-25/VERIFICATION.md).
+
+Còn lại trong V2: lưu file gốc theo batch, xuất/sửa/preview nhập lại exception, đối chiếu phí void theo phần trăm, xử lý baseline Actual chỉ có tổng, tự chốt dòng sạch và cảnh báo nghĩa vụ cộng dồn toàn Order.
+
 ## Phạm vi kiện/Lot của phụ phí và thuế Client
 
 Dòng nhập bằng Tracking lưu ID Tracking, kiện và Lot nếu có trong hồ sơ. Dòng nhập bằng Order ID giữ phạm vi Order. Tham chiếu dòng vẫn duy nhất theo Client và tra lại được bằng Order ID hoặc Tracking của cùng dòng. Một tham chiếu đã gắn Tracking không được gắn lại sang Tracking khác. Mỗi dòng tạo một bút toán Client cấp Order. Bản ghi cũ vẫn đọc được với tham chiếu kiện/Lot để trống.

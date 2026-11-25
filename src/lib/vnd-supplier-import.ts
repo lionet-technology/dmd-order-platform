@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 import {db} from './db';
 import {approvedFulfillment,hasPostedSupplierReference,hasSupplierReferenceOutsideActual,lotFulfillments,resolveFulfillment} from './vnd-fulfillment';
 import {installSupplierTemplateSchema,mappedSupplierRows} from './vnd-supplier-templates';
+import {compareSupplierComponents, supplierTags, type FinalComponent, type QuotedComponent} from './vnd-supplier-components';
 import type {AuthUser} from './auth';
 import {vnd,compareVnd,addVnd,subtractVnd,sumVnd} from './vnd-money';
 type Row=Record<string,unknown>;
@@ -20,6 +21,7 @@ function estimate(lot:Row){
  const count=(db.prepare('SELECT count(*) n FROM order_lots WHERE order_id=?').get(lot.order_id) as {n:number}).n;
  return count===1&&typeof q.net_vnd==='string'?q.net_vnd:null;
 }
+function normalizeTracking(value:unknown){return String(value??'').trim().toUpperCase().replace(/[\s-]+/g,'');}
 function matchesRoute(lot:Row|undefined,source:Row|undefined){
  return !source||(lot?.service===source.service&&lot?.sub_service===source.sub_service);
 }
@@ -33,34 +35,49 @@ export function supplierImportState(row:Row){
  const actual=attempt?approvedFulfillment(attempt.lot_id,supplier,attempt.id):undefined;
  const lot=attempt?lotFulfillments(attempt.lot_id)?.lot:undefined,old=actual?.approved;
  const errors=[...parseErrors];
+ const components=data.components as QuotedComponent[]|undefined;
+ const priorDecision=old?db.prepare('SELECT snapshot_json FROM vnd_supplier_import_decisions WHERE cost_id=?').get(old.id) as {snapshot_json:string}|undefined:undefined;
+ const previous=priorDecision?(JSON.parse(priorDecision.snapshot_json).comparison?.current as FinalComponent[]|undefined):undefined;
+ const comparison=components?compareSupplierComponents(previous??[],components):null;
+ const componentBlocked=!!(old&&(components ? !previous||components.some(component=>previous.some(existing=>existing.id===component.id&&existing.group!==component.group)) : previous));
+ if(componentBlocked)errors.push('COMPONENT_BASE_REVIEW_REQUIRED');
+ if(previous&&comparison){
+  if(comparison.lines.some(line=>line.old===null))errors.push('ADDITIONAL_FEE');
+  if(comparison.lines.some(line=>line.old!==null&&line.delta!=='0'))errors.push('FEE_ADJUSTMENT');
+ }
  if(resolution?.requiresReview||actual?.uncertain)errors.push('FULFILLMENT_REVIEW_REQUIRED');
  else if(resolution&&!resolution.ids.length)errors.push('ORDER_NOT_MATCHED');
  if(resolution&&resolution.ids.length>1)errors.push('AMBIGUOUS_MATCH');
- let net:string|null=null,weight:string|null=null;
+ let net:string|null=null,weight:string|null=null,revenue:string|null=null;
  if(lot){
   net=estimate(lot);
-  const cartons=db.prepare('SELECT chargeable_weight FROM order_cartons WHERE order_lot_id=?').all(lot.id) as Row[];
-  if(cartons.length&&cartons.every(c=>Number(c.chargeable_weight)>0))weight=sumVnd(cartons.map(c=>String(c.chargeable_weight)));
+  const cartons=db.prepare('SELECT weight,chargeable_weight FROM order_cartons WHERE order_lot_id=?').all(lot.id) as Row[];
+  const weightField=components?'weight':'chargeable_weight';
+  if(cartons.length&&cartons.every(c=>Number(c[weightField])>0))weight=sumVnd(cartons.map(c=>String(c[weightField])));
+  if(comparison){
+   const entries=db.prepare("SELECT kind,delta FROM vnd_ledger WHERE order_id=? AND kind IN ('ORDER_CHARGE','ORDER_CORRECTION','ORDER_SURCHARGE')").all(lot.order_id) as {kind:string;delta:string}[];
+   if(entries.some(entry=>entry.kind==='ORDER_CHARGE'))revenue=subtractVnd('0',sumVnd(entries.map(entry=>entry.delta)));
+  }
   const quoteRow=db.prepare('SELECT snapshot_json FROM vnd_auto_quotes WHERE order_id=?').get(lot.order_id) as Row|undefined;
   const quoteLot=quoteRow?JSON.parse(String(quoteRow.snapshot_json)).lots?.find((l:Row)=>l.lot_id===lot.id):null;
   const quotedWeight=quoteLot?.selected?.weight_kg??quoteLot?.weight_kg;
-  if(Number(quotedWeight)>0)weight=String(quotedWeight);
+  if(!components&&Number(quotedWeight)>0)weight=String(quotedWeight);
   if(!net)errors.push('MISSING_ESTIMATE');
-  const proposed=data.kind==='SUPPLEMENT'&&old?addVnd(String(old.amount),String(data.amount)):String(data.amount);
+  const proposed=comparison?.groups[0].current??(data.kind==='SUPPLEMENT'&&old?addVnd(String(old.amount),String(data.amount)):String(data.amount));
   if(net&&compareVnd(proposed,net)>0)errors.push('NET_ABOVE_ESTIMATE');
   if(data.supplier_weight&&(!weight||compareVnd(String(data.supplier_weight),weight)>0))errors.push(weight?'WEIGHT_ABOVE_DMD':'MISSING_DMD_WEIGHT');
   if(data.kind==='SUPPLEMENT'&&!old)errors.push('MISSING_APPROVED_BASE');
   if(old&&data.kind==='TOTAL')errors.push('DUPLICATE_HISTORY');
-  if(db.prepare('SELECT id FROM vnd_supplier_costs WHERE lot_id=? AND supplier=? AND fulfillment_epoch IS ?').get(lot.id,row.supplier,attempt!.id)&&!old&&data.kind==='TOTAL')errors.push('DUPLICATE_HISTORY');
+  if(!components&&db.prepare('SELECT id FROM vnd_supplier_costs WHERE lot_id=? AND supplier=? AND fulfillment_epoch IS ?').get(lot.id,row.supplier,attempt!.id)&&!old&&data.kind==='TOTAL')errors.push('DUPLICATE_HISTORY');
  }
- const peers=source?[]:db.prepare('SELECT * FROM vnd_supplier_import_rows WHERE supplier=? AND id<>?').all(row.supplier,row.id) as Row[];
+ const peers=source?db.prepare('SELECT * FROM vnd_supplier_import_rows WHERE batch_key=? AND supplier=? AND id<>?').all(row.batch_key,row.supplier,row.id) as Row[]:db.prepare('SELECT * FROM vnd_supplier_import_rows WHERE supplier=? AND id<>?').all(row.supplier,row.id) as Row[];
  const identity=(d:Row)=>JSON.stringify([d.tracking||null,d.label_url||null,d.lot_id??null,d.order_code||null]);
- const duplicates=peers.filter(p=>{const d=JSON.parse(String(p.data_json));return identity(d)===identity(data)&&(data.kind==='TOTAL'||(d.kind===data.kind&&d.amount===data.amount&&d.reason===data.reason));});
- if(!source&&duplicates.some(p=>p.batch_key===row.batch_key))errors.push('DUPLICATE_IN_FILE');
+ const duplicates=peers.filter(p=>{const d=JSON.parse(String(p.data_json));return (source ? !!data.tracking && normalizeTracking(d.tracking)===normalizeTracking(data.tracking) : identity(d)===identity(data))&&(data.kind==='TOTAL'||(d.kind===data.kind&&d.amount===data.amount&&d.reason===data.reason));});
+ if(duplicates.some(p=>p.batch_key===row.batch_key))errors.push('DUPLICATE_IN_FILE');
  if(duplicates.some(p=>p.batch_key!==row.batch_key)&&!errors.includes('DUPLICATE_HISTORY'))errors.push('DUPLICATE_HISTORY');
  if(hasSupplierReferenceOutsideActual(String(row.supplier),data.reference))errors.push('SUPPLIER_REFERENCE_IN_USE');
  const state={lot_id:lot?.id??null,order_code:lot?.order_code??null,fulfillment_epoch:attempt?.id??null,
-  fulfillment_candidates:resolution?.ids??[],estimated:net,dmd_weight:weight,approved_cost_id:Number(old?.id??0),approved_amount:old?.amount??null,errors};
+  fulfillment_candidates:resolution?.ids??[],estimated:net,dmd_weight:weight,approved_cost_id:Number(old?.id??0),approved_amount:old?.amount??null,comparison,revenue,revenue_below_obligation:revenue!==null&&comparison!==null&&compareVnd(revenue,comparison.total)<0,component_blocked:componentBlocked,tags:supplierTags(errors),errors};
  return {...row,data,...state,token:createHash('sha256').update(JSON.stringify(state)).digest('hex')};
 }
 export function supplierImportView(supplier:string){
@@ -118,7 +135,8 @@ export function applySupplierImport(actor:AuthUser,supplier:string,input:Row,rea
   if(input.decision==='accept'){
    lotId=item.lot_id===undefined?Number(state.lot_id):Number(item.lot_id);
    if(Array.isArray(state.data.parse_errors)&&state.data.parse_errors.length)throw Error('Dòng lỗi Excel cần sửa hoặc map lại trước khi Accept.');
-   if(state.errors.includes('FULFILLMENT_REVIEW_REQUIRED'))
+   if(state.component_blocked || (state.comparison && !state.lot_id)) throw Error('Cần xác minh dữ liệu thành phần hoặc lượt fulfillment trước khi Accept.');
+   if(state.errors.includes('FULFILLMENT_REVIEW_REQUIRED')||state.errors.includes('AMBIGUOUS_MATCH'))
     throw Error('Cần đối soát đúng lượt fulfillment trước khi ghi Actual/payable.');
    const history=lotFulfillments(lotId);
    const manual=item.lot_id!==undefined && state.lot_id!==lotId;
@@ -132,6 +150,7 @@ export function applySupplierImport(actor:AuthUser,supplier:string,input:Row,rea
    if(attempts.has(scope))throw Error('Một batch chỉ accept một dòng mỗi lượt fulfillment.');
    attempts.add(scope);
    const actual=approvedFulfillment(lotId,supplier,attempt.id),old=actual.approved;
+   if(old&&!state.comparison&&db.prepare("SELECT 1 FROM vnd_supplier_import_decisions WHERE cost_id=? AND json_type(snapshot_json,'$.comparison.current')='array'").get(old.id))throw Error('Actual thành phần cần chứng từ thành phần.');
    if(actual.uncertain)throw Error('Cần đối soát đúng lượt fulfillment của Actual cũ.');
    if(item.expected_approved_cost_id!==Number(old?.id??0))throw Error('Actual đã thay đổi; tải lại.');
    if(state.errors.includes('SUPPLIER_REFERENCE_IN_USE'))
@@ -139,7 +158,11 @@ export function applySupplierImport(actor:AuthUser,supplier:string,input:Row,rea
    if(hasPostedSupplierReference(supplier,lotId,state.data.reference))
     throw Error('Tham chiếu chứng từ đã ghi Actual cho Lot này.');
    if(state.data.kind==='SUPPLEMENT'&&!old)throw Error('Phụ phí cần Actual gốc đã chốt.');
-   const total=state.data.kind==='SUPPLEMENT'?addVnd(String(old!.amount),String(state.data.amount)):String(state.data.amount);
+   const total=state.comparison?.total??(state.data.kind==='SUPPLEMENT'?addVnd(String(old!.amount),String(state.data.amount)):String(state.data.amount));
+   if(state.comparison&&old&&compareVnd(total,String(old.amount))===0&&state.comparison.lines.every(line=>line.old!==null&&line.delta==='0')) {
+    db.prepare('INSERT INTO vnd_supplier_import_decisions(row_id,decision,lot_id,cost_id,snapshot_json,reason,actor_id) VALUES (?,?,?,?,?,?,?)').run(id,input.decision,lotId,null,JSON.stringify(state),reason,actor.id);
+    continue;
+   }
    costId=Number(db.prepare('INSERT INTO vnd_supplier_costs(lot_id,supplier,amount,reference,reason,actor_id,fulfillment_epoch) VALUES (?,?,?,?,?,?,?)').run(lotId,supplier,total,state.data.reference,reason,actor.id,attempt.id).lastInsertRowid);
    db.prepare("INSERT INTO vnd_supplier_reviews(cost_id,action,reason,actor_id) VALUES (?,'approve',?,?)").run(costId,reason,actor.id);
    db.prepare("INSERT INTO vnd_supplier_ledger(supplier,kind,delta,cost_id,reference,reason,actor_id) VALUES (?,'ACTUAL',?,?,?,?,?)").run(supplier,subtractVnd(total,String(old?.amount??'0')),costId,state.data.reference,reason,actor.id);
