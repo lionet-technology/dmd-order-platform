@@ -92,7 +92,7 @@ export function lotFulfillments(lotId: number) {
   }
   if(boundary){boundaries.unshift(boundary);upcoming=boundary.snapshot;}
  }
- const missingEmergency = (db.prepare('SELECT count(*) n FROM emergency_hold_orders WHERE order_id=? AND resolved_at IS NOT NULL').get(lot.order_id) as {n:number}).n !== emergencyCount;
+ const missingEmergency = (db.prepare("SELECT count(*) n FROM emergency_hold_orders WHERE order_id=? AND resolved_at IS NOT NULL AND COALESCE(resolution_kind,'SWITCH')='SWITCH'").get(lot.order_id) as {n:number}).n !== emergencyCount;
  const missingTracking = (db.prepare("SELECT id FROM order_trackings WHERE order_id=? AND lot_number=? AND status='REPLACED'").all(lot.order_id,lot.lot_number) as {id:number}[])
   .some(t => !replaced.has(t.id));
  const attempts: Attempt[] = [...boundaries.map(b => b.snapshot),current].map((snapshot,index) => ({

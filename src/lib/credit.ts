@@ -1,3 +1,4 @@
+import {emergencyOrderSuspended} from "./emergency-hold";
 import {isVndClient,completeVndReserve} from "./vnd-operational";
 import { db } from "./db";
 import {deriveDebtAge,type AgeEvent,type AgeBucket} from "./debt-age";
@@ -165,7 +166,7 @@ export function accountFinancials(clientId:number,options:{readOnly?:boolean;inc
  return {...c,...r,debt_age,debt_history:options.includeDetails===false?[]:db.prepare("SELECT id,created_at,event,data_json FROM financial_audit WHERE client_id=? AND event IN ('debt','debt_rate','extend_debt') ORDER BY id DESC LIMIT 100").all(clientId),debt_interest_history:options.includeDetails===false?[]:db.prepare("SELECT i.* FROM debt_daily_interest i JOIN credit_debts d ON d.id=i.debt_id WHERE d.client_id=? ORDER BY i.day DESC LIMIT 100").all(clientId),transactions,items,legacy_allocations,receivable_cents:receivable,purchasing_balance_cents:Math.max(0,netBalance),balance_cents:balance,net_balance_cents:netBalance,reserved_cents:reserved,credit_used_cents:Math.max(0,-balance-excluded),available_to_buy_cents:Math.max(0,available),purchase_blocked:reasons.length>0,reasons,allocations:options.includeDetails===false?[]:db.prepare("SELECT a.* FROM credit_allocations a JOIN ledger_entries e ON e.id=a.ledger_id WHERE e.client_user_id=?"+(options.includeTransactions===false?" ORDER BY a.id DESC LIMIT 100":"")).all(clientId)};
  })[options.readOnly?'deferred':'immediate']();}
 export function purchaseJobAction(user:AuthUser,b:Row){return db.transaction(()=>{requireAdmin(user);const orderId=Number(b.order_id),r=db.prepare("SELECT * FROM purchase_reserves WHERE order_id=?").get(orderId) as Row|undefined;if(!r)throw Error("Purchase job không tồn tại.");if(b.action==='fail'){if(r.status==='FAILED')return r;if(r.status!=='RESERVED'||db.prepare("SELECT id FROM order_trackings WHERE order_id=?").get(orderId))throw Error("Job đã có tracking; xử lý bằng case.");if(!String(b.reason||'').trim())throw Error("Cần lý do thất bại.");db.prepare("UPDATE purchase_reserves SET status='FAILED',updated_at=CURRENT_TIMESTAMP WHERE order_id=?").run(orderId);audit(Number(r.client_id),user.id,'PURCHASE_FAILED',b);}
- else if(b.action==='retry'){if(r.status==='RESERVED')return r;if(r.status!=='FAILED')throw Error("Chỉ retry job thất bại.");reservePurchase(orderId,Number(r.client_id),Number(r.amount_cents)/100,user.id);audit(Number(r.client_id),user.id,'PURCHASE_RETRY',b);}else throw Error("Action không hỗ trợ.");return db.prepare("SELECT * FROM purchase_reserves WHERE order_id=?").get(orderId);}).immediate();}
+ else if(b.action==='retry'){if(emergencyOrderSuspended(orderId))throw Error('Order đang tạm dừng xử lý.');if(r.status==='RESERVED')return r;if(r.status!=='FAILED')throw Error("Chỉ retry job thất bại.");reservePurchase(orderId,Number(r.client_id),Number(r.amount_cents)/100,user.id);audit(Number(r.client_id),user.id,'PURCHASE_RETRY',b);}else throw Error("Action không hỗ trợ.");return db.prepare("SELECT * FROM purchase_reserves WHERE order_id=?").get(orderId);}).immediate();}
 export function assertPurchasing(clientId:number,amount:number){const f=accountFinancials(clientId);if(f.purchase_blocked)throw Error(f.reasons.join("; "));if(f.available_to_buy_cents<cents(amount))throw Error("Balance / credit không đủ để mua dịch vụ.");}
 /** Client funds and Order reserve are serialized in the same SQLite write transaction.
  * The caller owns quote/consent eligibility. A failed replacement restores the original reserve. */
@@ -173,6 +174,7 @@ export function reservePurchase(orderId:number,clientId:number,amount:number,act
  const amountCents=cents(amount);
  const order=db.prepare("SELECT client_user_id,workflow_status FROM orders WHERE id=?").get(orderId) as Row|undefined;
  if(!order||Number(order.client_user_id)!==clientId)throw Error("Reserve Client mismatch.");
+ if(emergencyOrderSuspended(orderId))throw Error("Order đang tạm dừng xử lý.");
  if(["CANCELLED","DELIVERED","CLOSED"].includes(String(order.workflow_status)))throw Error("Order không cho phép reserve.");
  const existing=db.prepare("SELECT * FROM purchase_reserves WHERE order_id=?").get(orderId) as Row|undefined;
  if(existing&&Number(existing.client_id)!==clientId)throw Error("Reserve Client mismatch.");
@@ -190,6 +192,7 @@ export function completeReserve(orderId:number,actorId:number){return db.transac
  if(completeVndReserve(orderId,actorId))return;
  const r=db.prepare("SELECT * FROM purchase_reserves WHERE order_id=? AND status='RESERVED'").get(orderId) as Row|undefined;if(!r)return;
  const o=db.prepare("SELECT * FROM orders WHERE id=?").get(orderId) as Row;
+ if(emergencyOrderSuspended(orderId))throw Error("Order đang tạm dừng xử lý.");
  if(Number(o.client_user_id)!==Number(r.client_id))throw Error('Reserve Client mismatch.');
  const actual=cents(o.total_due);
  const previous=db.prepare("SELECT id,amount,client_user_id FROM ledger_entries WHERE entry_type='ORDER_CHARGE' AND reference_type='ORDER' AND reference_id=?").get(String(orderId)) as Row|undefined;if(previous&&Number(previous.client_user_id)!==Number(r.client_id))throw Error("Charge Client mismatch.");

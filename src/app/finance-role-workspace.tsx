@@ -9,6 +9,7 @@ import {SupplierAccountWorkspace} from "./supplier-account-workspace";
 import {BodFinanceWorkspace} from './bod-finance-workspace';
 import {StatementsV2Workspace} from './statements-v2-workspace';
 import {InternalExpensesWorkspace} from "./internal-expenses-workspace";
+import {SupplierRecoveryWorkspace} from "./supplier-recovery-workspace";
 export function FinanceWorkspace({user,onLogout}:{user:{display_name:string;role:string};onLogout:()=>void}){
  const [tab,setTab]=useState("suppliers"),[supplier,setSupplier]=useState("");
  return <main className="financeRoleWorkspace"><header className="pageHeader"><div><span className="eyebrow">{user.role}</span><h1>Tài chính</h1><p>{user.display_name}</p></div><button className="secondaryBtn" onClick={async()=>{await fetch("/api/auth/logout",{method:"POST"});onLogout()}}>Đăng xuất</button></header>
@@ -20,6 +21,6 @@ export function FinanceWorkspace({user,onLogout}:{user:{display_name:string;role
  {tab==="statements"&&<StatementsV2Workspace role={user.role}/>}
  {tab==="refunds"&&<RefundWorkspace role={user.role}/>}
  {tab==="payments"&&<PaymentReconciliationWorkspace role={user.role}/>}
- {tab==="suppliers"&&<SupplierAccountWorkspace onCostTools={supplier=>{setSupplier(supplier);setTab("costs")}}/>}{tab==="bod"&&<BodFinanceWorkspace/>}
+ {tab==="suppliers"&&<><SupplierRecoveryWorkspace/><SupplierAccountWorkspace onCostTools={supplier=>{setSupplier(supplier);setTab("costs")}}/></>}{tab==="bod"&&<BodFinanceWorkspace/>}
  </main>;
 }

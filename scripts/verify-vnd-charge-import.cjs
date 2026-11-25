@@ -19,7 +19,7 @@ try{
  bad(()=>call([doc('tax','0')]),/dương/);bad(()=>call([doc('tax','-1')]),/âm/);
  bad(()=>call([items[0],items[0]]),/Trùng/);
  const before=JSON.stringify(ops.vndView(client.id,admin));bad(()=>call([doc('surcharge'),{...doc('tax'),order_code:'MISSING'}]),/match/);eq(JSON.stringify(ops.vndView(client.id,admin)),before);
- const r=report.vndBusinessReport(vndDay().slice(0,7));eq(r.performance[0].revenue,'1.123456');eq(r.commission.orders[0].revenue,'0'); // Existing commission inputs deliberately retain shipping/correction scope.
+ const r=report.vndBusinessReport(vndDay().slice(0,7));eq(r.performance[0].revenue,'3.123457');eq(r.performance[0].surcharge_revenue,'1.123456');eq(r.performance[0].estimated_gp_net,'-26.876543');eq(r.commission.orders[0].revenue,'0'); // Existing commission inputs deliberately retain shipping/correction scope.
  eq(db.prepare('SELECT count(*) n FROM credit_debts WHERE client_id=?').get(client.id).n,0);eq(ops.vndRequest(o.id).status,'CHARGED');
  eq(ops.vndCancellationAmounts(o.id,100).collected,'3.123457');
  eq(ops.vndCancellationAmounts(o.id,100).refund,'3.123457');

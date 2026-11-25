@@ -35,9 +35,49 @@ export function recordEmergencyError(holdId:number,orderId:number,error:string){
  AND EXISTS(SELECT 1 FROM emergency_route_holds WHERE id=? AND undone_at IS NULL)`).run(error,holdId,orderId,holdId);
 }
 function admin(user:AuthUser){if(user.role!=="ADMIN")throw Error("Emergency Hold chỉ dành cho Admin.");}
+export function emergencyOrderSuspended(orderId:number){
+ return Boolean(db.prepare(`SELECT 1 FROM emergency_hold_orders i JOIN emergency_route_holds h ON h.id=i.hold_id
+  WHERE i.order_id=? AND i.resolved_at IS NULL AND h.undone_at IS NULL`).get(orderId));
+}
+export const clientVisibleWorkflowStatusSql=`COALESCE((
+ SELECT json_extract(i.snapshot_json,'$.workflow_status') FROM emergency_hold_orders i
+ JOIN emergency_route_holds h ON h.id=i.hold_id
+ WHERE i.order_id=orders.id AND i.resolved_at IS NULL AND h.undone_at IS NULL
+ LIMIT 1
+),orders.workflow_status)`;
+export function clientVisibleWorkflowStatus(orderId:number){
+ return (db.prepare(`SELECT ${clientVisibleWorkflowStatusSql} status FROM orders WHERE id=?`).get(orderId) as
+  {status:string}|undefined)?.status;
+}
+// An explicit Order release bypasses only the warehouse flag installed by this incident.
+export function emergencyRouteBlocksOrder(route:Row,orderId:unknown){
+ if(!route.warehouse_hold)return false;
+ if(!orderId)return true;
+ return !db.prepare(`SELECT 1 FROM emergency_route_holds h JOIN emergency_hold_orders i ON i.hold_id=h.id
+  WHERE h.route_id=? AND h.undone_at IS NULL AND h.prior_warehouse_hold=0 AND i.order_id=?
+  AND i.resolution_kind IN ('RESUME','SWITCH')`).get(route.id,orderId);
+}
 export function emergencyStatus(user:AuthUser,routeId:number){
  admin(user);
  return db.prepare("SELECT * FROM emergency_route_holds WHERE route_id=? ORDER BY id DESC").all(routeId);
+}
+export function emergencyOrdersWorkspace(user:AuthUser){
+ admin(user);
+ const routes=db.prepare(`SELECT r.id,r.service,r.sub_service,r.supplier,h.id hold_id,h.reason,
+  (SELECT count(*) FROM emergency_hold_orders i WHERE i.hold_id=h.id AND i.resolved_at IS NULL) pending
+  FROM service_route_configs r LEFT JOIN emergency_route_holds h ON h.route_id=r.id AND h.undone_at IS NULL
+  WHERE r.active=1 OR h.id IS NOT NULL ORDER BY r.service,r.sub_service,r.supplier,r.id`).all();
+ return {routes};
+}
+export function startSubServiceEmergencyHold(user:AuthUser,routeId:number,reason:string){
+ admin(user);
+ return db.transaction(()=>{
+  const scope=db.prepare("SELECT service,sub_service FROM service_route_configs WHERE id=? AND active=1").get(routeId) as {service:string;sub_service:string}|undefined;
+  if(!scope)throw Error("Không tìm thấy SubService đang hoạt động.");
+  const routes=db.prepare(`SELECT id FROM service_route_configs WHERE service=? COLLATE NOCASE
+   AND sub_service=? COLLATE NOCASE AND active=1 ORDER BY id`).all(scope.service,scope.sub_service) as {id:number}[];
+  return {holds:routes.map(route=>startEmergencyHold(user,route.id,reason))};
+ }).immediate();
 }
 export function startEmergencyHold(user:AuthUser,routeId:number,reason:string){
  admin(user);if(!reason?.trim())throw Error("Cần lý do Emergency Hold.");
@@ -49,7 +89,9 @@ export function startEmergencyHold(user:AuthUser,routeId:number,reason:string){
  const orders=db.prepare("SELECT * FROM orders WHERE service=? COLLATE NOCASE AND sub_service=? COLLATE NOCASE AND supplier=? COLLATE NOCASE AND workflow_status NOT IN ('CANCELLED','DELIVERED','CLOSED')").all(route.service,route.sub_service,route.supplier) as Row[];
  // Never infer handoff from ETD. Any historical movement, including replaced labels,
  // makes an order ineligible. Malformed movement evidence fails closed.
- const eligible=orders.filter(o=>!emergencyException(o));
+ const hasHold=db.prepare(`SELECT 1 FROM emergency_hold_orders i JOIN emergency_route_holds h ON h.id=i.hold_id
+ WHERE i.order_id=? AND i.resolved_at IS NULL AND h.undone_at IS NULL`);
+ const eligible=orders.filter(o=>!hasHold.get(o.id)&&!emergencyException(o));
  db.prepare("UPDATE service_route_configs SET warehouse_hold=1 WHERE id=?").run(routeId);
  const id=Number(db.prepare("INSERT INTO emergency_route_holds(route_id,actor_id,reason,prior_warehouse_hold) VALUES (?,?,?,?)").run(routeId,user.id,reason.trim(),route.warehouse_hold||0).lastInsertRowid);
  for(const o of eligible){

@@ -159,7 +159,7 @@ export function recomputeOrderFinancials(orderId:number){
   if(!order)return null;
   if(isVndClient(Number(order.client_user_id)))return order;
   // An Emergency reroute preserves its original sale/Charge for every later cost import too.
-  if(db.prepare("SELECT 1 FROM emergency_hold_orders WHERE order_id=? AND resolved_at IS NOT NULL LIMIT 1").get(orderId)){
+  if(db.prepare("SELECT 1 FROM emergency_hold_orders WHERE order_id=? AND resolved_at IS NOT NULL AND COALESCE(resolution_kind,'SWITCH')='SWITCH' LIMIT 1").get(orderId)){
     reconcileLots(orderId);return db.prepare("SELECT * FROM orders WHERE id=?").get(orderId);
   }
   // Pending manual quotes and an authorized pre-tracking amendment cannot invoke legacy auto-charge.

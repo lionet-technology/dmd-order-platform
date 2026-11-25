@@ -1,0 +1,60 @@
+{
+  "status": "PASS",
+  "data": "Synthetic SQLite TEST only",
+  "integrity": "ok",
+  "foreign_key_violations": 0,
+  "tables": [
+    {
+      "name": "emergency_route_holds",
+      "rows": 2
+    },
+    {
+      "name": "emergency_hold_orders",
+      "rows": 4
+    },
+    {
+      "name": "order_trackings",
+      "rows": 29
+    },
+    {
+      "name": "supplier_void_cases",
+      "rows": 1
+    },
+    {
+      "name": "vnd_supplier_recovery_sources",
+      "rows": 3
+    },
+    {
+      "name": "vnd_supplier_recovery_allocations",
+      "rows": 6
+    },
+    {
+      "name": "vnd_claim_links",
+      "rows": 2
+    },
+    {
+      "name": "vnd_refund_events",
+      "rows": 3
+    },
+    {
+      "name": "vnd_supplier_claims",
+      "rows": 2
+    },
+    {
+      "name": "vnd_supplier_claim_events",
+      "rows": 7
+    },
+    {
+      "name": "vnd_supplier_ledger",
+      "rows": 4
+    },
+    {
+      "name": "vnd_commands",
+      "rows": 16
+    },
+    {
+      "name": "vnd_ledger",
+      "rows": 7
+    }
+  ]
+}

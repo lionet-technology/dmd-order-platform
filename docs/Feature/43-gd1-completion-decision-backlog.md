@@ -104,3 +104,7 @@ Template Supplier × Service/Sub-Service có phiên bản, preview trong queue, 
 ## Supplier Reconciliation V2 · phần tiếp nối
 
 [Feature 40](40-vnd-post-shipping-import-reconciliation.md#supplier-reconciliation-v2--đợt-2) ghi luồng batch và file gốc, chỉnh thành phần bằng Excel, duyệt từng dòng hoặc nhiều dòng, cảnh báo nghĩa vụ Order và đối chiếu phí void. Phạm vi tiếp theo gồm Emergency Hold cấp Sub-Service trong Orders, các thao tác Admin theo dòng và hàng loạt, và Supplier Recovery Worklist gom nhiều Client Refund Orders theo Claim với phân bổ GP/receivable.
+
+## Tiếp nối Supplier Reconciliation V2 · 25/11/2026
+
+[Emergency Hold trong Orders](18-emergency-route-hold.md#emergency-hold-trong-orders--25112026) tái sử dụng luồng đổi Route/Tracking, hỗ trợ Hold theo SubService, tiếp tục hoặc huỷ theo Order. [Pending Supplier Recovery](42-vnd-claim-refund-next.md#pending-supplier-recovery--25112026) liên kết quyết định hoàn tiền với hồ sơ Supplier nhiều Order và lưu phân bổ khi duyệt. GP-Net bao gồm toàn bộ phần phân bổ thuế đã duyệt. Xác minh DEV/TEST vẫn cần bằng chứng triển khai.

@@ -6,7 +6,11 @@ export function vndSupplierExposure(orderId:number,proposedDelta?:string){
   JOIN order_lots l ON l.id=c.lot_id WHERE e.kind='ACTUAL' AND l.order_id=?`).all(orderId) as {delta:string}[];
  const obligation=accrued.length||proposedDelta!==undefined
   ?addVnd(sumVnd(accrued.map(entry=>entry.delta)),proposedDelta??'0'):null;
- if(obligation===null)return {revenue:null,obligation,loss:false};
+ const revenue=obligation===null?null:recognizedOrderRevenue(orderId);
+ return {revenue,obligation,loss:revenue!==null&&obligation!==null&&compareVnd(revenue,obligation)<0};
+}
+
+export function recognizedOrderRevenue(orderId:number){
  const entries=db.prepare(`SELECT kind,delta FROM vnd_ledger WHERE order_id=? AND
   kind IN ('ORDER_CHARGE','ORDER_CORRECTION','ORDER_SURCHARGE','ORDER_TAX','CANCELLATION_REFUND')`).all(orderId) as {kind:string;delta:string}[];
  const claims=db.prepare(`SELECT e.context_json FROM vnd_claims c JOIN json_each(c.orders_json) j ON j.value=?
@@ -16,7 +20,6 @@ export function vndSupplierExposure(orderId:number,proposedDelta?:string){
   const snapshot=claim.context_json?JSON.parse(claim.context_json):null;
   return snapshot?.allocation_version===1?snapshot.allocation.find((a:{order_id:number})=>a.order_id===orderId)?.total_vnd:undefined;
  });
- const revenue=entries.some(entry=>entry.kind==='ORDER_CHARGE')&&allocations.every(value=>typeof value==='string')
+ return entries.some(entry=>entry.kind==='ORDER_CHARGE')&&allocations.every(value=>typeof value==='string')
   ?subtractVnd('0',sumVnd([...entries.map(entry=>entry.delta),...allocations])):null;
- return {revenue,obligation,loss:revenue!==null&&compareVnd(revenue,obligation)<0};
 }

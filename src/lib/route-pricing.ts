@@ -1,3 +1,4 @@
+import {emergencyOrderSuspended,emergencyRouteBlocksOrder} from "./emergency-hold";
 import {isVndClient,vndRequest,assertVndIssuance} from "./vnd-operational";
 import {createHash} from "node:crypto";
 import {canPurchase} from "./order-transition-guards";
@@ -60,14 +61,14 @@ export function orderQuote(o:Row){
  if(!route.active)result.reasons.push("Route đang ngừng hoạt động.");
  if(o.client_user_id&&(!setting||!setting.is_enabled))result.reasons.push("Client chưa được phép sử dụng dịch vụ.");
  if(o.workflow_status==="CANCELLED")result.reasons.push("Đơn đã huỷ.");
- if((o.id&&hasCaseHold(Number(o.id)))||o.workflow_status==="HOLD"||route.warehouse_hold||(o.id&&db.prepare("SELECT id FROM warehouse_order_holds WHERE order_id=? AND released_at IS NULL").get(Number(o.id))))result.reasons.push("Đơn hoặc route đang Hold.");
+ if((o.id&&hasCaseHold(Number(o.id)))||o.workflow_status==="HOLD"||emergencyRouteBlocksOrder(route,o.id)||(o.id&&db.prepare("SELECT id FROM warehouse_order_holds WHERE order_id=? AND released_at IS NULL").get(Number(o.id))))result.reasons.push("Đơn hoặc route đang Hold.");
  result.eligible=!result.reasons.length;
  return {...result,route_id:Number(route.id),pricing_version_id:Number(o.pricing_snapshot_json?o.pricing_version_id:active.price_version_id),pricing_config_version_id:Number(o.pricing_snapshot_json?o.pricing_config_version_id:active.config_version_id)};
 }
 export function refreshDraft(id:number){
  const o=db.prepare("SELECT * FROM orders WHERE id=?").get(id) as Row;
  if(!o)throw Error("Order không tồn tại.");
- if(isVndClient(Number(o.client_user_id)))return o;
+ if(isVndClient(Number(o.client_user_id))||emergencyOrderSuspended(id))return o;
  if(o.pricing_snapshot_json||o.purchase_completed_at||["PURCHASED","RECONCILED","CANCELLED"].includes(String(o.workflow_status)))return o;
  const q=orderQuote(o);if(!q)return o;
  db.prepare("UPDATE orders SET est_net_cost=?,base_cost=?,retail=?,sales_price=?,surcharge=?,total_due=?,chargeable_weight=?,dimensional_divisor=5000,gross_profit_base=?,gross_profit_net=?,commission_amount=?,auto_pricing=1,pricing_eligibility_json=? WHERE id=?")
@@ -84,6 +85,7 @@ export function purchaseService(id:number,actor:{id:number;role:string},requireB
  if((actor.role==="CLIENT"&&Number(o.client_user_id)!==actor.id)||(actor.role==="SALES"&&!db.prepare("SELECT id FROM users WHERE id=? AND sales_user_id=?").get(Number(o.client_user_id),actor.id)))throw Error("Không có quyền mua Order này.");
  if(!["CLIENT","ADMIN","SALES"].includes(actor.role))throw Error("Không có quyền mua dịch vụ.");
  if(o.workflow_status==="CANCELLED")throw Error("Đơn đã huỷ.");
+ if(emergencyOrderSuspended(id))throw Error("Order đang tạm dừng xử lý.");
  if(o.pricing_snapshot_json||isManualPriceRoute(o.service)&&o.service_purchased_at)return o; // Idempotent retries never duplicate customer request/charge.
  const guard=canPurchase(o);if(!guard.allowed)throw Error(guard.reason);
  const q=orderQuote(o),route=routeFor(o);
@@ -136,8 +138,9 @@ export function clientDraftAwaitingPurchase(o:Row){
  return !o.service_purchased_at&&db.prepare("SELECT id FROM users WHERE id=? AND role='CLIENT'").get(Number(o.created_by_user_id||0));
 }
 export function assertConfiguredPurchase(o:Row){
+ if(emergencyOrderSuspended(Number(o.id)))throw Error("Order đang tạm dừng xử lý.");
  if(isVndClient(Number(o.client_user_id))){if(!assertVndIssuance(Number(o.id)))throw Error("Client chưa Purchase VNĐ.");return;}
- if(isManualPriceRoute(o.service)&&!o.pricing_snapshot_json){if(!o.service_purchased_at)throw Error('Client chưa đặt mua dịch vụ.');const route=routeFor(o);if(!route?.active||route.warehouse_hold||o.workflow_status==='HOLD'||hasCaseHold(Number(o.id))||db.prepare('SELECT id FROM warehouse_order_holds WHERE order_id=? AND released_at IS NULL').get(Number(o.id)))throw Error('Order / route chưa active hoặc đang Hold.');assertRouteCartons(o.service,route.max_cartons_per_order,o.carton_count);return;}
+ if(isManualPriceRoute(o.service)&&!o.pricing_snapshot_json){if(!o.service_purchased_at)throw Error('Client chưa đặt mua dịch vụ.');const route=routeFor(o);if(!route?.active||emergencyRouteBlocksOrder(route,o.id)||o.workflow_status==='HOLD'||hasCaseHold(Number(o.id))||db.prepare('SELECT id FROM warehouse_order_holds WHERE order_id=? AND released_at IS NULL').get(Number(o.id)))throw Error('Order / route chưa active hoặc đang Hold.');assertRouteCartons(o.service,route.max_cartons_per_order,o.carton_count);return;}
  if(o.client_user_id&&!o.pricing_snapshot_json&&!o.tracking&&!o.purchase_completed_at)assertPurchasing(Number(o.client_user_id),0);
  if(clientDraftAwaitingPurchase(o))throw Error("Client chưa đặt mua dịch vụ cho Draft này.");
  if(isEPacket(o)&&!o.pricing_snapshot_json&&!activePricing(Number(routeFor(o)?.id||0)))throw Error("Route chưa có bảng Base Rate được Owner duyệt.");

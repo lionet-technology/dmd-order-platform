@@ -1,3 +1,4 @@
+import {emergencyOrderSuspended,emergencyRouteBlocksOrder} from "./emergency-hold";
 import {vndAccess} from './vnd-access';
 import {db} from './db';
 import {applyVndRefund,vndRefundView} from './vnd-refunds';
@@ -28,7 +29,7 @@ function eligible(o:Row){
  const c=user(Number(o.client_user_id)),r=route(o);
  if(vndDebtProjection(Number(o.client_user_id)).overdue)throw new VndEligibilityError('Debt đã quá hạn.');
  if(!c?.active||c.purchase_locked)throw new VndEligibilityError('Client ngừng hoạt động hoặc bị khóa mua.');
- if(!r?.active||r.warehouse_hold||routeState(Number(r.id))!=='ACTIVE'||o.workflow_status==='HOLD'||['CANCELLED','CLOSED','DELIVERED'].includes(String(o.workflow_status)))throw new VndEligibilityError('Order / route không cho phép mua.');
+ if(!r?.active||emergencyRouteBlocksOrder(r,o.id)||routeState(Number(r.id))!=='ACTIVE'||o.workflow_status==='HOLD'||['CANCELLED','CLOSED','DELIVERED'].includes(String(o.workflow_status)))throw new VndEligibilityError('Order / route không cho phép mua.');
  if(db.prepare("SELECT id FROM warehouse_order_holds WHERE order_id=? AND released_at IS NULL").get(o.id))throw new VndEligibilityError('Order đang Hold.');
  if(db.prepare("SELECT c.id FROM operation_cases c JOIN operation_case_orders o ON o.case_id=c.id WHERE o.order_id=? AND c.kind='HOLD' AND c.status NOT IN ('RESOLVED','CLOSED')").get(o.id))throw new VndEligibilityError('Order có Case Hold.');
  const s=db.prepare("SELECT * FROM client_service_settings WHERE client_user_id=? AND service=? COLLATE NOCASE AND (sub_service=? COLLATE NOCASE OR sub_service='') ORDER BY length(sub_service) DESC LIMIT 1").get(c.id,o.service,String(o.sub_service||'')) as Row|undefined;
@@ -51,7 +52,7 @@ function append(clientId:number,orderId:number|null,kind:string,delta:string,rea
 }
 export function refreshAutomatic(r:Row){
  const o=order(Number(r.order_id));
- if(!automaticSourceKind(String(o.service),String(o.sub_service))||['CHARGED','CANCELLED'].includes(String(r.status))||issued(Number(o.id)))return r;
+ if(emergencyOrderSuspended(Number(o.id))||!automaticSourceKind(String(o.service),String(o.sub_service))||['CHARGED','CANCELLED'].includes(String(r.status))||issued(Number(o.id)))return r;
  try{
   const quote=automaticVndOrderQuote(Number(o.id));
   const old=db.prepare('SELECT * FROM vnd_auto_quotes WHERE order_id=?').get(o.id) as Row|undefined;
@@ -68,7 +69,7 @@ export function refreshAutomatic(r:Row){
  return vndRequest(Number(o.id))!;
 }
 function process(r:Row,actorId:number){
- if(['CHARGED','CANCELLED'].includes(String(r.status)))return;
+ if(['CHARGED','CANCELLED'].includes(String(r.status))||emergencyOrderSuspended(Number(r.order_id)))return;
  r=refreshAutomatic(r);
  if((db.prepare('SELECT pricing_error FROM vnd_auto_quotes WHERE order_id=?').get(r.order_id) as Row|undefined)?.pricing_error)return;
  if(r.status==='RESERVED'&&r.reserve===r.offer&&r.accepted_revision===r.revision)return;
@@ -87,6 +88,7 @@ export function resumeVndPurchases(clientId:number,actorId:number){
 }
 export function assertVndIssuance(orderId:number){
  let r=vndRequest(orderId);if(!r)return false;
+ if(emergencyOrderSuspended(orderId))throw Error('Order đang tạm dừng xử lý.');
  if(r.status==='CHARGED')return true;
  r=refreshAutomatic(r);
  if((db.prepare('SELECT pricing_error FROM vnd_auto_quotes WHERE order_id=?').get(orderId) as Row|undefined)?.pricing_error)throw Error('Giá tự động chưa hợp lệ; Admin cần xử lý.');

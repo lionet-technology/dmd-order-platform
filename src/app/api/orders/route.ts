@@ -1,3 +1,4 @@
+import {clientVisibleWorkflowStatus,clientVisibleWorkflowStatusSql} from "@/lib/emergency-hold";
 import {isVndClient,vndRequest} from "@/lib/vnd-operational";
 import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import { refreshDraft,safePricing,stripPricingInternals } from "@/lib/route-pricing";
@@ -46,7 +47,7 @@ async function handleGET(req: NextRequest) {
   const service=String(req.nextUrl.searchParams.get("service")||"").trim();
   const reconcile=String(req.nextUrl.searchParams.get("reconcile")||"").trim();
   const salesUserRaw=String(req.nextUrl.searchParams.get("salesUserId")||"").trim();
-  if(status){where.push("workflow_status=?");params.push(status);}
+  if(status){where.push((auth.user.role==="CLIENT"||auth.user.role==="SALES"?clientVisibleWorkflowStatusSql:"workflow_status")+"=?");params.push(status);}
   if(service){where.push("service=?");params.push(service);}
   if(reconcile){where.push("reconciliation_status=?");params.push(reconcile);}
   if(auth.user.role==="ADMIN"&&salesUserRaw){
@@ -73,6 +74,7 @@ async function handleGET(req: NextRequest) {
     const payload={...order,...(isVndClient(Number(order.client_user_id))?{money_currency:"VND",sales_price_vnd:vr?.offer??null}:{}),pricing:safePricing(order,auth.user.role),tracking:active.find(row=>row.is_primary)?.tracking||active[0]?.tracking||null,tracking_count:active.length,tracking_data:JSON.stringify(visible),trackings:visible};
     if(auth.user.role==="ADMIN")return payload;
     const safe:Record<string,unknown>=stripPricingInternals({...payload});
+    if(auth.user.role==="CLIENT"||auth.user.role==="SALES")safe.workflow_status=clientVisibleWorkflowStatus(Number(order.id));
     safe.public_note=publicNoteText(Number(order.id));
     delete safe.note;
     for(const key of ["supplier","est_net_cost","true_net_cost","base_cost","retail","gross_profit_base","gross_profit_net","gross_margin_pct","margin_status","reconciliation_delta"])delete safe[key];

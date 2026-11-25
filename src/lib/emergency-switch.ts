@@ -17,16 +17,17 @@ export function emergencySwitchOrder(actor:AuthUser,holdId:number,orderId:number
   if(reviewConfirmed!==true)throw Error("Admin cần xác minh Route, Tracking, Label và Estimated Net Cost rồi xác nhận để tiếp tục.");
   if(!Array.isArray(trackings))throw Error("Tracking phải là danh sách; để trống danh sách nếu chỉ đổi Route.");
   const request=JSON.stringify({route_id:newRouteId,trackings:trackings.map(t=>({old_tracking_id:Number(t.old_tracking_id),new_tracking:normalizeTracking(t.new_tracking),new_label_url:String(t.new_label_url||"").trim()})).sort((a,b)=>a.old_tracking_id-b.old_tracking_id)});
-  const item=db.prepare(`SELECT i.*,h.route_id,h.undone_at,h.reason hold_reason
+  const item=db.prepare(`SELECT i.*,h.route_id,h.undone_at,h.prior_warehouse_hold,h.reason hold_reason
    FROM emergency_hold_orders i JOIN emergency_route_holds h ON h.id=i.hold_id
    WHERE i.hold_id=? AND i.order_id=?`).get(holdId,orderId) as Row|undefined;
   if(!item)throw Error("Order không thuộc Emergency Hold.");
   if(item.resolved_at){
+   if(item.resolution_kind==="RESUME"||item.resolution_kind==="CANCEL")throw Error("Order đã được xử lý.");
    const receipt=db.prepare("SELECT route_id FROM supplier_void_cases WHERE incident_id=? AND order_id=?").get(holdId,orderId) as Row|undefined;
    if(receipt){
     const event=db.prepare("SELECT after_json FROM order_events WHERE order_id=? AND event_type='EMERGENCY_ROUTE_SWITCH' AND json_extract(after_json,'$.hold_id')=? ORDER BY id DESC LIMIT 1").get(orderId,holdId) as {after_json:string}|undefined;
     const outcome=event&&JSON.parse(event.after_json);
-    if(outcome&&item.switch_request_json===request&&receipt.route_id!==newRouteId&&outcome.result?.route_id===newRouteId&&outcome.requested_estimate===String(estimatedNetCost??'').trim())
+    if(outcome&&item.switch_request_json===request&&outcome.result?.route_id===newRouteId&&outcome.requested_estimate===String(estimatedNetCost??'').trim())
      return {...outcome.result,updated_trackings:0,replayed:true};
     throw Error("Order đã được chuyển Route với thông tin khác; không thể ghi đè.");
    }
@@ -48,8 +49,9 @@ export function emergencySwitchOrder(actor:AuthUser,holdId:number,orderId:number
   if(!before||before.workflow_status!=="HOLD")throw Error("Order không còn ở trạng thái Emergency Hold.");
   const origin=JSON.parse(String(item.snapshot_json)) as Row;
   if([before.service,before.sub_service,before.supplier].some((v,i)=>String(v||"").toLowerCase()!==String([origin.service,origin.sub_service,origin.supplier][i]||"").toLowerCase()))throw Error("Route gốc đã thay đổi; cần kiểm tra.");
-  const newRoute=db.prepare("SELECT * FROM service_route_configs WHERE id=? AND active=1 AND warehouse_hold=0").get(newRouteId) as Row|undefined;
-  if(!newRoute||newRouteId===Number(item.route_id))throw Error("Route mới phải Active, không Hold và khác Route cũ.");
+  const sameRoute=newRouteId===Number(item.route_id);
+  const newRoute=db.prepare("SELECT * FROM service_route_configs WHERE id=? AND active=1").get(newRouteId) as Row|undefined;
+  if(!newRoute||(!sameRoute&&newRoute.warehouse_hold)||sameRoute&&(!trackings.length||item.prior_warehouse_hold))throw Error("Cần Route Active ngoài Hold, hoặc thay toàn bộ Tracking/Label trên Route gốc không có Hold kho trước đó.");
   assertRouteCartons(newRoute.service,newRoute.max_cartons_per_order,before.carton_count);
   const exception=emergencyException(before);if(exception)throw Error(exception);
   if(db.prepare("SELECT id FROM manifest_carton_items WHERE order_id=? LIMIT 1").get(orderId))
@@ -120,7 +122,7 @@ export function emergencySwitchOrder(actor:AuthUser,holdId:number,orderId:number
   }
   const primary=db.prepare("SELECT tracking,label_url FROM order_trackings WHERE order_id=? AND status='ACTIVE' ORDER BY is_primary DESC,lot_number,id LIMIT 1").get(orderId) as {tracking:string;label_url:string}|undefined;
   db.prepare("UPDATE orders SET tracking=?,label=?,workflow_status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(trackings.length?primary?.tracking||null:before.tracking,trackings.length?primary?.label_url||null:before.label,origin.workflow_status,orderId);
-  db.prepare("UPDATE emergency_hold_orders SET resolved_at=CURRENT_TIMESTAMP,last_error=NULL,switch_request_json=? WHERE hold_id=? AND order_id=?").run(request,holdId,orderId);
+  db.prepare("UPDATE emergency_hold_orders SET resolved_at=CURRENT_TIMESTAMP,last_error=NULL,resolution_kind='SWITCH',switch_request_json=? WHERE hold_id=? AND order_id=?").run(request,holdId,orderId);
   db.prepare("DELETE FROM emergency_route_switch_context WHERE order_id=?").run(orderId);
   const after=db.prepare("SELECT * FROM orders WHERE id=?").get(orderId) as Row;
   if(["total_due","sales_price","surcharge","import_tax","client_user_id","order_id","system_order_code","pricing_snapshot_json"].some(key=>after[key]!==before[key]))

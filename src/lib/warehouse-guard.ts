@@ -1,3 +1,4 @@
+import {emergencyRouteBlocksOrder} from "./emergency-hold";
 import {canWarehouseOutbound} from "./order-transition-guards";
 import {hasCaseHold} from "./cases";
 import {db} from "./db";
@@ -20,7 +21,7 @@ export function warehouseGuard(order:Row,carton:Row):GuardResult {
  if(current.workflow_status==="CANCELLED")return block("ORDER_CANCELLED","Order đã hủy.");
  if(hasCaseHold(Number(order.order_id))||current.workflow_status==="HOLD"||db.prepare("SELECT id FROM warehouse_order_holds WHERE order_id=? AND released_at IS NULL").get(order.order_id))return block("ORDER_HOLD","Order đang bị hold từ Client / Sales / Admin.");
  const state=canWarehouseOutbound(current);if(!state.allowed)return block("ADMIN_VIOLATION",state.reason);
- if(route.warehouse_hold)return block("ROUTE_HOLD","Admin đang hold toàn route.");
+ if(emergencyRouteBlocksOrder(route,order.order_id))return block("ROUTE_HOLD","Admin đang hold toàn route.");
  if(route.segmentation_enabled){
   const rules=db.prepare("SELECT * FROM warehouse_routing_rules WHERE route_config_id=? AND active=1 ORDER BY priority DESC,id").all(route.id) as Row[];
   for(const rule of rules){

@@ -40,3 +40,13 @@ Parse theo dòng, nhóm theo Order; lỗi của một Order không hủy kết q
 `emergency-hold.ts`, `emergency-switch.ts`, `emergency-schema.ts`, `emergency-excel.ts`, `reconciliation.ts`, `order-operations.ts`, API service-routes/:id/emergency và `emergency-switch-workspace.tsx`.
 
 `scripts/verify-emergency-hold.cjs`: database synthetic tạm; tiền/Statement bất biến, route-only, full replacement, rollback audit, role, Manifest history, duplicate/retry, worker concurrency/Switch-vs-Undo, cost cũ+mới, cost import retry và mixed Excel recovery. Kết quả thực chạy và giới hạn ghi trong [audit mới](AUDIT-EMERGENCY-SIMPLIFICATION-2026-10-24.md).
+
+## Emergency Hold trong Orders · 25/11/2026
+
+Admin mở **Emergency Hold** trong Orders và chọn một Route hoặc đồng thời các Route đang hoạt động của cùng Service/SubService. Phạm vi SubService dùng một giao dịch để áp dụng các Route được cấu hình tại lúc Hold. Điều kiện trước bàn giao và các ngoại lệ thủ công giữ theo quy tắc ở trên. Lý do Incident và chi tiết xử lý nằm trong API và audit nội bộ.
+
+- Mở Route đang Hold để đổi Route hoặc ghi bộ Tracking/Label thay thế. Bộ thay thế đầy đủ có thể dùng lại Route gốc nếu Route đang hoạt động và trước sự cố không có Hold kho khác. Hệ thống lưu hồ sơ void và lượt Supplier cũ. Admin tiếp tục xử lý chứng từ/cổng của Supplier để void và lấy label mới.
+- Chọn một hoặc nhiều Order, nhập lý do để **Tiếp tục** hoặc **Huỷ**. Tiếp tục khôi phục workflow gốc và bỏ qua Hold do Incident cho chính Order đó. Các Hold độc lập vẫn có hiệu lực. Huỷ áp dụng chính sách hiện hành trong cùng giao dịch và hoàn tác nếu chính sách từ chối. Lý do nội bộ chỉ vào audit; quy trình huỷ thông thường ghi nội dung công khai chung.
+- Kết quả mỗi Order được ghi trong một giao dịch. Lặp thao tác đã thành công trả về kết quả đã xử lý. Undo trên Route khôi phục các Order còn chờ, giữ các kết quả đã xử lý.
+
+Kiểm chứng miền nghiệp vụ tại `scripts/verify-vnd-supplier-recovery.cjs` và `scripts/verify-emergency-hold.cjs`.

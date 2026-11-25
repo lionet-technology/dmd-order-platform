@@ -1,3 +1,4 @@
+import {clientVisibleWorkflowStatus} from "@/lib/emergency-hold";
 import {withFinancialPrivacy} from "@/lib/financial-privacy";
 import { refreshDraft,safePricing,stripPricingInternals } from "@/lib/route-pricing";
 import { NextRequest,NextResponse } from "next/server";
@@ -26,6 +27,7 @@ async function handleGET(req:NextRequest,{params}:{params:Promise<{id:string}>})
   const payload={...order,pricing:safePricing(order,auth.user.role),cancellation:cancellationPolicy(order as Record<string,unknown>&{id:number}),trackings:auth.user.role==="ADMIN"?trackings:trackings.filter(row=>row.status==="ACTIVE"||(order.workflow_status==="CANCELLED"&&row.status==="CANCELLED")).map(publicOrderTracking),events};
   if(auth.user.role==="ADMIN")return NextResponse.json(payload);
   const safe:Record<string,unknown>=stripPricingInternals({...payload});
+  if(auth.user.role==="CLIENT"||auth.user.role==="SALES")safe.workflow_status=clientVisibleWorkflowStatus(id);
   safe.public_note=publicNoteText(id);
   delete safe.note;
   for(const key of ["supplier","est_net_cost","true_net_cost","base_cost","retail","gross_profit_base","gross_profit_net","gross_margin_pct","margin_status","reconciliation_delta"])delete safe[key];

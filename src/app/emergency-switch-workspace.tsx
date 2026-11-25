@@ -7,6 +7,8 @@ type Draft={reviewed:boolean;estimate:string;fields:Record<number,{tracking:stri
 export function EmergencySwitchWorkspace({routeId,holdId}:{routeId:number;holdId:number}){
  const [items,setItems]=useState<Item[]>([]),[routes,setRoutes]=useState<Route[]>([]),[route,setRoute]=useState("");
  const [drafts,setDrafts]=useState<Record<number,Draft>>({}),[confirmed,setConfirmed]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState("");
+ const [resolutionReason,setResolutionReason]=useState("");
+ const [selected,setSelected]=useState<number[]>([]);
  const [excel,setExcel]=useState<File|null>(null);
  const url="/api/service-routes/"+routeId+"/emergency";
  async function load(){
@@ -18,7 +20,7 @@ export function EmergencySwitchWorkspace({routeId,holdId}:{routeId:number;holdId
   const x=await a.json(),y=await b.json();if(!a.ok||!b.ok)throw Error(x.error||y.error);
   if(live){setItems(x.orders||[]);setRoutes(y||[])}
  }).catch(e=>{if(live)setMessage(e.message)});return ()=>{live=false}},[url,holdId]);
- const eligible=routes.filter(r=>r.id!==routeId&&r.active&&r.warehouse_hold!==1);
+ const eligible=routes.filter(r=>r.active&&(r.id===routeId||r.warehouse_hold!==1));
  const selectedRoute=eligible.find(r=>String(r.id)===route);
  const pending=items.filter(i=>!i.resolved_at);
  const get=(i:Item)=>drafts[i.source_dmd_id]||{reviewed:false,estimate:"",fields:{}};
@@ -30,7 +32,7 @@ export function EmergencySwitchWorkspace({routeId,holdId}:{routeId:number;holdId
   });
  }
  function replacing(i:Item){return Object.values(get(i).fields).some(f=>f.tracking.trim()||f.label.trim())}
- function ready(i:Item){return !!route&&get(i).reviewed&&(!replacing(i)||i.trackings.every(t=>!!get(i).fields[t.old_tracking_id]?.tracking.trim()&&!!get(i).fields[t.old_tracking_id]?.label.trim()))}
+ function ready(i:Item){return !!route&&(Number(route)!==routeId||replacing(i))&&get(i).reviewed&&(!replacing(i)||i.trackings.every(t=>!!get(i).fields[t.old_tracking_id]?.tracking.trim()&&!!get(i).fields[t.old_tracking_id]?.label.trim()))}
  async function submit(i:Item){
   const d=get(i);
   const response=await fetch(url,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({
@@ -55,6 +57,24 @@ export function EmergencySwitchWorkspace({routeId,holdId}:{routeId:number;holdId
   try{await load()}catch(e){errors.push((e as Error).message)}
   setMessage("Đã đổi "+success+"/"+list.length+" Order. "+errors.join("; "));setBusy(false);
  }
+ async function resolve(list:Item[],action:"resume"|"cancel"){
+  setBusy(true);
+  const errors:string[]=[];
+  let success=0;
+  for(const item of list){
+   try{
+    const response=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},
+     body:JSON.stringify({action,hold_id:holdId,order_id:item.source_dmd_id,reason:resolutionReason})});
+    const result=await response.json();
+    if(!response.ok)throw Error(result.error);
+    success++;
+   }catch(e){errors.push(item.client_order_id+": "+(e as Error).message)}
+  }
+  try{await load()}catch(e){errors.push((e as Error).message)}
+  setMessage("Đã xử lý "+success+"/"+list.length+" Order. "+errors.join("; "));
+  setBusy(false);
+ }
+ const selectedOrders=pending.filter(item=>selected.includes(item.source_dmd_id));
  return <section className="templateConfigCard" aria-label="Emergency đổi Route Tracking Label">
   <h3>Emergency · Đổi Route trên cùng Order</h3>
   <p>Giữ nguyên DMD ID, Client Order ID, giá bán và Balance. Admin kiểm tra, điều chỉnh nếu cần rồi xác nhận từng Order. Mỗi Order được lưu trọn vẹn; lỗi không ảnh hưởng Order khác. Để trống Tracking/Label mới nếu chỉ đổi Route.</p>
@@ -72,6 +92,7 @@ export function EmergencySwitchWorkspace({routeId,holdId}:{routeId:number;holdId
   <div role="alert" aria-label="Order Emergency chưa xử lý">{pending.length>0&&<p>Các Order bên dưới vẫn đang Hold. Order lỗi được giữ lại để sửa và thử lại; Order thành công đã ra khỏi hàng chờ.</p>}</div>
   {pending.map(i=><section key={i.source_dmd_id} className="routeVariablesEditor">
    <b>{i.current?.system_order_code||"DMD #"+i.source_dmd_id} · {i.client_order_id}</b>
+   <label><input type="checkbox" checked={selected.includes(i.source_dmd_id)} onChange={e=>setSelected(ids=>e.target.checked?[...ids,i.source_dmd_id]:ids.filter(id=>id!==i.source_dmd_id))}/> Chọn Order</label>
    {i.last_error&&<p role="alert">Cần xử lý lại: {i.last_error}</p>}
    <p>Route hiện tại: {i.current?.service} / {i.current?.sub_service} / {i.current?.supplier} → {selectedRoute?[selectedRoute.service,selectedRoute.sub_service,selectedRoute.supplier].join(" / "):"Chưa chọn Route mới"}</p>
    <p>Giá bán giữ nguyên: {Number(i.original_selling_price).toFixed(2)} USD · {i.original_status}</p>
@@ -89,6 +110,9 @@ export function EmergencySwitchWorkspace({routeId,holdId}:{routeId:number;holdId
    <button className="primaryBtn" disabled={busy||!ready(i)} onClick={()=>void run([i])}>Xác nhận & chuyển Order này</button>
   </section>)}
   <button className="secondaryBtn" disabled={busy||!pending.some(ready)} onClick={()=>void run(pending.filter(ready))}>Chuyển các Order sẵn sàng ({pending.filter(ready).length})</button>
+  <label>Lý do nội bộ khi tiếp tục hoặc huỷ<textarea value={resolutionReason} maxLength={2000} onChange={e=>setResolutionReason(e.target.value)}/></label>
+  <button disabled={busy||!selectedOrders.length||!resolutionReason.trim()} onClick={()=>void resolve(selectedOrders,"resume")}>Tiếp tục Order đã chọn ({selectedOrders.length})</button>
+  <button disabled={busy||!selectedOrders.length||!resolutionReason.trim()} onClick={()=>{if(window.confirm("Huỷ "+selectedOrders.length+" Order theo chính sách hiện hành?"))void resolve(selectedOrders,"cancel")}}>Huỷ Order đã chọn ({selectedOrders.length})</button>
   {message&&<p role="status">{message}</p>}
  </section>;
 }

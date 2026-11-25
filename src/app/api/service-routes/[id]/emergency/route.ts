@@ -4,6 +4,7 @@ import {requireUser} from "@/lib/auth";
 import {emergencyStatus,startEmergencyHold,undoEmergencyHold,emergencyHoldDetails} from "@/lib/emergency-hold";
 import {emergencySwitchOrder} from "@/lib/emergency-switch";
 import {EMERGENCY_EXCEL_HEADERS,importEmergencyWorkbook} from "@/lib/emergency-excel";
+import {resolveEmergencyOrder} from "@/lib/emergency-resolution";
 type Context={params:Promise<{id:string}>};
 export async function GET(req:NextRequest,{params}:Context){
  const auth=requireUser(req,"ADMIN");if(auth.error)return auth.error;
@@ -42,10 +43,14 @@ export async function POST(req:NextRequest,{params}:Context){
  const body=await req.json();
  if(body.action==="hold")return NextResponse.json(startEmergencyHold(auth.user,id,String(body.reason||"")));
  if(body.action==="undo")return NextResponse.json(undoEmergencyHold(auth.user,id,Number(body.hold_id)));
+ if(body.action==="resume"||body.action==="cancel"){
+  if(typeof body.reason!=="string")throw Error("Cần lý do xử lý.");
+  return NextResponse.json(resolveEmergencyOrder(auth.user,id,Number(body.hold_id),Number(body.order_id),body.action,body.reason));
+ }
  if(body.action==="switch"){
   if(!emergencyStatus(auth.user,id).some((value)=>Number((value as Record<string,unknown>).id)===Number(body.hold_id)&&!(value as Record<string,unknown>).undone_at))throw Error("Emergency Hold không thuộc Route này hoặc đã đóng.");
   return NextResponse.json(emergencySwitchOrder(auth.user,Number(body.hold_id),Number(body.order_id),Number(body.new_route_id),body.trackings??[],body.estimated_net_cost,body.review_confirmed===true));
  }
- return NextResponse.json({error:"Chỉ hỗ trợ Hold/Undo/đổi Route và Tracking trên chính Order. Huỷ/tạo lại không được dùng."},{status:409});
+ return NextResponse.json({error:"Tác vụ Emergency Hold không hợp lệ."},{status:409});
  }catch(e){return NextResponse.json({error:(e as Error).message},{status:409});}
 }

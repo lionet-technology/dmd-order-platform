@@ -1,3 +1,4 @@
+import {clientVisibleWorkflowStatus} from "@/lib/emergency-hold";
 import {captureTrackingFulfillment,recordTrackingFulfillment} from '@/lib/vnd-fulfillment';
 import {vndRequest} from "@/lib/vnd-operational";
 import {hasPartialLabelOverride,labelFingerprint} from "@/lib/partial-label";
@@ -29,7 +30,7 @@ async function handleGET(req:NextRequest,{params}:{params:Promise<{id:string}>})
   const auth=requireUser(req);if(auth.error)return auth.error;
   const id=Number((await params).id);const access=accessible(auth.user,id);if(access.error)return access.error;
   const rows=listOrderTrackings(id,auth.user.role==="ADMIN");
-  const publicOrder=auth.user.role==="ADMIN"?access.order:{id:access.order?.id,workflow_status:access.order?.workflow_status,purchase_completed_at:access.order?.purchase_completed_at};
+  const publicOrder=auth.user.role==="ADMIN"?access.order:{id:access.order?.id,workflow_status:access.order?clientVisibleWorkflowStatus(access.order.id):undefined,purchase_completed_at:access.order?.purchase_completed_at};
   return NextResponse.json({order:publicOrder,trackings:auth.user.role==="ADMIN"?rows:rows.filter(x=>x.status==="ACTIVE").map(({normalized_tracking,cost_match_type,cost_parent_tracking_id,replaced_by_tracking_id,...row})=>row)});
 }
 

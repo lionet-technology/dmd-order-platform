@@ -23,6 +23,9 @@ type Role = "ADMIN" | "SALES" | "CLIENT" | "WAREHOUSE";
 type User = { id:number; username:string; display_name:string; role:Role|"BOD"|"FINANCE"; sales_user_id?:number|null; sales_display_name?:string|null; active?:number; is_root_admin?:number };
 type RowData = Record<string, string | number | null>;
 type PagedRows = { items:RowData[]; total:number; page:number; pageSize:number; totalPages:number };
+import {SupplierRecoveryWorkspace} from "./supplier-recovery-workspace";
+import {OrdersEmergencyWorkspace} from "./orders-emergency-workspace";
+
 type AppSection = "dashboard"|"orders"|"manifest"|"shipping"|"costs"|"recon"|"ledger"|"accounts"|"masterdata"|"operations";
 type Summary = { orders:number; review:number; unmatched:number; ledger:number; receivable:number };
 type ManualKind = "order" | "balance";
@@ -1114,6 +1117,8 @@ function Platform({user,onLogout}:{user:User;onLogout:()=>void}) {
         </>}
 
         {section==="orders"&&<>
+          {role==="ADMIN"&&<OrdersEmergencyWorkspace onSaved={()=>void refresh()}/>}
+          {role==="ADMIN"&&<SupplierRecoveryWorkspace canGroup/>}
           {role==="ADMIN"&&<details><summary>Đơn huỷ chờ xử lý Supplier</summary><SupplierCancellationWorkspace/></details>}
           <PageHeader eyebrow="OPERATIONS" title="Orders" description={role==="ADMIN"?"Quản lý toàn bộ đơn hàng và trạng thái xử lý.":role==="SALES"?"Quản lý Orders của các Client được phân công.":"Theo dõi Orders của tài khoản Client này."}
             actions={role==="CLIENT"?<button className="primaryBtn" onClick={()=>{setClientDraft(null);setClientPurchase(true)}}>＋ Tạo / Import & Đặt mua dịch vụ</button>:<><button className="secondaryBtn" onClick={()=>setImportKind(role==="ADMIN"?"orders":"sales_orders")}>⇩ Import</button>{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkTracking(true)}>▦ Mua đơn hàng loạt</button>}{role==="ADMIN"&&<button className="secondaryBtn" onClick={()=>setBulkReplacement(true)}>⇄ Đổi Tracking</button>}<button className="primaryBtn" onClick={()=>openEntry("order")}>＋ Tạo Order</button></>}/>

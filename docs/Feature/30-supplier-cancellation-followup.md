@@ -77,3 +77,5 @@ Hàng đợi giữ chứng từ Supplier đến muộn, kể cả khi tuyến đ
 Admin có thể cấu hình phí cố định hoặc mức hoàn 90%/100% theo Route. Hồ sơ void mới chụp phiên bản policy, ID lượt của từng Lot và Actual đã duyệt tại thời điểm mở. Hoàn 90% cho phép Supplier giữ tối đa 10% Actual đã chụp. Hoàn 100% đặt phí tối đa bằng 0. Khi thiếu căn cứ Actual cho 90% hoặc có nhiều hồ sơ cho cùng lượt, queue yêu cầu rà soát. Hồ sơ cũ chưa lưu ID lượt vẫn xuất hiện khi lọc theo yêu cầu hủy.
 
 Nếu xác định duy nhất lượt và mức phí tối đa, nghĩa vụ đề xuất vượt mức được gắn `Cancel Fee > Policy`. Finance/BOD tiếp tục duyệt bằng chứng và lý do theo luồng Supplier Actual. Mở hoặc cập nhật hồ sơ void chỉ ghi lịch sử.
+
+Đổi toàn bộ Tracking/Label trên Route gốc từ Emergency Hold dùng cùng hồ sơ void theo Incident/Order. Hồ sơ giữ ảnh chụp của lượt cũ để theo dõi với Supplier. Khi Admin chọn huỷ Order trong Emergency Hold, hệ thống chạy chính sách huỷ và luồng Supplier follow-up hiện hành. [Emergency Hold trong Orders](18-emergency-route-hold.md#emergency-hold-trong-orders--25112026).

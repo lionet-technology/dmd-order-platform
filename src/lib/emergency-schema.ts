@@ -43,7 +43,7 @@ export function installEmergencySchema(db:Database.Database){
  AND EXISTS(SELECT 1 FROM emergency_route_holds h JOIN service_route_configs r ON r.id=h.route_id WHERE h.undone_at IS NULL AND r.service=NEW.service COLLATE NOCASE AND r.sub_service=NEW.sub_service COLLATE NOCASE AND r.supplier=NEW.supplier COLLATE NOCASE)
  BEGIN SELECT RAISE(ABORT,'Route is under Emergency Hold'); END;
  CREATE TRIGGER IF NOT EXISTS emergency_order_freeze BEFORE UPDATE ON orders
- WHEN (NEW.workflow_status IS NOT OLD.workflow_status OR NEW.service IS NOT OLD.service OR NEW.sub_service IS NOT OLD.sub_service OR NEW.supplier IS NOT OLD.supplier OR NEW.total_due IS NOT OLD.total_due OR NEW.sales_price IS NOT OLD.sales_price OR NEW.surcharge IS NOT OLD.surcharge OR NEW.import_tax IS NOT OLD.import_tax OR NEW.est_net_cost IS NOT OLD.est_net_cost OR NEW.client_user_id IS NOT OLD.client_user_id OR NEW.order_id IS NOT OLD.order_id OR NEW.system_order_code IS NOT OLD.system_order_code OR NEW.tracking IS NOT OLD.tracking OR NEW.label IS NOT OLD.label)
+ WHEN (NEW.workflow_status IS NOT OLD.workflow_status OR NEW.service IS NOT OLD.service OR NEW.sub_service IS NOT OLD.sub_service OR NEW.supplier IS NOT OLD.supplier OR NEW.total_due IS NOT OLD.total_due OR NEW.sales_price IS NOT OLD.sales_price OR NEW.surcharge IS NOT OLD.surcharge OR NEW.import_tax IS NOT OLD.import_tax OR NEW.est_net_cost IS NOT OLD.est_net_cost OR NEW.client_user_id IS NOT OLD.client_user_id OR NEW.order_id IS NOT OLD.order_id OR NEW.system_order_code IS NOT OLD.system_order_code OR NEW.tracking IS NOT OLD.tracking OR NEW.label IS NOT OLD.label OR NEW.fulfillment_started_at IS NOT OLD.fulfillment_started_at)
  AND EXISTS(SELECT 1 FROM emergency_hold_orders i JOIN emergency_route_holds h ON h.id=i.hold_id WHERE i.order_id=OLD.id AND h.undone_at IS NULL AND i.resolved_at IS NULL)
  AND NOT EXISTS(SELECT 1 FROM emergency_route_switch_context c WHERE c.order_id=OLD.id)
  BEGIN SELECT RAISE(ABORT,'Order is under Emergency Hold'); END;
@@ -55,7 +55,7 @@ export function installEmergencySchema(db:Database.Database){
  BEGIN SELECT RAISE(ABORT,'Route is under Emergency Hold'); END;
  `);
  if(!(db.pragma('table_info(emergency_hold_orders)') as Array<{name:string}>).some(x=>x.name==='resolved_at'))db.exec('ALTER TABLE emergency_hold_orders ADD COLUMN resolved_at TEXT');
- for(const [name,type] of Object.entries({last_error:"TEXT",switch_request_json:"TEXT"})){
+ for(const [name,type] of Object.entries({last_error:"TEXT",switch_request_json:"TEXT",resolution_kind:"TEXT"})){
  if(!(db.pragma('table_info(emergency_hold_orders)') as Array<{name:string}>).some(x=>x.name===name))db.exec(`ALTER TABLE emergency_hold_orders ADD COLUMN ${name} ${type}`);
  }
  for(const operation of ["INSERT","UPDATE","DELETE"]){

@@ -4,6 +4,7 @@ import {vnd,compareVnd,subtractVnd,sumVnd} from './vnd-money';
 import {validVndDay,vndDay} from './vnd-debt';
 import {vndAccess} from './vnd-access';
 import {addClaimProcessing,claimOrderIds,claimProcessing,claimWatchlist,setClaimWatchlist,supplierClaimOrders} from './vnd-claim-cases';
+import {postRecoveryAllocation,selectRecoverySources} from './vnd-supplier-recovery-worklist';
 type Row=Record<string,unknown>;
 function required(v:unknown){const s=typeof v==='string'?v.trim():'';if(!s||s.length>2000)throw Error('Cần chứng từ/lý do hợp lệ.');return s;}
 function amount(v:unknown,positive=false){if(typeof v!=='string')throw Error('Cần chuỗi VNĐ.');const n=vnd(v);if(compareVnd(n,'0')<(positive?1:0))throw Error('Số tiền không hợp lệ.');return n;}
@@ -24,8 +25,9 @@ export function supplierClaimView(supplier:string){
 }
 /** Runs within the Supplier action immediate transaction, after authorization and receipt lookup. */
 export function applySupplierClaim(actor:AuthUser,supplier:string,input:Row,reason:string){
- if(!['FINANCE','BOD'].includes(actor.role))throw Error('Supplier Claim cần Finance/BOD.');
  const action=String(input.action);
+ if(action==='claim_group_recovery'?actor.role!=='ADMIN':!['FINANCE','BOD'].includes(actor.role))
+  throw Error('Admin gom Order; Finance/BOD xử lý quyết định Supplier Claim.');
  if(action==='claim_watchlist'){
   setClaimWatchlist('SUPPLIER',supplier,claimOrderIds(input.order_ids),input.active,reason,actor.id);
   return;
@@ -52,6 +54,21 @@ export function applySupplierClaim(actor:AuthUser,supplier:string,input:Row,reas
  const reference=required(input.reference),evidence=required(input.evidence);
  // One reference identifies one real evidence transaction, including reversed/voided history.
  if(db.prepare('SELECT id FROM vnd_supplier_claims WHERE supplier=? AND lower(reference)=lower(?)').get(supplier,reference)||db.prepare('SELECT e.id FROM vnd_supplier_claim_events e JOIN vnd_supplier_claims c ON c.id=e.claim_id WHERE c.supplier=? AND lower(e.reference)=lower(?)').get(supplier,reference)||db.prepare('SELECT id FROM vnd_supplier_ledger WHERE supplier=? AND lower(reference)=lower(?)').get(supplier,reference))throw Error('Tham chiếu Supplier đã dùng.');
+ if(action==='claim_group_recovery'){
+  const sources=selectRecoverySources(supplier,input.sources);
+  const lots=sources.map(source=>source.attempt.lot_id);
+  const scope=sources.map(({attempt})=>({lot_id:attempt.lot_id,fulfillment_epoch:attempt.id,trackings:attempt.trackings}));
+  const claimId=Number(db.prepare(`INSERT INTO vnd_supplier_claims(supplier,requested,lots_json,scope_json,reference,evidence,reason,actor_id)
+   VALUES (?,?,?,?,?,?,?,?)`).run(supplier,amount(input.amount,true),JSON.stringify(lots),JSON.stringify(scope),reference,evidence,reason,actor.id).lastInsertRowid);
+  const insert=db.prepare(`INSERT INTO vnd_supplier_recovery_sources(client_claim_id,order_id,decision_id,supplier_claim_id,lot_id,fulfillment_epoch,basis_json)
+   VALUES (?,?,?,?,?,?,?)`);
+  const link=db.prepare('INSERT OR IGNORE INTO vnd_claim_links(client_claim_id,supplier_claim_id,reason,actor_id) VALUES (?,?,?,?)');
+  for(const {selection,basis} of sources){
+   insert.run(selection.client_claim_id,selection.order_id,selection.decision_id,claimId,selection.lot_id,selection.epoch,JSON.stringify(basis));
+   link.run(selection.client_claim_id,claimId,reason,actor.id);
+  }
+  return;
+ }
  if(action==='claim_create'){
   let ids=input.lot_ids;
   if(input.order_ids!==undefined){
@@ -99,6 +116,7 @@ export function applySupplierClaim(actor:AuthUser,supplier:string,input:Row,reas
   if(!original||state.events.some(e=>e.kind==='REVERSE'&&e.settlement_id===original.id))throw Error('Settlement không hợp lệ hoặc đã đảo.');
   kind='REVERSE';n=String(original.amount);settlement=Number(original.id);if(original.kind==='OFFSET')payable=n;
  }else throw Error('Supplier Claim action không hợp lệ.');
- db.prepare('INSERT INTO vnd_supplier_claim_events(claim_id,kind,amount,approved,settlement_id,reference,evidence,reason,executed_day,actor_id) VALUES (?,?,?,?,?,?,?,?,?,?)').run(claim.id,kind,n,approved,settlement,reference,evidence,reason,day,actor.id);
+ const event=db.prepare('INSERT INTO vnd_supplier_claim_events(claim_id,kind,amount,approved,settlement_id,reference,evidence,reason,executed_day,actor_id) VALUES (?,?,?,?,?,?,?,?,?,?)').run(claim.id,kind,n,approved,settlement,reference,evidence,reason,day,actor.id);
+ if(approved!==null)postRecoveryAllocation(Number(claim.id),Number(event.lastInsertRowid),approved);
  if(payable!==null)db.prepare('INSERT INTO vnd_supplier_ledger(supplier,kind,delta,reference,reason,actor_id) VALUES (?,?,?,?,?,?)').run(supplier,kind==='REVERSE'?'CLAIM_OFFSET_REVERSE':'CLAIM_OFFSET',payable,reference,reason,actor.id);
 }
