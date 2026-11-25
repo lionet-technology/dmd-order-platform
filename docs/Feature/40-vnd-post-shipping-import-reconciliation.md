@@ -68,7 +68,7 @@ Form cấu hình và API Supplier hỗ trợ `mapping.components` với `column`
 
 [Bằng chứng TEST đợt 1](../../artifacts/supplier-reconciliation-v2-2026-11-25/VERIFICATION.md).
 
-Còn lại trong V2: lưu file gốc theo batch, xuất/sửa/preview nhập lại exception, đối chiếu phí void theo phần trăm, xử lý baseline Actual chỉ có tổng, tự chốt dòng sạch và cảnh báo nghĩa vụ cộng dồn toàn Order.
+Tại cuối đợt 1, phần còn lại của V2 gồm lưu file gốc theo batch, xuất/sửa/preview nhập lại exception, đối chiếu phí void theo phần trăm, xử lý baseline Actual chỉ có tổng, tự chốt dòng sạch và cảnh báo nghĩa vụ cộng dồn toàn Order.
 
 ## Phạm vi kiện/Lot của phụ phí và thuế Client
 
@@ -77,3 +77,11 @@ Dòng nhập bằng Tracking lưu ID Tracking, kiện và Lot nếu có trong h�
 ## Xung đột tham chiếu qua sổ Supplier
 
 Finance/BOD duyệt Actual sau khi kiểm tra tham chiếu, theo Supplier và không phân biệt hoa thường. Tham chiếu đã có trong payment, adjustment, các dòng offset hoặc hồ sơ/sự kiện Supplier Claim phát sinh lỗi `SUPPLIER_REFERENCE_IN_USE` ở queue hoặc thông báo lỗi khi duyệt Actual thủ công. Người xử lý có thể bỏ qua dòng queue kèm lý do. Khi một bút toán làm tình trạng tham chiếu thay đổi, tải lại queue trước khi rà soát. [Memo P0](47-gd1-p0-decision-memo.md).
+
+## Supplier Reconciliation V2 · đợt 2
+
+- Upload Excel lưu byte gốc, SHA-256, tên file, người nhập, mã batch và phiên bản template trong cùng giao dịch với các dòng. Hàng chờ và lịch sử nối về số dòng vật lý Excel. File gốc tải dưới dạng attachment theo quyền Supplier. Chứng từ nhập trước đợt này có lịch sử dòng sẵn có và thiếu file gốc. Batch hiển thị tối đa 200 file gần nhất, trạng thái quyết định, lỗi, delta phải trả và kỳ ghi sổ. Finance/BOD xem đã thanh toán theo kỳ khóa. Thanh toán cấp Supplier chưa có phân bổ theo từng quotation.
+- Từ Exception Queue, xuất các dòng thành phần V2 đang chờ. Mỗi dòng Excel mang mã batch nguồn, Queue ID, mã kiểm tra trạng thái và Component ID. Chỉ cột Proposed VNĐ thay đổi số đề xuất. Ô trống giữ Actual đã duyệt. Số 0 là đề xuất có chủ đích. Excel dùng giá trị tĩnh. Hệ thống giới hạn dung lượng nén và giải nén, từ chối formula, macro và liên kết workbook ngoài.
+- Admin, Finance hoặc BOD xem trước và lưu đề xuất có lý do. Đề xuất thêm một phiên bản bất biến, lưu file điều chỉnh và giữ nguyên chứng từ gốc. Bản Excel lỗi thời hoặc sai batch/mapping bị từ chối. Finance/BOD chọn từng dòng hoặc nhiều dòng và xác nhận có lý do, độc lập với các dòng còn chờ trong file. Các lỗi fulfillment mơ hồ, tham chiếu đã dùng và Actual lịch sử chưa xác minh thành phần tiếp tục chặn ghi sổ. Dòng trùng chứng từ hoặc có chênh lệch hiển thị tag để duyệt rõ ràng. Quyết định đã lưu hiển thị lại snapshot tại thời điểm duyệt.
+- Cảnh báo khoản lỗ dùng tổng delta Actual đã ghi cho toàn Order qua các lượt và Supplier, cộng delta đề xuất của dòng đang xét. Doanh thu có thể thu gồm giá vận chuyển, sửa giá, phụ phí và thuế, sau hoàn do hủy và các khoản Client Claim đã duyệt có phân bổ. Claim lịch sử thiếu phân bổ khiến phép so sánh chờ xác minh. Kiểm tra Estimated Net vẫn chỉ dùng nhóm Cost. Cảnh báo chỉ phục vụ rà soát.
+- Đối chiếu phí hủy dùng chính sách được chụp lúc mở hồ sơ của lượt fulfillment. Xem [Feature 30](30-supplier-cancellation-followup.md#đối-chiếu-phí-void-trong-exception-queue).

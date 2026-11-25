@@ -1,44 +1,11 @@
+import {approvedFulfillment,lotFulfillments} from './vnd-fulfillment';
 import {db} from './db';
 import type {AuthUser} from './auth';
 import {emergencyException} from './emergency-hold';
 import {logAdminEvent} from './order-audit';
 import {vnd,compareVnd,multiplyVnd} from './vnd-money';
 type Row=Record<string,unknown>;
-db.exec(`CREATE TABLE IF NOT EXISTS supplier_cancellations(
- order_id INTEGER PRIMARY KEY REFERENCES orders(id),supplier TEXT NOT NULL,
- tracking_label_json TEXT NOT NULL,reason TEXT NOT NULL,actor_id INTEGER NOT NULL REFERENCES users(id),
- created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
- CREATE TABLE IF NOT EXISTS supplier_cancellation_events(
- id INTEGER PRIMARY KEY,order_id INTEGER NOT NULL REFERENCES supplier_cancellations(order_id),
- status TEXT NOT NULL CHECK(status IN ('PENDING','FOLLOWING_UP','RESOLVED')),
- note TEXT NOT NULL,actor_id INTEGER NOT NULL REFERENCES users(id),request_key TEXT NOT NULL UNIQUE,
- created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
- CREATE INDEX IF NOT EXISTS supplier_cancellation_supplier ON supplier_cancellations(supplier);`);
-db.exec(`CREATE TABLE IF NOT EXISTS supplier_cancellation_refund_choices(event_id INTEGER PRIMARY KEY REFERENCES supplier_cancellation_events(id),choice_json TEXT NOT NULL);`);
-for(const table of ['supplier_cancellations','supplier_cancellation_events','supplier_cancellation_refund_choices'])for(const op of ['UPDATE','DELETE'])
- db.exec(`CREATE TRIGGER IF NOT EXISTS immutable_${table}_${op} BEFORE ${op} ON ${table} BEGIN SELECT RAISE(ABORT,'Supplier cancellation history is immutable'); END;`);
 function access(user:AuthUser){const actual=db.prepare('SELECT role,active FROM users WHERE id=?').get(user.id) as Row|undefined;if(!actual?.active||actual.role!==user.role||!['ADMIN','FINANCE','BOD'].includes(user.role))throw Error('Không có quyền theo dõi huỷ với Supplier.');}
-db.exec(`CREATE TABLE IF NOT EXISTS supplier_void_policies(
- id INTEGER PRIMARY KEY, route_id INTEGER NOT NULL REFERENCES service_route_configs(id),
- fee_vnd TEXT NOT NULL, evidence_required TEXT NOT NULL, actor_id INTEGER NOT NULL REFERENCES users(id),
- created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
- CREATE TABLE IF NOT EXISTS supplier_void_cases(
- id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id),
- route_id INTEGER NOT NULL REFERENCES service_route_configs(id), supplier TEXT NOT NULL,
- incident_id INTEGER REFERENCES emergency_route_holds(id), reason TEXT NOT NULL,
- snapshot_json TEXT NOT NULL, request_key TEXT NOT NULL UNIQUE, actor_id INTEGER NOT NULL REFERENCES users(id),
- created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(incident_id,order_id));
- CREATE TABLE IF NOT EXISTS supplier_void_events(
- id INTEGER PRIMARY KEY, case_id INTEGER NOT NULL REFERENCES supplier_void_cases(id),
- status TEXT NOT NULL CHECK(status IN ('PENDING','FOLLOWING_UP','RESOLVED','CONFIRMED','DENIED','EXPIRED')),
- note TEXT NOT NULL, actor_id INTEGER NOT NULL REFERENCES users(id), request_key TEXT NOT NULL UNIQUE,
- created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
- CREATE INDEX IF NOT EXISTS supplier_void_scope ON supplier_void_cases(supplier,incident_id);
- CREATE INDEX IF NOT EXISTS supplier_void_history ON supplier_void_events(case_id,id);
- CREATE INDEX IF NOT EXISTS supplier_void_policy_route ON supplier_void_policies(route_id,id);`);
-for(const table of ['supplier_void_cases','supplier_void_events','supplier_void_policies'])for(const op of ['UPDATE','DELETE'])
- db.exec(`CREATE TRIGGER IF NOT EXISTS immutable_${table}_${op} BEFORE ${op} ON ${table}
- BEGIN SELECT RAISE(ABORT,'Supplier void history is immutable'); END;`);
 
 const voidStatuses=['PENDING','FOLLOWING_UP','RESOLVED','CONFIRMED','DENIED','EXPIRED'];
 function requiredText(raw:unknown,max:number){
@@ -59,11 +26,21 @@ export function recordSupplierVoid(order:Row,user:AuthUser,routeId:number,incide
  const route=db.prepare('SELECT service,sub_service,supplier FROM service_route_configs WHERE id=?').get(routeId) as Row|undefined;
  if(!route||['service','sub_service','supplier'].some(field=>String(route[field]).toLowerCase()!==String(order[field]).toLowerCase()))
   throw Error('Route gốc không còn khớp Order.');
- const policy=db.prepare('SELECT id,fee_vnd,evidence_required FROM supplier_void_policies WHERE route_id=? ORDER BY id DESC LIMIT 1').get(routeId)??null;
+ const policyRow=db.prepare(`SELECT p.id,p.fee_vnd,p.evidence_required,v.refund_percent
+  FROM supplier_void_policies p LEFT JOIN supplier_void_percent_policies v ON v.policy_id=p.id
+  WHERE p.route_id=? ORDER BY p.id DESC LIMIT 1`).get(routeId) as Row|undefined;
+ const policy=policyRow?{id:policyRow.id,fee_vnd:policyRow.fee_vnd,evidence_required:policyRow.evidence_required,
+  ...(policyRow.refund_percent===null?{}:{refund_percent:policyRow.refund_percent})}:null;
+ const lots=(db.prepare('SELECT id,lot_number FROM order_lots WHERE order_id=? ORDER BY lot_number').all(orderId) as {id:number;lot_number:number}[]).map(lot=>{
+  const history=lotFulfillments(lot.id);
+  const attempt=history&&!history.incomplete?history.attempts.at(-1):undefined;
+  const actual=attempt&&attempt.supplier===route.supplier?approvedFulfillment(lot.id,attempt.supplier,attempt.id):undefined;
+  return attempt?{...lot,fulfillment_epoch:attempt.id,basis:actual&&!actual.uncertain?actual.approved?.amount??null:null}:lot;
+ });
  const snapshot={
-  service:route.service,sub_service:route.sub_service,policy,
+  service:route.service,sub_service:route.sub_service,policy:policy??null,
   legacy_tracking:order.tracking||null,legacy_label:order.label||null,
-  lots:db.prepare('SELECT id,lot_number FROM order_lots WHERE order_id=? ORDER BY lot_number').all(orderId),
+  lots,
   trackings:db.prepare("SELECT id,lot_number,tracking,label_url,status FROM order_trackings WHERE order_id=? AND status='ACTIVE' ORDER BY id").all(orderId),
  };
  const id=Number(db.prepare(`INSERT INTO supplier_void_cases
@@ -84,10 +61,14 @@ export function submitSupplierVoid(user:AuthUser,input:Row){
    if(compareVnd(fee,'0')<0)throw Error('Phí void không được âm.');
    const routeId=Number(input.route_id),evidence=requiredText(input.evidence_required,2000);
    const latest=db.prepare('SELECT id,fee_vnd,evidence_required FROM supplier_void_policies WHERE route_id=? ORDER BY id DESC LIMIT 1').get(routeId) as Row|undefined;
-   if(latest?.fee_vnd===fee&&latest.evidence_required===evidence)return {id:latest.id};
+   const percent=input.refund_percent??null;
+   if(percent!==null&&percent!==90&&percent!==100)throw Error('Tỷ lệ hoàn Supplier phải là 90% hoặc 100%.');
+   const previousPercent=latest?db.prepare('SELECT refund_percent FROM supplier_void_percent_policies WHERE policy_id=?').pluck().get(latest.id)??null:null;
+   if(latest?.fee_vnd===fee&&latest.evidence_required===evidence&&percent===previousPercent)return {id:latest.id};
    if(Number(input.expected_policy_id??0)!==Number(latest?.id??0))throw Error('Chính sách đã thay đổi; tải lại trước khi cập nhật.');
    const {lastInsertRowid}=db.prepare('INSERT INTO supplier_void_policies(route_id,fee_vnd,evidence_required,actor_id) VALUES (?,?,?,?)')
     .run(routeId,fee,evidence,user.id);
+   if(percent!==null)db.prepare('INSERT INTO supplier_void_percent_policies(policy_id,refund_percent) VALUES (?,?)').run(lastInsertRowid,percent);
    return {id:Number(lastInsertRowid)};
   }
   const key='user:'+requiredText(input.request_key,200);

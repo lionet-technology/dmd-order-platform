@@ -194,6 +194,8 @@ let checks=0,n=0;const eq=(a,b)=>{checks++;assert.deepEqual(a,b)},bad=(f,re)=>{c
  ]);
  review('accept',componentRow);
  eq(view().entries.at(-1).delta,'-2');
+ const frozenComponent=find('COMP-ADJUST','ADJUST');
+ eq(frozenComponent.comparison.total,'33');eq(frozenComponent.comparison.lines.find(line=>line.id==='LAST_MILE').old,'5');
  const postings=view().entries.length;
  upload('COMP-UNCHANGED',componentTemplate.id,await componentGrid('UNCHANGED',[20,0,10,3]));
  componentRow=find('COMP-UNCHANGED','UNCHANGED');
@@ -203,6 +205,13 @@ let checks=0,n=0;const eq=(a,b)=>{checks++;assert.deepEqual(a,b)},bad=(f,re)=>{c
  upload('COMP-ADJUST',componentTemplate.id,amended);
  eq(view().import_rows.filter(r=>r.data.source?.document==='COMP-ADJUST').length,1);
  eq(view().entries.length,postings);
+ const route=db.prepare("SELECT id FROM service_route_configs WHERE service='ePacket' AND sub_service='Standard' AND supplier='DMD' ORDER BY id DESC LIMIT 1").get();
+ const voidActions=require('../src/lib/supplier-cancellation.ts');
+ voidActions.submitSupplierVoid(admin,{action:'configure_void',route_id:route.id,fee_vnd:'0',refund_percent:90,evidence_required:'TEST policy'});
+ voidActions.submitSupplierVoid(admin,{action:'open_void',order_id:componentCase.o.id,route_id:route.id,request_key:key(),note:'TEST case'});
+ upload('COMP-VOID',componentTemplate.id,await componentGrid('VOID',[3,0,0,1]));
+ const voidRow=find('COMP-VOID','VOID');
+ eq(voidRow.void_policy.cap,'3.3');eq(voidRow.void_policy.requested,true);eq(voidRow.tags.includes('Cancel Fee > Policy'),true);
  bad(()=>db.prepare('DELETE FROM vnd_supplier_import_rows').run(),/Immutable/);bad(()=>db.prepare("UPDATE vnd_supplier_import_decisions SET reason='x'").run(),/Immutable/);
  eq(ops.vndBalance(client.id),balance);eq(JSON.stringify(db.prepare('SELECT * FROM vnd_ledger').all()),journal);eq(db.pragma('integrity_check',{simple:true}),'ok');
  console.log('VND SUPPLIER IMPORT PASS ('+checks+' assertions)');

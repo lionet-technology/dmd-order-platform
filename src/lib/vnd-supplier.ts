@@ -1,6 +1,6 @@
 import {db} from './db';
 import {supplierPeriodView,closeSupplierPeriod,supplierPostingCursor,linkSupplierPostings} from './vnd-supplier-periods';
-import {supplierImportView,applySupplierImport} from './vnd-supplier-import';
+import {supplierImportView,applySupplierImport,supplierImportBatches,storeSupplierWorkbook,type SupplierWorkbook} from './vnd-supplier-import';
 import {approvedFulfillment,hasPostedSupplierReference,hasSupplierReferenceOutsideActual,lotFulfillments,resolveFulfillment} from './vnd-fulfillment';
 import {applySupplierClaim,supplierClaimView} from './vnd-supplier-claims';
 import {saveSupplierTemplate,supplierTemplates} from './vnd-supplier-templates';
@@ -29,20 +29,27 @@ export function vndLotEstimate(lotId:number){
  return count===1&&typeof quote.net_vnd==='string'?quote.net_vnd:null;
 }
 export function vndSupplierView(actor:AuthUser,supplierRaw:unknown){return db.transaction(()=>readSupplier(actor,supplierRaw)).deferred();}
+export function supplierWorkbookFile(actor:AuthUser,supplierRaw:unknown,batch:string){
+ access(actor);
+ const supplier=canonicalEnumValue('SUPPLIER',supplierRaw,'',{allowInactive:true});
+ return db.prepare('SELECT file_name,workbook FROM vnd_supplier_import_files WHERE supplier=? AND batch_key=?').get(supplier,batch) as {file_name:string;workbook:Buffer}|undefined;
+}
 function readSupplier(actor:AuthUser,supplierRaw:unknown){
  access(actor);const supplier=canonicalEnumValue('SUPPLIER',supplierRaw,'',{allowInactive:true});
  const costs=db.prepare('SELECT c.*,l.order_id,l.lot_number FROM vnd_supplier_costs c JOIN order_lots l ON l.id=c.lot_id WHERE c.supplier=? ORDER BY c.id DESC').all(supplier) as Row[];
  const reviews=db.prepare('SELECT r.* FROM vnd_supplier_reviews r JOIN vnd_supplier_costs c ON c.id=r.cost_id WHERE c.supplier=? ORDER BY r.id').all(supplier);
  const templates=supplierTemplates(supplier);
  const projection=costs.map(c=>({...c,estimated:vndLotEstimate(Number(c.lot_id)),approved_cost_id:approvedFulfillment(Number(c.lot_id),supplier,Number(c.fulfillment_epoch??0)).approved?.id??null}));
- if(actor.role==='ADMIN')return {currency:'VND',supplier,costs:projection,reviews,templates,import_rows:supplierImportView(supplier)};
+ const import_rows=supplierImportView(supplier);
+ const import_batches=supplierImportBatches(supplier,new Map(import_rows.filter(row=>!row.decision).map(row=>[row.id,row.errors])));
+ if(actor.role==='ADMIN')return {currency:'VND',supplier,costs:projection,reviews,templates,import_batches,import_rows};
  const entries=db.prepare('SELECT * FROM vnd_supplier_ledger WHERE supplier=? ORDER BY id').all(supplier) as Row[];
- return {currency:'VND',supplier,costs:projection,reviews,templates,import_rows:supplierImportView(supplier),...supplierClaimView(supplier),...supplierPeriodView(supplier),payable:sumVnd(entries.map(e=>String(e.delta))),entries};
+ return {currency:'VND',supplier,costs:projection,reviews,templates,import_batches,import_rows,...supplierClaimView(supplier),...supplierPeriodView(supplier),payable:sumVnd(entries.map(e=>String(e.delta))),entries};
 }
-export function vndSupplierAction(actor:AuthUser,input:Row){
+export function vndSupplierAction(actor:AuthUser,input:Row,workbook?:SupplierWorkbook){
  return db.transaction(()=>{
  access(actor);const action=String(input.action),key=required(input.request_key),reason=required(input.reason);
- const payload=JSON.stringify(Object.fromEntries(Object.entries(input).sort(([a],[b])=>a.localeCompare(b))));
+ const payload=JSON.stringify(Object.fromEntries(Object.entries(workbook?{...input,workbook_sha256:workbook.sha256,workbook_name:workbook.name}:input).sort(([a],[b])=>a.localeCompare(b))));
  const prior=db.prepare('SELECT * FROM vnd_commands WHERE request_key=?').get(key) as Row|undefined;
  if(prior){if(prior.actor_id!==actor.id||prior.payload!==payload)throw Error('request_key đã dùng.');return vndSupplierView(actor,input.supplier);}
  const supplier=canonicalEnumValue('SUPPLIER',input.supplier,'',{allowInactive:true});
@@ -51,7 +58,8 @@ export function vndSupplierAction(actor:AuthUser,input:Row){
   closeSupplierPeriod(actor,supplier,input,reason);
  }else if(action==='save_import_template'){
   saveSupplierTemplate(supplier,actor.id,input);
- }else if(action==='import'||action==='review_import'||action==='import_workbook'){
+ }else if(action==='import'||action==='review_import'||action==='import_workbook'||action==='stage_import_adjustments'){
+  if(workbook&&(action==='import'||action==='import_workbook'||action==='stage_import_adjustments'))storeSupplierWorkbook(actor,supplier,input,workbook);
   applySupplierImport(actor,supplier,input,reason);
  }else if(action.startsWith('claim_')){
   applySupplierClaim(actor,supplier,input,reason);

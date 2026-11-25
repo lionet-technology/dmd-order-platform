@@ -13,3 +13,7 @@ Nền đối chiếu là local HEAD, origin/main và GitHub main tại `9e103f9e
 ## Thay đổi kỹ thuật
 
 Manual Actual và Supplier Import kiểm tra lại tham chiếu trùng trong giao dịch duyệt, theo Supplier và đối sánh không phân biệt hoa thường như journal hiện có. Hàng đợi hiển thị lý do, khóa Accept cho dòng xung đột và vẫn cho Skip có audit. Mã dùng chung giữa các Lot của cùng chứng từ Actual tiếp tục theo phạm vi Lot hiện hành. Căn cứ nhận diện một dòng đi qua nhiều journal vẫn thuộc quyết định P0.
+
+## Supplier Reconciliation V2 · cập nhật triển khai
+
+[Feature 30](30-supplier-cancellation-followup.md#đối-chiếu-phí-void-trong-exception-queue) ghi cách áp dụng phí cố định hoặc hoàn 90%/100% cho hồ sơ void theo Route và lượt. Chính sách 90% dùng Actual đã duyệt và chụp tại thời điểm mở hồ sơ. Căn cứ phí thiếu đi vào rà soát. [Feature 40](40-vnd-post-shipping-import-reconciliation.md#supplier-reconciliation-v2--đợt-2) ghi batch và sửa Excel. Supplier Recovery Worklist và phân bổ recovery vào GP vẫn trong phần tiếp nối.

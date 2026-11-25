@@ -71,3 +71,9 @@ Hồ sơ void và xác nhận chỉ là dữ liệu đối soát nội bộ. Ghi
 ## Chứng từ Supplier cần đối soát lượt fulfillment
 
 Hàng đợi giữ chứng từ Supplier đến muộn, kể cả khi tuyến đã rời đi. Finance/BOD chỉ ghi Actual theo Lot và lượt xác định duy nhất. Hồ sơ void và sự kiện chuyển tuyến lưu bằng chứng, còn payable hiện có và snapshot kỳ khóa giữ nguyên. Xác nhận void tiếp tục đi qua quy trình đối soát/Claim nếu có giao dịch tiền.
+
+## Đối chiếu phí void trong Exception Queue
+
+Admin có thể cấu hình phí cố định hoặc mức hoàn 90%/100% theo Route. Hồ sơ void mới chụp phiên bản policy, ID lượt của từng Lot và Actual đã duyệt tại thời điểm mở. Hoàn 90% cho phép Supplier giữ tối đa 10% Actual đã chụp. Hoàn 100% đặt phí tối đa bằng 0. Khi thiếu căn cứ Actual cho 90% hoặc có nhiều hồ sơ cho cùng lượt, queue yêu cầu rà soát. Hồ sơ cũ chưa lưu ID lượt vẫn xuất hiện khi lọc theo yêu cầu hủy.
+
+Nếu xác định duy nhất lượt và mức phí tối đa, nghĩa vụ đề xuất vượt mức được gắn `Cancel Fee > Policy`. Finance/BOD tiếp tục duyệt bằng chứng và lý do theo luồng Supplier Actual. Mở hoặc cập nhật hồ sơ void chỉ ghi lịch sử.

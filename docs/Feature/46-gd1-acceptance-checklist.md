@@ -35,3 +35,7 @@ Audit chức năng VNĐ cho tài khoản mở mới, 20/11/2026, repo chính th�
 UI/UX có thể tiếp nối sau khi các ca sửa đạt kiểm thử kỹ thuật. Các quyết định P0 chi phối màn hình hạch toán hoặc chỉ tiêu tương ứng. UAT Admin/Sales/Client/Finance/BOD và pilot cần chứng từ thật, template đã duyệt, rate/zone/cap, điều kiện void theo tuyến, bằng chứng ngân hàng và đối chiếu trên kỳ thật. Triển khai và phục hồi ở DEV/TEST cần xác nhận riêng. Jenkins HTTP 403 là kết quả lần bàn giao trước, trạng thái deploy hiện chưa xác minh.
 
 [Kết quả chạy audit và dữ liệu TEST](../../artifacts/gd1-acceptance-2026-11-20/VERIFICATION.md)
+
+## Supplier Reconciliation V2 · đợt 2
+
+Kịch bản kiểm tra gồm tải lại đúng byte file gốc, truy vết dòng về batch, xem trước và lưu Excel chỉnh sửa, từ chối token cũ và ô công thức, Finance/BOD ghi delta sau xác nhận và khôi phục được workbook cùng revision từ SQLite TEST. [Phạm vi Feature 40](40-vnd-post-shipping-import-reconciliation.md#supplier-reconciliation-v2--đợt-2).

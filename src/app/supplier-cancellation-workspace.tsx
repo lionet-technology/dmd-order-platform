@@ -19,7 +19,9 @@ export function SupplierCancellationWorkspace({supplier:scopeSupplier}:{supplier
  }
  async function submitAdmin(e:FormEvent<HTMLFormElement>,action:string){
  e.preventDefault();setBusy(true);setError('');
- const form=e.currentTarget,body={action,...Object.fromEntries(new FormData(form))};
+ const form=e.currentTarget,fields=new FormData(form);
+ const percent=fields.get('void_refund_percent');
+ const body={action,...Object.fromEntries(fields),...(action==='configure_void'&&percent?{refund_percent:Number(percent)}:{})};
  const payload=JSON.stringify(body);if(receipt.current?.payload!==payload)receipt.current={payload,key:crypto.randomUUID()};
  try{const r=await fetch('/api/supplier-cancellations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,request_key:receipt.current.key})}),d=await r.json();if(!r.ok)throw Error(d.error);receipt.current=null;form.reset();await load();}
  catch(e){setError((e as Error).message);}finally{setBusy(false);}
@@ -31,7 +33,7 @@ export function SupplierCancellationWorkspace({supplier:scopeSupplier}:{supplier
  {!scopeSupplier&&<label className="field">Supplier<input value={supplier} onChange={e=>setSupplier(e.target.value)} placeholder="Lọc theo tên Supplier"/></label>}
  {role==='ADMIN'&&!scopeSupplier&&<details><summary>Mở void hoặc cấu hình phí</summary>
  <form onSubmit={e=>void submitAdmin(e,'open_void')}><label className="field">Order ID<input name="order_id" type="number" min="1" required/></label><label className="field">Route ID gốc<input name="route_id" type="number" min="1" required/></label><label className="field">Lý do void<textarea name="note" required maxLength={2000}/></label><button className="secondaryBtn" disabled={busy}>Mở yêu cầu void</button></form>
- <form onSubmit={e=>void submitAdmin(e,'configure_void')}><label className="field">Route ID<input name="route_id" type="number" min="1" required/></label><label className="field">Phiên bản hiện hành (0 khi tạo mới)<input name="expected_policy_id" type="number" min="0" defaultValue="0" required/></label><label className="field">Phí void VNĐ<input name="fee_vnd" inputMode="decimal" required/></label><label className="field">Chứng từ bắt buộc<textarea name="evidence_required" required maxLength={2000}/></label><button className="secondaryBtn" disabled={busy}>Lưu phiên bản phí</button></form>
+ <form onSubmit={e=>void submitAdmin(e,'configure_void')}><label className="field">Route ID<input name="route_id" type="number" min="1" required/></label><label className="field">Phiên bản hiện hành (0 khi tạo mới)<input name="expected_policy_id" type="number" min="0" defaultValue="0" required/></label><label className="field">Cách tính phí void<select name="void_refund_percent"><option value="">Phí cố định</option><option value="90">Hoàn 90% Actual đã duyệt</option><option value="100">Hoàn 100%</option></select></label><label className="field">Phí cố định VNĐ<input name="fee_vnd" inputMode="decimal" defaultValue="0" required/></label><label className="field">Chứng từ bắt buộc<textarea name="evidence_required" required maxLength={2000}/></label><button className="secondaryBtn" disabled={busy}>Lưu phiên bản phí</button></form>
  </details>}
  <label className="field">Incident ID<input value={incident} onChange={e=>setIncident(e.target.value)} inputMode="numeric"/></label>
  <label className="field">Trạng thái<select value={status} onChange={e=>setStatus(e.target.value)}><option value="">Chờ xử lý / Đang liên hệ</option><option value="PENDING">Chờ xử lý</option><option value="FOLLOWING_UP">Đang liên hệ</option><option value="RESOLVED">Đã xử lý theo dõi</option>{voidOptions}<option value="ALL">Tất cả</option></select></label>
@@ -40,7 +42,7 @@ export function SupplierCancellationWorkspace({supplier:scopeSupplier}:{supplier
  {items.map(item=><article key={item.id?'void:'+item.id:'cancel:'+item.order_id}><h4>{String(item.system_order_code||'Order #'+item.order_id)} · {item.supplier||'Chưa xác định Supplier'} · {item.status}</h4>
  <p>Order #{item.order_id} · Client Order {String(item.client_order_id||'—')} · {String(item.reason)}</p>
  {item.id&&<><p>Void #{item.id} · Route #{item.route_id} · {item.tracking_label.service} / {item.tracking_label.sub_service}{item.incident_id&&' · Incident #'+item.incident_id} · {String(item.created_at)} · Người mở #{String(item.actor_id)}</p>
- <p>Lot {item.tracking_label.lots?.map(l=>String(l.lot_number)).join(', ')||'—'} · {item.tracking_label.policy?'Phí theo phiên bản #'+String(item.tracking_label.policy.id)+': '+String(item.tracking_label.policy.fee_vnd)+' VNĐ · '+String(item.tracking_label.policy.evidence_required):'Chưa cấu hình phí void'}</p></>}
+ <p>Lot {item.tracking_label.lots?.map(l=>String(l.lot_number)).join(', ')||'—'} · {item.tracking_label.policy?'Phí theo phiên bản #'+String(item.tracking_label.policy.id)+': '+(item.tracking_label.policy.refund_percent?'Hoàn '+String(item.tracking_label.policy.refund_percent)+'%':String(item.tracking_label.policy.fee_vnd)+' VNĐ')+' · '+String(item.tracking_label.policy.evidence_required):'Chưa cấu hình phí void'}</p></>}
  <p>{item.tracking_label.legacy_tracking||'Chưa có Tracking'} · {label(item.tracking_label.legacy_label)}</p>
  {item.tracking_label.trackings.map(t=><p key={String(t.id)}>Tracking #{String(t.id)} · Lot {String(t.lot_number||'—')} · {String(t.tracking)} · {label(t.label_url)}</p>)}
  <details><summary>History</summary>{item.history.map(h=><p key={String(h.id)}>{String(h.created_at)} · {String(h.status)} · {String(h.note)}{Boolean(h.choice_json)&&<span> · Lựa chọn Admin (chưa ghi tiền): {choiceText(h.choice_json)}</span>} · Người ghi #{String(h.actor_id)}</p>)}</details>

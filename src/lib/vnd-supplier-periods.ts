@@ -16,7 +16,12 @@ export function installSupplierPeriodSchema(database:Database.Database){
 export function supplierPeriods(supplier:string){
  return db.prepare('SELECT * FROM vnd_supplier_periods WHERE supplier=? ORDER BY id DESC').all(supplier) as Row[];
 }
-export function supplierPeriodView(supplier:string){return {periods:supplierPeriods(supplier).map(p=>({...p,snapshot:JSON.parse(String(p.snapshot_json))})),late_adjustments:db.prepare('SELECT * FROM vnd_supplier_posting_links WHERE supplier=? ORDER BY id DESC').all(supplier)};}
+export function supplierPeriodView(supplier:string){return {periods:supplierPeriods(supplier).map(p=>{
+ const snapshot=JSON.parse(String(p.snapshot_json));
+ const startUtc=Date.parse(String(p.period_start)+'T00:00:00+07:00');
+ const payments=(snapshot.entries as Row[]).filter(entry=>entry.kind==='PAYMENT'&&Date.parse(String(entry.created_at).replace(' ','T')+'Z')>=startUtc);
+ return {...p,snapshot,paid_in_period:subtractVnd('0',sumVnd(payments.map(entry=>String(entry.delta))))};
+ }),late_adjustments:db.prepare('SELECT * FROM vnd_supplier_posting_links WHERE supplier=? ORDER BY id DESC').all(supplier)};}
 /** Called within the existing immediate Supplier command and receipt transaction. */
 export function closeSupplierPeriod(actor:AuthUser,supplier:string,input:Row,reason:string){
  if(!['FINANCE','BOD'].includes(actor.role))throw Error('Khóa kỳ cần Finance/BOD.');

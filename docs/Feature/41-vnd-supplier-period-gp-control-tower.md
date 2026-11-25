@@ -48,3 +48,7 @@ New verify-vnd-period-close and verify-vnd-exceptions suites; expanded commissio
 ## Lot trống sau sửa kiện
 
 Đối chiếu Actual sử dụng Lot có kiện và Lot có chi phí Supplier đã lưu. Slot Lot trống do đánh số hoặc bỏ kiện không tạo yêu cầu Actual. Những lượt có chứng từ của Lot tiếp tục tham gia đối chiếu theo quy tắc lịch sử ở trên.
+
+## Cảnh báo nghĩa vụ Supplier cấp Order
+
+Control Tower nội bộ hiển thị các Order có tổng Actual Supplier đã ghi cao hơn doanh thu có thể thu, kể cả sau khi dòng cuối cùng đã duyệt. Nghĩa vụ cộng delta của toàn bộ Lot, lượt fulfillment và Supplier của Order. Căn cứ doanh thu và cách xử lý Claim thiếu phân bổ xem [Feature 40](40-vnd-post-shipping-import-reconciliation.md#supplier-reconciliation-v2--đợt-2).

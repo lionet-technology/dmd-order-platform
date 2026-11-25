@@ -100,3 +100,7 @@ Template Supplier × Service/Sub-Service có phiên bản, preview trong queue, 
 ## Đối chiếu quyết định P0 · 21/11/2026
 
 [Memo quyết định và hiện trạng triển khai](47-gd1-p0-decision-memo.md) cập nhật ba P0, thuế Supplier và quyền ghi nhạy cảm.
+
+## Supplier Reconciliation V2 · phần tiếp nối
+
+[Feature 40](40-vnd-post-shipping-import-reconciliation.md#supplier-reconciliation-v2--đợt-2) ghi luồng batch và file gốc, chỉnh thành phần bằng Excel, duyệt từng dòng hoặc nhiều dòng, cảnh báo nghĩa vụ Order và đối chiếu phí void. Phạm vi tiếp theo gồm Emergency Hold cấp Sub-Service trong Orders, các thao tác Admin theo dòng và hàng loạt, và Supplier Recovery Worklist gom nhiều Client Refund Orders theo Claim với phân bổ GP/receivable.

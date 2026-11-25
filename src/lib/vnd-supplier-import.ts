@@ -1,16 +1,55 @@
 import {createHash} from 'node:crypto';
+import {vndSupplierExposure} from './vnd-supplier-exposure';
 import {db} from './db';
 import {approvedFulfillment,hasPostedSupplierReference,hasSupplierReferenceOutsideActual,lotFulfillments,resolveFulfillment} from './vnd-fulfillment';
 import {installSupplierTemplateSchema,mappedSupplierRows} from './vnd-supplier-templates';
 import {compareSupplierComponents, supplierTags, type FinalComponent, type QuotedComponent} from './vnd-supplier-components';
 import type {AuthUser} from './auth';
-import {vnd,compareVnd,addVnd,subtractVnd,sumVnd} from './vnd-money';
+import {vnd,compareVnd,addVnd,subtractVnd,sumVnd,multiplyVnd} from './vnd-money';
 type Row=Record<string,unknown>;
+export type SupplierWorkbook = {name:string; bytes:Buffer; sha256:string};
+
+export function storeSupplierWorkbook(actor:AuthUser,supplier:string,input:Row,file:SupplierWorkbook){
+ db.prepare(`INSERT INTO vnd_supplier_import_files(batch_key,supplier,file_name,workbook,sha256,document,template_id,actor_id)
+  VALUES (?,?,?,?,?,?,?,?)`).run(input.request_key,supplier,file.name,file.bytes,file.sha256,input.document??null,input.template_id??null,actor.id);
+}
+
+export function supplierImportBatches(supplier:string,pendingStates:Map<number,string[]>){
+ const files=db.prepare(`SELECT batch_key,file_name,sha256,document,template_id,actor_id,created_at,
+  date(datetime(created_at,'+7 hours')) posting_day FROM vnd_supplier_import_files WHERE supplier=? ORDER BY rowid DESC LIMIT 200`).all(supplier) as Row[];
+ const rows=db.prepare(`SELECT r.id,r.position,d.decision,
+  json_array_length(json_extract(r.data_json,'$.parse_errors')) parse_errors,
+  coalesce(json_array_length(json_extract(d.snapshot_json,'$.errors')),0) review_errors,
+  r.batch_key source_batch,l.delta,l.id ledger_id,date(datetime(l.created_at,'+7 hours')) posting_day,
+  p.id period_id
+  FROM vnd_supplier_import_rows r
+  LEFT JOIN vnd_supplier_import_decisions d ON d.row_id=r.id
+  LEFT JOIN vnd_supplier_ledger l ON l.cost_id=d.cost_id AND l.kind='ACTUAL' AND r.batch_key=@batch
+  LEFT JOIN vnd_supplier_periods p ON p.supplier=r.supplier AND date(datetime(l.created_at,'+7 hours')) BETWEEN p.period_start AND p.period_end
+  WHERE r.supplier=@supplier AND (r.batch_key=@batch OR EXISTS(SELECT 1 FROM vnd_supplier_import_revisions v WHERE v.row_id=r.id AND v.batch_key=@batch)) ORDER BY r.position`);
+ return files.map(file=>{
+  const lines=rows.all({batch:file.batch_key,supplier}) as Row[];
+  return {...file,lines,accepted:lines.filter(row=>row.decision==='accept').length,
+   skipped:lines.filter(row=>row.decision==='skip').length,pending:lines.filter(row=>row.decision===null).length,
+   errors:lines.filter(row=>Number(row.parse_errors)>0||Number(row.review_errors)>0||Boolean(pendingStates.get(Number(row.id))?.length)).length,
+   payable_delta:sumVnd(lines.map(row=>String(row.delta??'0')))};
+ });
+}
 export function installSupplierImportSchema(database:typeof db){
  database.exec(`CREATE TABLE IF NOT EXISTS vnd_supplier_import_rows(id INTEGER PRIMARY KEY,supplier TEXT NOT NULL,batch_key TEXT NOT NULL,position INTEGER NOT NULL,data_json TEXT NOT NULL,actor_id INTEGER NOT NULL REFERENCES users(id),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(batch_key,position));
+ CREATE TABLE IF NOT EXISTS vnd_supplier_import_files(
+  batch_key TEXT PRIMARY KEY,supplier TEXT NOT NULL,file_name TEXT NOT NULL,workbook BLOB NOT NULL,
+  sha256 TEXT NOT NULL,document TEXT,template_id INTEGER,actor_id INTEGER NOT NULL REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+ CREATE INDEX IF NOT EXISTS vnd_supplier_import_files_supplier ON vnd_supplier_import_files(supplier);
+ CREATE TABLE IF NOT EXISTS vnd_supplier_import_revisions(
+  id INTEGER PRIMARY KEY,row_id INTEGER NOT NULL REFERENCES vnd_supplier_import_rows(id),values_json TEXT NOT NULL,
+  batch_key TEXT NOT NULL REFERENCES vnd_supplier_import_files(batch_key), actor_id INTEGER NOT NULL REFERENCES users(id),
+  reason TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+ CREATE INDEX IF NOT EXISTS vnd_supplier_import_revisions_row ON vnd_supplier_import_revisions(row_id,id);
  CREATE TABLE IF NOT EXISTS vnd_supplier_import_decisions(id INTEGER PRIMARY KEY,row_id INTEGER NOT NULL UNIQUE REFERENCES vnd_supplier_import_rows(id),decision TEXT NOT NULL,lot_id INTEGER REFERENCES order_lots(id),cost_id INTEGER REFERENCES vnd_supplier_costs(id),snapshot_json TEXT NOT NULL,reason TEXT NOT NULL,actor_id INTEGER NOT NULL REFERENCES users(id),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);`);
  installSupplierTemplateSchema(database);
- for(const table of ['vnd_supplier_import_rows','vnd_supplier_import_decisions'])for(const op of ['UPDATE','DELETE'])database.exec(`CREATE TRIGGER IF NOT EXISTS immutable_${table}_${op} BEFORE ${op} ON ${table} BEGIN SELECT RAISE(ABORT,'Immutable supplier import'); END;`);
+ for(const table of ['vnd_supplier_import_rows','vnd_supplier_import_decisions','vnd_supplier_import_files','vnd_supplier_import_revisions'])for(const op of ['UPDATE','DELETE'])database.exec(`CREATE TRIGGER IF NOT EXISTS immutable_${table}_${op} BEFORE ${op} ON ${table} BEGIN SELECT RAISE(ABORT,'Immutable supplier import'); END;`);
 }
 function text(value:unknown,optional=false){const s=typeof value==='string'?value.trim():'';if((!optional&&!s)||s.length>2000)throw Error('Thiếu hoặc quá dài dữ liệu chứng từ.');return s;}
 function amount(value:unknown){if(typeof value!=='string')throw Error('Số tiền/cân cần chuỗi thập phân.');const n=vnd(value);if(compareVnd(n,'0')<0)throw Error('Số tiền/cân không được âm.');return n;}
@@ -25,7 +64,26 @@ function normalizeTracking(value:unknown){return String(value??'').trim().toUppe
 function matchesRoute(lot:Row|undefined,source:Row|undefined){
  return !source||(lot?.service===source.service&&lot?.sub_service===source.sub_service);
 }
-export function supplierImportState(row:Row){
+function supplierImportVoid(orderId:number,lotId:number,epoch:number,supplier:string){
+ const cases=db.prepare('SELECT id,snapshot_json FROM supplier_void_cases WHERE order_id=? AND supplier=? ORDER BY id DESC').all(orderId,supplier) as {id:number;snapshot_json:string}[];
+ const matched=cases.flatMap(row=>{
+  const snapshot=JSON.parse(row.snapshot_json);
+  const lot=(snapshot.lots as Row[]).find(lot=>lot.id===lotId&&lot.fulfillment_epoch===epoch);
+  return lot?[{id:row.id,lot,policy:snapshot.policy as Row|null}]:[];
+ });
+ const caseInfo=matched.length===1?matched[0]:undefined;
+ const policy=caseInfo?.policy;
+ let cap:string|null=null;
+ if(policy?.refund_percent===100)cap='0';
+ if(policy?.refund_percent===90&&typeof caseInfo?.lot.basis==='string')cap=multiplyVnd(caseInfo.lot.basis,'0.1');
+ if(policy?.refund_percent==null&&typeof policy?.fee_vnd==='string')cap=policy.fee_vnd;
+ const cancellation=Boolean(db.prepare('SELECT 1 FROM supplier_cancellations WHERE order_id=? AND supplier=?').get(orderId,supplier));
+ return {requested:cases.length>0||cancellation,case_id:caseInfo?.id??null,cap,needs_review:matched.length>1||matched.length===1&&cap===null};
+}
+
+type Revision={id:number;batch_key:string;values_json:string};
+export function supplierImportState(row:Row,proposal?:Record<string,string|null>){
+ const revision=db.prepare('SELECT id,batch_key,values_json FROM vnd_supplier_import_revisions WHERE row_id=? ORDER BY id DESC LIMIT 1').get(row.id) as Revision|undefined;
  const data=JSON.parse(String(row.data_json)) as Row;
  const source=data.source as Row|undefined;
  const parseErrors=(data.parse_errors??[]) as string[];
@@ -35,7 +93,10 @@ export function supplierImportState(row:Row){
  const actual=attempt?approvedFulfillment(attempt.lot_id,supplier,attempt.id):undefined;
  const lot=attempt?lotFulfillments(attempt.lot_id)?.lot:undefined,old=actual?.approved;
  const errors=[...parseErrors];
- const components=data.components as QuotedComponent[]|undefined;
+ const edits=proposal??(revision?JSON.parse(revision.values_json) as Record<string,string|null>:undefined);
+ const supplierComponents=data.components as QuotedComponent[]|undefined;
+ const components=supplierComponents?.map(component=>edits&&Object.hasOwn(edits,component.id)?{...component,amount:edits[component.id]}:component);
+ if(components)data.components=components;
  const priorDecision=old?db.prepare('SELECT snapshot_json FROM vnd_supplier_import_decisions WHERE cost_id=?').get(old.id) as {snapshot_json:string}|undefined:undefined;
  const previous=priorDecision?(JSON.parse(priorDecision.snapshot_json).comparison?.current as FinalComponent[]|undefined):undefined;
  const comparison=components?compareSupplierComponents(previous??[],components):null;
@@ -48,20 +109,26 @@ export function supplierImportState(row:Row){
  if(resolution?.requiresReview||actual?.uncertain)errors.push('FULFILLMENT_REVIEW_REQUIRED');
  else if(resolution&&!resolution.ids.length)errors.push('ORDER_NOT_MATCHED');
  if(resolution&&resolution.ids.length>1)errors.push('AMBIGUOUS_MATCH');
- let net:string|null=null,weight:string|null=null,revenue:string|null=null;
+ let voidPolicy:ReturnType<typeof supplierImportVoid>|null=null;
+ let net:string|null=null,weight:string|null=null,revenue:string|null=null,orderObligation:string|null=null;
  if(lot){
   net=estimate(lot);
   const cartons=db.prepare('SELECT weight,chargeable_weight FROM order_cartons WHERE order_lot_id=?').all(lot.id) as Row[];
   const weightField=components?'weight':'chargeable_weight';
   if(cartons.length&&cartons.every(c=>Number(c[weightField])>0))weight=sumVnd(cartons.map(c=>String(c[weightField])));
   if(comparison){
-   const entries=db.prepare("SELECT kind,delta FROM vnd_ledger WHERE order_id=? AND kind IN ('ORDER_CHARGE','ORDER_CORRECTION','ORDER_SURCHARGE')").all(lot.order_id) as {kind:string;delta:string}[];
-   if(entries.some(entry=>entry.kind==='ORDER_CHARGE'))revenue=subtractVnd('0',sumVnd(entries.map(entry=>entry.delta)));
+   const exposure=vndSupplierExposure(lot.order_id,subtractVnd(comparison.total,String(old?.amount??'0')));
+   revenue=exposure.revenue;
+   orderObligation=exposure.obligation;
   }
   const quoteRow=db.prepare('SELECT snapshot_json FROM vnd_auto_quotes WHERE order_id=?').get(lot.order_id) as Row|undefined;
   const quoteLot=quoteRow?JSON.parse(String(quoteRow.snapshot_json)).lots?.find((l:Row)=>l.lot_id===lot.id):null;
   const quotedWeight=quoteLot?.selected?.weight_kg??quoteLot?.weight_kg;
   if(!components&&Number(quotedWeight)>0)weight=String(quotedWeight);
+  voidPolicy=supplierImportVoid(lot.order_id,lot.id,attempt!.id,supplier);
+  const proposedTotal=comparison?.total??(data.kind==='SUPPLEMENT'&&old?addVnd(String(old.amount),String(data.amount)):String(data.amount));
+  if(voidPolicy.needs_review)errors.push('VOID_POLICY_REVIEW_REQUIRED');
+  if(voidPolicy.cap!==null&&compareVnd(proposedTotal,voidPolicy.cap)>0)errors.push('CANCEL_FEE_ABOVE_POLICY');
   if(!net)errors.push('MISSING_ESTIMATE');
   const proposed=comparison?.groups[0].current??(data.kind==='SUPPLEMENT'&&old?addVnd(String(old.amount),String(data.amount)):String(data.amount));
   if(net&&compareVnd(proposed,net)>0)errors.push('NET_ABOVE_ESTIMATE');
@@ -75,16 +142,60 @@ export function supplierImportState(row:Row){
  const duplicates=peers.filter(p=>{const d=JSON.parse(String(p.data_json));return (source ? !!data.tracking && normalizeTracking(d.tracking)===normalizeTracking(data.tracking) : identity(d)===identity(data))&&(data.kind==='TOTAL'||(d.kind===data.kind&&d.amount===data.amount&&d.reason===data.reason));});
  if(duplicates.some(p=>p.batch_key===row.batch_key))errors.push('DUPLICATE_IN_FILE');
  if(duplicates.some(p=>p.batch_key!==row.batch_key)&&!errors.includes('DUPLICATE_HISTORY'))errors.push('DUPLICATE_HISTORY');
+ if(components&&!errors.includes('DUPLICATE_HISTORY')){
+  const acceptedTracking=normalizeTracking(data.tracking);
+  const matchingHistory=acceptedTracking&&db.prepare(`SELECT 1 FROM vnd_supplier_import_decisions d
+   JOIN vnd_supplier_import_rows r ON r.id=d.row_id WHERE d.decision='accept' AND r.supplier=? AND r.id<>?
+   AND upper(replace(replace(replace(replace(replace(json_extract(r.data_json,'$.tracking'),'-',''),' ',''),char(9),''),char(10),''),char(13),''))=? LIMIT 1`)
+   .get(supplier,row.id,acceptedTracking);
+  if(matchingHistory||lot&&hasPostedSupplierReference(supplier,lot.id,data.reference))errors.push('DUPLICATE_HISTORY');
+ }
  if(hasSupplierReferenceOutsideActual(String(row.supplier),data.reference))errors.push('SUPPLIER_REFERENCE_IN_USE');
- const state={lot_id:lot?.id??null,order_code:lot?.order_code??null,fulfillment_epoch:attempt?.id??null,
-  fulfillment_candidates:resolution?.ids??[],estimated:net,dmd_weight:weight,approved_cost_id:Number(old?.id??0),approved_amount:old?.amount??null,comparison,revenue,revenue_below_obligation:revenue!==null&&comparison!==null&&compareVnd(revenue,comparison.total)<0,component_blocked:componentBlocked,tags:supplierTags(errors),errors};
- return {...row,data,...state,token:createHash('sha256').update(JSON.stringify(state)).digest('hex')};
+ const state={revision_id:revision?.id??null, revision_batch:revision?.batch_key??null,lot_id:lot?.id??null,order_code:lot?.order_code??null,fulfillment_epoch:attempt?.id??null,
+  fulfillment_candidates:resolution?.ids??[],estimated:net,dmd_weight:weight,approved_cost_id:Number(old?.id??0),approved_amount:old?.amount??null,comparison,void_policy:voidPolicy,revenue,order_obligation:orderObligation,revenue_below_obligation:revenue!==null&&orderObligation!==null&&compareVnd(revenue,orderObligation)<0,component_blocked:componentBlocked,tags:supplierTags(errors),errors};
+ return {...row,id:Number(row.id),batch_key:String(row.batch_key),data,supplier_components:supplierComponents,...state,token:createHash('sha256').update(JSON.stringify(state)).digest('hex')};
 }
 export function supplierImportView(supplier:string){
  const rows=db.prepare('SELECT * FROM vnd_supplier_import_rows WHERE supplier=? AND (NOT EXISTS(SELECT 1 FROM vnd_supplier_import_decisions d WHERE d.row_id=vnd_supplier_import_rows.id) OR id IN (SELECT row_id FROM vnd_supplier_import_decisions ORDER BY id DESC LIMIT 200)) ORDER BY id DESC').all(supplier) as Row[];
- return rows.map(row=>({...supplierImportState(row),decision:db.prepare('SELECT * FROM vnd_supplier_import_decisions WHERE row_id=?').get(row.id)??null}));
+ const findDecision=db.prepare('SELECT * FROM vnd_supplier_import_decisions WHERE row_id=?');
+ return rows.map(row=>{
+  const decision=findDecision.get(row.id) as {snapshot_json:string}|undefined;
+  return {...(decision?JSON.parse(decision.snapshot_json) as ReturnType<typeof supplierImportState>:supplierImportState(row)),decision:decision??null};
+ });
 }
+export function previewSupplierAdjustments(supplier:string,input:unknown){
+ if(!Array.isArray(input)||!input.length||input.length>200)throw Error('Chọn 1–200 dòng điều chỉnh.');
+ const lookup=db.prepare(`SELECT * FROM vnd_supplier_import_rows r WHERE supplier=? AND id=?
+  AND NOT EXISTS (SELECT 1 FROM vnd_supplier_import_decisions d WHERE d.row_id=r.id)`);
+ const seen=new Set<number>();
+ return input.map((item:Row)=>{
+  const id=Number(item.id);
+  if(!Number.isSafeInteger(id)||id<1||seen.has(id))throw Error('Mã dòng điều chỉnh không hợp lệ hoặc trùng.');
+  seen.add(id);
+  const row=lookup.get(supplier,id) as Row|undefined;
+  if(!row||item.batch!==row.batch_key)throw Error('Dòng đã xử lý hoặc sai batch gốc.');
+  const old=supplierImportState(row);
+  const components=old.data.components as QuotedComponent[]|undefined;
+  if(!components?.length||old.data.parse_errors instanceof Array&&old.data.parse_errors.length||item.token!==old.token)
+   throw Error('Dòng Excel lỗi hoặc đã thay đổi. Tải bản xuất mới để đối soát.');
+  if(item.tracking!==String(old.data.tracking??''))throw Error('Tracking không khớp dòng gốc.');
+  if(!item.values||typeof item.values!=='object'||Array.isArray(item.values))throw Error('Thiếu số tiền thành phần.');
+  const raw=item.values as Row;
+  const groups=item.groups as Row|undefined;
+  if(!groups||Object.keys(raw).length!==components.length||components.some(component=>!Object.hasOwn(raw,component.id)||groups[component.id]!==component.group))throw Error('Component ID không khớp template gốc.');
+  const values=Object.fromEntries(components.map(({id})=>[id,raw[id]===null?null:amount(raw[id])]));
+  const proposed=supplierImportState(row,values);
+  return {id,values,old:old.comparison,proposed:proposed.comparison,tags:proposed.tags,errors:proposed.errors};
+ });
+}
+
 export function applySupplierImport(actor:AuthUser,supplier:string,input:Row,reason:string){
+ if(input.action==='stage_import_adjustments'){
+  const changes=previewSupplierAdjustments(supplier,input.adjustments);
+  const append=db.prepare('INSERT INTO vnd_supplier_import_revisions(row_id,values_json,batch_key,actor_id,reason) VALUES (?,?,?,?,?)');
+  for(const {id,values} of changes)append.run(id,JSON.stringify(values),input.request_key,actor.id,reason);
+  return;
+ }
  if(input.action==='import_workbook'){
   const seen=new Set<string>();
   const insertRow=db.prepare('INSERT INTO vnd_supplier_import_rows(supplier,batch_key,position,data_json,actor_id) VALUES (?,?,?,?,?)');
@@ -118,19 +229,22 @@ export function applySupplierImport(actor:AuthUser,supplier:string,input:Row,rea
    if([!!tracking,!!order_code,lot_id!==null].filter(Boolean).length!==1|| (lot_id!==null&&(!Number.isSafeInteger(lot_id)||lot_id<1)))throw Error('Mỗi dòng cần một Tracking, Order ID hoặc Lot ID.');
    if(label_url&&!tracking)throw Error('Label cần Tracking trên chứng từ.');
    const data={kind,tracking,label_url,order_code,lot_id,amount:amount(raw.amount),supplier_weight:raw.supplier_weight?amount(raw.supplier_weight):null,reference:text(raw.reference),reason:text(raw.reason??reason)};
-   db.prepare('INSERT INTO vnd_supplier_import_rows(supplier,batch_key,position,data_json,actor_id) VALUES (?,?,?,?,?)').run(supplier,input.request_key,i+1,JSON.stringify(data),actor.id);
+   db.prepare('INSERT INTO vnd_supplier_import_rows(supplier,batch_key,position,data_json,actor_id) VALUES (?,?,?,?,?)').run(supplier,input.request_key, Array.isArray(input.excel_rows)?input.excel_rows[i]:i+1,JSON.stringify(data),actor.id);
   });return;
  }
  if(!Array.isArray(input.items)||!input.items.length||input.items.length>200)throw Error('Review 1–200 dòng.');
  if(!['accept','skip'].includes(String(input.decision)))throw Error('Chọn accept hoặc skip.');
  if(input.decision==='accept'&&!['FINANCE','BOD'].includes(actor.role))throw Error('Accept Actual cần Finance/BOD.');
  const seen=new Set<number>(),attempts=new Set<string>();
- for(const item of input.items as Row[]){
-  const id=Number(item.id);if(seen.has(id))throw Error('Trùng dòng review.');seen.add(id);
-  const row=db.prepare('SELECT * FROM vnd_supplier_import_rows WHERE id=? AND supplier=?').get(id,supplier) as Row|undefined;
-  if(!row||db.prepare('SELECT id FROM vnd_supplier_import_decisions WHERE row_id=?').get(id))throw Error('Dòng không tồn tại hoặc đã xử lý.');
+ const reviewed=(input.items as Row[]).map(item=>{
+  const row=db.prepare('SELECT * FROM vnd_supplier_import_rows WHERE id=? AND supplier=?').get(Number(item.id),supplier) as Row|undefined;
+  if(!row||db.prepare('SELECT id FROM vnd_supplier_import_decisions WHERE row_id=?').get(row.id))throw Error('Dòng không tồn tại hoặc đã xử lý.');
   const state=supplierImportState(row);
   if(item.token!==state.token)throw Error('Dữ liệu đối soát đã thay đổi; tải lại queue.');
+  return {item,state};
+ });
+ for(const {item,state} of reviewed){
+  const id=Number(item.id);if(seen.has(id))throw Error('Trùng dòng review.');seen.add(id);
   let costId:number|null=null,lotId:number|null=null;
   if(input.decision==='accept'){
    lotId=item.lot_id===undefined?Number(state.lot_id):Number(item.lot_id);

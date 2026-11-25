@@ -1,5 +1,6 @@
 import {installSalesAttributionSchema} from './sales-attribution-schema';
 import Database from "better-sqlite3";
+import {installSupplierCancellationSchema} from './supplier-cancellation-schema';
 import {installEmergencySchema} from "./emergency-schema";
 import {installRouteLifecycleSchema} from "./route-lifecycle";
 import fs from "node:fs";
@@ -814,3 +815,4 @@ import {installServiceV1Schema} from "./service-v1-schema";
 installServiceV1Schema(db);
 import {installVndOperationalSchema} from "./vnd-operational-schema";
 installVndOperationalSchema(db);
+installSupplierCancellationSchema(db);
