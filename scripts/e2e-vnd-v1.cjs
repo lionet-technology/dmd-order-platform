@@ -34,6 +34,51 @@ let server,browser,checks=0;const check=(v,m)=>{checks++;assert.ok(v,m)};
  const role=async r=>{await context.addCookies([{name:'dmd_session',value:fixture.tokens[r],url:base}]);await page.goto(base+'/vnd');await page.getByRole('heading',{name:'Dịch vụ · tài khoản VNĐ',exact:true}).waitFor();if(r!=='CLIENT')await page.getByLabel('Client ID',{exact:true}).fill(String(fixture.client.id));await page.getByRole('button',{name:'Tải tài khoản',exact:true}).click();await page.getByRole('heading',{name:'Sức mua',exact:true}).waitFor();};
  const tools=page.getByRole('region',{name:'Công cụ tài khoản VNĐ',exact:true});
  const action=()=>tools.getByRole('combobox',{name:'Thao tác',exact:true});
+ const detailOrder=fixture.claimOrder;
+ const ordersUrl=base+'/api/orders/';
+ const accountUrl=base+'/api/service-v1/operations?client_id='+fixture.client.id;
+ const detailResults=[];
+ for(const r of ['ADMIN','SALES','CLIENT']){
+  await context.addCookies([{name:'dmd_session',value:fixture.tokens[r],url:base}]);
+  const before=await (await context.request.get(accountUrl)).json();
+  const charge=before.ledger.find(e=>e.order_id===detailOrder.id&&e.kind==='ORDER_CHARGE');
+  check(typeof charge?.delta==='string'&&charge.delta.includes('.'),'fixture has exact fractional charge for '+r);
+  const own=await context.request.get(ordersUrl+detailOrder.id);
+  const order=await own.json();
+  check(own.ok()&&order.id===detailOrder.id&&order.vnd_entries.some(e=>e.delta===charge.delta),'authorized exact Order data for '+r);
+  check(order.vnd_entries.every(e=>Object.keys(e).sort().join(',')==='delta,id,kind'),'Order entries exclude journal metadata for '+r);
+  if(r!=='ADMIN'){
+   check(!('supplier' in order)&&!('est_net_cost' in order),'no Supplier or Net data for '+r);
+   const foreign=await context.request.get(ordersUrl+monthlyOrders[1]);
+   check(foreign.status()===403&&!('vnd_entries' in await foreign.json()),'foreign Order ID denied for '+r);
+  }
+  for(const width of [1440,390]){
+   await page.setViewportSize({width,height:width===390?844:1000});
+   await page.goto(base);
+   await page.getByRole('button',{name:'Orders',exact:true}).click();
+   const search=page.getByRole('textbox',{name:/Tìm Orders/});
+   await search.fill(detailOrder.order_id);
+   const orderRow=page.getByRole('row').filter({has:page.getByRole('cell',{name:detailOrder.order_id,exact:true})});
+   const response=page.waitForResponse(result=>result.url()===ordersUrl+detailOrder.id&&result.request().method()==='GET');
+   await orderRow.getByRole('button',{name:'View VNĐ',exact:true}).click();
+   check((await response).ok(),'View VNĐ requests the selected ID for '+r+' '+width);
+   const detail=page.locator('.orderDetail');
+   await detail.getByRole('heading',{name:order.system_order_code,exact:true}).waitFor();
+   await detail.getByRole('button',{name:'Tracking & Label',exact:true}).click();
+   await detail.getByText('TEST-UAT-CLAIM-TRACKING',{exact:true}).waitFor();
+   await detail.getByRole('button',{name:'Giao dịch VNĐ',exact:true}).click();
+   await detail.getByText(charge.delta+' VNĐ',{exact:true}).waitFor();
+   check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Order detail fits viewport for '+r+' '+width);
+   await page.screenshot({path:path.join(output,'order-detail-'+r.toLowerCase()+'-'+width+'.png')});
+   await page.getByRole('button',{name:'Quay lại danh sách',exact:true}).click();
+   check(await search.inputValue()===detailOrder.order_id&&await orderRow.isVisible()&&page.url()===base+'/','returns to filtered Orders for '+r+' '+width);
+   detailResults.push({role:r,width,order_id:detailOrder.id,charge:charge.delta,result:'PASS'});
+  }
+  const after=await (await context.request.get(accountUrl)).json();
+  check(after.balance===before.balance&&JSON.stringify(after.ledger)===JSON.stringify(before.ledger),'Order Detail read leaves exact Balance and Ledger unchanged for '+r);
+ }
+ await page.setViewportSize({width:1440,height:1000});
+ fs.writeFileSync(path.join(output,'order-detail-results.json'),JSON.stringify(detailResults,null,2));
  await role('ADMIN');
  const lotOrderId=fixture.lotOrder.id;
  const offerForm=page.locator('form').filter({has:page.getByRole('combobox').filter({has:page.locator('option[value=offer]')})});

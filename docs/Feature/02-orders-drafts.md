@@ -49,3 +49,10 @@ Chỉ với Route được phép nhiều Carton, màn Client hiển thị chọn
 
 ## Delta lượt tiếp tục 16/10/2026
 API cấp tracking từ chối Lot nhập khác Lot của Carton thay vì âm thầm ưu tiên carton. Khai báo Carton/Lot trước cấp tracking; transaction rollback khi xung đột. Regression HTTP cập nhật fixture hai Lot đúng cấu trúc.
+
+
+## View VNĐ từ Orders
+
+Admin, Sales và Client mở Chi tiết Order từ dòng đã chọn. Chi tiết tải theo Order ID. Nút Quay lại danh sách giữ từ khóa, bộ lọc và trang đang xem. Client chỉ xem Order của mình. Sales chỉ xem Order của Client đang được phân công. Giữ quyền truy cập tại API chi tiết, kể cả khi gọi trực tiếp bằng Order ID.
+
+Tổng quan hiển thị giá và trạng thái mua. Giao dịch VNĐ hiển thị các bút toán cước, điều chỉnh cước, phụ phí, thuế và hoàn do huỷ gắn với Order. Các số tiền hiển thị theo chuỗi thập phân từ hệ thống VNĐ. Số hoàn trên Order đã huỷ lấy từ bút toán hoàn đã ghi. [Kiểm chứng Chrome và HTTP](../../artifacts/gd1-operational-uat-2026-11-26/order-detail-fix/VERIFICATION.md).

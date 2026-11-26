@@ -1,0 +1,27 @@
+PASS SubService hold covers both Suppliers and leaves unrelated SubService available
+PASS Resume one selected Order from Emergency workspace
+PASS Resume two selected Orders from Emergency workspace in one action
+PASS Per-Order Emergency switch changes Supplier and records replacement
+PASS Operator changes route back B to A with a second replacement label
+PASS Two selected Orders create one Supplier Claim, pending approval
+PASS Unselected Refund remains available separately
+PASS Finance sees the grouped Claim pending
+PASS Finance approval posts exactly 90 VNĐ to Supplier receivable
+PASS Payable offset clears 20 VNĐ receivable
+PASS Bank clears a further 10 VNĐ without reapproving Recovery
+{
+  "status": "PASS",
+  "checks": [
+    "SubService hold covers both Suppliers and leaves unrelated SubService available",
+    "Resume one selected Order from Emergency workspace",
+    "Resume two selected Orders from Emergency workspace in one action",
+    "Per-Order Emergency switch changes Supplier and records replacement",
+    "Operator changes route back B to A with a second replacement label",
+    "Two selected Orders create one Supplier Claim, pending approval",
+    "Unselected Refund remains available separately",
+    "Finance sees the grouped Claim pending",
+    "Finance approval posts exactly 90 VNĐ to Supplier receivable",
+    "Payable offset clears 20 VNĐ receivable",
+    "Bank clears a further 10 VNĐ without reapproving Recovery"
+  ]
+}

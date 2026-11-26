@@ -9,7 +9,7 @@ Nền đối chiếu GitHub `main` trước đợt này là `ef3817972eb268d59ce
 | Admin, Finance, BOD · Reconciliation V2 | PASS. Chrome kiểm tra danh sách chín tag, so sánh thành phần, xuất và nhập lại Excel điều chỉnh, duyệt các dòng đủ điều kiện và giữ dòng chưa xử lý. | Nộp chứng từ gốc ít nhất hai kỳ, thử bản trùng Tracking và bản đổi mã. Đối chiếu file sửa với batch gốc. |
 | Admin · Emergency Hold | PASS hồi quy cho phạm vi SubService, chặn mua/retry, chuyển supplier, void và A → B → A. Chrome áp dụng Hold theo SubService, tiếp tục một và nhiều Order, đổi riêng một Order A → B kèm Tracking/Label. | DEFERRED với hồ sơ carrier thật. Kiểm tra hai lượt thay Tracking/Label, lịch sử fulfillment, hủy và tiếp tục theo chính sách. |
 | Admin, Finance, BOD · Recovery | PASS hồi quy cho gom Order, duyệt, phân bổ, sửa duyệt, Bank và Payable Offset từng phần. Chrome xác nhận hồ sơ thiếu căn cứ và thao tác gom hai Order cùng Supplier thành một Claim chờ duyệt. | DEFERRED với hồ sơ thật. Gom cùng Supplier, thử chọn khác Supplier, kiểm tra Claim lịch sử thiếu phân bổ và đối chiếu chứng từ Bank/Offset. |
-| Admin, Sales, Client · Orders, Status, Refund | PASS trong phạm vi Chrome và HTTP của bộ TEST, gồm màn hình Orders theo vai trò, Claim/Refund và quyền truy cập dựa trên tài khoản. | DEFERRED nghiệm thu xuyên luồng theo hồ sơ pilot và trên điện thoại thật. |
+| Admin, Sales, Client · Orders, Status, Refund | PASS trên Chrome desktop và viewport mobile 390 px. View VNĐ mở đúng Order và Quay lại danh sách giữ ngữ cảnh lọc. HTTP xác nhận Client chỉ xem Order của mình và Sales chỉ xem Order của Client được phân công. Claim/Refund và quyền truy cập đã qua kiểm tra TEST. | DEFERRED nghiệm thu xuyên luồng theo hồ sơ pilot và trên điện thoại thật. |
 | Balance Ledger và Control Tower · các vai trò được cấp quyền | PASS trong phạm vi TEST, gồm sổ VNĐ, phân quyền, kỳ gốc/kỳ ghi sổ và Control Tower trên dữ liệu USD/VNĐ. Đã sửa BUG làm Control Tower USD lỗi toàn màn hình. | Đối chiếu kỳ đã khóa, bộ lọc, trạng thái rỗng và điều hướng từ ngoại lệ trên thiết bị thật. |
 
 ## Rà soát dữ liệu TEST
@@ -28,4 +28,11 @@ Supplier Import kiểm tra trùng trong file và lịch sử. Khi Supplier đặ
 
 ## Operational dry run · 26/11/2026
 
-[Ma trận nghiệm thu, tài khoản TEST, bước tái hiện và ảnh](../../artifacts/gd1-operational-uat-2026-11-26/ACCEPTANCE-MATRIX.md). Trên Chrome desktop, nút View VNĐ của Admin, Sales và Client mở sổ chung và làm mất ngữ cảnh Order. Giữ lỗi điều hướng trong danh sách UX. Kết quả kiểm thử áp dụng cho bản build localhost với SQLite giả lập. Pilot chứng từ thật, điều hướng trên thiết bị thật và SHA/health DEV/TEST đang triển khai tiếp tục mở.
+[Ma trận nghiệm thu, tài khoản TEST, bước tái hiện và ảnh](../../artifacts/gd1-operational-uat-2026-11-26/ACCEPTANCE-MATRIX.md). P1 View VNĐ đã sửa và xác minh trên bản build localhost với SQLite giả lập. Approved Decisions giữ chính xác phần lẻ VNĐ. Order CSV `TEST-DRY-CSV-01` ghi một charge `-2505090.7757568` VNĐ, khớp chênh lệch Balance. [Kết quả retest](../../artifacts/gd1-operational-uat-2026-11-26/order-detail-fix/VERIFICATION.md).
+
+## Còn mở khi ký pilot
+
+- OPEN — Nghiệm thu điều hướng trên điện thoại thật và chạy một hồ sơ thực tế xuyên suốt từ mở tài khoản đến chốt kỳ.
+- OPEN — Đối chiếu chứng từ Supplier thật và xác nhận mapping, định danh chứng từ theo Supplier, cấu hình void thực tế theo tuyến.
+- OPEN — Claim lịch sử thiếu phân bổ và chứng từ trùng dưới mã khác. Finance đối chiếu chứng từ gốc và giữ khoản chưa xác định ngoài GP theo Order.
+- OPEN — SHA và health DEV/TEST đang triển khai chưa được xác minh.

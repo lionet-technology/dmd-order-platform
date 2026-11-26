@@ -4,7 +4,7 @@ import { trackingSheetScope } from "@/lib/tracking-sheet-scope";
 
 import {instant} from "@/lib/sla";
 import { PricingPreview,type Preview } from "./pricing-preview";
-import { useCallback,useEffect,useState } from "react";
+import { Fragment,useCallback,useEffect,useState } from "react";
 import { TRACKING_REPLACEMENT_REASONS } from "@/lib/order-rules";
 
 type Role="ADMIN"|"SALES"|"CLIENT"|"WAREHOUSE";
@@ -112,7 +112,11 @@ export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderI
   if(!data)return <div className="loadingState">Đang tải chi tiết Order…</div>;
   const trackings=Array.isArray(data.trackings)?data.trackings as GenericRow[]:[];
   const cancelled=data.workflow_status==="CANCELLED";
-  const policy=(data.cancellation||{}) as {allowed?:boolean;reason?:string;refund_percent?:number;refund_amount?:number;support_refund_amount?:number;currency?:string;vnd_cancellation?:{refund:string;support:string}};
+  const pricing=data.pricing as (Preview&{purchase_state?:string})|null;
+  const isVnd=pricing?.currency==="VND";
+  const vndEntries=data.vnd_entries as {id:number;kind:string;delta:string}[]|null;
+  const vndEntryLabels:Record<string,string>={ORDER_CHARGE:"Charge cước",ORDER_CORRECTION:"Điều chỉnh cước",ORDER_SURCHARGE:"Phụ phí",ORDER_TAX:"Thuế",CANCELLATION_REFUND:"Hoàn do huỷ đơn"};
+  const policy=(data.cancellation||{}) as {allowed?:boolean;reason?:string;refund_percent?:number;refund_amount?:number;support_refund_amount?:number;vnd_cancellation?:{refund:string;support:string}};
   async function submitCancellation(){
     setCancelBusy(true);setCancelError("");
     try{
@@ -134,17 +138,20 @@ export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderI
     </div>
     <div className="detailActions">
       <button className="secondaryBtn" disabled={!active.length} onClick={()=>void copyAll()}>Copy tất cả Tracking</button>
-      {!cancelled&&role==="ADMIN"&&onPurchase&&<button className="secondaryBtn" onClick={()=>onPurchase(data)}>Tracking & Label</button>}
-      {!cancelled&&role!=="CLIENT"&&<button className="primaryBtn" onClick={()=>onEdit(data)}>Sửa Order</button>}
+      {!cancelled&&!isVnd&&role==="ADMIN"&&onPurchase&&<button className="secondaryBtn" onClick={()=>onPurchase(data)}>Tracking & Label</button>}
+      {!cancelled&&!isVnd&&role!=="CLIENT"&&<button className="primaryBtn" onClick={()=>onEdit(data)}>Sửa Order</button>}
       {!cancelled&&<span className="cancelBtnWrap" title={!policy.allowed?policy.reason:""}><button className="secondaryBtn cancelOrderBtn" disabled={!policy.allowed||cancelBusy} aria-disabled={!policy.allowed||cancelBusy} onClick={()=>{setCancelOpen(true);setRefundSupport(false);setCancelError("")}}>Huỷ đơn</button></span>}
     </div>
-    {cancelled&&<div className="cancellationSummary"><b>Đã huỷ · Hoàn {String(data.cancellation_refund_percent||0)}%: {money(data.cancellation_refund_amount)}</b><p>{"Hoàn theo chính sách đã áp dụng; số tiền đã hoàn trước đó được khấu trừ."}</p></div>}
-    {cancelOpen&&<section className="cancellationConfirm"><h3>Xác nhận huỷ đơn</h3>{role==="ADMIN"&&Number(policy.refund_percent)<100&&<label><input type="checkbox" checked={refundSupport} onChange={e=>setRefundSupport(e.target.checked)}/>Admin hỗ trợ hoàn 100% (thay mức policy {policy.refund_percent}%)</label>}<p>Hoàn {refundSupport&&role==="ADMIN"?100:policy.refund_percent}% vào Balance: <b>{policy.currency==='VND'?(refundSupport&&role==='ADMIN'?policy.vnd_cancellation?.support:policy.vnd_cancellation?.refund)+' VNĐ':money(refundSupport&&role==="ADMIN"?policy.support_refund_amount:policy.refund_amount)}</b>. Đơn sẽ ngừng xử lý trên hệ thống.</p><p>{"Đủ điều kiện policy sẽ tự động huỷ và hoàn. Chưa charge chỉ giải phóng reserve."}</p>{cancelError&&<p role="alert">{cancelError}</p>}<div className="detailActions"><button className="secondaryBtn" disabled={cancelBusy} onClick={()=>setCancelOpen(false)}>Đóng</button><button className="primaryBtn" disabled={cancelBusy} onClick={()=>void submitCancellation()}>{cancelBusy?"Đang huỷ…":"Xác nhận huỷ đơn"}</button></div></section>}
-    <div className="detailTabs">
-      {[["overview","Tổng quan"],["cartons","Carton & SKU"],["tracking","Tracking & Label"],["finance","Giá & Đối soát"],["history","Lịch sử"]].filter(item=>role==="ADMIN"||item[0]!=="finance").map(item=><button key={item[0]} className={tab===item[0]?"active":""} onClick={()=>setTab(item[0])}>{item[1]}</button>)}
+    {cancelled&&<div className="cancellationSummary"><b>Đã huỷ · Hoàn {String(data.cancellation_refund_percent||0)}%: {isVnd?String(data.vnd_cancellation_refund)+" VNĐ":money(data.cancellation_refund_amount)}</b><p>{"Hoàn theo chính sách đã áp dụng; số tiền đã hoàn trước đó được khấu trừ."}</p></div>}
+    {cancelOpen&&<section className="cancellationConfirm"><h3>Xác nhận huỷ đơn</h3>{role==="ADMIN"&&Number(policy.refund_percent)<100&&<label><input type="checkbox" checked={refundSupport} onChange={e=>setRefundSupport(e.target.checked)}/>Admin hỗ trợ hoàn 100% (thay mức policy {policy.refund_percent}%)</label>}<p>Hoàn {refundSupport&&role==="ADMIN"?100:policy.refund_percent}% vào Balance: <b>{isVnd?((refundSupport&&role==='ADMIN'?policy.vnd_cancellation?.support:policy.vnd_cancellation?.refund)??"0")+' VNĐ':money(refundSupport&&role==="ADMIN"?policy.support_refund_amount:policy.refund_amount)}</b>. Đơn sẽ ngừng xử lý trên hệ thống.</p><p>{"Đủ điều kiện policy sẽ tự động huỷ và hoàn. Chưa charge chỉ giải phóng reserve."}</p>{cancelError&&<p role="alert">{cancelError}</p>}<div className="detailActions"><button className="secondaryBtn" disabled={cancelBusy} onClick={()=>setCancelOpen(false)}>Đóng</button><button className="primaryBtn" disabled={cancelBusy} onClick={()=>void submitCancellation()}>{cancelBusy?"Đang huỷ…":"Xác nhận huỷ đơn"}</button></div></section>}
+    <div className={isVnd?"detailTabs vndOrderDetailTabs":"detailTabs"}>
+      {[["overview","Tổng quan"],["cartons","Carton & SKU"],["tracking","Tracking & Label"],["finance","Giá & Đối soát"],["history","Lịch sử"]].filter(item=>isVnd||role==="ADMIN"||item[0]!=="finance").map(item=><button key={item[0]} className={tab===item[0]?"active":""} onClick={()=>setTab(item[0])}>{isVnd&&item[0]==="finance"?"Giao dịch VNĐ":item[1]}</button>)}
     </div>
     {tab==="overview"&&<div className="detailBody">
-      {Boolean(data.pricing)&&<PricingPreview pricing={data.pricing as Preview}/>}
+      {isVnd?<section className="pricingPreview" aria-label="Giá Order VNĐ">
+        <p>Giá Order: {pricing.total_charge===null?"Chờ báo giá":String(pricing.total_charge)+" VNĐ"}</p>
+        <p>Trạng thái mua: {pricing.purchase_state}</p>
+      </section>:pricing&&<PricingPreview pricing={pricing}/>}
       <section className="detailGrid">
         <article className="detailCard"><h3>Người nhận</h3><b>{String(data.recipient_name||"—")}</b><p>{String(data.address1||"")}{data.address2?<><br/>{String(data.address2)}</>:null}</p><p>{[data.city,data.state,data.zip].filter(Boolean).join(", ")}</p><p>{String(data.country||"")} · {String(data.phone||"")}</p>{data.recipient_email?<p>{String(data.recipient_email)}</p>:null}</article>
         <article className="detailCard"><h3>Hàng hóa</h3><dl><dt>Sản phẩm</dt><dd>{String(data.item||"—")}</dd><dt>Chất liệu</dt><dd>{String(data.material||"—")}</dd><dt>Số lượng Carton</dt><dd>{String(data.carton_count||0)}</dd><dt>Khối lượng</dt><dd>{String(data.weight||0)} kg</dd><dt>Kích thước</dt><dd>{data.length&&data.width&&data.height?String(data.length)+" × "+String(data.width)+" × "+String(data.height)+" cm":"Nhập thể tích tổng"}</dd><dt>Thể tích</dt><dd>{Number(data.volume||0).toLocaleString("en-US")} cm³</dd><dt>Hạng cân</dt><dd><b>{String(data.chargeable_weight||0)} kg</b></dd></dl></article>
@@ -165,7 +172,13 @@ export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderI
         {row.label_url?<a href={String(row.label_url)} target="_blank" rel="noreferrer">{cancelled?"Label lưu trữ · không sử dụng ↗":"Xem/Tải Label ↗"}</a>:<em>Thiếu Label</em>}
       </article>)}</div>
     </div>}
-    {tab==="finance"&&role==="ADMIN"&&<div className="detailBody"><section className="financeCards">
+    {tab==="finance"&&isVnd&&<div className="detailBody">
+      <section className="detailCard" aria-label="Bút toán theo Order">
+        <h3>Bút toán theo Order</h3>
+        {vndEntries?.length?<dl>{vndEntries.map(entry=><Fragment key={entry.id}><dt>{vndEntryLabels[entry.kind]}</dt><dd>{entry.delta} VNĐ</dd></Fragment>)}</dl>:<p>Chưa có bút toán theo Order.</p>}
+      </section>
+    </div>}
+    {tab==="finance"&&!isVnd&&role==="ADMIN"&&<div className="detailBody"><section className="financeCards">
       {[["Discount",String(data.discount||0)+"%"],["Giá bán",data.sales_price],["Phụ phí PS",data.extra_surcharge],["Thuế NK PS",data.extra_import_tax],["Giá tổng",data.total_due]].map(([label,value])=><article key={String(label)}><span>{String(label)}</span><b>{String(label)==="Discount"?String(value):money(value)}</b></article>)}
     </section><div className="reconcileStrip"><span>Đối soát</span><b>{String(data.reconciliation_status||"PENDING")}</b><span>Chi phí có thể về sau và không chặn hoàn tất Order.</span></div></div>}
     {tab==="history"&&<div className="detailBody">

@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { listOrderTrackings,publicOrderTracking } from "@/lib/order-operations";
 import { publicNoteText,sanitizePrivateNoteForSales } from "@/lib/order-audit";
 import {orderTimeline} from "@/lib/order-timeline";
+import { sumVnd } from "@/lib/vnd-money";
 import { cancellationPolicy } from "@/lib/order-cancellation";
 
 export const runtime="nodejs";
@@ -14,6 +15,7 @@ export const runtime="nodejs";
 async function handleGET(req:NextRequest,{params}:{params:Promise<{id:string}>}){
   const auth=requireUser(req);if(auth.error)return auth.error;
   const id=Number((await params).id);
+  if(!Number.isSafeInteger(id)||id<=0)return NextResponse.json({error:"Order không tồn tại."},{status:404});
   const found=db.prepare("SELECT id,client_user_id FROM orders WHERE id=?").get(id) as {id:number;client_user_id:number|null}|undefined;
   if(!found)return NextResponse.json({error:"Order không tồn tại."},{status:404});
   if(auth.user.role!=="ADMIN"){
@@ -24,7 +26,15 @@ async function handleGET(req:NextRequest,{params}:{params:Promise<{id:string}>})
   const order=refreshDraft(id);
   const trackings=listOrderTrackings(id,auth.user.role==="ADMIN"||order.workflow_status==="CANCELLED");
   const events=orderTimeline(id,auth.user.role);
-  const payload={...order,pricing:safePricing(order,auth.user.role),cancellation:cancellationPolicy(order as Record<string,unknown>&{id:number}),trackings:auth.user.role==="ADMIN"?trackings:trackings.filter(row=>row.status==="ACTIVE"||(order.workflow_status==="CANCELLED"&&row.status==="CANCELLED")).map(publicOrderTracking),events};
+  const pricing=safePricing(order,auth.user.role);
+  const vndEntries=pricing?.currency==="VND"?db.prepare(`
+    SELECT id,kind,delta FROM vnd_ledger
+    WHERE order_id=? AND client_id=?
+      AND kind IN ('ORDER_CHARGE','ORDER_CORRECTION','ORDER_SURCHARGE','ORDER_TAX','CANCELLATION_REFUND')
+    ORDER BY id
+  `).all(id,found.client_user_id) as {id:number;kind:string;delta:string}[]:null;
+  const vndRefund=vndEntries===null?null:sumVnd(vndEntries.filter(e=>e.kind==="CANCELLATION_REFUND").map(e=>e.delta));
+  const payload={...order,pricing,vnd_entries:vndEntries,vnd_cancellation_refund:vndRefund,cancellation:cancellationPolicy(order as Record<string,unknown>&{id:number}),trackings:auth.user.role==="ADMIN"?trackings:trackings.filter(row=>row.status==="ACTIVE"||(order.workflow_status==="CANCELLED"&&row.status==="CANCELLED")).map(publicOrderTracking),events};
   if(auth.user.role==="ADMIN")return NextResponse.json(payload);
   const safe:Record<string,unknown>=stripPricingInternals({...payload});
   if(auth.user.role==="CLIENT"||auth.user.role==="SALES")safe.workflow_status=clientVisibleWorkflowStatus(id);
