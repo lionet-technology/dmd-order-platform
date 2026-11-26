@@ -193,7 +193,7 @@ export function OrderDetailPanel({orderId,role,onEdit,onPurchase,onDone}:{orderI
 type QueueRow={
   order_pk:number;system_order_code:string;client_order_id:string;customer:string;recipient_name:string;
   service:string;sub_service:string;carton_count:number;carton_slot:number;carton_id:number|null;supplier:string;
-  expected_lot_count:number;manual_total_price:number|null;tracking_id:number|null;tracking:string;label_url:string;
+  expected_lot_count:number;manual_total_price:number|null;is_vnd:boolean;vnd_offer:string|null;tracking_id:number|null;tracking:string;label_url:string;
   purchase_status:string;purchase_issue:string;purchase_error_type?:string;manifest_status:string;manifest_issue:string;
 };
 
@@ -411,11 +411,11 @@ export function BulkTrackingSheet({enums,onDone,onExitState}:{enums:EnumRow[];on
           <td>{row.carton_slot}/{row.carton_count}</td>
           <td>{row.service}</td>
           {rowIndex===0&&<>
-            <td rowSpan={group.length} className="orderLevelField"><label><span>Áp dụng toàn Order</span><select disabled={mode==="MANIFEST"||view==="ISSUES"} value={row.sub_service} onChange={e=>updateOrder(row.order_pk,"sub_service",e.target.value)}><option value="">Không có</option>{subsFor(row.service).map(item=><option key={item.id}>{item.value}</option>)}</select></label></td>
-            <td rowSpan={group.length} className="orderLevelField"><label><span>Áp dụng toàn Order</span><select disabled={mode==="MANIFEST"||view==="ISSUES"} value={row.supplier} onChange={e=>updateOrder(row.order_pk,"supplier",e.target.value)}><option value="">Chọn Supplier</option>{suppliers.map(item=><option key={item.id}>{item.value}</option>)}</select></label></td>
+            <td rowSpan={group.length} className="orderLevelField"><label><span>Áp dụng toàn Order</span><select disabled={mode==="MANIFEST"||view==="ISSUES"||row.is_vnd} value={row.sub_service} onChange={e=>updateOrder(row.order_pk,"sub_service",e.target.value)}><option value="">Không có</option>{subsFor(row.service).map(item=><option key={item.id}>{item.value}</option>)}</select></label></td>
+            <td rowSpan={group.length} className="orderLevelField"><label><span>Áp dụng toàn Order</span><select disabled={mode==="MANIFEST"||view==="ISSUES"||row.is_vnd} value={row.supplier} onChange={e=>updateOrder(row.order_pk,"supplier",e.target.value)}><option value="">Chọn Supplier</option>{suppliers.map(item=><option key={item.id}>{item.value}</option>)}</select></label></td>
             <td rowSpan={group.length} className="orderLevelField"><label><span>Áp dụng toàn Order</span><input disabled={mode==="MANIFEST"||view==="ISSUES"} type="number" min="1" value={row.expected_lot_count} onChange={e=>updateOrder(row.order_pk,"expected_lot_count",e.target.value)}/></label></td>
           </>}
-          {rowIndex===0&&<td rowSpan={group.length} className="orderLevelField">{/^(UPS|Chuyên tuyến)$/i.test(row.service)?<label><span>{row.manual_total_price===null?'Chưa chốt giá · cần bổ sung trước Statement':'Giá toàn Order đã chốt'}</span><input type="number" min="0.01" step="0.01" disabled={mode==='MANIFEST'||view==='ISSUES'||row.manual_total_price!==null&&Boolean(row.tracking_id)} value={row.manual_total_price??''} onChange={e=>updateOrder(row.order_pk,'manual_total_price',e.target.value)} placeholder="USD"/></label>:<span>Giá tự động</span>}</td>}
+          {rowIndex===0&&<td rowSpan={group.length} className="orderLevelField">{row.is_vnd?<span>{row.vnd_offer===null?"Chưa có báo giá VNĐ":row.vnd_offer+" VNĐ"}</span>:/^(UPS|Chuyên tuyến)$/i.test(row.service)?<label><span>{row.manual_total_price===null?'Chưa chốt giá · cần bổ sung trước Statement':'Giá toàn Order đã chốt'}</span><input type="number" min="0.01" step="0.01" disabled={mode==='MANIFEST'||view==='ISSUES'||row.manual_total_price!==null&&Boolean(row.tracking_id)} value={row.manual_total_price??''} onChange={e=>updateOrder(row.order_pk,'manual_total_price',e.target.value)} placeholder="USD"/></label>:<span>Giá tự động</span>}</td>}
           <td><input value={row.tracking} disabled={mode==='MANIFEST'||view==='ISSUES'||Boolean(row.tracking_id)} onPaste={e=>pasteTracking(e,index)} onChange={e=>update(index,"tracking",e.target.value)}/></td>
           <td><input value={row.label_url} disabled={mode==='MANIFEST'||view==='ISSUES'} onChange={e=>update(index,"label_url",e.target.value)}/></td>
         </tr>;

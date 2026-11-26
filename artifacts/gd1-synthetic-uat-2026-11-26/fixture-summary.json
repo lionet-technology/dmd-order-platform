@@ -1,0 +1,16 @@
+{
+  "orders": 570,
+  "bulk": {
+    "ready": 85,
+    "invalid": 5,
+    "insufficientFunds": 5,
+    "held": 5
+  },
+  "supplierRows": 500,
+  "unmatchedSupplierRows": 30,
+  "supplierBatches": 3,
+  "claim": 1,
+  "recovery": 1,
+  "gpNet": "94500.34",
+  "elapsedMs": 20292
+}

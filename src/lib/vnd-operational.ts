@@ -86,6 +86,22 @@ export function resumeVndPurchases(clientId:number,actorId:number){
  // Immediate outer transaction serializes independent writers; request id is the stable FIFO tie-break.
  for(const r of db.prepare("SELECT * FROM vnd_purchase_requests WHERE client_id=? AND status NOT IN ('CHARGED','CANCELLED') ORDER BY id").all(clientId) as Row[])process(r,actorId);
 }
+/** Readiness for the bulk queue. The write path still refreshes the quote before issuing. */
+export function vndIssuanceBlocker(orderId:number, request = vndRequest(orderId)){
+ if(emergencyOrderSuspended(orderId))return 'Order đang tạm dừng xử lý.';
+ if(!request)return 'Client chưa gửi yêu cầu mua VNĐ.';
+ if(request.status==='CHARGED')return null;
+ if((db.prepare('SELECT pricing_error FROM vnd_auto_quotes WHERE order_id=?').get(orderId) as Row|undefined)?.pricing_error)
+  return 'Giá tự động chưa hợp lệ; Admin cần xử lý.';
+ try{eligible(order(orderId));}catch(error){
+  if(error instanceof VndEligibilityError)return error.message;
+  throw error;
+ }
+ if(request.status==='AWAITING_FUNDS')return 'Thiếu sức mua VNĐ; kiểm tra Balance và hạn mức của Client.';
+ if(request.status==='AWAITING_QUOTE')return 'Chờ Admin hoặc Sales báo giá VNĐ.';
+ if(request.status!=='RESERVED'||request.accepted_revision!==request.revision)return 'Chờ Client xác nhận giá VNĐ.';
+ return null;
+}
 export function assertVndIssuance(orderId:number){
  let r=vndRequest(orderId);if(!r)return false;
  if(emergencyOrderSuspended(orderId))throw Error('Order đang tạm dừng xử lý.');

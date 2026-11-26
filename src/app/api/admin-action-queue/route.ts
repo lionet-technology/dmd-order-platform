@@ -13,6 +13,7 @@ export async function GET(req:NextRequest){
     (SELECT COUNT(*) FROM order_trackings t WHERE t.order_id=o.id AND t.status='ACTIVE' AND trim(coalesce(t.label_url,''))<>'') labels
     FROM orders o WHERE o.service_purchased_at IS NOT NULL AND lower(trim(o.service)) IN ('ups','chuyên tuyến')
     AND o.workflow_status<>'CANCELLED'
+    AND NOT EXISTS (SELECT 1 FROM vnd_accounts a WHERE a.client_id=o.client_user_id)
     AND (coalesce(o.pricing_snapshot_json,'')='' OR json_valid(o.pricing_snapshot_json)=0 OR o.total_due<=0)
     ORDER BY CASE WHEN date(o.service_purchased_at,'+7 hours')<date('now','+7 hours') THEN 0 ELSE 1 END, o.service_purchased_at,o.id LIMIT 100`).all() as Record<string,unknown>[];
   const partial=db.prepare(`SELECT o.id,o.order_id,o.system_order_code,o.service,o.carton_count,

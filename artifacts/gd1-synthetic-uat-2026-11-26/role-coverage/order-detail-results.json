@@ -1,0 +1,44 @@
+[
+  {
+    "role": "ADMIN",
+    "width": 1440,
+    "order_id": 52,
+    "charge": "-9847603.269504",
+    "result": "PASS"
+  },
+  {
+    "role": "ADMIN",
+    "width": 390,
+    "order_id": 52,
+    "charge": "-9847603.269504",
+    "result": "PASS"
+  },
+  {
+    "role": "SALES",
+    "width": 1440,
+    "order_id": 52,
+    "charge": "-9847603.269504",
+    "result": "PASS"
+  },
+  {
+    "role": "SALES",
+    "width": 390,
+    "order_id": 52,
+    "charge": "-9847603.269504",
+    "result": "PASS"
+  },
+  {
+    "role": "CLIENT",
+    "width": 1440,
+    "order_id": 52,
+    "charge": "-9847603.269504",
+    "result": "PASS"
+  },
+  {
+    "role": "CLIENT",
+    "width": 390,
+    "order_id": 52,
+    "charge": "-9847603.269504",
+    "result": "PASS"
+  }
+]

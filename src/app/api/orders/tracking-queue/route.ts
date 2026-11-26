@@ -1,4 +1,5 @@
 import {withFinancialPrivacy} from "@/lib/financial-privacy";
+import {isVndClient,vndIssuanceBlocker,vndRequest} from "@/lib/vnd-operational";
 import {isManualPriceRoute,setManualOrderPrice} from '@/lib/manual-route-price';
 import {assertPurchasing} from '@/lib/credit';
 import {purchaseErrorType} from '@/lib/client-bulk-purchase';
@@ -20,7 +21,7 @@ export const runtime="nodejs";
 type QueueRow={
   order_pk:number;system_order_code:string;client_order_id:string;customer:string;recipient_name:string;
   service:string;sub_service:string;carton_count:number;carton_slot:number;carton_id:number|null;supplier:string;
-  expected_lot_count:number;manual_total_price:number|null;tracking_id:number|null;tracking:string;label_url:string;
+  expected_lot_count:number;manual_total_price:number|null;is_vnd:boolean;vnd_offer:string|null;tracking_id:number|null;tracking:string;label_url:string;
   purchase_status:string;purchase_issue:string;purchase_error_type:string;manifest_status:string;manifest_issue:string;
 };
 
@@ -54,7 +55,12 @@ function queueRows(service="",subService="",supplier="",mode:"PURCHASE"|"MANIFES
     for(const field of ['order_id','recipient_name','address1','city','state','zip','phone','item','material']){
       if(!String(order[field]||'').trim())issues.push('Thiếu thông tin bắt buộc: '+field);
     }
-    if(!order.pricing_snapshot_json){
+    const isVnd=isVndClient(Number(order.client_user_id));
+    const request=isVnd?vndRequest(Number(order.id)):undefined;
+    if(mode==='PURCHASE'&&isVnd){
+      const blocker=vndIssuanceBlocker(Number(order.id),request);
+      if(blocker&&!issues.includes(blocker))issues.push(blocker);
+    }else if(!isVnd&&!order.pricing_snapshot_json){
       const quote=orderQuote(order);
       if(!quote&&!isManualPriceRoute(order.service))issues.push('Route chưa có cấu hình giá hợp lệ.');
       else if(quote&&order.client_user_id){try{assertPurchasing(Number(order.client_user_id),quote.total_charge)}catch(e){const message=(e as Error).message;issues.push(message);accountIssues.add(message)}}
@@ -76,7 +82,8 @@ function queueRows(service="",subService="",supplier="",mode:"PURCHASE"|"MANIFES
         order_pk:Number(order.id),system_order_code:String(order.system_order_code||""),client_order_id:String(order.order_id||""),
         customer:String(order.customer||""),recipient_name:String(order.recipient_name||""),service:String(order.service||""),
         sub_service:String(order.sub_service||""),carton_count:cartonCount,carton_slot:index+1,carton_id:carton?.id||null,supplier:String(order.supplier||""),
-        expected_lot_count:Math.max(1,Number(order.expected_lot_count||1)),manual_total_price:isManualPriceRoute(order.service)&&order.pricing_snapshot_json?Number(order.total_due):null,tracking_id:tracking?Number(tracking.id):null,
+        is_vnd:isVnd,vnd_offer:typeof request?.offer==="string"?request.offer:null,
+        expected_lot_count:Math.max(1,Number(order.expected_lot_count||1)),manual_total_price:!isVnd&&isManualPriceRoute(order.service)&&order.pricing_snapshot_json?Number(order.total_due):null,tracking_id:tracking?Number(tracking.id):null,
         tracking:String(tracking?.tracking||""),label_url:String(tracking?.label_url||""),
         purchase_status:purchaseStatus,purchase_issue:purchaseIssue,purchase_error_type:errorType,manifest_status:manifestStatus,manifest_issue:manifestIssue,
       });
@@ -130,6 +137,8 @@ async function handlePUT(req:NextRequest){
       const code=text(cell(source,headers,"DMD ID"));if(!code)continue;
       const order=db.prepare("SELECT * FROM orders WHERE system_order_code=?").get(code) as Record<string,unknown>|undefined;
       if(!order)throw new Error("Không tìm thấy "+code+".");
+      const isVnd=isVndClient(Number(order.client_user_id));
+      const request=isVnd?vndRequest(Number(order.id)):undefined;
       const trackingValue=text(cell(source,headers,"Tracking"));
       const existing=trackingValue?db.prepare("SELECT id FROM order_trackings WHERE order_id=? AND normalized_tracking=UPPER(REPLACE(REPLACE(?,' ',''),'-',''))").get(order.id,trackingValue) as {id:number}|undefined:undefined;
       rows.push({
@@ -138,8 +147,9 @@ async function handlePUT(req:NextRequest){
         sub_service:String(order.sub_service||""),carton_count:Number(order.carton_count||1),
         carton_slot:Number(cell(source,headers,"Carton số")||1),
         carton_id:(db.prepare("SELECT id FROM order_cartons WHERE order_id=? AND carton_number=?").get(order.id,Number(cell(source,headers,"Carton số")||1)) as {id:number}|undefined)?.id||null,
-        supplier:text(cell(source,headers,"Supplier"))||String(order.supplier||""),
-        expected_lot_count:Math.max(1,Number(cell(source,headers,"Số lượng Lô")||order.expected_lot_count||1)),manual_total_price:cell(source,headers,'Giá bán thủ công (USD/Order)')===''?null:Number(cell(source,headers,'Giá bán thủ công (USD/Order)')),
+        is_vnd:isVnd,vnd_offer:typeof request?.offer==="string"?request.offer:null,
+        supplier:(!isVnd&&text(cell(source,headers,"Supplier")))||String(order.supplier||""),
+        expected_lot_count:Math.max(1,Number(cell(source,headers,"Số lượng Lô")||order.expected_lot_count||1)),manual_total_price:isVnd||cell(source,headers,'Giá bán thủ công (USD/Order)')===''?null:Number(cell(source,headers,'Giá bán thủ công (USD/Order)')),
         tracking_id:existing?.id||null,tracking:trackingValue,label_url:text(cell(source,headers,"URL Label")),
         purchase_status:"",purchase_issue:"",purchase_error_type:"",manifest_status:"",manifest_issue:"",
       });
@@ -167,7 +177,8 @@ async function handlePOST(req:NextRequest){
         const supplier=text(first.supplier)?canonicalEnumValue("SUPPLIER",first.supplier):String(order.supplier||"");
         const subService=first.sub_service===undefined?String(order.sub_service||""):
           text(first.sub_service)?canonicalEnumValue("SUB_SERVICE",first.sub_service,String(order.service||"")):"";
-        if(order.pricing_snapshot_json&&(supplier!==text(order.supplier)||subService!==text(order.sub_service)))throw new Error("Route đã khóa khi đặt mua.");
+        const isVnd=isVndClient(Number(order.client_user_id));
+        if((isVnd||order.pricing_snapshot_json)&&(supplier!==text(order.supplier)||subService!==text(order.sub_service)))throw new Error("Route đã khóa khi đặt mua.");
         const expectedLots=Math.max(1,Math.trunc(Number(first.expected_lot_count||order.expected_lot_count||1)));
         db.prepare("UPDATE orders SET sub_service=?,supplier=?,expected_lot_count=?,updated_by_user_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
           .run(subService||null,supplier||null,expectedLots,auth.user.id,orderId);
@@ -175,9 +186,9 @@ async function handlePOST(req:NextRequest){
           logAdminEvent({orderId,eventType:"PURCHASE_ROUTE_OVERRIDDEN",summary:"Admin điều chỉnh route mua đơn.",actorId:auth.user.id,source:"BULK",before:{sub_service:order.sub_service,supplier:order.supplier},after:{sub_service:subService,supplier}});
         }
         const current:Record<string,unknown>={...order,sub_service:subService,supplier};
-        if(isManualPriceRoute(order.service)&&first.manual_total_price!==undefined&&first.manual_total_price!==null&&String(first.manual_total_price).trim()!=='')setManualOrderPrice(orderId,first.manual_total_price,auth.user.id);
-        if(!isManualPriceRoute(order.service)||group.some(row=>text(row.tracking)))assertConfiguredPurchase(db.prepare('SELECT * FROM orders WHERE id=?').get(orderId) as Record<string,unknown>);
-        if(!current.pricing_snapshot_json&&orderQuote(current))purchaseService(orderId,auth.user,false);
+        if(!isVnd&&isManualPriceRoute(order.service)&&first.manual_total_price!==undefined&&first.manual_total_price!==null&&String(first.manual_total_price).trim()!=='')setManualOrderPrice(orderId,first.manual_total_price,auth.user.id);
+        if(isVnd||!isManualPriceRoute(order.service)||group.some(row=>text(row.tracking)))assertConfiguredPurchase(db.prepare('SELECT * FROM orders WHERE id=?').get(orderId) as Record<string,unknown>);
+        if(!isVnd&&!current.pricing_snapshot_json&&orderQuote(current))purchaseService(orderId,auth.user,false);
         ensureOrderShipmentStructure(orderId);
         for(const raw of group){
           const tracking=text(raw.tracking);const label=text(raw.label_url);
